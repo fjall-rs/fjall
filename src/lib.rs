@@ -14,6 +14,7 @@ mod serde;
 mod value;
 
 pub use {
+    crate::serde::{DeserializeError, SerializeError},
     error::{Error, Result},
     value::Value,
 };
