@@ -62,7 +62,7 @@ pub type Result = std::result::Result<(SeqNo, MemTable), Error>;
 
 impl MemTable {
     /// Creates a [`MemTable`] from a commit log on disk
-    pub(crate) fn from_commit_log_file<P: AsRef<Path>>(path: &P, strategy: &Strategy) -> Result {
+    pub(crate) fn from_file<P: AsRef<Path>>(path: P, strategy: &Strategy) -> Result {
         use Marker::{End, Item, Start};
 
         let iter = LogFileIterator::new(path)?;
