@@ -4,7 +4,7 @@ use crate::{
 };
 use std::io::{Read, Write};
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
     Start(u32),
     Item(Value),
@@ -62,6 +62,63 @@ impl Deserializable for Marker {
                 Ok(End(val))
             }
             tag => Err(DeserializeError::InvalidTag(tag)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_and_deserialize_success() {
+        let item = Marker::Item(Value::new(vec![1, 2, 3], vec![], false, 42));
+
+        // Serialize
+        let mut serialized_data = Vec::new();
+        item.serialize(&mut serialized_data).unwrap();
+
+        // Deserialize
+        let mut reader = &serialized_data[..];
+        let deserialized_item = Marker::deserialize(&mut reader).unwrap();
+
+        assert_eq!(item, deserialized_item);
+    }
+
+    #[test]
+    fn test_invalid_deserialize() {
+        let invalid_data = [0u8; 1]; // Should be followed by a u32
+
+        // Try to deserialize with invalid data
+        let mut reader = &invalid_data[..];
+        let result = Marker::deserialize(&mut reader);
+
+        match result {
+            Ok(_) => panic!("should error"),
+            Err(error) => match error {
+                DeserializeError::Io(error) => match error.kind() {
+                    std::io::ErrorKind::UnexpectedEof => {}
+                    _ => panic!("should throw UnexpectedEof"),
+                },
+                _ => panic!("should throw InvalidTag"),
+            },
+        }
+    }
+
+    #[test]
+    fn test_invalid_tag() {
+        let invalid_data = [3u8; 1]; // Invalid tag
+
+        // Try to deserialize with invalid data
+        let mut reader = &invalid_data[..];
+        let result = Marker::deserialize(&mut reader);
+
+        match result {
+            Ok(_) => panic!("should error"),
+            Err(error) => match error {
+                DeserializeError::InvalidTag(3) => {}
+                _ => panic!("should throw InvalidTag"),
+            },
         }
     }
 }
