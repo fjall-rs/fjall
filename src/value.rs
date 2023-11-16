@@ -28,7 +28,7 @@ impl Value {
     ///
     /// # Panics
     ///
-    /// Panics if the key length is greather than 2^16, or the value length is greater than 2^32
+    /// Panics if the key length is empty or greather than 2^16, or the value length is greater than 2^32
     ///
     /// # Examples
     ///
@@ -51,6 +51,7 @@ impl Value {
         let k = key.into();
         let v = value.into();
 
+        assert!(!k.is_empty());
         assert!(k.len() <= u16::MAX.into());
         assert!(u32::try_from(v.len()).is_ok());
 
@@ -140,5 +141,32 @@ impl Deserializable for Value {
         reader.read_exact(&mut value)?;
 
         Ok(Self::new(key, value, is_tombstone, seqno))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_value() {
+        // Create an empty Value instance
+        let value = Value::new(vec![1, 2, 3], vec![], false, 42);
+
+        // Serialize the empty Value
+        let mut serialized = Vec::new();
+        value
+            .serialize(&mut serialized)
+            .expect("Serialization failed");
+
+        // Deserialize the empty Value
+        let deserialized = Value::deserialize(&mut &serialized[..]);
+
+        // Check if deserialization is successful
+        assert!(deserialized.is_ok());
+
+        // Check if deserialized Value is equivalent to the original empty Value
+        let deserialized = deserialized.expect("Deserialization failed");
+        assert_eq!(value, deserialized);
     }
 }

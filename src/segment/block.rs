@@ -90,19 +90,8 @@ mod tests {
 
     #[test]
     fn test_blocky_deserialization_success() {
-        let item1 = Value {
-            seqno: 42,
-            key: vec![1, 2, 3],
-            value: vec![4, 5, 6],
-            is_tombstone: false,
-        };
-
-        let item2 = Value {
-            seqno: 43,
-            key: vec![7, 8, 9],
-            value: vec![10, 11, 12],
-            is_tombstone: false,
-        };
+        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
+        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
 
         let items = vec![item1.clone(), item2.clone()];
         let crc = ValueBlock::create_crc(&items);
@@ -131,22 +120,11 @@ mod tests {
 
     #[test]
     fn test_blocky_deserialization_failure_crc() {
-        let value1 = Value {
-            seqno: 42,
-            key: vec![1, 2, 3],
-            value: vec![4, 5, 6],
-            is_tombstone: false,
-        };
-
-        let value2 = Value {
-            seqno: 43,
-            key: vec![7, 8, 9],
-            value: vec![10, 11, 12],
-            is_tombstone: false,
-        };
+        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
+        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
 
         let block = ValueBlock {
-            items: vec![value1, value2],
+            items: vec![item1, item2],
             crc: 12345,
         };
 
