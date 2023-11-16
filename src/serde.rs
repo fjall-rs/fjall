@@ -1,15 +1,19 @@
 use std::io::{Read, Write};
 
-// Custom error enum
+/// Error during serialization
 #[derive(Debug)]
 pub enum SerializeError {
+    /// I/O error
     Io(std::io::Error),
 }
 
-// Custom error enum
+/// Error during deserialization
 #[derive(Debug)]
 pub enum DeserializeError {
+    /// I/O error
     Io(std::io::Error),
+
+    /// The CRC value does not match the expected value
     CrcCheck(u32),
 }
 

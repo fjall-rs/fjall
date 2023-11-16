@@ -6,8 +6,12 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
 
+mod error;
 mod segment;
 mod serde;
 mod value;
 
-pub use value::Value;
+pub use {
+    error::{Error, Result},
+    value::Value,
+};
