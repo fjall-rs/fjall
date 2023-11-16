@@ -8,6 +8,7 @@
 
 mod commit_log;
 mod error;
+mod memtable;
 mod segment;
 mod serde;
 mod value;
