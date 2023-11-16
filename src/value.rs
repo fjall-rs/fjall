@@ -1,6 +1,8 @@
 use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeError};
 use std::io::{Read, Write};
 
+pub type SeqNo = u64;
+
 /// Represents a value in the LSM-tree
 ///
 /// `key` and `value` are arbitrary user-defined byte arrays
@@ -17,7 +19,7 @@ pub struct Value {
     pub value: Vec<u8>,
 
     /// Sequence number
-    pub seqno: u64,
+    pub seqno: SeqNo,
 
     /// Tombstone marker - if this is true, the value has been deleted
     pub is_tombstone: bool,
@@ -112,9 +114,9 @@ impl Serializable for Value {
 impl Deserializable for Value {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
         // Read seqno
-        let mut seqno_bytes = [0; std::mem::size_of::<u64>()];
+        let mut seqno_bytes = [0; std::mem::size_of::<SeqNo>()];
         reader.read_exact(&mut seqno_bytes)?;
-        let seqno = u64::from_be_bytes(seqno_bytes);
+        let seqno = SeqNo::from_be_bytes(seqno_bytes);
 
         // Read tombstone
         let mut tomb_bytes = [0; std::mem::size_of::<u8>()];

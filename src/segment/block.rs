@@ -2,7 +2,6 @@ use crate::{
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
     Value,
 };
-use crc32fast::Hasher;
 use std::io::{Read, Write};
 
 /// Value blocks are the building blocks of a [`Segment`]. Each block is a sorted list of [`Value`]s,
@@ -18,7 +17,7 @@ struct ValueBlock {
 impl ValueBlock {
     /// Calculates the CRC from a list of values
     fn create_crc(items: &Vec<Value>) -> u32 {
-        let mut hasher: Hasher = Hasher::new();
+        let mut hasher = crc32fast::Hasher::new();
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
@@ -114,7 +113,7 @@ mod tests {
                 assert_eq!(block.items.get(1).cloned(), Some(item2));
                 assert_eq!(crc, block.crc);
             }
-            Err(err) => panic!("Deserialization failed: {err:?}"),
+            Err(error) => panic!("Deserialization failed: {error:?}"),
         }
     }
 
