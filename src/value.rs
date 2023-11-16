@@ -76,6 +76,7 @@ impl Value {
     /// assert_eq!(&[0x61, 0x62, 0x63, 0, 0, 0, 0, 0, 0, 0, 5], &*value.get_internal_key());
     /// ```
     #[must_use]
+    #[doc(hidden)]
     pub fn get_internal_key(&self) -> Vec<u8> {
         let mut internal_key = Vec::with_capacity(self.key.len() + std::mem::size_of::<u64>());
         internal_key.extend_from_slice(&self.key);
