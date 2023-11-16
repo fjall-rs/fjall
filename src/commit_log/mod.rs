@@ -58,6 +58,8 @@ impl CommitLog {
 
     /// Creates a new commit log file to append data to
     pub(crate) fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        std::fs::create_dir_all(path.as_ref().parent().expect("path should have parent"))?;
+
         let file = OpenOptions::new().append(true).create(true).open(path)?;
         let writer = Mutex::new(BufWriter::with_capacity(128_000, file));
 
