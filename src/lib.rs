@@ -6,6 +6,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
 
+mod commit_log;
 mod error;
 mod segment;
 mod serde;
