@@ -3,6 +3,9 @@ use crate::serde::DeserializeError;
 /// Represents errors that can occur in the LSM-tree
 #[derive(Debug)]
 pub enum Error {
+    /// I/O error
+    Io(std::io::Error),
+
     /// Deserialization failed
     Deserialize(DeserializeError),
 }
@@ -14,6 +17,12 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
 
 /// Tree result
 pub type Result<T> = std::result::Result<T, Error>;
