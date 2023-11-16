@@ -1,0 +1,21 @@
+[package]
+name = "lsm_tree"
+description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+exclude = [".gitignore", ".cargo/config", ".github/**"]
+keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
+categories = ["data-structures", "database-implementations", "algorithms"]
+repository = "https://github.com/marvin-j97/lsm-tree"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "lsm_tree"
+path = "src/lib.rs"
+
+[dependencies]
+crc32fast = "1.3.2"
+serde = "1.0.192"
