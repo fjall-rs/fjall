@@ -1,5 +1,5 @@
-pub mod iterator;
 pub mod marker;
+pub mod reader;
 
 use self::marker::Marker;
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     Value,
 };
 use std::{
-    fs::{File, OpenOptions},
+    fs::File,
     io::{BufWriter, Write},
     path::Path,
     sync::{Mutex, MutexGuard},
@@ -60,7 +60,7 @@ impl CommitLog {
     pub(crate) fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         std::fs::create_dir_all(path.as_ref().parent().expect("path should have parent"))?;
 
-        let file = OpenOptions::new().append(true).create(true).open(path)?;
+        let file = File::create(path)?;
         let writer = Mutex::new(BufWriter::with_capacity(128_000, file));
 
         Ok(Self { writer })
@@ -96,6 +96,7 @@ impl CommitLog {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    use test_log::test;
 
     #[test]
     fn test_write() -> std::io::Result<()> {

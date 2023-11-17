@@ -1,10 +1,13 @@
-use crate::serde::DeserializeError;
+use crate::{serde::DeserializeError, SerializeError};
 
 /// Represents errors that can occur in the LSM-tree
 #[derive(Debug)]
 pub enum Error {
     /// I/O error
     Io(std::io::Error),
+
+    /// Serialization failed
+    Serialize(SerializeError),
 
     /// Deserialization failed
     Deserialize(DeserializeError),

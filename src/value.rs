@@ -30,7 +30,7 @@ impl Value {
     ///
     /// # Panics
     ///
-    /// Panics if the key length is empty or greather than 2^16, or the value length is greater than 2^32
+    /// Panics if the key length is empty or greater than 2^16, or the value length is greater than 2^32
     ///
     /// # Examples
     ///
@@ -63,6 +63,14 @@ impl Value {
             is_tombstone,
             seqno,
         }
+    }
+
+    #[must_use]
+    #[doc(hidden)]
+    pub fn size(&self) -> usize {
+        let key_size = self.key.len();
+        let value_size = self.value.len();
+        std::mem::size_of::<Self>() + key_size + value_size
     }
 
     /// Computes the internal key based on the user key + seqno
@@ -150,6 +158,7 @@ impl Deserializable for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_empty_value() {

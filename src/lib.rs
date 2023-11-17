@@ -7,6 +7,8 @@
 #![forbid(unsafe_code)]
 
 mod commit_log;
+mod disk_block;
+mod disk_block_index;
 mod error;
 mod memtable;
 mod segment;

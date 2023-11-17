@@ -1,8 +1,8 @@
 use super::MemTable;
 use crate::{
     commit_log::{
-        iterator::{Error as CommitIterateError, LogFileIterator},
         marker::Marker,
+        reader::{Error as CommitIterateError, Reader as CommitLogReader},
     },
     serde::{Serializable, SerializeError},
     value::SeqNo,
@@ -58,14 +58,14 @@ impl From<SerializeError> for Error {
     }
 }
 
-pub type Result = std::result::Result<(SeqNo, MemTable), Error>;
+pub type Result = std::result::Result<(SeqNo, u64, MemTable), Error>;
 
 impl MemTable {
     /// Creates a [`MemTable`] from a commit log on disk
     pub(crate) fn from_file<P: AsRef<Path>>(path: P, strategy: &Strategy) -> Result {
         use Marker::{End, Item, Start};
 
-        let iter = LogFileIterator::new(path)?;
+        let reader = CommitLogReader::new(path)?;
 
         let mut hasher = crc32fast::Hasher::new();
         let mut is_in_batch = false;
@@ -76,7 +76,7 @@ impl MemTable {
         let mut memtable = Self::default();
         let mut items: Vec<Value> = vec![];
 
-        for item in iter {
+        for item in reader {
             let item = item?; // TODO: result, RecoveryStrategy
 
             match item {
@@ -156,7 +156,7 @@ impl MemTable {
             }
         }
 
-        memtable.size_in_bytes = byte_count;
+        // memtable.size_in_bytes = byte_count;
 
         let lsn = memtable
             .data
@@ -165,6 +165,6 @@ impl MemTable {
             .max()
             .unwrap_or_default();
 
-        Ok((lsn, memtable))
+        Ok((lsn, byte_count, memtable))
     }
 }

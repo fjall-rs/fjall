@@ -69,6 +69,7 @@ impl Deserializable for Marker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_serialize_and_deserialize_success() {

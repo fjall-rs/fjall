@@ -4,11 +4,11 @@ use std::{fs::File, io::BufReader, path::Path};
 
 /// The log file iterator emits every entry in the commit log file,
 /// without checking for any kind of data integrity
-pub struct LogFileIterator {
+pub struct Reader {
     file_reader: BufReader<File>,
 }
 
-impl LogFileIterator {
+impl Reader {
     pub fn new<P: AsRef<Path>>(file: P) -> std::io::Result<Self> {
         let file_handle = File::open(file)?;
         let file_reader = BufReader::with_capacity(128_000, file_handle);
@@ -34,7 +34,7 @@ impl From<DeserializeError> for Error {
     }
 }
 
-impl Iterator for LogFileIterator {
+impl Iterator for Reader {
     type Item = Result<Marker, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
