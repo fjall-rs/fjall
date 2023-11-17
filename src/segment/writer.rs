@@ -10,31 +10,31 @@ use std::{
 };
 
 pub struct Writer {
-    opts: Options,
+    pub opts: Options,
 
     block_writer: BufWriter<File>,
     index_writer: IndexWriter,
     chunk: ValueBlock,
 
-    block_count: usize,
-    written_item_count: usize,
-    file_pos: u64,
-    uncompressed_size: u64,
+    pub block_count: usize,
+    pub item_count: usize,
+    pub file_pos: u64,
+    pub uncompressed_size: u64,
 
-    first_key: Option<Vec<u8>>,
-    last_key: Option<Vec<u8>>,
-    tombstone_count: usize,
-    chunk_size: usize,
+    pub first_key: Option<Vec<u8>>,
+    pub last_key: Option<Vec<u8>>,
+    pub tombstone_count: usize,
+    pub chunk_size: usize,
 
-    lowest_seqno: SeqNo,
-    highest_seqno: SeqNo,
+    pub lowest_seqno: SeqNo,
+    pub highest_seqno: SeqNo,
 }
 
 pub struct Options {
-    path: PathBuf,
-    evict_tombstones: bool,
-    block_size: u32,
-    index_block_size: u32,
+    pub path: PathBuf,
+    pub evict_tombstones: bool,
+    pub block_size: u32,
+    pub index_block_size: u32,
 }
 
 impl Writer {
@@ -52,7 +52,7 @@ impl Writer {
         };
 
         let mut block_count: usize = 0;
-        let mut written_item_count = 0;
+        let mut item_count = 0;
         let mut file_pos: u64 = 0;
         let mut uncompressed_size: u64 = 0;
 
@@ -64,7 +64,7 @@ impl Writer {
             chunk,
 
             block_count,
-            written_item_count,
+            item_count,
             file_pos,
             uncompressed_size,
 
@@ -123,7 +123,7 @@ impl Writer {
         );
 
         self.file_pos += u64::from(bytes_written);
-        self.written_item_count += self.chunk.items.len();
+        self.item_count += self.chunk.items.len();
         self.block_count += 1;
         self.chunk.items.clear();
 
@@ -180,7 +180,7 @@ impl Writer {
 
         log::debug!(
             "Written {} items in {} blocks into new segment file, written {} MB",
-            self.written_item_count,
+            self.item_count,
             self.block_count,
             self.file_pos / 1024 / 1024
         );
@@ -192,35 +192,29 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{segment::index::MetaIndex, Value};
-    use std::path::Path;
+    use crate::{
+        segment::{index::MetaIndex, meta::Metadata, reader::Reader},
+        Value,
+    };
     use std::sync::Arc;
     use test_log::test;
 
     #[test]
     fn test_write() {
-        // TODO: tempfile
+        const ITEM_COUNT: u64 = 1_600_000;
 
-        // TODO: remove
-        if Path::new(".peter").exists() {
-            std::fs::remove_dir_all(".peter").unwrap();
-        }
-
-        let NUM_ITEMS = 8_000_000;
-
-        let mut items = (0u64..NUM_ITEMS)
-            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i))
-            .collect::<Vec<_>>();
-
-        items.sort_by(|a, b| a.key.cmp(&b.key));
+        let folder = tempfile::tempdir().unwrap().into_path();
 
         let mut writer = Writer::new(Options {
-            path: ".peter".into(),
+            path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
             index_block_size: 4096,
         })
         .unwrap();
+
+        let items = (0u64..ITEM_COUNT)
+            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
 
         for item in items {
             writer.write(item).unwrap();
@@ -228,20 +222,38 @@ mod tests {
 
         writer.finalize().unwrap();
 
-        let meta_index = Arc::new(MetaIndex::from_file(".peter").unwrap());
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
+        metadata.write(&folder).unwrap();
 
-        for NUM_THREADS in [1, 1, 2, 4] {
+        let meta_index = Arc::new(MetaIndex::from_file(&folder).unwrap());
+
+        let mut iter =
+            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), &None, &None).unwrap();
+
+        for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
+            let item = iter.next().unwrap().expect("item should exist");
+            assert_eq!(key, &*item.key);
+        }
+
+        let mut iter =
+            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), &None, &None).unwrap();
+
+        for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
+            let item = iter.next_back().unwrap().expect("item should exist");
+            assert_eq!(key, &*item.key);
+        }
+
+        /* for thread_count in [1, 1, 2, 4] {
             let start = std::time::Instant::now();
-            eprintln!("getting 400k items with {NUM_THREADS} threads");
 
-            let threads = (0..NUM_THREADS)
+            let threads = (0..thread_count)
                 .map(|thread_no| {
                     let meta_index = meta_index.clone();
 
                     std::thread::spawn(move || {
-                        let item_count = NUM_ITEMS / NUM_THREADS;
+                        let item_count = ITEM_COUNT / thread_count;
                         let start = thread_no * item_count;
-                        let range = start..start + item_count;
+                        let range = start..(start + item_count);
 
                         for key in range.map(u64::to_be_bytes) {
                             let item = meta_index.get_latest(&key);
@@ -250,7 +262,9 @@ mod tests {
                                 Some(item) => {
                                     assert_eq!(key, &*item.key);
                                 }
-                                None => panic!("item should exist"),
+                                None => {
+                                    panic!("item should exist: {}", u64::from_be_bytes(key))
+                                }
                             }
                         }
                     })
@@ -263,7 +277,7 @@ mod tests {
 
             let elapsed = start.elapsed();
             let nanos = elapsed.as_nanos();
-            let nanos_per_item = nanos / u128::from(NUM_ITEMS);
+            let nanos_per_item = nanos / u128::from(ITEM_COUNT);
             let reads_per_second = (std::time::Duration::from_secs(1)).as_nanos() / nanos_per_item;
 
             eprintln!(
@@ -272,6 +286,6 @@ mod tests {
                 nanos_per_item,
                 reads_per_second
             );
-        }
+        } */
     }
 }

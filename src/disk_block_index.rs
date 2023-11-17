@@ -100,37 +100,23 @@ impl DiskBlockIndex {
         self.data.range(key.to_vec()..).next()
     } */
 
-    /* pub fn get_first_block_info(&self) -> Vec<u8> {
-        self.data
-            .iter()
-            .next()
-            .map(|(key, _)| key)
-            .cloned()
-            .unwrap()
-    } */
+    /// Returns the key of the first block
+    pub fn get_first_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
+        self.data.iter().next().unwrap()
+    }
 
-    /* pub fn get_last_block_info(&self) -> Vec<u8> {
-        self.data
-            .iter()
-            .next_back()
-            .map(|(key, _)| key)
-            .cloned()
-            .unwrap()
-    } */
+    /// Returns the key of the last block
+    pub fn get_last_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
+        self.data.iter().next_back().unwrap()
+    }
 
-    /* pub fn get_previous_block_info(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.data
-            .range(..key.to_vec())
-            .next_back()
-            .map(|(key, _)| key)
-            .cloned()
-    } */
+    /// Returns the key of the block before the input key, if it exists, or None
+    pub fn get_previous_block_key(&self, key: &[u8]) -> Option<(&Vec<u8>, &DiskBlockReference)> {
+        self.data.range(..key.to_vec()).next_back()
+    }
 
-    /* pub fn get_next_block_info(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.data
-            .range((Excluded(key.to_vec()), Unbounded))
-            .next()
-            .map(|(key, _)| key)
-            .cloned()
-    } */
+    /// Returns the key of the block after the input key, if it exists, or None
+    pub fn get_next_block_key(&self, key: &[u8]) -> Option<(&Vec<u8>, &DiskBlockReference)> {
+        self.data.range((Excluded(key.to_vec()), Unbounded)).next()
+    }
 }

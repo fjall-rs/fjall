@@ -4,20 +4,27 @@ use super::block::ValueBlock;
 use crate::disk_block::{DiskBlock, Error as DiskBlockError};
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
-use crate::Value;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+// TODO: replace
+use lockfree::map::Map;
 
+/// Points to a block on file
 #[derive(Clone, Debug)]
-pub struct BlockIndexEntry {
+pub struct IndexEntry {
+    /// Position of block in file
     pub offset: u64,
+
+    /// Size of block in bytes
     pub size: u32,
+
+    /// Key of first item in block
     pub start_key: Vec<u8>,
 }
 
-impl Serializable for BlockIndexEntry {
+impl Serializable for IndexEntry {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), crate::SerializeError> {
         writer.write_all(&self.offset.to_be_bytes())?;
         writer.write_all(&self.size.to_be_bytes())?;
@@ -33,7 +40,7 @@ impl Serializable for BlockIndexEntry {
     }
 }
 
-impl Deserializable for BlockIndexEntry {
+impl Deserializable for IndexEntry {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, crate::DeserializeError>
     where
         Self: Sized,
@@ -63,33 +70,142 @@ impl Deserializable for BlockIndexEntry {
     }
 }
 
-// TODO: replace
-use lockfree::map::Map;
-
+/// In-memory index that translates item keys to block refs.
+///
+/// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct MetaIndex {
+    /// Base folder path
     path: PathBuf,
+
+    /// Level-0 index ("fence pointers"). Is read-only and always fully loaded.
+    ///
+    /// This index points to index blocks inside the level-1 index.
     pub index: DiskBlockIndex,
 
-    pub blocks: Map<Vec<u8>, Arc<DiskBlock<BlockIndexEntry>>>,
-    // TODO: real block cache
+    /// Level-1 index. This index is only partially loaded into memory, decreasing memory usage, compared to a fully loaded one.
+    ///
+    /// However to find a disk block, one layer of indirection is required:
+    ///
+    /// To find a reference to a segment block, first the level-0 index needs to be checked,
+    /// then the corresponding index block needs to be loaded, which contains the wanted disk block reference.
+    pub blocks: Map<Vec<u8>, Arc<DiskBlock<IndexEntry>>>, // TODO: change this to a struct
+    // TODO: real block cache, don't do actual loading in this index
     pub real_blocks: Map<Vec<u8>, Arc<ValueBlock>>,
 }
 
-impl DiskBlock<BlockIndexEntry> {
-    pub(crate) fn get_lower_bound_block_info(&self, key: &[u8]) -> Option<&BlockIndexEntry> {
+impl DiskBlock<IndexEntry> {
+    pub(crate) fn get_previous_block_info(&self, key: &[u8]) -> Option<&IndexEntry> {
+        self.items.iter().rev().find(|x| &*x.start_key < key)
+    }
+
+    pub(crate) fn get_next_block_info(&self, key: &[u8]) -> Option<&IndexEntry> {
+        self.items.iter().find(|x| &*x.start_key > key)
+    }
+
+    pub(crate) fn get_lower_bound_block_info(&self, key: &[u8]) -> Option<&IndexEntry> {
         self.items.iter().rev().find(|x| &*x.start_key <= key)
     }
 }
 
 impl MetaIndex {
-    // TODO: need to use prefix iterator and get last
-    pub fn get_latest(&self, key: &[u8]) -> Option<Value> {
+    /// Returns the previous index block's key, if it exists, or None
+    pub fn get_previous_block_key(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let (first_block_key, first_block_ref) = self.index.get_lower_bound_block_info(key)?;
+        let index_block = self.load_index_block(first_block_key, first_block_ref);
+
+        let maybe_prev = index_block.get_previous_block_info(key);
+
+        match maybe_prev {
+            Some(item) => Some(item.start_key.clone()),
+            None => {
+                let (prev_block_key, prev_block_ref) =
+                    self.index.get_previous_block_key(first_block_key)?;
+                let index_block = self.load_index_block(prev_block_key, prev_block_ref);
+                index_block.items.last().map(|x| x.start_key.clone())
+            }
+        }
+    }
+
+    /// Returns the next index block's key, if it exists, or None
+    pub fn get_next_block_key(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let (first_block_key, first_block_ref) = self.index.get_lower_bound_block_info(key)?;
+        let index_block = self.load_index_block(first_block_key, first_block_ref);
+
+        let maybe_next = index_block.get_next_block_info(key);
+
+        match maybe_next {
+            Some(item) => Some(item.start_key.clone()),
+            None => {
+                let (next_block_key, next_block_ref) =
+                    self.index.get_next_block_key(first_block_key)?;
+                let index_block = self.load_index_block(next_block_key, next_block_ref);
+                index_block.items.first().map(|x| x.start_key.clone())
+            }
+        }
+    }
+
+    /// Returns the first block's key
+    pub fn get_first_block_key(&self) -> Vec<u8> {
+        let (block_key, block_ref) = self.index.get_first_block_key();
+        let index_block = self.load_index_block(block_key, block_ref);
+        index_block
+            .items
+            .first()
+            .map(|x| x.start_key.clone())
+            .unwrap()
+    }
+
+    /// Returns the last block's key
+    pub fn get_last_block_key(&self) -> Vec<u8> {
+        let (block_key, block_ref) = self.index.get_last_block_key();
+        let index_block = self.load_index_block(block_key, block_ref);
+        index_block
+            .items
+            .last()
+            .map(|x| x.start_key.clone())
+            .unwrap()
+    }
+
+    /// Load an index block from disk
+    fn load_index_block(
+        &self,
+        block_key: &[u8],
+        block_ref: &DiskBlockReference,
+    ) -> Arc<DiskBlock<IndexEntry>> {
+        match self.blocks.get(block_key) {
+            Some(block) => block.1.clone(),
+            None => {
+                let block = DiskBlock::<IndexEntry>::from_file_compressed(
+                    self.path.join("index_blocks"),
+                    block_ref.offset,
+                    block_ref.size,
+                )
+                .unwrap(); // TODO:
+
+                let block = Arc::new(block);
+
+                self.blocks.insert(block_key.into(), Arc::clone(&block));
+
+                block
+            }
+        }
+    }
+
+    /// Gets the reference to an index block
+    pub fn get_ref(&self, key: &[u8]) -> Option<IndexEntry> {
+        let (block_key, block_ref) = self.index.get_lower_bound_block_info(key)?;
+        let index_block = self.load_index_block(block_key, block_ref);
+        index_block.get_lower_bound_block_info(key).cloned()
+    }
+
+    // TODO: need to use prefix iterator and get last seqno
+    /*  pub fn get_latest(&self, key: &[u8]) -> Option<Value> {
         let (block_key, index_block_ref) = self.index.get_lower_bound_block_info(key)?;
 
         let index_block = match self.blocks.get(block_key) {
             Some(block) => block.1.clone(),
             None => {
-                let block = DiskBlock::<BlockIndexEntry>::from_file_compressed(
+                let block = DiskBlock::<IndexEntry>::from_file_compressed(
                     self.path.join("index_blocks"),
                     index_block_ref.offset,
                     index_block_ref.size,
@@ -132,12 +248,35 @@ impl MetaIndex {
         )
         .unwrap(); // TODO: panic */
 
-        real_block.items.iter().find(|x| x.key == key).cloned()
+        let item_index = real_block.items.binary_search_by(|x| (*x.key).cmp(key));
+        item_index.map_or(None, |idx| Some(real_block.items[idx].clone()))
+    } */
+
+    // TODO: use this instead of from_file after writing Segment somehow...
+    pub fn from_items<P: AsRef<Path>>(path: P, items: Vec<IndexEntry>) -> Self {
+        let mut tree = BTreeMap::new();
+
+        for item in items {
+            tree.insert(
+                item.start_key,
+                DiskBlockReference {
+                    offset: item.offset,
+                    size: item.size,
+                },
+            );
+        }
+
+        Self {
+            path: path.as_ref().into(),
+            index: DiskBlockIndex { data: tree },
+            blocks: Map::default(),
+            real_blocks: Map::default(),
+        }
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, DiskBlockError> {
-        let size = std::fs::metadata(&path.as_ref().join("index"))?.len();
-        let index = DiskBlock::<BlockIndexEntry>::from_file_compressed(
+        let size = std::fs::metadata(path.as_ref().join("index"))?.len();
+        let index = DiskBlock::<IndexEntry>::from_file_compressed(
             path.as_ref().join("index"),
             0,
             size as u32,
@@ -148,23 +287,6 @@ impl MetaIndex {
         // TODO: no panic
         assert!(crc == index.crc, "crc fail");
 
-        let mut tree = BTreeMap::new();
-
-        for item in index.items {
-            tree.insert(
-                item.start_key,
-                DiskBlockReference {
-                    offset: item.offset,
-                    size: item.size,
-                },
-            );
-        }
-
-        Ok(Self {
-            path: path.as_ref().into(),
-            index: DiskBlockIndex { data: tree },
-            blocks: Map::default(),
-            real_blocks: Map::default(),
-        })
+        Ok(Self::from_items(path, index.items))
     }
 }

@@ -1,4 +1,5 @@
 use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeError};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 pub type SeqNo = u64;
@@ -95,25 +96,17 @@ impl Value {
 
 impl Serializable for Value {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
-        // Write seqno
-        writer.write_all(&self.seqno.to_be_bytes())?;
-
-        // Write tombstone
-        let tombstone = u8::from(self.is_tombstone);
-        writer.write_all(&tombstone.to_be_bytes())?;
-
-        // Write key length and key
+        writer.write_u64::<BigEndian>(self.seqno)?;
+        writer.write_u8(u8::from(self.is_tombstone))?;
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
-        writer.write_all(&(self.key.len() as u16).to_be_bytes())?;
+        writer.write_u16::<BigEndian>(self.key.len() as u16)?;
         writer.write_all(&self.key)?;
 
-        // Write value length and value
-
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
-        writer.write_all(&(self.value.len() as u32).to_be_bytes())?;
+        writer.write_u32::<BigEndian>(self.value.len() as u32)?;
         writer.write_all(&self.value)?;
 
         Ok(())
@@ -122,33 +115,15 @@ impl Serializable for Value {
 
 impl Deserializable for Value {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
-        // Read seqno
-        let mut seqno_bytes = [0; std::mem::size_of::<SeqNo>()];
-        reader.read_exact(&mut seqno_bytes)?;
-        let seqno = SeqNo::from_be_bytes(seqno_bytes);
+        let seqno = reader.read_u64::<BigEndian>()?;
+        let is_tombstone = reader.read_u8()? > 0;
 
-        // Read tombstone
-        let mut tomb_bytes = [0; std::mem::size_of::<u8>()];
-        reader.read_exact(&mut tomb_bytes)?;
-        let tomb_byte = u8::from_be_bytes(tomb_bytes);
-        let is_tombstone = tomb_byte > 0;
-
-        // Read key length
-        let mut key_len_bytes = [0; std::mem::size_of::<u16>()];
-        reader.read_exact(&mut key_len_bytes)?;
-        let key_len = u16::from_be_bytes(key_len_bytes) as usize;
-
-        // Read key
-        let mut key = vec![0; key_len];
+        let key_len = reader.read_u16::<BigEndian>()?;
+        let mut key = vec![0; key_len.into()];
         reader.read_exact(&mut key)?;
 
-        // Read value length
-        let mut value_len_bytes = [0; std::mem::size_of::<u32>()];
-        reader.read_exact(&mut value_len_bytes)?;
-        let value_len = u32::from_be_bytes(value_len_bytes) as usize;
-
-        // Read value
-        let mut value = vec![0; value_len];
+        let value_len = reader.read_u32::<BigEndian>()?;
+        let mut value = vec![0; value_len as usize];
         reader.read_exact(&mut value)?;
 
         Ok(Self::new(key, value, is_tombstone, seqno))
