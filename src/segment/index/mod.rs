@@ -4,6 +4,7 @@ use super::block::ValueBlock;
 use crate::disk_block::{DiskBlock, Error as DiskBlockError};
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use scc::HashIndex;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -11,6 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Points to a block on file
+///
+/// # Disk representation
+///
+/// \[offset; 8 bytes] - \[size; 4 byte] - \[key length; 2 bytes] - \[key; N bytes]
 #[derive(Clone, Debug)]
 pub struct IndexEntry {
     /// Position of block in file
@@ -25,14 +30,13 @@ pub struct IndexEntry {
 
 impl Serializable for IndexEntry {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), crate::SerializeError> {
-        writer.write_all(&self.offset.to_be_bytes())?;
-        writer.write_all(&self.size.to_be_bytes())?;
-
-        // Write key length and key
+        writer.write_u64::<BigEndian>(self.offset)?;
+        writer.write_u32::<BigEndian>(self.size)?;
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
-        writer.write_all(&(self.start_key.len() as u16).to_be_bytes())?;
+        writer.write_u16::<BigEndian>(self.start_key.len() as u16)?;
+
         writer.write_all(&self.start_key)?;
 
         Ok(())
@@ -44,21 +48,12 @@ impl Deserializable for IndexEntry {
     where
         Self: Sized,
     {
-        let mut offset_bytes = [0u8; std::mem::size_of::<u64>()];
-        reader.read_exact(&mut offset_bytes)?;
-        let offset = u64::from_be_bytes(offset_bytes);
+        let offset = reader.read_u64::<BigEndian>()?;
+        let size = reader.read_u32::<BigEndian>()?;
 
-        let mut size_bytes = [0u8; std::mem::size_of::<u32>()];
-        reader.read_exact(&mut size_bytes)?;
-        let size = u32::from_be_bytes(size_bytes);
+        let key_len = reader.read_u16::<BigEndian>()?;
 
-        // Read key length
-        let mut key_len_bytes = [0; std::mem::size_of::<u16>()];
-        reader.read_exact(&mut key_len_bytes)?;
-        let key_len = u16::from_be_bytes(key_len_bytes) as usize;
-
-        // Read key
-        let mut key = vec![0; key_len];
+        let mut key = vec![0; key_len.into()];
         reader.read_exact(&mut key)?;
 
         Ok(Self {

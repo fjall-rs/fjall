@@ -1,9 +1,26 @@
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
 use crate::{
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
     Value,
 };
 use std::io::{Read, Write};
 
+/// Commit log marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
+///
+/// The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
+///
+/// The end marker contains a CRC value. If the CRC of the items doesn't match that, the batch is broken.
+///
+/// If a start marker is detected, while inside a batch, the batch is broken.
+///
+/// # Disk representation
+///
+/// start: \[tag (0x0); 1 byte] \[item count; 4 byte]
+///
+/// item: \[tag (0x1); 1 byte] \[item; (see [`Value`])]
+///
+/// end: \[tag (0x2): 1 byte] \[crc value; 4 byte]
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
     Start(u32),
@@ -21,15 +38,15 @@ impl Serializable for Marker {
 
         match self {
             Start(val) => {
-                writer.write_all(&[MARKER_START_TAG])?;
+                writer.write_u8(MARKER_START_TAG)?;
                 writer.write_all(&val.to_be_bytes())?;
             }
             Item(value) => {
-                writer.write_all(&[MARKER_ITEM_TAG])?;
+                writer.write_u8(MARKER_ITEM_TAG)?;
                 value.serialize(writer)?;
             }
             End(val) => {
-                writer.write_all(&[MARKER_END_TAG])?;
+                writer.write_u8(MARKER_END_TAG)?;
                 writer.write_all(&val.to_be_bytes())?;
             }
         }
@@ -41,25 +58,20 @@ impl Deserializable for Marker {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
         use Marker::{End, Item, Start};
 
-        let mut tag = [0u8; 1];
-        reader.read_exact(&mut tag)?;
+        let tag = reader.read_u8()?;
 
-        match tag[0] {
+        match tag {
             MARKER_START_TAG => {
-                let mut val_bytes = [0u8; 4];
-                reader.read_exact(&mut val_bytes)?;
-                let val = u32::from_be_bytes(val_bytes);
-                Ok(Start(val))
+                let item_count = reader.read_u32::<BigEndian>()?;
+                Ok(Start(item_count))
             }
             MARKER_ITEM_TAG => {
                 let value = Value::deserialize(reader)?;
                 Ok(Item(value))
             }
             MARKER_END_TAG => {
-                let mut val_bytes = [0u8; 4];
-                reader.read_exact(&mut val_bytes)?;
-                let val = u32::from_be_bytes(val_bytes);
-                Ok(End(val))
+                let crc = reader.read_u32::<BigEndian>()?;
+                Ok(End(crc))
             }
             tag => Err(DeserializeError::InvalidTag(tag)),
         }

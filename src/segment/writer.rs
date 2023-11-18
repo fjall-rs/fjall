@@ -34,7 +34,6 @@ pub struct Options {
     pub path: PathBuf,
     pub evict_tombstones: bool,
     pub block_size: u32,
-    pub index_block_size: u32,
 }
 
 impl Writer {
@@ -44,7 +43,7 @@ impl Writer {
         let block_writer = File::create(opts.path.join("blocks"))?;
         let mut block_writer = BufWriter::with_capacity(512_000, block_writer);
 
-        let mut index_writer = IndexWriter::new(&opts.path, opts.index_block_size)?;
+        let mut index_writer = IndexWriter::new(&opts.path, opts.block_size)?;
 
         let mut chunk = ValueBlock {
             items: Vec::with_capacity(1_000),
@@ -209,7 +208,6 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-            index_block_size: 4096,
         })
         .unwrap();
 

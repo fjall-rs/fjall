@@ -256,7 +256,6 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-            index_block_size: 4096,
         })
         .unwrap();
 

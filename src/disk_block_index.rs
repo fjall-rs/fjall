@@ -1,3 +1,5 @@
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
 use crate::serde::{Deserializable, Serializable};
 use std::{
     collections::BTreeMap,
@@ -8,6 +10,10 @@ use std::{
 /// A reference to a block on disk
 ///
 /// Stores the block's position and size in bytes
+///
+/// # Disk representation
+///
+/// \[offset; 8 bytes] - \[size; 4 byte]
 #[derive(Debug, PartialEq, Eq)]
 pub struct DiskBlockReference {
     pub offset: u64,
@@ -16,8 +22,9 @@ pub struct DiskBlockReference {
 
 impl Serializable for DiskBlockReference {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), crate::SerializeError> {
-        writer.write_all(&self.offset.to_be_bytes())?;
-        writer.write_all(&self.size.to_be_bytes())?;
+        writer.write_u64::<BigEndian>(self.offset)?;
+        writer.write_u32::<BigEndian>(self.size)?;
+
         Ok(())
     }
 }
@@ -27,13 +34,8 @@ impl Deserializable for DiskBlockReference {
     where
         Self: Sized,
     {
-        let mut offset_bytes = [0u8; std::mem::size_of::<u64>()];
-        reader.read_exact(&mut offset_bytes)?;
-        let offset = u64::from_be_bytes(offset_bytes);
-
-        let mut size_bytes = [0u8; std::mem::size_of::<u32>()];
-        reader.read_exact(&mut size_bytes)?;
-        let size = u32::from_be_bytes(size_bytes);
+        let offset = reader.read_u64::<BigEndian>()?;
+        let size = reader.read_u32::<BigEndian>()?;
 
         Ok(Self { offset, size })
     }
