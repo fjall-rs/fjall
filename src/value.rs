@@ -74,7 +74,7 @@ impl Value {
         std::mem::size_of::<Self>() + key_size + value_size
     }
 
-    /// Computes the internal key based on the user key + seqno
+    /* /// Computes the internal key based on the user key + seqno
     ///
     /// ### Example
     ///
@@ -91,7 +91,7 @@ impl Value {
         internal_key.extend_from_slice(&self.key);
         internal_key.extend_from_slice(&self.seqno.to_be_bytes());
         internal_key
-    }
+    } */
 }
 
 impl Serializable for Value {

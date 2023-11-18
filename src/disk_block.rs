@@ -34,11 +34,7 @@ impl From<DeserializeError> for Error {
 }
 
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
-    pub fn from_reader_compressed<R: Read>(
-        reader: &mut R,
-        offset: u64,
-        size: u32,
-    ) -> Result<Self, Error> {
+    pub fn from_reader_compressed<R: Read>(reader: &mut R, size: u32) -> Result<Self, Error> {
         let mut bytes = vec![0u8; size as usize];
         reader.read_exact(&mut bytes)?;
 
@@ -57,7 +53,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         // Read bytes from disk
         let mut reader = BufReader::new(File::open(path)?);
         reader.seek(std::io::SeekFrom::Start(offset))?;
-        Self::from_reader_compressed(&mut reader, offset, size)
+        Self::from_reader_compressed(&mut reader, size)
     }
 }
 

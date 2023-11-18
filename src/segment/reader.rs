@@ -30,8 +30,8 @@ impl Reader {
         file: P,
         //segment_id: String,
         block_index: Arc<MetaIndex>,
-        start_offset: &Option<Vec<u8>>,
-        end_offset: &Option<Vec<u8>>,
+        start_offset: Option<&Vec<u8>>,
+        end_offset: Option<&Vec<u8>>,
     ) -> std::io::Result<Self> {
         let file_reader = BufReader::with_capacity(u16::MAX.into(), File::open(file)?);
 
@@ -47,14 +47,15 @@ impl Reader {
             current_hi: None,
         };
 
-        if let Some(ref offset) = start_offset {
+        if let Some(offset) = start_offset {
             iter.current_lo = Some(offset.clone());
             iter.load_block(offset)?;
         }
 
-        if let Some(ref offset) = end_offset {
+        if let Some(offset) = end_offset {
             iter.current_hi = Some(offset.clone());
-            if iter.current_lo != *end_offset {
+
+            if iter.current_lo != end_offset.cloned() {
                 iter.load_block(offset)?;
             }
         }
@@ -63,31 +64,31 @@ impl Reader {
     }
 
     fn load_block(&mut self, key: &[u8]) -> std::io::Result<Option<()>> {
-        Ok(if let Some(block_ref) = self.block_index.get_ref(key) {
-            /* if let Some(block) = self.block_cache.get(&self.segment_id, block_ref.offset) {
-                // Cache hit: Copy from block
-                self.blocks.insert(key.to_vec(), block.items.clone());
-            } else { */
-            // Cache miss: load from disk
+        Ok(
+            if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key) {
+                /* if let Some(block) = self.block_cache.get(&self.segment_id, block_ref.offset) {
+                    // Cache hit: Copy from block
+                    self.blocks.insert(key.to_vec(), block.items.clone());
+                } else { */
+                // Cache miss: load from disk
 
-            self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
-            let block = ValueBlock::from_reader_compressed(
-                &mut self.file_reader,
-                block_ref.offset,
-                block_ref.size,
-            )
-            .unwrap();
+                self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
 
-            self.blocks.insert(key.to_vec(), block.items.into());
+                let block =
+                    ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)
+                        .unwrap();
 
-            /*   self.block_cache
-            .insert(self.segment_id.clone(), block_ref.offset, Arc::new(block)); */
-            /*  } */
+                self.blocks.insert(key.to_vec(), block.items.into());
 
-            Some(())
-        } else {
-            None
-        })
+                /*   self.block_cache
+                .insert(self.segment_id.clone(), block_ref.offset, Arc::new(block)); */
+                /*  } */
+
+                Some(())
+            } else {
+                None
+            },
+        )
     }
 }
 
@@ -98,14 +99,15 @@ impl Iterator for Reader {
         if self.current_lo.is_none() {
             // Initialize first block
             let new_block_offset = self.block_index.get_first_block_key();
-            self.current_lo = Some(new_block_offset.clone());
+            self.current_lo = Some(new_block_offset.start_key.clone());
 
-            if Some(&new_block_offset) == self.current_hi.as_ref() {
+            if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
                 // If the high bound is already at this block
                 // Read from the block that was already loaded by hi
-            } else if !self.processed_blocks.contains(&new_block_offset) {
+            } else if !self.processed_blocks.contains(&new_block_offset.start_key) {
                 // Load first block for real, then take item from it
-                let load_result = self.load_block(&new_block_offset);
+                let load_result = self.load_block(&new_block_offset.start_key);
+
                 if let Err(error) = load_result {
                     return Some(Err(error));
                 }
@@ -136,13 +138,14 @@ impl Iterator for Reader {
                         if let Some(new_block_offset) =
                             self.block_index.get_next_block_key(current_lo)
                         {
-                            if !self.processed_blocks.contains(&new_block_offset) {
-                                self.current_lo = Some(new_block_offset.clone());
-                                if Some(&new_block_offset) == self.current_hi.as_ref() {
+                            if !self.processed_blocks.contains(&new_block_offset.start_key) {
+                                self.current_lo = Some(new_block_offset.start_key.clone());
+
+                                if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
                                     // Do nothing
                                     // Next item consumed will use the existing higher block
                                 } else {
-                                    let load_result = self.load_block(&new_block_offset);
+                                    let load_result = self.load_block(&new_block_offset.start_key);
                                     if let Err(error) = load_result {
                                         return Some(Err(error));
                                     }
@@ -166,14 +169,14 @@ impl DoubleEndedIterator for Reader {
         if self.current_hi.is_none() {
             // Initialize next block
             let new_block_offset = self.block_index.get_last_block_key();
-            self.current_hi = Some(new_block_offset.clone());
+            self.current_hi = Some(new_block_offset.start_key.clone());
 
-            if Some(&new_block_offset) == self.current_lo.as_ref() {
+            if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
                 // If the low bound is already at this block
                 // Read from the block that was already loaded by lo
-            } else if !self.processed_blocks.contains(&new_block_offset) {
+            } else if !self.processed_blocks.contains(&new_block_offset.start_key) {
                 // Load first block for real, then take item from it
-                let load_result = self.load_block(&new_block_offset);
+                let load_result = self.load_block(&new_block_offset.start_key);
                 if let Err(error) = load_result {
                     return Some(Err(error));
                 }
@@ -204,13 +207,13 @@ impl DoubleEndedIterator for Reader {
                         if let Some(new_block_offset) =
                             self.block_index.get_previous_block_key(current_hi)
                         {
-                            if !self.processed_blocks.contains(&new_block_offset) {
-                                self.current_hi = Some(new_block_offset.clone());
-                                if Some(&new_block_offset) == self.current_lo.as_ref() {
+                            if !self.processed_blocks.contains(&new_block_offset.start_key) {
+                                self.current_hi = Some(new_block_offset.start_key.clone());
+                                if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
                                     // Do nothing
                                     // Next item consumed will use the existing lower block
                                 } else {
-                                    let load_result = self.load_block(&new_block_offset);
+                                    let load_result = self.load_block(&new_block_offset.start_key);
                                     if let Err(error) = load_result {
                                         return Some(Err(error));
                                     }
@@ -226,5 +229,69 @@ impl DoubleEndedIterator for Reader {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        segment::{
+            index::MetaIndex,
+            meta::Metadata,
+            reader::Reader,
+            writer::{Options, Writer},
+        },
+        Value,
+    };
+    use std::sync::Arc;
+    use test_log::test;
+
+    #[test]
+    fn test_get_all() {
+        const ITEM_COUNT: u64 = 100_000;
+
+        let folder = tempfile::tempdir().unwrap().into_path();
+
+        let mut writer = Writer::new(Options {
+            path: folder.clone(),
+            evict_tombstones: false,
+            block_size: 4096,
+            index_block_size: 4096,
+        })
+        .unwrap();
+
+        let items = (0u64..ITEM_COUNT)
+            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
+
+        for item in items {
+            writer.write(item).unwrap();
+        }
+
+        writer.finalize().unwrap();
+
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
+        metadata.write_to_file(&folder).unwrap();
+
+        let meta_index = Arc::new(MetaIndex::from_file(&folder).unwrap());
+
+        log::info!("Getting every item");
+
+        let mut iter =
+            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+
+        for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
+            let item = iter.next().unwrap().expect("item should exist");
+            assert_eq!(key, &*item.key);
+        }
+
+        log::info!("Getting every item in reverse");
+
+        let mut iter =
+            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+
+        for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
+            let item = iter.next_back().unwrap().expect("item should exist");
+            assert_eq!(key, &*item.key);
+        }
     }
 }

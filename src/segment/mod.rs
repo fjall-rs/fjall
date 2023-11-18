@@ -1,12 +1,13 @@
 mod block;
 pub mod index;
 mod meta;
+mod prefix;
+mod range;
 mod reader;
 mod writer;
 
+use self::{index::MetaIndex, prefix::PrefixedReader, range::Range, reader::Reader};
 use crate::value::SeqNo;
-
-use self::index::MetaIndex;
 use std::{ops::Bound, sync::Arc};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
@@ -26,6 +27,53 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// Creates an iterator over the `Segment`
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error happens
+    pub fn iter(&self) -> std::io::Result<Reader> {
+        Reader::new(
+            self.metadata.path.join("blocks"),
+            /* self.metadata.id.clone(),
+            Arc::clone(&self.block_index), */
+            Arc::clone(&self.block_index),
+            None,
+            None,
+        )
+    }
+
+    /// Creates a ranged iterator over the `Segment`
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error happens
+    pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> std::io::Result<Range> {
+        Range::new(
+            self.metadata.path.join("blocks"),
+            //self.metadata.id.clone(),
+            Arc::clone(&self.block_index),
+            //Arc::clone(&self.block_cache),
+            range,
+        )
+    }
+
+    /// Creates a prefixed iterator over the `Segment`
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error happens
+    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> std::io::Result<PrefixedReader> {
+        PrefixedReader::new(
+            self.metadata.path.join("blocks"),
+            //self.metadata.id.clone(),
+            Arc::clone(&self.block_index),
+            //Arc::clone(&self.block_cache),
+            prefix,
+        )
+    }
+
+    /// Returns the highest sequence number in the segment
     pub fn lsn(&self) -> SeqNo {
         self.metadata.seqnos.1
     }

@@ -63,8 +63,6 @@ pub struct DiskBlockIndex {
     pub data: BTreeMap<Vec<u8>, DiskBlockReference>,
 }
 
-// TODO: not needed...? just use Vec? like in DiskBlock
-
 impl DiskBlockIndex {
     pub fn new(data: BTreeMap<Vec<u8>, DiskBlockReference>) -> Self {
         Self { data }
@@ -75,16 +73,19 @@ impl DiskBlockIndex {
     } */
 
     /// Returns the first key that is not covered by the given prefix anymore
-    /*  pub(crate) fn get_prefix_upper_bound(&self, prefix: &[u8]) -> Option<&Vec<u8>> {
+    pub(crate) fn get_prefix_upper_bound(
+        &self,
+        prefix: &[u8],
+    ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
         let mut iter = self.data.range(prefix.to_vec()..);
 
         loop {
-            let (key, _) = iter.next()?;
+            let (key, block_ref) = iter.next()?;
             if !key.starts_with(prefix) {
-                return Some(key);
+                return Some((key, block_ref));
             }
         }
-    } */
+    }
 
     pub(crate) fn get_lower_bound_block_info(
         &self,
@@ -93,12 +94,12 @@ impl DiskBlockIndex {
         self.data.range(..=key.to_vec()).next_back()
     }
 
-    /* pub(crate) fn get_upper_bound_block_info(
+    pub(crate) fn get_upper_bound_block_info(
         &self,
         key: &[u8],
     ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
         self.data.range(key.to_vec()..).next()
-    } */
+    }
 
     /// Returns the key of the first block
     pub fn get_first_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {

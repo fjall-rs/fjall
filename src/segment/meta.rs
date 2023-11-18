@@ -66,7 +66,7 @@ impl Metadata {
     /// Stores segment metadata in a file
     ///
     /// Will be stored as JSON
-    pub fn write<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
+    pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         // TODO: atomic rewrite
 
         let mut writer = OpenOptions::new()
