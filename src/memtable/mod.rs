@@ -12,9 +12,9 @@ use std::sync::RwLock;
 
 /// The `MemTable` serves as an intermediary storage for new items
 ///
-/// If the memtable's size exceeds a certain threshold, it will be written to disk as a Segment and cleared
+/// If the `MemTable`'s size exceeds a certain threshold, it will be written to disk as a Segment and cleared
 ///
-/// In case of a program crash, the current memtable can be rebuilt from the commit log
+/// In case of a program crash, the current `MemTable` can be rebuilt from the commit log
 #[derive(Default)]
 pub struct MemTable {
     items: RwLock<BTreeMap<Vec<u8>, Value>>,
@@ -29,7 +29,7 @@ impl MemTable {
         result.cloned()
     }
 
-    /// Returns true if the MemTable is empty
+    /// Returns true if the `MemTable` is empty
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -55,8 +55,8 @@ impl MemTable {
         self.size_in_bytes > threshold
     } */
 
-    /// Inserts an item into the MemTable
-    pub fn insert(&self, entry: Value, bytes_written: usize) {
+    /// Inserts an item into the `MemTable`
+    pub fn insert(&self, entry: Value, _bytes_written: usize) {
         let mut lock = self.items.write().expect("should lock");
         lock.insert(entry.key.clone(), entry);
         //self.size_in_bytes += bytes_written as u64;
@@ -77,7 +77,7 @@ impl MemTable {
 
         let mut byte_count: u64 = 0;
 
-        let mut memtable = Self::default();
+        let memtable = Self::default();
         let mut items: Vec<Value> = vec![];
 
         let mut lsn = 0;
