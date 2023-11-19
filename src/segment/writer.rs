@@ -50,11 +50,6 @@ impl Writer {
             crc: 0,
         };
 
-        let block_count: usize = 0;
-        let item_count = 0;
-        let file_pos: u64 = 0;
-        let uncompressed_size: u64 = 0;
-
         Ok(Self {
             opts,
 
@@ -62,10 +57,10 @@ impl Writer {
             index_writer,
             chunk,
 
-            block_count,
-            item_count,
-            file_pos,
-            uncompressed_size,
+            block_count: 0,
+            item_count: 0,
+            file_pos: 0,
+            uncompressed_size: 0,
 
             first_key: None,
             last_key: None,
