@@ -1,6 +1,5 @@
 pub mod writer;
 
-
 use crate::block_cache::BlockCache;
 use crate::disk_block::{DiskBlock, Error as DiskBlockError};
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
