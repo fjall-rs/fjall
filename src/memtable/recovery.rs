@@ -1,6 +1,6 @@
 use super::MemTable;
 use crate::{
-    commit_log::reader::Error as CommitIterateError, serde::SerializeError, value::SeqNo, Value,
+    commit_log::reader::Error as CommitIterateError, serde::SerializeError, value::SeqNo,
 };
 
 #[derive(Default)]

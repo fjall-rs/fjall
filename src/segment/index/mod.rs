@@ -1,12 +1,12 @@
 pub mod writer;
 
-use super::block::ValueBlock;
+
 use crate::block_cache::BlockCache;
 use crate::disk_block::{DiskBlock, Error as DiskBlockError};
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use serde_json::value::Index;
+
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

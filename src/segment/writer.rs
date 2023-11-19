@@ -41,19 +41,19 @@ impl Writer {
         std::fs::create_dir_all(&opts.path)?;
 
         let block_writer = File::create(opts.path.join("blocks"))?;
-        let mut block_writer = BufWriter::with_capacity(512_000, block_writer);
+        let block_writer = BufWriter::with_capacity(512_000, block_writer);
 
-        let mut index_writer = IndexWriter::new(&opts.path, opts.block_size)?;
+        let index_writer = IndexWriter::new(&opts.path, opts.block_size)?;
 
-        let mut chunk = ValueBlock {
+        let chunk = ValueBlock {
             items: Vec::with_capacity(1_000),
             crc: 0,
         };
 
-        let mut block_count: usize = 0;
-        let mut item_count = 0;
-        let mut file_pos: u64 = 0;
-        let mut uncompressed_size: u64 = 0;
+        let block_count: usize = 0;
+        let item_count = 0;
+        let file_pos: u64 = 0;
+        let uncompressed_size: u64 = 0;
 
         Ok(Self {
             opts,
