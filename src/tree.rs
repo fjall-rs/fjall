@@ -8,6 +8,10 @@ use crate::{
 use std::sync::{atomic::AtomicU64, Arc};
 
 /// A log-structured merge tree (LSM tree/LSMT)
+///
+/// The tree is internally synchronized (Send + Sync), so it does not need to be wrapped in a lock nor an Arc.
+///
+/// To share the tree with threads, use `Arc::clone(&tree)` or `tree.clone()`.
 #[doc(alias = "keyspace")]
 #[doc(alias = "table")]
 #[derive(Clone)]
@@ -24,18 +28,81 @@ impl std::ops::Deref for Tree {
 impl Tree {
     /// Opens the tree at the given folder.
     ///
-    /// Will create a new tree if the folder does not exist or recover a previous state
+    /// Will create a new tree if the folder is not in use or recover a previous state
     /// if it exists
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    /// // Same as
+    /// # let folder = tempfile::tempdir()?;
+    /// let tree = Config::new(folder).open()?;
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
     /// - Will return `Err` if an IO error occurs
     pub fn open(config: Config) -> crate::Result<Self> {
-        if config.path.exists() {
+        if config.path.join(".lsm").exists() {
             Self::recover(config)
         } else {
             Self::create_new(config)
         }
+    }
+
+    /// Returns `true` if the tree is empty
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// assert!(tree.is_empty()?);
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert!(!tree.is_empty()?);
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - Will return `Err` if an IO error occurs
+    pub fn is_empty(&self) -> crate::Result<bool> {
+        // TODO: optimize
+        self.len().map(|x| x == 0)
+    }
+
+    /// Returns the number of items in the tree.
+    ///
+    /// ## This does a full scan!
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// assert!(tree.len()? == 0);
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert!(tree.len()? == 1);
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - Will return `Err` if an IO error occurs
+    pub fn len(&self) -> crate::Result<usize> {
+        // TODO:
+        Ok(self.active_memtable.len())
     }
 
     /// Creates a new tree in a folder.
@@ -43,9 +110,15 @@ impl Tree {
     /// # Errors
     ///
     /// - Will return `Err` if an IO error occurs
-    /// - Will fail, if the folder already exists
+    /// - Will fail, if the folder already occupied
     fn create_new(config: Config) -> crate::Result<Self> {
-        assert!(!config.path.exists());
+        std::fs::create_dir_all(&config.path)?;
+
+        let marker = config.path.join(".lsm");
+        assert!(!marker.try_exists()?);
+
+        let file = std::fs::File::create(marker)?;
+        file.sync_all()?;
 
         let log_path = config.path.join("log");
 
@@ -56,6 +129,10 @@ impl Tree {
             block_cache: Arc::new(BlockCache::new(1024 /* TODO: */)),
             lsn: AtomicU64::new(0),
         };
+
+        // Fsync folder
+        let folder = std::fs::File::open(&inner.config.path)?;
+        folder.sync_all()?;
 
         Ok(Self(Arc::new(inner)))
     }
@@ -94,13 +171,12 @@ impl Tree {
     ///
     /// ```
     /// # let folder = tempfile::tempdir()?;
-    /// use lsm_tree::Tree;
+    /// use lsm_tree::{Config, Tree};
     ///
-    /// # // TODO: use Config::open() instead
-    /// let tree = Tree::create_new(folder, /* TODO: use open instead */ 0);
-    /// tree.insert("a", nanoid::nanoid!()).unwrap();
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("a", nanoid::nanoid!())?;
     ///
-    /// # Ok::<(), std::io::Error>(())
+    /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
     /// # Errors
@@ -118,32 +194,148 @@ impl Tree {
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
 
+        // TODO: make sure if someone writes to log, they also get to write to the memtable
+        // next
         self.commit_log.append(value.clone())?;
         self.active_memtable.insert(value, 0);
 
         Ok(())
     }
 
+    /// Deletes an item from the tree
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("a", nanoid::nanoid!())?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_some());
+    ///
+    /// tree.remove("a")?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_none());
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn remove<K: Into<Vec<u8>>>(&self, key: K) -> crate::Result<()> {
+        let value = Value::new(
+            key,
+            vec![],
+            true,
+            self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        );
+
+        let key = value.key.clone();
+
+        self.commit_log.append(value)?;
+        self.active_memtable.remove(&key);
+
+        Ok(())
+    }
+
     /// Returns `true` if the tree contains the specified key
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// assert!(!tree.contains_key("a")?);
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert!(tree.contains_key("a")?);
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
+        self.get(key).map(|x| x.is_some())
+    }
+
+    /// Returns `true` if the tree contains the specified item
+    ///
+    /// Alias for [`Tree::contains_key`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// assert!(!tree.contains("a")?);
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert!(tree.contains("a")?);
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.get(key).map(|x| x.is_some())
+        self.contains_key(key)
     }
 
     /// Retrieves an item from the tree
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("a", nanoid::nanoid!())?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_some());
+    ///
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
         Ok(self.active_memtable.get(key))
+
+        // TODO: walk segments
     }
 
     /// Flushes the commit log to disk, making sure all written data is persisted
     /// and crash-safe
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?.into_path();
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder.clone()).open()?;
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// tree.flush()?;
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_some());
+    ///
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -191,7 +383,6 @@ mod tests {
                 thread.join().unwrap();
             }
 
-            eprintln!("flushing commit log");
             tree.flush().unwrap();
 
             let elapsed = start.elapsed();
@@ -238,7 +429,6 @@ mod tests {
         tree.insert("a", nanoid::nanoid!()).unwrap();
         tree.insert("b", nanoid::nanoid!()).unwrap();
         tree.insert("c", nanoid::nanoid!()).unwrap();
-        eprintln!("flushing commit log");
         tree.flush().unwrap();
 
         let item = tree.get("a").unwrap().unwrap();

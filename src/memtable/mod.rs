@@ -62,6 +62,11 @@ impl MemTable {
         //self.size_in_bytes += bytes_written as u64;
     }
 
+    pub fn remove(&self, key: &[u8]) {
+        let mut lock = self.items.write().expect("should lock");
+        lock.remove(key);
+    }
+
     /// Creates a [`MemTable`] from a commit log on disk
     pub(crate) fn from_file<P: AsRef<Path>>(
         path: P,

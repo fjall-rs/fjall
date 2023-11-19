@@ -2,13 +2,26 @@ use std::path::{Path, PathBuf};
 
 use crate::Tree;
 
-/// Tree config
+/// Tree configuration
 pub struct Config {
     /// Folder path
+    ///
+    /// Defaults to `./.lsm.data`
     pub(crate) path: PathBuf,
 
     /// Block size of data and index blocks
+    ///
+    /// Defaults to 4 KiB (4096 bytes)
     pub(crate) block_size: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            path: ".lsm.data".into(),
+            block_size: 4_096,
+        }
+    }
 }
 
 impl Config {
