@@ -3,7 +3,7 @@ use crate::{
     commit_log::CommitLog,
     memtable::{recovery::Strategy, MemTable},
     tree_inner::TreeInner,
-    Config, Value,
+    Batch, Config, Value,
 };
 use std::sync::{atomic::AtomicU64, Arc};
 
@@ -53,6 +53,35 @@ impl Tree {
         } else {
             Self::create_new(config)
         }
+    }
+
+    /// Initializes a new, atomic write batch
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// let mut batch = tree.batch();
+    /// batch.insert("a", "hello");
+    /// batch.insert("b", "hello2");
+    /// batch.insert("c", "hello3");
+    /// batch.insert("d", "idontlikeu");
+    ///
+    /// batch.commit()?;
+    ///
+    /// assert_eq!(3, tree.len()?);
+    ///
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// Call [`Batch::commit`] to commit the batch to the LSM-tree
+    #[must_use]
+    pub fn batch(&self) -> Batch {
+        Batch::new(self.clone())
     }
 
     /// Returns `true` if the tree is empty
@@ -197,7 +226,7 @@ impl Tree {
         // TODO: make sure if someone writes to log, they also get to write to the memtable
         // next
         self.commit_log.append(value.clone())?;
-        self.active_memtable.insert(value, 0);
+        self.active_memtable.insert(value, 0 /* TODO: */);
 
         Ok(())
     }

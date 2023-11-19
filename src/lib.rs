@@ -46,6 +46,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
 
+mod batch;
 mod block_cache;
 mod commit_log;
 mod config;
@@ -61,6 +62,7 @@ mod value;
 
 pub use {
     crate::serde::{DeserializeError, SerializeError},
+    batch::Batch,
     config::Config,
     error::{Error, Result},
     tree::Tree,
