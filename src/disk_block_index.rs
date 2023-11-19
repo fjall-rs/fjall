@@ -96,12 +96,12 @@ impl DiskBlockIndex {
         self.data.range(..=key.to_vec()).next_back()
     }
 
-    pub(crate) fn get_upper_bound_block_info(
+    /* pub(crate) fn get_upper_bound_block_info(
         &self,
         key: &[u8],
     ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
         self.data.range(key.to_vec()..).next()
-    }
+    } */
 
     /// Returns the key of the first block
     pub fn get_first_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {

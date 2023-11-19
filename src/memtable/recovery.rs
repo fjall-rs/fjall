@@ -22,6 +22,7 @@ pub struct Strategy {
     pub invalid_batch_strategy: InvalidBatchMode,
 }
 
+#[derive(Debug)]
 pub enum Error {
     MissingBatchEnd,
     UnexpectedBatchStart,

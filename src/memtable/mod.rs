@@ -1,4 +1,4 @@
-mod recovery;
+pub mod recovery;
 
 use crate::Value;
 use crate::{
@@ -8,6 +8,7 @@ use crate::{
 use log::{error, warn};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::RwLock;
 
 /// The `MemTable` serves as an intermediary storage for new items
 ///
@@ -16,15 +17,28 @@ use std::path::Path;
 /// In case of a program crash, the current memtable can be rebuilt from the commit log
 #[derive(Default)]
 pub struct MemTable {
-    items: BTreeMap<Vec<u8>, Value>,
+    items: RwLock<BTreeMap<Vec<u8>, Value>>,
     //size_in_bytes: u64,
 }
 
 impl MemTable {
     /// Returns the item by key if it exists
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Value> {
-        let result = self.items.get(key.as_ref());
+        let lock = self.items.read().expect("should lock");
+        let result = lock.get(key.as_ref());
         result.cloned()
+    }
+
+    /// Returns true if the MemTable is empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Gets the item count
+    pub fn len(&self) -> usize {
+        let lock = self.items.read().expect("should lock");
+        lock.len()
     }
 
     /*   #[allow(dead_code)]
@@ -41,8 +55,10 @@ impl MemTable {
         self.size_in_bytes > threshold
     } */
 
-    pub fn insert(&mut self, entry: Value, bytes_written: usize) {
-        self.items.insert(entry.key.clone(), entry);
+    /// Inserts an item into the MemTable
+    pub fn insert(&self, entry: Value, bytes_written: usize) {
+        let mut lock = self.items.write().expect("should lock");
+        lock.insert(entry.key.clone(), entry);
         //self.size_in_bytes += bytes_written as u64;
     }
 
@@ -63,6 +79,8 @@ impl MemTable {
 
         let mut memtable = Self::default();
         let mut items: Vec<Value> = vec![];
+
+        let mut lsn = 0;
 
         for item in reader {
             let item = item?; // TODO: result, RecoveryStrategy
@@ -127,6 +145,9 @@ impl MemTable {
                     hasher.update(&bytes);
                     batch_counter -= 1;
 
+                    // Increase LSN if item's seqno is higher
+                    lsn = lsn.max(item.seqno);
+
                     items.push(item);
                 }
             }
@@ -145,13 +166,6 @@ impl MemTable {
         }
 
         // memtable.size_in_bytes = byte_count;
-
-        let lsn = memtable
-            .items
-            .values()
-            .map(|item| item.seqno)
-            .max()
-            .unwrap_or_default();
 
         Ok((lsn, byte_count, memtable))
     }

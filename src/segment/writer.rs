@@ -192,6 +192,7 @@ impl Writer {
 mod tests {
     use super::*;
     use crate::{
+        block_cache::BlockCache,
         segment::{index::MetaIndex, meta::Metadata, reader::Reader},
         Value,
     };
@@ -224,8 +225,10 @@ mod tests {
         metadata.write_to_file(&folder).unwrap();
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
-        let meta_index = Arc::new(MetaIndex::from_file(&folder).unwrap());
+        let block_cache = Arc::new(BlockCache::new(usize::MAX));
+        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
         let iter = Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+
         assert_eq!(ITEM_COUNT, iter.count() as u64);
 
         /*  log::info!("Getting every item");

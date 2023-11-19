@@ -39,7 +39,7 @@ impl Serializable for Marker {
         match self {
             Start(val) => {
                 writer.write_u8(MARKER_START_TAG)?;
-                writer.write_all(&val.to_be_bytes())?;
+                writer.write_u32::<BigEndian>(*val)?;
             }
             Item(value) => {
                 writer.write_u8(MARKER_ITEM_TAG)?;
@@ -47,7 +47,7 @@ impl Serializable for Marker {
             }
             End(val) => {
                 writer.write_u8(MARKER_END_TAG)?;
-                writer.write_all(&val.to_be_bytes())?;
+                writer.write_u32::<BigEndian>(*val)?;
             }
         }
         Ok(())

@@ -235,6 +235,7 @@ impl DoubleEndedIterator for Reader {
 #[cfg(test)]
 mod tests {
     use crate::{
+        block_cache::BlockCache,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -271,7 +272,8 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file(&folder).unwrap();
 
-        let meta_index = Arc::new(MetaIndex::from_file(&folder).unwrap());
+        let block_cache = Arc::new(BlockCache::new(usize::MAX));
+        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
 
         log::info!("Getting every item");
 

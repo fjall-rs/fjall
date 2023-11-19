@@ -1,4 +1,4 @@
-mod block;
+pub mod block;
 pub mod index;
 mod meta;
 mod prefix;
@@ -6,8 +6,10 @@ mod range;
 mod reader;
 mod writer;
 
-use self::{index::MetaIndex, prefix::PrefixedReader, range::Range, reader::Reader};
-use crate::value::SeqNo;
+use self::{
+    block::ValueBlock, index::MetaIndex, prefix::PrefixedReader, range::Range, reader::Reader,
+};
+use crate::{block_cache::BlockCache, value::SeqNo, Value};
 use std::{ops::Bound, sync::Arc};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
@@ -23,15 +25,67 @@ pub struct Segment {
 
     /// Translates key (first item of a block) to block offset (address inside file) and (compressed) size
     pub block_index: Arc<MetaIndex>,
-    // TODO: block cache
+
+    /// Block cache
+    ///
+    /// Stores index and data blocks
+    pub block_cache: Arc<BlockCache>,
 }
 
 impl Segment {
+    /// Retrieves an item from the segment
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn get(&self, key: &[u8]) -> Option<Value> {
+        let block_ref = self.block_index.get_latest(key)?;
+
+        let real_block = match self.block_cache.get_disk_block(&block_ref.start_key) {
+            Some(block) => block,
+            None => {
+                let block = ValueBlock::from_file_compressed(
+                    self.metadata.path.join("blocks"),
+                    block_ref.offset,
+                    block_ref.size,
+                )
+                .unwrap(); // TODO: panic
+
+                let block = Arc::new(block);
+
+                self.block_cache
+                    .insert_disk_block(block_ref.start_key.clone(), Arc::clone(&block));
+
+                block
+            }
+        };
+
+        let item_index = real_block.items.binary_search_by(|x| (*x.key).cmp(key));
+        item_index.map_or(None, |idx| Some(real_block.items[idx].clone()))
+    }
+
+    /// Counts all items in the segment
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn len(&self) -> std::io::Result<usize> {
+        Ok(Reader::new(
+            self.metadata.path.join("blocks"),
+            /* self.metadata.id.clone(),
+            Arc::clone(&self.block_index), */
+            Arc::clone(&self.block_index),
+            None,
+            None,
+        )?
+        .count())
+    }
+
     /// Creates an iterator over the `Segment`
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn iter(&self) -> std::io::Result<Reader> {
         Reader::new(
             self.metadata.path.join("blocks"),
@@ -47,7 +101,7 @@ impl Segment {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> std::io::Result<Range> {
         Range::new(
             self.metadata.path.join("blocks"),
@@ -62,7 +116,7 @@ impl Segment {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> std::io::Result<PrefixedReader> {
         PrefixedReader::new(
             self.metadata.path.join("blocks"),

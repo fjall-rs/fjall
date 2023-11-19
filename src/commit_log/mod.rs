@@ -7,10 +7,10 @@ use crate::{
     Value,
 };
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufWriter, Write},
     path::Path,
-    sync::{Mutex, MutexGuard},
+    sync::Mutex,
 };
 
 /// The commit logs durably stores items before they are added to the [`MemTable`]
@@ -23,27 +23,13 @@ struct Writer;
 
 impl Writer {
     /// Writes a batch start marker to the commit log
-    fn write_start(
-        writer: &mut MutexGuard<BufWriter<File>>,
-        len: u32,
-    ) -> Result<(), SerializeError> {
-        Marker::Start(len).serialize(writer.get_mut())
+    fn write_start(writer: &mut BufWriter<File>, len: u32) -> Result<(), SerializeError> {
+        Marker::Start(len).serialize(writer)
     }
 
     /// Writes a batch end marker to the commit log
-    fn write_end(writer: &mut MutexGuard<BufWriter<File>>, crc: u32) -> Result<(), SerializeError> {
-        Marker::End(crc).serialize(writer.get_mut())
-    }
-
-    /// Writes a batch item to the commit log
-    fn write_item(
-        writer: &mut MutexGuard<BufWriter<File>>,
-        item: Value,
-    ) -> Result<Vec<u8>, SerializeError> {
-        let mut bytes = Vec::new();
-        Marker::Item(item).serialize(&mut bytes)?;
-        writer.write_all(&bytes)?;
-        Ok(bytes)
+    fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<(), SerializeError> {
+        Marker::End(crc).serialize(writer)
     }
 }
 
@@ -60,7 +46,7 @@ impl CommitLog {
     pub(crate) fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         std::fs::create_dir_all(path.as_ref().parent().expect("path should have parent"))?;
 
-        let file = File::create(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         let writer = Mutex::new(BufWriter::with_capacity(128_000, file));
 
         Ok(Self { writer })
@@ -68,7 +54,8 @@ impl CommitLog {
 
     /// Appends a single item wrapped in a batch to the commit log
     pub(crate) fn append(&self, item: Value) -> Result<(), SerializeError> {
-        self.append_batch(vec![item])
+        self.append_batch(vec![item])?;
+        Ok(())
     }
 
     /// Appends a batch to the commit log
@@ -82,11 +69,17 @@ impl CommitLog {
         Writer::write_start(&mut writer, items.len() as u32)?;
 
         for item in items {
-            let serialized = Writer::write_item(&mut writer, item)?;
-            hasher.update(&serialized);
+            let marker = Marker::Item(item);
+
+            let mut bytes = Vec::new();
+            marker.serialize(&mut bytes)?;
+            writer.write_all(&bytes)?;
+
+            hasher.update(&bytes);
         }
 
-        Writer::write_end(&mut writer, hasher.finalize())?;
+        let crc = hasher.finalize();
+        Writer::write_end(&mut writer, crc)?;
 
         Ok(())
     }
@@ -116,8 +109,8 @@ mod tests {
 
         assert_eq!(
             &[
-                0, 0, 0, 0, 2, 2, 131, 84, 123, 163, 1, 0, 0, 0, 0, 0, 0, 0, 42, 0, 0, 3, 1, 2, 3,
-                0, 0, 0, 3, 4, 5, 6, 1, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 3, 7, 8, 9, 0, 0, 0, 0
+                0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 42, 0, 0, 3, 1, 2, 3, 0, 0, 0, 3, 4, 5, 6,
+                1, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 3, 7, 8, 9, 0, 0, 0, 0, 2, 131, 84, 123, 163
             ],
             &*file_content
         );

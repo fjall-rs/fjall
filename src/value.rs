@@ -42,7 +42,7 @@ impl Value {
     /// ```
     /// # use lsm_tree::Value;
     /// #
-    /// let value = Value::new(*b"key-1", *b"my-value", false, 5);
+    /// let value = Value::new("key-1", "my-value", false, 5);
     /// assert_eq!(b"key-1", &*value.key);
     /// assert_eq!(b"my-value", &*value.value);
     /// assert_eq!(5, value.seqno);
@@ -85,7 +85,7 @@ impl Value {
     /// ```
     /// # use lsm_tree::Value;
     /// #
-    /// let value = Value::new(*b"abc", *b"my-value", false, 5);
+    /// let value = Value::new("abc", "my-value", false, 5);
     /// assert_eq!(&[0x61, 0x62, 0x63, 0, 0, 0, 0, 0, 0, 0, 5], &*value.get_internal_key());
     /// ```
     #[must_use]

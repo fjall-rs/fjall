@@ -27,5 +27,17 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<SerializeError> for Error {
+    fn from(value: SerializeError) -> Self {
+        Self::Serialize(value)
+    }
+}
+
+impl From<DeserializeError> for Error {
+    fn from(value: DeserializeError) -> Self {
+        Self::Deserialize(value)
+    }
+}
+
 /// Tree result
 pub type Result<T> = std::result::Result<T, Error>;
