@@ -5,7 +5,7 @@
 //! LSM-trees are an alternative to B-trees to persist a sorted list of items (e.g. a database table) on disk and perform fast lookup queries.
 //! Instead of updating a disk-based data structure in-place, deltas (inserts and deletes) are added into an in-memory data structure (`MemTable`).
 //! To provide durability, the `MemTable` is backed by a disk-based journal.
-//! When the `MemTable` exceeds a size threshold, it is flushed to a sorted file on disk ("Segment" a.k.a. "SSTable").
+//! When the `MemTable` exceeds a size threshold, it is flushed to a sorted file on disk ("Segment" a.k.a. "`SSTable`").
 //! Items can then be retrieved by checking and merging results from the `MemTable` and Segments.
 //!
 //! Amassing many segments on disk will degrade read performance and waste disk space usage, so segments are periodically merged into larger segments in a process called "Compaction".
