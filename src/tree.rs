@@ -69,7 +69,7 @@ impl Tree {
     /// batch.insert("a", "hello");
     /// batch.insert("b", "hello2");
     /// batch.insert("c", "hello3");
-    /// batch.insert("d", "idontlikeu");
+    /// batch.remove("idontlikeu");
     ///
     /// batch.commit()?;
     ///
@@ -130,7 +130,7 @@ impl Tree {
     ///
     /// - Will return `Err` if an IO error occurs
     pub fn len(&self) -> crate::Result<usize> {
-        // TODO:
+        // TODO: use iter().count()
         Ok(self.active_memtable.len())
     }
 

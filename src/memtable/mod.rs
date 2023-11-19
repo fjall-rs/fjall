@@ -29,16 +29,18 @@ impl MemTable {
         result.cloned()
     }
 
+    // TODO: remove
     /// Returns true if the `MemTable` is empty
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    // TODO: remove
     /// Gets the item count
     pub fn len(&self) -> usize {
         let lock = self.items.read().expect("should lock");
-        lock.len()
+        lock.iter().filter(|(_, value)| !value.is_tombstone).count()
     }
 
     /*   #[allow(dead_code)]
