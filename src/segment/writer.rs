@@ -172,6 +172,10 @@ impl Writer {
         self.block_writer.flush()?;
         self.block_writer.get_mut().sync_all()?;
 
+        // Fsync folder
+        let folder = std::fs::File::open(&self.opts.path)?;
+        folder.sync_all()?;
+
         log::debug!(
             "Written {} items in {} blocks into new segment file, written {} MB",
             self.item_count,
