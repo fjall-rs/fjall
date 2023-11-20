@@ -13,6 +13,16 @@ pub struct Config {
     ///
     /// Defaults to 4 KiB (4096 bytes)
     pub(crate) block_size: u32,
+
+    /// [`MemTable`] maximum size in bytes
+    ///
+    /// Defaults to 128 MiB
+    pub(crate) max_memtable_size: u32,
+
+    /// Amount of levels of the LSM tree (depth of tree)
+    ///
+    /// Defaults to 7, like RocksDB
+    pub(crate) levels: u8,
 }
 
 impl Default for Config {
@@ -20,6 +30,8 @@ impl Default for Config {
         Self {
             path: ".lsm.data".into(),
             block_size: 4_096,
+            max_memtable_size: 128 * 1_024 * 1_024,
+            levels: 7,
         }
     }
 }
@@ -29,8 +41,22 @@ impl Config {
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
             path: path.as_ref().into(),
-            block_size: 4_096,
+            ..Default::default()
         }
+    }
+
+    /// Sets the compaction strategy to use (default: Tiered compaction)
+    #[must_use]
+    pub fn level_count(mut self, count: u8) -> Self {
+        self.levels = count;
+        self
+    }
+
+    /// Sets the maximum memtable size (default: 128 MiB)
+    #[must_use]
+    pub fn max_memtable_size(mut self, bytes: u32) -> Self {
+        self.max_memtable_size = bytes;
+        self
     }
 
     /// Sets the block size

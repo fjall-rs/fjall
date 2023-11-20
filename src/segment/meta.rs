@@ -5,19 +5,35 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::value::SeqNo;
+use crate::{time::unix_timestamp, value::SeqNo};
 
 use super::writer::Writer;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
+    /// Path of segment folder, relative to tree base path
     pub path: PathBuf,
+
+    /// Segment ID
     pub id: String,
-    pub created_at: u128,
+
+    /// Creation time as unix timestamp
+    pub created_at: u64,
+
+    /// Number of items in the segment
+    ///
+    /// This may include tombstones
     pub item_count: u64,
+
+    /// Block size (uncompressed)
     pub block_size: u32,
+
+    /// Number of written blocks
     pub block_count: u32,
 
+    /// Whether LZ4 is used
+    ///
+    /// Is always true
     pub is_compressed: bool,
 
     /// compressed size in bytes (on disk)
@@ -26,21 +42,25 @@ pub struct Metadata {
     /// true size in bytes (if no compression were used)
     pub uncompressed_size: u64,
 
+    /// Key range
     pub key_range: (Vec<u8>, Vec<u8>),
+
+    /// Sequence number range
     pub seqnos: (SeqNo, SeqNo),
 
+    /// Number of tombstones
     pub tombstone_count: u64,
 }
 
 impl Metadata {
     /// Consumes a writer and its metadata to create the segment metadata
-    pub fn from_writer(id: String, writer: Writer) -> Self {
+    pub fn from_writer<P: Into<PathBuf>>(id: String, writer: Writer, path: P) -> Self {
         Self {
             id,
-            path: writer.opts.path,
+            path: path.into(),
             block_count: writer.block_count as u32,
             block_size: writer.opts.block_size,
-            created_at: 0, /* TODO: */
+            created_at: unix_timestamp().as_secs(),
             file_size: writer.file_pos,
             is_compressed: true,
             item_count: writer.item_count as u64,
@@ -67,13 +87,13 @@ impl Metadata {
     ///
     /// Will be stored as JSON
     pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
-        // TODO: atomic rewrite
+        log::debug!("Writing segment meta file to {}", path.as_ref().display());
 
         let mut writer = OpenOptions::new()
             .truncate(true)
             .create(true)
             .write(true)
-            .open(path.as_ref().join("meta.json"))?;
+            .open(&path)?;
 
         writer.write_all(
             serde_json::to_string_pretty(self)

@@ -292,6 +292,8 @@ impl MetaIndex {
         path: P,
         block_cache: Arc<BlockCache>,
     ) -> Result<Self, DiskBlockError> {
+        log::debug!("Reading block index from {}", path.as_ref().display());
+
         let size = std::fs::metadata(path.as_ref().join("index"))?.len();
         let index = IndexBlock::from_file_compressed(path.as_ref().join("index"), 0, size as u32)?;
 

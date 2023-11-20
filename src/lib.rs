@@ -45,6 +45,7 @@
 #![deny(clippy::all, missing_docs, clippy::cargo)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
+#![allow(clippy::missing_const_for_fn)]
 
 mod batch;
 mod block_cache;
@@ -53,9 +54,11 @@ mod config;
 mod disk_block;
 mod disk_block_index;
 mod error;
+mod level;
 mod memtable;
 mod segment;
 mod serde;
+mod time;
 mod tree;
 mod tree_inner;
 mod value;

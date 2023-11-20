@@ -1,10 +1,10 @@
 pub mod block;
 pub mod index;
-mod meta;
+pub mod meta;
 mod prefix;
 mod range;
 mod reader;
-mod writer;
+pub mod writer;
 
 use self::{
     block::ValueBlock, index::MetaIndex, prefix::PrefixedReader, range::Range, reader::Reader,

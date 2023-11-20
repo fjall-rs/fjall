@@ -8,7 +8,6 @@ use crate::{
 use log::{error, warn};
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::RwLock;
 
 /// The `MemTable` serves as an intermediary storage for new items
 ///
@@ -17,16 +16,19 @@ use std::sync::RwLock;
 /// In case of a program crash, the current `MemTable` can be rebuilt from the commit log
 #[derive(Default)]
 pub struct MemTable {
-    items: RwLock<BTreeMap<Vec<u8>, Value>>,
-    //size_in_bytes: u64,
+    pub(crate) items: BTreeMap<Vec<u8>, Value>,
+    pub(crate) size_in_bytes: u64,
 }
 
 impl MemTable {
     /// Returns the item by key if it exists
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Value> {
-        let lock = self.items.read().expect("should lock");
-        let result = lock.get(key.as_ref());
+        let result = self.items.get(key.as_ref());
         result.cloned()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.items = Default::default();
     }
 
     // TODO: remove
@@ -39,8 +41,10 @@ impl MemTable {
     // TODO: remove
     /// Gets the item count
     pub fn len(&self) -> usize {
-        let lock = self.items.read().expect("should lock");
-        lock.iter().filter(|(_, value)| !value.is_tombstone).count()
+        self.items
+            .iter()
+            .filter(|(_, value)| !value.is_tombstone)
+            .count()
     }
 
     /*   #[allow(dead_code)]
@@ -53,20 +57,18 @@ impl MemTable {
         self.size_in_bytes = value;
     } */
 
-    /* pub fn exceeds_threshold(&mut self, threshold: u64) -> bool {
+    pub fn exceeds_threshold(&mut self, threshold: u64) -> bool {
         self.size_in_bytes > threshold
-    } */
-
-    /// Inserts an item into the `MemTable`
-    pub fn insert(&self, entry: Value, _bytes_written: usize) {
-        let mut lock = self.items.write().expect("should lock");
-        lock.insert(entry.key.clone(), entry);
-        //self.size_in_bytes += bytes_written as u64;
     }
 
-    pub fn remove(&self, key: &[u8]) {
-        let mut lock = self.items.write().expect("should lock");
-        lock.remove(key);
+    /// Inserts an item into the `MemTable`
+    pub fn insert(&mut self, entry: Value, bytes_written: usize) {
+        self.items.insert(entry.key.clone(), entry);
+        self.size_in_bytes += bytes_written as u64;
+    }
+
+    pub fn remove(&mut self, key: &[u8]) {
+        self.items.remove(key);
     }
 
     /// Creates a [`MemTable`] from a commit log on disk
@@ -84,7 +86,7 @@ impl MemTable {
 
         let mut byte_count: u64 = 0;
 
-        let memtable = Self::default();
+        let mut memtable = Self::default();
         let mut items: Vec<Value> = vec![];
 
         let mut lsn = 0;
@@ -172,7 +174,7 @@ impl MemTable {
             }
         }
 
-        // memtable.size_in_bytes = byte_count;
+        memtable.size_in_bytes = byte_count;
 
         Ok((lsn, byte_count, memtable))
     }
