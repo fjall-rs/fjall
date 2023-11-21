@@ -106,16 +106,21 @@ impl Tree {
         self.levels.read().expect("lock poisoned").len()
     }
 
-    /// Sums the disk space usage of all segments
+    /// Sums the disk space usage of the tree (segments + commit log)
     #[must_use]
     pub fn disk_space(&self) -> u64 {
-        self.levels
+        let segment_size: u64 = self
+            .levels
             .read()
             .expect("lock poisoned")
             .get_all_segments()
             .values()
             .map(|x| x.metadata.file_size)
-            .sum()
+            .sum();
+
+        let memtable = self.active_memtable.read().expect("should lock");
+
+        segment_size + u64::from(memtable.size_in_bytes)
     }
 
     /// Returns the folder path used by the tree
