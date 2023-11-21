@@ -26,7 +26,6 @@ pub fn flush_memtable(
     let old_memtable = Arc::new(std::mem::take(&mut *memtable_lock));
     let mut immutable_memtables = tree.immutable_memtables.write().expect("should lock");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
-    eprintln!("memtable now empty === {}", memtable_lock.len());
     drop(memtable_lock);
 
     let tree = Arc::clone(tree);
@@ -74,10 +73,9 @@ pub fn flush_memtable(
         levels.write_to_disk()?;
         drop(levels);
 
-        log::trace!("Removing old memtable");
+        log::trace!("Destroying old memtable");
         let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
         memtable_lock.remove(&segment_id);
-        eprintln!("now {} immutable memtables", memtable_lock.len());
         drop(memtable_lock);
 
         tree.flush_semaphore.release();
