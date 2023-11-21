@@ -185,7 +185,7 @@ mod tests {
         writer.finalize().unwrap();
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
-        metadata.write_to_file(folder.join("meta.json")).unwrap();
+        metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
@@ -352,7 +352,7 @@ mod tests {
         writer.finalize().unwrap();
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
-        metadata.write_to_file(folder.join("meta.json")).unwrap();
+        metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());

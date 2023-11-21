@@ -14,6 +14,11 @@ pub struct Config {
     /// Defaults to 4 KiB (4096 bytes)
     pub(crate) block_size: u32,
 
+    /// Block cache size in bytes
+    ///
+    /// Defaults to 4 MiB
+    pub(crate) block_cache_size: u32,
+
     /// [`MemTable`] maximum size in bytes
     ///
     /// Defaults to 128 MiB
@@ -30,6 +35,7 @@ impl Default for Config {
         Self {
             path: ".lsm.data".into(),
             block_size: 4_096,
+            block_cache_size: 4 * 1_024 * 1_024,
             max_memtable_size: 128 * 1_024 * 1_024,
             levels: 7,
         }
@@ -70,6 +76,17 @@ impl Config {
 
         self.block_size = block_size;
         self
+    }
+
+    /// Sets the block cache size
+    #[must_use]
+    pub fn block_cache_size(mut self, block_cache_size: u32) -> Self {
+        self.block_cache_size = block_cache_size;
+        self
+    }
+
+    pub(crate) fn calculate_block_cache_capacity(&self) -> u32 {
+        self.block_cache_size / self.block_size
     }
 
     /// Opens a tree using the config

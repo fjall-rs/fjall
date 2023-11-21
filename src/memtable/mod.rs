@@ -17,7 +17,7 @@ use std::path::Path;
 #[derive(Default)]
 pub struct MemTable {
     pub(crate) items: BTreeMap<Vec<u8>, Value>,
-    pub(crate) size_in_bytes: u64,
+    pub(crate) size_in_bytes: u32,
 }
 
 impl MemTable {
@@ -57,14 +57,14 @@ impl MemTable {
         self.size_in_bytes = value;
     } */
 
-    pub fn exceeds_threshold(&mut self, threshold: u64) -> bool {
+    pub fn exceeds_threshold(&mut self, threshold: u32) -> bool {
         self.size_in_bytes > threshold
     }
 
     /// Inserts an item into the `MemTable`
-    pub fn insert(&mut self, entry: Value, bytes_written: usize) {
+    pub fn insert(&mut self, entry: Value, bytes_written: u32) {
         self.items.insert(entry.key.clone(), entry);
-        self.size_in_bytes += bytes_written as u64;
+        self.size_in_bytes += bytes_written;
     }
 
     pub fn remove(&mut self, key: &[u8]) {
@@ -84,7 +84,7 @@ impl MemTable {
         let mut is_in_batch = false;
         let mut batch_counter = 0;
 
-        let mut byte_count: u64 = 0;
+        let mut byte_count = 0;
 
         let mut memtable = Self::default();
         let mut items: Vec<Value> = vec![];
@@ -174,8 +174,14 @@ impl MemTable {
             }
         }
 
-        memtable.size_in_bytes = byte_count;
+        memtable.size_in_bytes = byte_count as u32;
 
         Ok((lsn, byte_count, memtable))
+    }
+}
+
+impl Drop for MemTable {
+    fn drop(&mut self) {
+        log::trace!("Drop memtable");
     }
 }

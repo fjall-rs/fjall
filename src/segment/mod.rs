@@ -38,30 +38,38 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn get(&self, key: &[u8]) -> Option<Value> {
-        let block_ref = self.block_index.get_latest(key)?;
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
+        let block_ref = self.block_index.get_latest(key.as_ref());
 
-        let real_block = match self.block_cache.get_disk_block(&block_ref.start_key) {
-            Some(block) => block,
-            None => {
-                let block = ValueBlock::from_file_compressed(
-                    self.metadata.path.join("blocks"),
-                    block_ref.offset,
-                    block_ref.size,
-                )
-                .unwrap(); // TODO: panic
+        Ok(match block_ref {
+            Some(block_ref) => {
+                let real_block = match self.block_cache.get_disk_block(&block_ref.start_key) {
+                    Some(block) => block,
+                    None => {
+                        let block = ValueBlock::from_file_compressed(
+                            self.metadata.path.join("blocks"),
+                            block_ref.offset,
+                            block_ref.size,
+                        )
+                        .unwrap(); // TODO: panic
 
-                let block = Arc::new(block);
+                        let block = Arc::new(block);
 
-                self.block_cache
-                    .insert_disk_block(block_ref.start_key.clone(), Arc::clone(&block));
+                        self.block_cache
+                            .insert_disk_block(block_ref.start_key.clone(), Arc::clone(&block));
 
-                block
+                        block
+                    }
+                };
+
+                let item_index = real_block
+                    .items
+                    .binary_search_by(|x| (*x.key).cmp(key.as_ref()));
+
+                item_index.map_or(None, |idx| Some(real_block.items[idx].clone()))
             }
-        };
-
-        let item_index = real_block.items.binary_search_by(|x| (*x.key).cmp(key));
-        item_index.map_or(None, |idx| Some(real_block.items[idx].clone()))
+            None => None,
+        })
     }
 
     /// Counts all items in the segment

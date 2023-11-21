@@ -1,10 +1,11 @@
+use std_semaphore::Semaphore;
+
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
+    flush::flush_memtable,
     level::Levels,
     memtable::{recovery::Strategy, MemTable},
-    segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
-    time::unix_timestamp,
     tree_inner::TreeInner,
     Batch, Config, Value,
 };
@@ -12,10 +13,10 @@ use std::{
     collections::HashMap,
     fs::create_dir_all,
     path::PathBuf,
-    sync::{atomic::AtomicU64, Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard},
+    sync::{atomic::AtomicU64, Arc, Mutex, MutexGuard, RwLock},
 };
 
-/// A log-structured merge tree (LSM tree/LSMT)
+/// A log-structured merge tree (LSM-tree/LSMT)
 ///
 /// The tree is internally synchronized (Send + Sync), so it does not need to be wrapped in a lock nor an Arc.
 ///
@@ -90,6 +91,31 @@ impl Tree {
     #[must_use]
     pub fn batch(&self) -> Batch {
         Batch::new(self.clone())
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn is_compacting(&self) -> bool {
+        let levels = self.levels.read().expect("lock poisoned");
+        levels.is_compacting()
+    }
+
+    /// Counts the amount of segments currently in the tree
+    #[must_use]
+    pub fn segment_count(&self) -> usize {
+        self.levels.read().expect("lock poisoned").len()
+    }
+
+    /// Sums the disk space usage of all segments
+    #[must_use]
+    pub fn disk_space(&self) -> u64 {
+        self.levels
+            .read()
+            .expect("lock poisoned")
+            .get_all_segments()
+            .values()
+            .map(|x| x.metadata.file_size)
+            .sum()
     }
 
     /// Returns the folder path used by the tree
@@ -167,13 +193,19 @@ impl Tree {
         let log_path = config.path.join("log");
         let levels = Levels::create_new(config.levels, config.path.join("levels.json"))?;
 
+        let block_cache = Arc::new(BlockCache::new(
+            config.calculate_block_cache_capacity() as usize
+        ));
+
         let inner = TreeInner {
             config,
             active_memtable: Arc::new(RwLock::new(MemTable::default())),
+            immutable_memtables: Arc::default(),
             commit_log: Arc::new(Mutex::new(CommitLog::new(log_path)?)),
-            block_cache: Arc::new(BlockCache::new(1024 /* TODO: */)),
+            block_cache,
             lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
+            flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
         };
 
         // Create subfolders
@@ -193,8 +225,11 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     fn recover(config: Config) -> crate::Result<Self> {
-        let (lsn, _, memtable) =
+        let (lsn, bytes_written, memtable) =
             MemTable::from_file(config.path.join("log"), &Strategy::default()).unwrap();
+
+        dbg!("Loaded memtable with # entries:", memtable.len());
+        dbg!("Commit Log size", bytes_written);
 
         // TODO: read segments etc, get LSN
 
@@ -202,13 +237,19 @@ impl Tree {
 
         let levels = Levels::from_disk(&config.path.join("levels.json"), HashMap::new())?;
 
+        let block_cache = Arc::new(BlockCache::new(
+            config.calculate_block_cache_capacity() as usize
+        ));
+
         let inner = TreeInner {
             config,
             active_memtable: Arc::new(RwLock::new(memtable)),
-            block_cache: Arc::new(BlockCache::new(1024 /* TODO: */)),
+            immutable_memtables: Arc::default(),
+            block_cache,
             commit_log: Arc::new(Mutex::new(CommitLog::new(log_path)?)),
             lsn: AtomicU64::new(lsn),
             levels: Arc::new(RwLock::new(levels)),
+            flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
         };
 
         Ok(Self(Arc::new(inner)))
@@ -224,72 +265,10 @@ impl Tree {
         //let mut lock = self.commit_log.lock().expect("should lock");
         let bytes_written = commit_log.append(value.clone())?;
 
-        memtable.insert(value, bytes_written);
+        memtable.insert(value, bytes_written as u32);
 
-        // TODO: memtable size param
-        if memtable.exceeds_threshold(160_000_000) {
-            let segment_id = unix_timestamp().as_micros().to_string();
-            let old_commit_log_path = self.config.path.join(format!("logs/{segment_id}"));
-
-            std::fs::rename(self.config.path.join("log"), old_commit_log_path.clone())?;
-            *commit_log = CommitLog::new(self.config.path.join("log"))?;
-            drop(commit_log);
-
-            let old_memtable = std::mem::take(&mut *memtable);
-            drop(memtable);
-
-            let tree_path = self.config.path.clone();
-            let segment_folder = self.config.path.join(format!("segments/{segment_id}"));
-            let block_size = self.config.block_size;
-            let block_cache = Arc::clone(&self.block_cache);
-            let levels_manifest = Arc::clone(&self.levels);
-
-            let thread = std::thread::spawn(move || {
-                let mut segment_writer = Writer::new(crate::segment::writer::Options {
-                    path: segment_folder.clone(),
-                    evict_tombstones: false,
-                    block_size,
-                })?;
-
-                log::debug!(
-                    "Flushing memtable -> {}",
-                    segment_writer.opts.path.display()
-                );
-
-                for (_, value) in old_memtable.items {
-                    segment_writer.write(value)?;
-                }
-
-                segment_writer.finalize()?;
-                log::debug!("Finalized segment write");
-
-                let segment_path_relative =
-                    pathdiff::diff_paths(&segment_folder, &tree_path).unwrap();
-                let metadata =
-                    Metadata::from_writer(segment_id, segment_writer, segment_path_relative);
-                metadata.write_to_file(segment_folder.join("meta.json"))?;
-
-                let meta_index = Arc::new(
-                    MetaIndex::from_file(&segment_folder, Arc::clone(&block_cache)).expect("TODO:"),
-                );
-
-                let created_segment = Segment {
-                    block_index: meta_index,
-                    block_cache,
-                    metadata,
-                };
-
-                let mut levels = levels_manifest.write().expect("should lock");
-                levels.add(Arc::new(created_segment));
-                levels.write_to_disk()?;
-                drop(levels);
-
-                log::debug!("Flush done");
-
-                std::fs::remove_file(old_commit_log_path)?;
-
-                Ok::<_, crate::Error>(())
-            });
+        if memtable.exceeds_threshold(self.config.max_memtable_size) {
+            flush_memtable(self, commit_log, memtable)?;
         }
 
         Ok(())
@@ -425,6 +404,74 @@ impl Tree {
         self.contains_key(key)
     }
 
+    /// Returns the first key-value pair in the LSM-tree. The key in this pair is the minimum key in the LSM-tree
+    ///
+    /// # Example usage
+    ///
+    /// ```
+    /// # use lsm_tree::Error as TreeError;
+    /// # use lsm_tree::{Tree, Config};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let mut tree = Config::default()
+    /// #   .path(&folder)
+    /// #   .open()?;
+    /// #
+    /// tree.insert("1", "abc")?;
+    /// tree.insert("3", "abc")?;
+    /// tree.insert("5", "abc")?;
+    ///
+    /// let item = tree.first_key_value()?;
+    /// assert!(item.is_some());
+    /// let item = item.unwrap();
+    /// assert_eq!(item.key, "1".as_bytes());
+    ///
+    /// # Ok::<(), TreeError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn first_key_value(&self) -> std::io::Result<Option<Value>> {
+        /* let item = self.iter()?.into_iter().next().transpose()?;
+        Ok(item) */
+        unimplemented!()
+    }
+
+    /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
+    /// #
+    /// # Example usage
+    ///
+    /// ```
+    /// # use lsm_tree::Error as TreeError;
+    /// # use lsm_tree::{Tree, Config};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let mut tree = Config::default()
+    /// #   .path(&folder)
+    /// #   .open()?;
+    /// #
+    /// tree.insert("1", "abc")?;
+    /// tree.insert("3", "abc")?;
+    /// tree.insert("5", "abc")?;
+    /// #
+    /// let item = tree.last_key_value()?;
+    /// assert!(item.is_some());
+    /// let item = item.unwrap();
+    /// assert_eq!(item.key, "5".as_bytes());
+    ///
+    /// # Ok::<(), TreeError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn last_key_value(&self) -> std::io::Result<Option<Value>> {
+        /* let item = self.iter()?.into_iter().next_back().transpose()?;
+        Ok(item) */
+        unimplemented!()
+    }
+
     /// Retrieves an item from the tree
     ///
     /// # Examples
@@ -448,17 +495,124 @@ impl Tree {
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
         let lock = self.active_memtable.write().expect("should lock");
 
-        if let Some(item) = lock.get(key) {
-            if item.is_tombstone {
+        if let Some(item) = lock.get(&key) {
+            return if item.is_tombstone {
                 Ok(None)
             } else {
                 Ok(Some(item))
-            }
-        } else {
-            Ok(None)
+            };
         }
 
-        // TODO: walk segments
+        let memtable_lock = self.immutable_memtables.read().expect("lock poisoned");
+        for (_, memtable) in memtable_lock.iter().rev() {
+            if let Some(item) = memtable.get(&key) {
+                return if item.is_tombstone {
+                    Ok(None)
+                } else {
+                    Ok(Some(item))
+                };
+            }
+        }
+        drop(memtable_lock);
+
+        let segment_lock = self.levels.read().expect("lock poisoned");
+        let segments = &segment_lock.get_all_segments_flattened();
+
+        for segment in segments {
+            let item = segment.get(&key)?;
+
+            if let Some(ref entry) = item {
+                return if entry.is_tombstone {
+                    Ok(None)
+                } else {
+                    Ok(item)
+                };
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Atomically fetches and updates an item if it exists
+    ///
+    /// Returns the previous value if the item exists
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn fetch_replace<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+        &self,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<Vec<u8>>> {
+        // TODO: fully lock all shards
+
+        let commit_log_lock = self.commit_log.lock().expect("lock poisoned");
+
+        Ok(match self.get(key)? {
+            Some(item) => {
+                let updated_value = f(&item.value);
+
+                self.append_entry(
+                    commit_log_lock,
+                    Value {
+                        key: item.key,
+                        value: updated_value,
+                        is_tombstone: false,
+                        seqno: self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                    },
+                )?;
+
+                Some(item.value)
+            }
+            None => None,
+        })
+    }
+
+    /// Atomically fetches and updates an item if it exists
+    ///
+    /// Returns the updated value if the item exists
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+        &self,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<Vec<u8>>> {
+        // TODO: fully lock all shards
+
+        let commit_log_lock = self.commit_log.lock().expect("lock poisoned");
+
+        Ok(match self.get(key)? {
+            Some(item) => {
+                let updated_value = f(&item.value);
+
+                self.append_entry(
+                    commit_log_lock,
+                    Value {
+                        key: item.key,
+                        value: updated_value.clone(),
+                        is_tombstone: false,
+                        seqno: self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                    },
+                )?;
+
+                Some(updated_value)
+            }
+            None => None,
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn force_memtable_flush(
+        &self,
+    ) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
+        let commit_log = self.commit_log.lock().expect("should lock");
+        let memtable = self.active_memtable.write().expect("should lock");
+
+        flush_memtable(self, commit_log, memtable)
     }
 
     /// Flushes the commit log to disk, making sure all written data is persisted

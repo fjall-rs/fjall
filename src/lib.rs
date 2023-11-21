@@ -54,6 +54,7 @@ mod config;
 mod disk_block;
 mod disk_block_index;
 mod error;
+mod flush;
 mod level;
 mod memtable;
 mod segment;

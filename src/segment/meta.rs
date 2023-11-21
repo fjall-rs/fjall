@@ -11,7 +11,7 @@ use super::writer::Writer;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
-    /// Path of segment folder, relative to tree base path
+    /// Path of segment folder
     pub path: PathBuf,
 
     /// Segment ID
@@ -86,14 +86,12 @@ impl Metadata {
     /// Stores segment metadata in a file
     ///
     /// Will be stored as JSON
-    pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
-        log::debug!("Writing segment meta file to {}", path.as_ref().display());
-
+    pub fn write_to_file(&self) -> std::io::Result<()> {
         let mut writer = OpenOptions::new()
             .truncate(true)
             .create(true)
             .write(true)
-            .open(&path)?;
+            .open(self.path.join("meta.json"))?;
 
         writer.write_all(
             serde_json::to_string_pretty(self)

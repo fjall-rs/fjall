@@ -221,7 +221,7 @@ mod tests {
         writer.finalize().unwrap();
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
-        metadata.write_to_file(folder.join("meta.json")).unwrap();
+        metadata.write_to_file().unwrap();
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));

@@ -27,7 +27,7 @@ quick_cache = { version = "0.4.0", default-features = false }
 scc = "2.0.3"
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
-# std-semaphore = "0.1.0"
+std-semaphore = "0.1.0"
 
 [dev-dependencies]
 # criterion = { version = "0.5.0", features = ["html_reports"] }
