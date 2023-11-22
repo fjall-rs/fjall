@@ -27,35 +27,12 @@ impl MemTable {
         result.cloned()
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.items = Default::default();
-    }
-
-    // TODO: remove
-    /// Returns true if the `MemTable` is empty
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    // TODO: remove
     /// Gets the item count
+    ///
+    /// Does not take tombstones into account
     pub fn len(&self) -> usize {
-        self.items
-            .iter()
-            .filter(|(_, value)| !value.is_tombstone)
-            .count()
+        self.items.len()
     }
-
-    /*   #[allow(dead_code)]
-    pub(crate) fn get_size(&self) -> u64 {
-        self.size_in_bytes
-    } */
-
-    /* #[allow(dead_code)]
-    pub(crate) fn set_size(&mut self, value: u64) {
-        self.size_in_bytes = value;
-    } */
 
     pub fn exceeds_threshold(&mut self, threshold: u32) -> bool {
         self.size_in_bytes > threshold
@@ -65,10 +42,6 @@ impl MemTable {
     pub fn insert(&mut self, entry: Value, bytes_written: u32) {
         self.items.insert(entry.key.clone(), entry);
         self.size_in_bytes += bytes_written;
-    }
-
-    pub fn remove(&mut self, key: &[u8]) {
-        self.items.remove(key);
     }
 
     /// Creates a [`MemTable`] from a commit log on disk

@@ -1,9 +1,9 @@
 pub mod block;
 pub mod index;
 pub mod meta;
-mod prefix;
-mod range;
-mod reader;
+pub mod prefix;
+pub mod range;
+pub mod reader;
 pub mod writer;
 
 use self::{
@@ -77,7 +77,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn len(&self) -> std::io::Result<usize> {
+    pub fn len(&self) -> crate::Result<usize> {
         Ok(Reader::new(
             self.metadata.path.join("blocks"),
             /* self.metadata.id.clone(),
@@ -94,15 +94,17 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn iter(&self) -> std::io::Result<Reader> {
-        Reader::new(
+    pub fn iter(&self) -> crate::Result<Reader> {
+        let reader = Reader::new(
             self.metadata.path.join("blocks"),
             /* self.metadata.id.clone(),
             Arc::clone(&self.block_index), */
             Arc::clone(&self.block_index),
             None,
             None,
-        )
+        )?;
+
+        Ok(reader)
     }
 
     /// Creates a ranged iterator over the `Segment`
@@ -110,14 +112,16 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> std::io::Result<Range> {
-        Range::new(
+    pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> crate::Result<Range> {
+        let range = Range::new(
             self.metadata.path.join("blocks"),
             //self.metadata.id.clone(),
             Arc::clone(&self.block_index),
             //Arc::clone(&self.block_cache),
             range,
-        )
+        )?;
+
+        Ok(range)
     }
 
     /// Creates a prefixed iterator over the `Segment`
@@ -125,14 +129,16 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> std::io::Result<PrefixedReader> {
-        PrefixedReader::new(
+    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
+        let reader = PrefixedReader::new(
             self.metadata.path.join("blocks"),
             //self.metadata.id.clone(),
             Arc::clone(&self.block_index),
             //Arc::clone(&self.block_cache),
             prefix,
-        )
+        )?;
+
+        Ok(reader)
     }
 
     /// Returns the highest sequence number in the segment

@@ -19,7 +19,7 @@ impl Range {
         block_index: Arc<MetaIndex>,
         //block_cache: Arc<BlockCache>,
         range: (Bound<Vec<u8>>, Bound<Vec<u8>>),
-    ) -> std::io::Result<Self> {
+    ) -> crate::Result<Self> {
         let offset_lo = match range.start_bound() {
             Bound::Unbounded => None,
             Bound::Included(start) | Bound::Excluded(start) => block_index
@@ -48,7 +48,7 @@ impl Range {
 }
 
 impl Iterator for Range {
-    type Item = std::io::Result<Value>;
+    type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

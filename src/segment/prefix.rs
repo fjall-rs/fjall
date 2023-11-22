@@ -20,7 +20,7 @@ impl PrefixedReader {
         block_index: Arc<MetaIndex>,
         //block_cache: Arc<BlockCache>,
         prefix: K,
-    ) -> std::io::Result<Self> {
+    ) -> crate::Result<Self> {
         let prefix = prefix.into();
 
         //TODO: optimize upper bound
@@ -40,7 +40,7 @@ impl PrefixedReader {
 }
 
 impl Iterator for PrefixedReader {
-    type Item = std::io::Result<Value>;
+    type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

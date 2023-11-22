@@ -32,7 +32,7 @@ impl Reader {
         block_index: Arc<MetaIndex>,
         start_offset: Option<&Vec<u8>>,
         end_offset: Option<&Vec<u8>>,
-    ) -> std::io::Result<Self> {
+    ) -> crate::Result<Self> {
         let file_reader = BufReader::with_capacity(u16::MAX.into(), File::open(file)?);
 
         let mut iter = Self {
@@ -63,7 +63,7 @@ impl Reader {
         Ok(iter)
     }
 
-    fn load_block(&mut self, key: &[u8]) -> std::io::Result<Option<()>> {
+    fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
         Ok(
             if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key) {
                 /* if let Some(block) = self.block_cache.get(&self.segment_id, block_ref.offset) {
@@ -93,7 +93,7 @@ impl Reader {
 }
 
 impl Iterator for Reader {
-    type Item = std::io::Result<Value>;
+    type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_lo.is_none() {
