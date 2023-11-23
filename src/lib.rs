@@ -53,6 +53,7 @@ mod commit_log;
 mod config;
 mod disk_block;
 mod disk_block_index;
+mod either;
 mod error;
 mod flush;
 mod level;
