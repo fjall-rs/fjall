@@ -3,7 +3,6 @@ use std_semaphore::Semaphore;
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
-    flush::flush_memtable,
     level::Levels,
     memtable::{recovery::Strategy, MemTable},
     prefix::Prefix,
@@ -95,6 +94,7 @@ impl Tree {
         Batch::new(self.clone())
     }
 
+    /// Returns `true` if there are some segments that are being compacted
     #[doc(hidden)]
     #[must_use]
     pub fn is_compacting(&self) -> bool {
@@ -270,7 +270,7 @@ impl Tree {
         memtable.insert(value, bytes_written as u32);
 
         if memtable.exceeds_threshold(self.config.max_memtable_size) {
-            flush_memtable(self, commit_log, memtable)?;
+            crate::flush::start(self, commit_log, memtable)?;
         }
 
         Ok(())
@@ -444,11 +444,7 @@ impl Tree {
             .get_all_segments()
             .values()
             .filter(|x| x.check_key_range_overlap(&bounds))
-            .map(|x| crate::range::SegmentInfo {
-                id: x.metadata.id.clone(),
-                block_index: Arc::clone(&x.block_index),
-                path: x.metadata.path.join("blocks"),
-            })
+            .cloned()
             .collect();
 
         Ok(Range::new(
@@ -481,11 +477,7 @@ impl Tree {
             .get_all_segments()
             .values()
             .filter(|x| x.check_key_range_overlap(&bounds))
-            .map(|x| crate::prefix::SegmentInfo {
-                id: x.metadata.id.clone(),
-                block_index: Arc::clone(&x.block_index),
-                path: x.metadata.path.join("blocks"),
-            })
+            .cloned()
             .collect();
 
         Ok(Prefix::new(
@@ -694,6 +686,7 @@ impl Tree {
         })
     }
 
+    /// Force-starts a memtable flush thread
     #[doc(hidden)]
     pub fn force_memtable_flush(
         &self,
@@ -701,7 +694,14 @@ impl Tree {
         let commit_log = self.commit_log.lock().expect("should lock");
         let memtable = self.active_memtable.write().expect("should lock");
 
-        flush_memtable(self, commit_log, memtable)
+        crate::flush::start(self, commit_log, memtable)
+    }
+
+    /// Force-starts a memtable flush thread and waits until its completely done
+    #[doc(hidden)]
+    pub fn wait_for_memtable_flush(&self) -> crate::Result<()> {
+        let flush_thread = self.force_memtable_flush()?;
+        flush_thread.join().expect("should join")
     }
 
     /// Flushes the commit log to disk, making sure all written data is persisted

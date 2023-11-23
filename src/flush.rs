@@ -1,4 +1,7 @@
-use std::sync::{Arc, MutexGuard, RwLockWriteGuard};
+use std::{
+    path::Path,
+    sync::{Arc, MutexGuard, RwLockWriteGuard},
+};
 
 use crate::{
     commit_log::CommitLog,
@@ -8,7 +11,68 @@ use crate::{
     Tree,
 };
 
-pub fn flush_memtable(
+fn flush_worker(
+    tree: &Tree,
+    old_memtable: &Arc<MemTable>,
+    segment_id: &str,
+    old_commit_log_path: &Path,
+) -> crate::Result<()> {
+    let segment_folder = tree.config.path.join(format!("segments/{segment_id}"));
+
+    let mut segment_writer = Writer::new(crate::segment::writer::Options {
+        path: segment_folder.clone(),
+        evict_tombstones: false,
+        block_size: tree.config.block_size,
+    })?;
+
+    log::debug!(
+        "Flushing memtable -> {}",
+        segment_writer.opts.path.display()
+    );
+
+    // TODO: this clone hurts
+    for value in old_memtable.items.values().cloned() {
+        segment_writer.write(value)?;
+    }
+
+    segment_writer.finalize()?;
+    log::debug!("Finalized segment write");
+
+    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer, &segment_folder);
+    metadata.write_to_file()?;
+
+    match MetaIndex::from_file(&segment_folder, Arc::clone(&tree.block_cache)).map(Arc::new) {
+        Ok(meta_index) => {
+            let created_segment = Segment {
+                block_index: meta_index,
+                block_cache: Arc::clone(&tree.block_cache),
+                metadata,
+            };
+
+            let mut levels = tree.levels.write().expect("should lock");
+            levels.add(Arc::new(created_segment));
+            levels.write_to_disk()?;
+            drop(levels);
+
+            log::trace!("Destroying old memtable");
+            let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
+            memtable_lock.remove(segment_id);
+            drop(memtable_lock);
+        }
+        Err(error) => {
+            log::error!("Flush error: {:?}", error);
+        }
+    }
+
+    tree.flush_semaphore.release();
+    std::fs::remove_file(old_commit_log_path)?;
+
+    log::debug!("Flush done");
+
+    Ok(())
+}
+
+pub fn start(
     tree: &Tree,
     mut commit_log_lock: MutexGuard<CommitLog>,
     mut memtable_lock: RwLockWriteGuard<MemTable>,
@@ -28,62 +92,9 @@ pub fn flush_memtable(
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
     drop(memtable_lock);
 
-    let tree = Arc::clone(tree);
+    let tree = tree.clone();
 
     Ok(std::thread::spawn(move || {
-        let segment_folder = tree.config.path.join(format!("segments/{segment_id}"));
-
-        let mut segment_writer = Writer::new(crate::segment::writer::Options {
-            path: segment_folder.clone(),
-            evict_tombstones: false,
-            block_size: tree.config.block_size,
-        })?;
-
-        log::debug!(
-            "Flushing memtable -> {}",
-            segment_writer.opts.path.display()
-        );
-
-        // TODO: this clone hurts
-        for value in old_memtable.items.values().cloned() {
-            segment_writer.write(value)?;
-        }
-
-        segment_writer.finalize()?;
-        log::debug!("Finalized segment write");
-
-        /* let segment_path_relative =
-        pathdiff::diff_paths(&segment_folder, &tree.config.path).unwrap(); */
-
-        let metadata = Metadata::from_writer(segment_id.clone(), segment_writer, &segment_folder);
-        metadata.write_to_file()?;
-
-        let meta_index = Arc::new(
-            MetaIndex::from_file(&segment_folder, Arc::clone(&tree.block_cache)).expect("TODO:"),
-        );
-
-        let created_segment = Segment {
-            block_index: meta_index,
-            block_cache: Arc::clone(&tree.block_cache),
-            metadata,
-        };
-
-        let mut levels = tree.levels.write().expect("should lock");
-        levels.add(Arc::new(created_segment));
-        levels.write_to_disk()?;
-        drop(levels);
-
-        log::trace!("Destroying old memtable");
-        let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
-        memtable_lock.remove(&segment_id);
-        drop(memtable_lock);
-
-        tree.flush_semaphore.release();
-
-        std::fs::remove_file(old_commit_log_path)?;
-
-        log::debug!("Flush done");
-
-        Ok::<_, crate::Error>(())
+        flush_worker(&tree, &old_memtable, &segment_id, &old_commit_log_path)
     }))
 }

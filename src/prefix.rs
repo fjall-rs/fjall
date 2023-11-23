@@ -1,20 +1,12 @@
-use std::{path::PathBuf, sync::Arc};
-
 use crate::{
-    block_cache::BlockCache, merge::MergeIterator, range::MemTableGuard, segment::index::MetaIndex,
-    Value,
+    block_cache::BlockCache, merge::MergeIterator, range::MemTableGuard, segment::Segment, Value,
 };
-
-pub struct SegmentInfo {
-    pub(crate) id: String,
-    pub(crate) path: PathBuf,
-    pub(crate) block_index: Arc<MetaIndex>,
-}
+use std::sync::Arc;
 
 pub struct Prefix<'a> {
     guard: MemTableGuard<'a>,
     prefix: Vec<u8>,
-    segments: Vec<SegmentInfo>,
+    segments: Vec<Arc<Segment>>,
     block_cache: Arc<BlockCache>,
 }
 
@@ -22,7 +14,7 @@ impl<'a> Prefix<'a> {
     pub fn new(
         guard: MemTableGuard<'a>,
         prefix: Vec<u8>,
-        segments: Vec<SegmentInfo>,
+        segments: Vec<Arc<Segment>>,
         block_cache: Arc<BlockCache>,
     ) -> Self {
         Self {
@@ -45,14 +37,8 @@ impl<'a> PrefixIterator<'a> {
             vec![];
 
         for segment in &lock.segments {
-            segment_iters.push(Box::new(
-                crate::segment::prefix::PrefixedReader::new(
-                    &segment.path,
-                    Arc::clone(&segment.block_index),
-                    lock.prefix.clone(),
-                )
-                .unwrap(),
-            ));
+            let reader = segment.prefix(lock.prefix.clone()).unwrap();
+            segment_iters.push(Box::new(reader));
         }
 
         let mut iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =

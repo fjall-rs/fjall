@@ -1,20 +1,11 @@
+use crate::{
+    block_cache::BlockCache, memtable::MemTable, merge::MergeIterator, segment::Segment, Value,
+};
 use std::{
     collections::BTreeMap,
     ops::Bound,
-    path::PathBuf,
     sync::{Arc, RwLockReadGuard},
 };
-
-use crate::{
-    block_cache::BlockCache, memtable::MemTable, merge::MergeIterator, segment::index::MetaIndex,
-    Value,
-};
-
-pub struct SegmentInfo {
-    pub(crate) id: String,
-    pub(crate) path: PathBuf,
-    pub(crate) block_index: Arc<MetaIndex>,
-}
 
 pub struct MemTableGuard<'a> {
     pub(crate) active: RwLockReadGuard<'a, MemTable>,
@@ -24,7 +15,7 @@ pub struct MemTableGuard<'a> {
 pub struct Range<'a> {
     guard: MemTableGuard<'a>,
     bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
-    segments: Vec<SegmentInfo>,
+    segments: Vec<Arc<Segment>>,
     block_cache: Arc<BlockCache>,
 }
 
@@ -32,7 +23,7 @@ impl<'a> Range<'a> {
     pub fn new(
         guard: MemTableGuard<'a>,
         bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
-        segments: Vec<SegmentInfo>,
+        segments: Vec<Arc<Segment>>,
         block_cache: Arc<BlockCache>,
     ) -> Self {
         Self {
@@ -55,19 +46,8 @@ impl<'a> RangeIterator<'a> {
             vec![];
 
         for segment in &lock.segments {
-            let range = crate::segment::range::Range::new(
-                &segment.path,
-                Arc::clone(&segment.block_index),
-                lock.bounds.clone(),
-                /*   &segment.path,
-                segment.id.clone(),
-                Arc::clone(&segment.block_index),
-                Arc::clone(&lock.block_cache),
-                lock.bounds.clone(),  */
-            )
-            .unwrap();
-
-            segment_iters.push(Box::new(range));
+            let reader = segment.range(lock.bounds.clone()).unwrap();
+            segment_iters.push(Box::new(reader));
         }
 
         let mut iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
