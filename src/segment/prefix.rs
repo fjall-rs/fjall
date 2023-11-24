@@ -1,6 +1,5 @@
-use crate::Value;
-
 use super::{index::MetaIndex, range::Range};
+use crate::{block_cache::BlockCache, Value};
 use std::{
     ops::Bound::{Excluded, Included, Unbounded},
     path::Path,
@@ -16,9 +15,9 @@ pub struct PrefixedReader {
 impl PrefixedReader {
     pub fn new<P: AsRef<Path>, K: Into<Vec<u8>>>(
         path: P,
-        //segment_id: String,
+        segment_id: String,
+        block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
-        //block_cache: Arc<BlockCache>,
         prefix: K,
     ) -> crate::Result<Self> {
         let prefix = prefix.into();
@@ -29,9 +28,9 @@ impl PrefixedReader {
 
         let iterator = Range::new(
             path,
-            //    segment_id,
+            segment_id,
+            block_cache,
             block_index,
-            //   block_cache,
             (Included(prefix.clone()), upper_bound),
         )?;
 
@@ -161,21 +160,32 @@ mod tests {
                 writer.write(item).unwrap();
             }
 
-            writer.finalize().unwrap();
+            writer.finish().unwrap();
 
-            let metadata =
-                Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+            let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
             metadata.write_to_file().unwrap();
 
             let block_cache = Arc::new(BlockCache::new(usize::MAX));
-            let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
+            let meta_index = Arc::new(
+                MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache))
+                    .unwrap(),
+            );
 
-            let iter =
-                Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+            let iter = Reader::new(
+                folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
+                Arc::clone(&meta_index),
+                None,
+                None,
+            )
+            .unwrap();
             assert_eq!(iter.count() as u64, item_count * 3);
 
             let iter = PrefixedReader::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 b"a/b/".to_vec(),
             )
@@ -185,6 +195,8 @@ mod tests {
 
             let iter = PrefixedReader::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 b"a/b/".to_vec(),
             )
@@ -226,13 +238,15 @@ mod tests {
             writer.write(item).unwrap();
         }
 
-        writer.finalize().unwrap();
+        writer.finish().unwrap();
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
+        let meta_index = Arc::new(
+            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
+        );
 
         let expected = [
             (b"a".to_vec(), 9),
@@ -246,9 +260,14 @@ mod tests {
         ];
 
         for (prefix_key, item_count) in expected {
-            let iter =
-                PrefixedReader::new(folder.join("blocks"), Arc::clone(&meta_index), prefix_key)
-                    .unwrap();
+            let iter = PrefixedReader::new(
+                folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
+                Arc::clone(&meta_index),
+                prefix_key,
+            )
+            .unwrap();
 
             assert_eq!(iter.count(), item_count);
         }

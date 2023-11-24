@@ -1,11 +1,11 @@
 pub mod recovery;
 
+use crate::commit_log::CommitLog;
 use crate::Value;
 use crate::{
     commit_log::{marker::Marker, reader::Reader as CommitLogReader},
     serde::Serializable,
 };
-use log::{error, warn};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -18,6 +18,29 @@ use std::path::Path;
 pub struct MemTable {
     pub(crate) items: BTreeMap<Vec<u8>, Value>,
     pub(crate) size_in_bytes: u32,
+}
+
+fn rewrite_commit_log<P: AsRef<Path>>(path: P, memtable: &MemTable) -> std::io::Result<()> {
+    log::info!("Rewriting commit log");
+
+    let parent = path.as_ref().parent().unwrap();
+    /* let file = std::fs::File::create(parent.join("rlog"))?; */
+    let mut repaired_log = CommitLog::new(parent.join("rlog"))?;
+
+    repaired_log
+        .append_batch(memtable.items.values().cloned().collect())
+        .unwrap();
+
+    repaired_log.flush()?;
+
+    std::fs::rename(parent.join("rlog"), &path)?;
+
+    let file = std::fs::File::open(&path)?;
+    file.sync_all()?;
+
+    log::info!("Atomically rewritten commit log");
+
+    Ok(())
 }
 
 impl MemTable {
@@ -47,11 +70,11 @@ impl MemTable {
     /// Creates a [`MemTable`] from a commit log on disk
     pub(crate) fn from_file<P: AsRef<Path>>(
         path: P,
-        strategy: &recovery::Strategy,
+        //strategy: &recovery::Strategy,
     ) -> recovery::Result {
         use Marker::{End, Item, Start};
 
-        let reader = CommitLogReader::new(path)?;
+        let reader = CommitLogReader::new(&path)?;
 
         let mut hasher = crc32fast::Hasher::new();
         let mut is_in_batch = false;
@@ -69,9 +92,28 @@ impl MemTable {
 
             match item {
                 Start(batch_size) => {
-                    if is_in_batch {
-                        error!("Invalid batch: found batch start inside batch");
-                        return Err(recovery::Error::UnexpectedBatchStart);
+                    if is_in_batch && !items.is_empty() {
+                        log::warn!("Invalid batch: found batch start inside non-empty batch");
+                        rewrite_commit_log(path, &memtable)?;
+
+                        // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                        return Ok((lsn, byte_count, memtable));
+
+                        /* match strategy.invalid_batch_strategy {
+                            recovery::InvalidBatchMode::Discard => {
+                                warn!("Reached end of commit log without end marker, discarding items");
+
+                                // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                                /* memtable.size_in_bytes = byte_count as u32;
+                                return Ok((lsn, byte_count, memtable)); */
+                            }
+                            recovery::InvalidBatchMode::Error => {
+                                error!("Reached end of commit log without end marker");
+                                return Err(recovery::Error::UnexpectedBatchEnd);
+                            }
+                        } */
                     }
 
                     is_in_batch = true;
@@ -80,32 +122,55 @@ impl MemTable {
                 End(crc) => {
                     // TODO: allow to drop invalid batches, not same option as LastBatchStrategy
                     if batch_counter > 0 {
-                        error!(
+                        log::warn!(
                             "Invalid batch: reached end of batch with less entries than expected"
                         );
-                        match strategy.invalid_batch_strategy {
+                        rewrite_commit_log(path, &memtable)?;
+
+                        // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                        return Ok((lsn, byte_count, memtable));
+                        /* match strategy.invalid_batch_strategy {
                             recovery::InvalidBatchMode::Discard => {
                                 warn!("Reached end of commit log without end marker, discarding items");
+
+
+
+                                // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                                /* memtable.size_in_bytes = byte_count as u32;
+                                return Ok((lsn, byte_count, memtable)); */
                             }
                             recovery::InvalidBatchMode::Error => {
                                 error!("Reached end of commit log without end marker");
                                 return Err(recovery::Error::UnexpectedBatchEnd);
                             }
-                        }
+                        } */
                     }
 
                     // TODO: allow to drop invalid batches, not same option as LastBatchStrategy
                     if hasher.finalize() != crc {
-                        error!("Invalid batch: checksum check failed");
-                        match strategy.invalid_batch_strategy {
+                        log::warn!("Invalid batch: checksum check failed");
+                        rewrite_commit_log(path, &memtable)?;
+
+                        // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                        return Ok((lsn, byte_count, memtable));
+
+                        /* match strategy.invalid_batch_strategy {
                             recovery::InvalidBatchMode::Discard => {
                                 warn!("CRC mismatch, discarding items");
+
+                                // TODO: commit log is probably corrupt from here on... need to rewrite log and atomically swap it
+
+                                /* memtable.size_in_bytes = byte_count as u32;
+                                return Ok((lsn, byte_count, memtable)); */
                             }
                             recovery::InvalidBatchMode::Error => {
                                 error!("CRC mismatch");
                                 return Err(recovery::Error::ChecksumCheckFail);
                             }
-                        }
+                        } */
                     }
 
                     hasher = crc32fast::Hasher::new();
@@ -136,7 +201,10 @@ impl MemTable {
         }
 
         if is_in_batch {
-            match strategy.last_batch_strategy {
+            log::warn!("Reached end of commit log without end marker, discarding items");
+            rewrite_commit_log(path, &memtable)?;
+
+            /* match strategy.last_batch_strategy {
                 recovery::InvalidBatchMode::Discard => {
                     warn!("Reached end of commit log without end marker, discarding items");
                 }
@@ -144,17 +212,13 @@ impl MemTable {
                     error!("Reached end of commit log without end marker");
                     return Err(recovery::Error::MissingBatchEnd);
                 }
-            }
+            } */
         }
+
+        log::info!("Memtable recovered");
 
         memtable.size_in_bytes = byte_count as u32;
 
         Ok((lsn, byte_count, memtable))
-    }
-}
-
-impl Drop for MemTable {
-    fn drop(&mut self) {
-        log::trace!("Drop memtable");
     }
 }

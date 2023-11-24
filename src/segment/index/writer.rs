@@ -1,7 +1,6 @@
-use lz4_flex::compress_prepend_size;
-
 use super::IndexEntry;
 use crate::{disk_block::DiskBlock, serde::Serializable};
+use lz4_flex::compress_prepend_size;
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -142,7 +141,7 @@ impl Writer {
         Ok(())
     }
 
-    pub fn finalize(&mut self) -> std::io::Result<()> {
+    pub fn finish(&mut self) -> std::io::Result<()> {
         if self.block_counter > 0 {
             self.write_block()?;
         }

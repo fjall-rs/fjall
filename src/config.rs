@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
-
 use crate::Tree;
+use std::path::{Path, PathBuf};
 
 /// Tree configuration
 pub struct Config {

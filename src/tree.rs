@@ -1,21 +1,22 @@
-use std_semaphore::Semaphore;
-
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
     level::Levels,
-    memtable::{recovery::Strategy, MemTable},
+    memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
+    segment::{self, Segment},
+    time::unix_timestamp,
     tree_inner::TreeInner,
     Batch, Config, Value,
 };
 use std::{
     collections::HashMap,
     ops::RangeBounds,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{atomic::AtomicU64, Arc, Mutex, MutexGuard, RwLock},
 };
+use std_semaphore::Semaphore;
 
 /// A log-structured merge tree (LSM-tree/LSMT)
 ///
@@ -223,25 +224,105 @@ impl Tree {
         Ok(Self(Arc::new(inner)))
     }
 
+    fn recover_segments<P: AsRef<Path>>(
+        folder: &P,
+        block_cache: &Arc<BlockCache>,
+    ) -> crate::Result<HashMap<String, Arc<Segment>>> {
+        let folder = folder.as_ref();
+        let mut segments = HashMap::new();
+
+        if folder.exists() {
+            log::info!("Reading existing segments from folder {}", folder.display());
+
+            for dirent in std::fs::read_dir(folder)? {
+                let dirent = dirent?;
+                let path = dirent.path();
+
+                if path.is_dir() {
+                    if path.join("meta.json").exists() {
+                        let segment = Segment::recover(&path, Arc::clone(block_cache))?;
+                        segments.insert(segment.metadata.id.clone(), Arc::new(segment));
+                        log::debug!("Resurrected segment from {:?}", path);
+                    } else {
+                        log::warn!("Deleting unfinished segment: {}", path.to_string_lossy());
+                        std::fs::remove_dir_all(path)?;
+                    }
+                } else {
+                    log::debug!("Segment folder is not a folder after all");
+                }
+            }
+        }
+
+        Ok(segments)
+    }
+
     /// Tries to recover a tree from a folder.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
     fn recover(config: Config) -> crate::Result<Self> {
-        let (lsn, bytes_written, memtable) =
-            MemTable::from_file(config.path.join("log"), &Strategy::default()).unwrap();
+        // Flush orphaned logs
+
+        for dirent in std::fs::read_dir(&config.path.join("logs"))? {
+            let dirent = dirent?;
+
+            log::warn!(
+                "Flushing orphaned journal {} to segment",
+                dirent.path().to_string_lossy()
+            );
+
+            let (_, _, memtable) = MemTable::from_file(dirent.path()).unwrap();
+
+            let segment_id = unix_timestamp().as_nanos().to_string();
+
+            let segment_folder = config.path.join(format!("segments/{segment_id}"));
+
+            let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {
+                path: segment_folder.clone(),
+                evict_tombstones: false,
+                block_size: config.block_size,
+            })?;
+
+            for value in memtable.items.into_values() {
+                segment_writer.write(value)?;
+            }
+
+            segment_writer.finish()?;
+        }
+
+        // Restore memtable from current commit log
+
+        log::info!("Restoring memtable");
+
+        let (mut lsn, bytes_written, memtable) =
+            MemTable::from_file(config.path.join("log")).unwrap();
 
         dbg!("Loaded memtable with # entries:", memtable.len());
         dbg!("Commit Log size", bytes_written);
 
-        // TODO: read segments etc, get LSN
+        // Load segments
 
-        let log_path = config.path.join("log");
-
-        let levels = Levels::from_disk(&config.path.join("levels.json"), HashMap::new())?;
+        log::info!("Restoring segments");
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
+        let segments = Self::recover_segments(&config.path.join("segments"), &block_cache)?;
+
+        // Check if a segment has a higher seqno and then take it
+        lsn = lsn.max(
+            segments
+                .values()
+                .map(|x| x.metadata.seqnos.1)
+                .max()
+                .unwrap_or(0),
+        );
+
+        // Finalize Tree
+
+        log::info!("Loading level manifest");
+
+        let levels = Levels::from_disk(&config.path.join("levels.json"), segments)?;
+        let log_path = config.path.join("log");
 
         let inner = TreeInner {
             config,
@@ -253,6 +334,8 @@ impl Tree {
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
         };
+
+        log::info!("Tree loaded");
 
         Ok(Self(Arc::new(inner)))
     }
@@ -454,7 +537,6 @@ impl Tree {
             },
             bounds,
             segment_info,
-            Arc::clone(&self.block_cache),
         ))
     }
 
@@ -487,7 +569,6 @@ impl Tree {
             },
             prefix.into(),
             segment_info,
-            Arc::clone(&self.block_cache),
         ))
     }
 

@@ -1,14 +1,13 @@
-use std::{
-    path::Path,
-    sync::{Arc, MutexGuard, RwLockWriteGuard},
-};
-
 use crate::{
     commit_log::CommitLog,
     memtable::MemTable,
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
     time::unix_timestamp,
     Tree,
+};
+use std::{
+    path::Path,
+    sync::{Arc, MutexGuard, RwLockWriteGuard},
 };
 
 fn flush_worker(
@@ -35,13 +34,19 @@ fn flush_worker(
         segment_writer.write(value)?;
     }
 
-    segment_writer.finalize()?;
+    segment_writer.finish()?;
     log::debug!("Finalized segment write");
 
-    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer, &segment_folder);
+    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer);
     metadata.write_to_file()?;
 
-    match MetaIndex::from_file(&segment_folder, Arc::clone(&tree.block_cache)).map(Arc::new) {
+    match MetaIndex::from_file(
+        segment_id.into(),
+        &segment_folder,
+        Arc::clone(&tree.block_cache),
+    )
+    .map(Arc::new)
+    {
         Ok(meta_index) => {
             let created_segment = Segment {
                 block_index: meta_index,

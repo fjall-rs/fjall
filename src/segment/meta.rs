@@ -1,13 +1,11 @@
+use super::writer::Writer;
+use crate::{time::unix_timestamp, value::SeqNo};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
 };
-
-use crate::{time::unix_timestamp, value::SeqNo};
-
-use super::writer::Writer;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
@@ -54,10 +52,10 @@ pub struct Metadata {
 
 impl Metadata {
     /// Consumes a writer and its metadata to create the segment metadata
-    pub fn from_writer<P: Into<PathBuf>>(id: String, writer: Writer, path: P) -> Self {
+    pub fn from_writer(id: String, writer: Writer) -> Self {
         Self {
             id,
-            path: path.into(),
+            path: writer.opts.path,
             block_count: writer.block_count as u32,
             block_size: writer.opts.block_size,
             created_at: unix_timestamp().as_secs(),

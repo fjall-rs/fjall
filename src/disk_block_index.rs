@@ -1,6 +1,5 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::serde::{Deserializable, Serializable};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     collections::BTreeMap,
     io::{Read, Write},

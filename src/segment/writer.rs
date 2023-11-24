@@ -1,6 +1,7 @@
-use super::block::ValueBlock;
+use super::{block::ValueBlock, meta::Metadata};
 use crate::{
-    segment::index::writer::Writer as IndexWriter, serde::Serializable, value::SeqNo, Value,
+    segment::index::writer::Writer as IndexWriter, serde::Serializable, time::unix_timestamp,
+    value::SeqNo, Value,
 };
 use lz4_flex::compress_prepend_size;
 use std::{
@@ -9,6 +10,88 @@ use std::{
     path::PathBuf,
 };
 
+/// Like `Writer` but will rotate to a new segment, once a segment grows larger than `target_size`
+///
+/// This results in a sorted "run" of segments
+pub struct MultiWriter {
+    /// Target size of segments in bytes
+    ///
+    /// If a segment reaches the target size, a new one is started,
+    /// resulting in a sorted "run" of segments
+    pub target_size: u64,
+
+    pub opts: Options,
+    created_items: Vec<Metadata>,
+
+    pub current_segment_id: String,
+    pub writer: Writer,
+}
+
+impl MultiWriter {
+    /// Sets up a new `MultiWriter` at the given segments folder
+    pub fn new(target_size: u64, opts: Options) -> crate::Result<Self> {
+        let segment_id = unix_timestamp().as_micros().to_string();
+
+        let writer = Writer::new(Options {
+            path: opts.path.join(&segment_id),
+            evict_tombstones: opts.evict_tombstones,
+            block_size: opts.block_size,
+        })?;
+
+        Ok(Self {
+            target_size,
+            created_items: Vec::with_capacity(10),
+            opts,
+            current_segment_id: segment_id,
+            writer,
+        })
+    }
+
+    /// Flushes the current writer, stores its metadata, and sets up a new writer for the next segment
+    fn rotate(&mut self) -> crate::Result<()> {
+        // Flush segment, and start new one
+        self.writer.finish()?;
+
+        let new_segment_id = unix_timestamp().as_micros().to_string();
+
+        let new_writer = Writer::new(Options {
+            path: self.opts.path.join(&new_segment_id),
+            evict_tombstones: self.opts.evict_tombstones,
+            block_size: self.opts.block_size,
+        })?;
+
+        let old_writer = std::mem::replace(&mut self.writer, new_writer);
+        let old_segment_id = std::mem::replace(&mut self.current_segment_id, new_segment_id);
+
+        self.created_items
+            .push(Metadata::from_writer(old_segment_id, old_writer));
+
+        Ok(())
+    }
+
+    /// Writes an item
+    pub fn write(&mut self, item: Value) -> crate::Result<()> {
+        self.writer.write(item)?;
+
+        if self.writer.file_pos >= self.target_size {
+            self.rotate()?;
+        }
+
+        Ok(())
+    }
+
+    /// Finishes the last segment, making sure all data is written durably
+    ///
+    /// Returns the metadata of created segments
+    pub fn finish(mut self) -> crate::Result<Vec<Metadata>> {
+        self.writer.finish()?;
+        Ok(self.created_items)
+    }
+}
+
+/// Serializes and compresses values into blocks and writes them to disk
+///
+/// Also takes care of creating the block index
 pub struct Writer {
     pub opts: Options,
 
@@ -37,6 +120,7 @@ pub struct Options {
 }
 
 impl Writer {
+    /// Sets up a new `MultiWriter` at the given segments folder
     pub fn new(opts: Options) -> std::io::Result<Self> {
         std::fs::create_dir_all(&opts.path)?;
 
@@ -72,6 +156,9 @@ impl Writer {
         })
     }
 
+    /// Writes a compressed block to disk
+    ///
+    /// This is triggered when a `Writer::write` causes the buffer to grow to the configured `block_size`
     fn write_block(&mut self) -> std::io::Result<()> {
         debug_assert!(!self.chunk.items.is_empty());
 
@@ -124,6 +211,7 @@ impl Writer {
         Ok(())
     }
 
+    /// Writes an item
     pub fn write(&mut self, item: Value) -> std::io::Result<()> {
         if item.is_tombstone {
             if self.opts.evict_tombstones {
@@ -160,14 +248,15 @@ impl Writer {
         Ok(())
     }
 
-    pub fn finalize(&mut self) -> std::io::Result<()> {
+    /// Finishes the segment, making sure all data is written durably
+    pub fn finish(&mut self) -> std::io::Result<()> {
         if !self.chunk.items.is_empty() {
             self.write_block()?;
         }
 
         // TODO: bloom etc
 
-        self.index_writer.finalize()?;
+        self.index_writer.finish()?;
 
         self.block_writer.flush()?;
         self.block_writer.get_mut().sync_all()?;
@@ -218,15 +307,25 @@ mod tests {
             writer.write(item).unwrap();
         }
 
-        writer.finalize().unwrap();
+        writer.finish().unwrap();
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file().unwrap();
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
-        let iter = Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+        let meta_index = Arc::new(
+            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
+        );
+        let iter = Reader::new(
+            folder.join("blocks"),
+            metadata.id,
+            Arc::clone(&block_cache),
+            Arc::clone(&meta_index),
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(ITEM_COUNT, iter.count() as u64);
 

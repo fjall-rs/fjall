@@ -7,10 +7,11 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    block::ValueBlock, index::MetaIndex, prefix::PrefixedReader, range::Range, reader::Reader,
+    block::ValueBlock, index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range,
+    reader::Reader,
 };
 use crate::{block_cache::BlockCache, value::SeqNo, Value};
-use std::{ops::Bound, sync::Arc};
+use std::{ops::Bound, path::Path, sync::Arc};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
@@ -33,6 +34,23 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// Tries to recover a segment from a folder
+    pub fn recover<P: AsRef<Path>>(folder: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
+        let metadata = Metadata::from_disk(folder.as_ref().join("meta.json"))?;
+        let block_index = MetaIndex::from_file(
+            metadata.id.clone(),
+            folder.as_ref(),
+            Arc::clone(&block_cache),
+        )
+        .unwrap();
+
+        Ok(Self {
+            metadata,
+            block_index: Arc::new(block_index),
+            block_cache,
+        })
+    }
+
     /// Retrieves an item from the segment
     ///
     /// # Errors
@@ -43,7 +61,10 @@ impl Segment {
 
         Ok(match block_ref {
             Some(block_ref) => {
-                let real_block = match self.block_cache.get_disk_block(&block_ref.start_key) {
+                let real_block = match self
+                    .block_cache
+                    .get_disk_block(self.metadata.id.clone(), &block_ref.start_key)
+                {
                     Some(block) => block,
                     None => {
                         let block = ValueBlock::from_file_compressed(
@@ -55,8 +76,11 @@ impl Segment {
 
                         let block = Arc::new(block);
 
-                        self.block_cache
-                            .insert_disk_block(block_ref.start_key.clone(), Arc::clone(&block));
+                        self.block_cache.insert_disk_block(
+                            self.metadata.id.clone(),
+                            block_ref.start_key.clone(),
+                            Arc::clone(&block),
+                        );
 
                         block
                     }
@@ -80,8 +104,8 @@ impl Segment {
     pub fn len(&self) -> crate::Result<usize> {
         Ok(Reader::new(
             self.metadata.path.join("blocks"),
-            /* self.metadata.id.clone(),
-            Arc::clone(&self.block_index), */
+            self.metadata.id.clone(),
+            Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
             None,
             None,
@@ -97,8 +121,8 @@ impl Segment {
     pub fn iter(&self) -> crate::Result<Reader> {
         let reader = Reader::new(
             self.metadata.path.join("blocks"),
-            /* self.metadata.id.clone(),
-            Arc::clone(&self.block_index), */
+            self.metadata.id.clone(),
+            Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
             None,
             None,
@@ -115,9 +139,9 @@ impl Segment {
     pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> crate::Result<Range> {
         let range = Range::new(
             self.metadata.path.join("blocks"),
-            //self.metadata.id.clone(),
+            self.metadata.id.clone(),
+            Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
-            //Arc::clone(&self.block_cache),
             range,
         )?;
 
@@ -132,9 +156,9 @@ impl Segment {
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
         let reader = PrefixedReader::new(
             self.metadata.path.join("blocks"),
-            //self.metadata.id.clone(),
+            self.metadata.id.clone(),
+            Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
-            //Arc::clone(&self.block_cache),
             prefix,
         )?;
 

@@ -1,3 +1,5 @@
+use super::{block::ValueBlock, index::MetaIndex};
+use crate::{block_cache::BlockCache, Value};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::File,
@@ -6,18 +8,16 @@ use std::{
     sync::Arc,
 };
 
-use crate::Value;
-
-use super::{block::ValueBlock, index::MetaIndex};
-
 #[allow(clippy::module_name_repetitions)]
 /// Stupidly iterates through the entries of a segment
 /// This does not account for tombstones
 pub struct Reader {
     file_reader: BufReader<File>,
-    //segment_id: String,
     block_index: Arc<MetaIndex>,
-    // TODO: block_cache
+
+    segment_id: String,
+    block_cache: Arc<BlockCache>,
+
     blocks: HashMap<Vec<u8>, VecDeque<Value>>,
     processed_blocks: HashSet<Vec<u8>>,
 
@@ -28,7 +28,8 @@ pub struct Reader {
 impl Reader {
     pub fn new<P: AsRef<Path>>(
         file: P,
-        //segment_id: String,
+        segment_id: String,
+        block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
         start_offset: Option<&Vec<u8>>,
         end_offset: Option<&Vec<u8>>,
@@ -37,7 +38,10 @@ impl Reader {
 
         let mut iter = Self {
             file_reader,
-            // segment_id,
+
+            segment_id,
+            block_cache,
+
             block_index,
 
             blocks: HashMap::with_capacity(2),
@@ -66,23 +70,23 @@ impl Reader {
     fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
         Ok(
             if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key) {
-                /* if let Some(block) = self.block_cache.get(&self.segment_id, block_ref.offset) {
+                if let Some(block) = self
+                    .block_cache
+                    .get_disk_block(self.segment_id.clone(), &block_ref.start_key)
+                {
                     // Cache hit: Copy from block
-                    self.blocks.insert(key.to_vec(), block.items.clone());
-                } else { */
-                // Cache miss: load from disk
+                    self.blocks.insert(key.to_vec(), block.items.clone().into());
+                } else {
+                    // Cache miss: load from disk
 
-                self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
+                    self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
 
-                let block =
-                    ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)
-                        .unwrap();
+                    let block =
+                        ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)
+                            .unwrap();
 
-                self.blocks.insert(key.to_vec(), block.items.into());
-
-                /*   self.block_cache
-                .insert(self.segment_id.clone(), block_ref.offset, Arc::new(block)); */
-                /*  } */
+                    self.blocks.insert(key.to_vec(), block.items.into());
+                }
 
                 Some(())
             } else {
@@ -267,18 +271,27 @@ mod tests {
             writer.write(item).unwrap();
         }
 
-        writer.finalize().unwrap();
+        writer.finish().unwrap();
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
+        let meta_index = Arc::new(
+            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
+        );
 
         log::info!("Getting every item");
 
-        let mut iter =
-            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+        let mut iter = Reader::new(
+            folder.join("blocks"),
+            metadata.id.clone(),
+            Arc::clone(&block_cache),
+            Arc::clone(&meta_index),
+            None,
+            None,
+        )
+        .unwrap();
 
         for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
             let item = iter.next().unwrap().expect("item should exist");
@@ -287,8 +300,15 @@ mod tests {
 
         log::info!("Getting every item in reverse");
 
-        let mut iter =
-            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
+        let mut iter = Reader::new(
+            folder.join("blocks"),
+            metadata.id,
+            Arc::clone(&block_cache),
+            Arc::clone(&meta_index),
+            None,
+            None,
+        )
+        .unwrap();
 
         for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
             let item = iter.next_back().unwrap().expect("item should exist");

@@ -1,6 +1,4 @@
-use crate::{
-    block_cache::BlockCache, memtable::MemTable, merge::MergeIterator, segment::Segment, Value,
-};
+use crate::{memtable::MemTable, merge::MergeIterator, segment::Segment, Value};
 use std::{
     collections::BTreeMap,
     ops::Bound,
@@ -16,7 +14,6 @@ pub struct Range<'a> {
     guard: MemTableGuard<'a>,
     bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
     segments: Vec<Arc<Segment>>,
-    block_cache: Arc<BlockCache>,
 }
 
 impl<'a> Range<'a> {
@@ -24,13 +21,11 @@ impl<'a> Range<'a> {
         guard: MemTableGuard<'a>,
         bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
         segments: Vec<Arc<Segment>>,
-        block_cache: Arc<BlockCache>,
     ) -> Self {
         Self {
             guard,
             bounds,
             segments,
-            block_cache,
         }
     }
 }

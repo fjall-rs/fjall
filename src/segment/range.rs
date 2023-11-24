@@ -1,3 +1,4 @@
+use crate::block_cache::BlockCache;
 use crate::Value;
 
 use super::index::MetaIndex;
@@ -15,9 +16,9 @@ pub struct Range {
 impl Range {
     pub fn new<P: AsRef<Path>>(
         path: P,
-        //segment_id: String,
+        segment_id: String,
+        block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
-        //block_cache: Arc<BlockCache>,
         range: (Bound<Vec<u8>>, Bound<Vec<u8>>),
     ) -> crate::Result<Self> {
         let offset_lo = match range.start_bound() {
@@ -36,9 +37,9 @@ impl Range {
 
         let iterator = Reader::new(
             path,
-            // segment_id,
+            segment_id,
+            Arc::clone(&block_cache),
             block_index,
-            // block_cache,
             offset_lo.as_ref(),
             offset_hi.as_ref(),
         )?;
@@ -182,19 +183,23 @@ mod tests {
             writer.write(item).unwrap();
         }
 
-        writer.finalize().unwrap();
+        writer.finish().unwrap();
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
+        let meta_index = Arc::new(
+            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
+        );
 
         {
             log::info!("Getting every item");
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..),
             )
@@ -209,6 +214,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..),
             )
@@ -225,6 +232,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
             )
@@ -239,6 +248,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
             )
@@ -255,6 +266,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&(1_000_u64.to_be_bytes().to_vec()..)),
             )
@@ -269,6 +282,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(
                     &(1_000_u64.to_be_bytes().to_vec()..5_000_u64.to_be_bytes().to_vec()),
@@ -349,13 +364,15 @@ mod tests {
             writer.write(item).unwrap();
         }
 
-        writer.finalize().unwrap();
+        writer.finish().unwrap();
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer, std::path::Path::new("."));
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
         metadata.write_to_file().unwrap();
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(&folder, block_cache).unwrap());
+        let meta_index = Arc::new(
+            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
+        );
 
         let ranges: Vec<(Bound<u64>, Bound<u64>)> = vec![
             range_bounds_to_tuple(&(0..1_000)),
@@ -376,6 +393,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 bounds_u64_to_bytes(&bounds),
             )
@@ -397,6 +416,8 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
+                metadata.id.clone(),
+                Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 bounds_u64_to_bytes(&bounds),
             )

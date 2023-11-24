@@ -1,9 +1,8 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::{
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
     Value,
 };
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 /// Commit log marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.

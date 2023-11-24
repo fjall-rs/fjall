@@ -5,7 +5,6 @@ use crate::disk_block::{DiskBlock, Error as DiskBlockError};
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -69,12 +68,12 @@ pub type IndexBlock = DiskBlock<IndexEntry>;
 pub struct IndexBlockIndex(Arc<BlockCache>);
 
 impl IndexBlockIndex {
-    pub fn insert(&self, key: Vec<u8>, value: Arc<IndexBlock>) {
-        self.0.insert_index_block(key, value)
+    pub fn insert(&self, segment_id: String, key: Vec<u8>, value: Arc<IndexBlock>) {
+        self.0.insert_index_block(segment_id, key, value)
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<Arc<IndexBlock>> {
-        self.0.get_index_block(key)
+    pub fn get(&self, segment_id: String, key: &[u8]) -> Option<Arc<IndexBlock>> {
+        self.0.get_index_block(segment_id, key)
     }
 }
 
@@ -84,6 +83,9 @@ impl IndexBlockIndex {
 pub struct MetaIndex {
     /// Base folder path
     path: PathBuf,
+
+    /// Segment ID
+    segment_id: String,
 
     /// Level-0 index ("fence pointers"). Is read-only and always fully loaded.
     ///
@@ -209,7 +211,7 @@ impl MetaIndex {
         block_key: &[u8],
         block_ref: &DiskBlockReference,
     ) -> Arc<DiskBlock<IndexEntry>> {
-        match self.blocks.get(block_key) {
+        match self.blocks.get(self.segment_id.clone(), block_key) {
             Some(block) => block,
             None => {
                 let block = IndexBlock::from_file_compressed(
@@ -222,7 +224,11 @@ impl MetaIndex {
                 let block = Arc::new(block);
 
                 // Cache block
-                self.blocks.insert(block_key.into(), Arc::clone(&block));
+                self.blocks.insert(
+                    self.segment_id.clone(),
+                    block_key.into(),
+                    Arc::clone(&block),
+                );
 
                 block
             }
@@ -241,7 +247,7 @@ impl MetaIndex {
     pub fn get_latest(&self, key: &[u8]) -> Option<IndexEntry> {
         let (block_key, index_block_ref) = self.index.get_lower_bound_block_info(key)?;
 
-        let index_block = match self.blocks.get(block_key) {
+        let index_block = match self.blocks.get(self.segment_id.clone(), block_key) {
             Some(block) => block,
             None => {
                 let block = IndexBlock::from_file_compressed(
@@ -253,7 +259,11 @@ impl MetaIndex {
 
                 let block = Arc::new(block);
 
-                self.blocks.insert(block_key.clone(), Arc::clone(&block));
+                self.blocks.insert(
+                    self.segment_id.clone(),
+                    block_key.clone(),
+                    Arc::clone(&block),
+                );
 
                 block
             }
@@ -264,6 +274,7 @@ impl MetaIndex {
 
     // TODO: use this instead of from_file after writing Segment somehow...
     pub fn from_items<P: AsRef<Path>>(
+        segment_id: String,
         path: P,
         items: Vec<IndexEntry>,
         block_cache: Arc<BlockCache>,
@@ -282,6 +293,7 @@ impl MetaIndex {
 
         Self {
             path: path.as_ref().into(),
+            segment_id,
             index: DiskBlockIndex::new(tree),
             blocks: IndexBlockIndex(Arc::clone(&block_cache)),
             block_cache,
@@ -289,6 +301,7 @@ impl MetaIndex {
     }
 
     pub fn from_file<P: AsRef<Path>>(
+        segment_id: String,
         path: P,
         block_cache: Arc<BlockCache>,
     ) -> Result<Self, DiskBlockError> {
@@ -304,6 +317,6 @@ impl MetaIndex {
 
         debug_assert!(!index.items.is_empty());
 
-        Ok(Self::from_items(path, index.items, block_cache))
+        Ok(Self::from_items(segment_id, path, index.items, block_cache))
     }
 }

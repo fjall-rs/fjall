@@ -1,7 +1,7 @@
 use super::MemTable;
 use crate::{commit_log::reader::Error as CommitIterateError, serde::SerializeError, value::SeqNo};
 
-#[derive(Default)]
+/* #[derive(Default)]
 #[non_exhaustive]
 pub enum InvalidBatchMode {
     /// Returns an error if the batch is invalid
@@ -18,12 +18,12 @@ pub enum InvalidBatchMode {
 pub struct Strategy {
     pub last_batch_strategy: InvalidBatchMode,
     pub invalid_batch_strategy: InvalidBatchMode,
-}
+} */
 
 #[derive(Debug)]
 pub enum Error {
     MissingBatchEnd,
-    UnexpectedBatchStart,
+    // UnexpectedBatchStart,
     UnexpectedBatchEnd,
     ChecksumCheckFail,
     Io(std::io::Error),

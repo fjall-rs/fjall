@@ -1,27 +1,18 @@
-use crate::{
-    block_cache::BlockCache, merge::MergeIterator, range::MemTableGuard, segment::Segment, Value,
-};
+use crate::{merge::MergeIterator, range::MemTableGuard, segment::Segment, Value};
 use std::sync::Arc;
 
 pub struct Prefix<'a> {
     guard: MemTableGuard<'a>,
     prefix: Vec<u8>,
     segments: Vec<Arc<Segment>>,
-    block_cache: Arc<BlockCache>,
 }
 
 impl<'a> Prefix<'a> {
-    pub fn new(
-        guard: MemTableGuard<'a>,
-        prefix: Vec<u8>,
-        segments: Vec<Arc<Segment>>,
-        block_cache: Arc<BlockCache>,
-    ) -> Self {
+    pub fn new(guard: MemTableGuard<'a>, prefix: Vec<u8>, segments: Vec<Arc<Segment>>) -> Self {
         Self {
             guard,
             prefix,
             segments,
-            block_cache,
         }
     }
 }
