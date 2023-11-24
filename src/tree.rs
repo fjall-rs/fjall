@@ -351,10 +351,12 @@ impl Tree {
     ) -> crate::Result<()> {
         let mut memtable = self.active_memtable.write().expect("should lock");
 
-        //let mut lock = self.commit_log.lock().expect("should lock");
-        let bytes_written = commit_log.append(value.clone())?;
+        commit_log.append(value.clone())?;
 
-        memtable.insert(value, bytes_written as u32);
+        // NOTE: Add value key length to take into account the overhead of keys
+        // inside the MemTable
+        let size = value.size() + value.key.len();
+        memtable.insert(value, size as u32);
 
         if memtable.exceeds_threshold(self.config.max_memtable_size) {
             crate::flush::start(self, commit_log, memtable)?;
