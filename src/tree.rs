@@ -301,9 +301,6 @@ impl Tree {
         let (mut lsn, bytes_written, memtable) =
             MemTable::from_file(config.path.join("log")).unwrap();
 
-        dbg!("Loaded memtable with # entries:", memtable.len());
-        dbg!("Commit Log size", bytes_written);
-
         // Load segments
 
         log::info!("Restoring segments");
