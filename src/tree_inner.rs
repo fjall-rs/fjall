@@ -15,7 +15,10 @@ pub struct TreeInner {
     pub(crate) block_cache: Arc<BlockCache>,
     pub(crate) lsn: AtomicU64,
     pub(crate) levels: Arc<RwLock<Levels>>,
+
     pub(crate) flush_semaphore: Arc<Semaphore>,
+
+    pub(crate) compaction_semaphore: Arc<Semaphore>,
 }
 
 impl Drop for TreeInner {

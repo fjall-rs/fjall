@@ -199,7 +199,10 @@ impl Levels {
     }
 
     pub(crate) fn write_to_disk(&mut self) -> std::io::Result<()> {
+        log::trace!("Writing level manifest");
+
         self.writer.seek(std::io::SeekFrom::Start(0))?;
+        self.writer.get_mut().set_len(0)?;
         serde_json::to_writer_pretty(&mut self.writer, &self.levels).expect("should serialize");
 
         self.writer.flush()?;

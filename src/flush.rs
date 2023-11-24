@@ -1,5 +1,6 @@
 use crate::{
     commit_log::CommitLog,
+    compaction::worker::start_compaction_thread,
     memtable::MemTable,
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
     time::unix_timestamp,
@@ -63,14 +64,13 @@ fn flush_worker(
             let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
             memtable_lock.remove(segment_id);
             drop(memtable_lock);
+
+            std::fs::remove_file(old_commit_log_path)?;
         }
         Err(error) => {
             log::error!("Flush error: {:?}", error);
         }
     }
-
-    tree.flush_semaphore.release();
-    std::fs::remove_file(old_commit_log_path)?;
 
     log::debug!("Flush done");
 
@@ -82,8 +82,9 @@ pub fn start(
     mut commit_log_lock: MutexGuard<CommitLog>,
     mut memtable_lock: RwLockWriteGuard<MemTable>,
 ) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
-    log::debug!("Preparing memtable flush thread");
+    log::trace!("Preparing memtable flush thread");
     tree.flush_semaphore.acquire();
+    log::trace!("Got flush semaphore");
 
     let segment_id = unix_timestamp().as_micros().to_string();
     let old_commit_log_path = tree.config.path.join(format!("logs/{segment_id}"));
@@ -100,6 +101,17 @@ pub fn start(
     let tree = tree.clone();
 
     Ok(std::thread::spawn(move || {
-        flush_worker(&tree, &old_memtable, &segment_id, &old_commit_log_path)
+        if let Err(error) = flush_worker(&tree, &old_memtable, &segment_id, &old_commit_log_path) {
+            log::error!("Flush error: {error:?}");
+        };
+
+        log::trace!("Post flush semaphore");
+        tree.flush_semaphore.release();
+
+        // Flush done, so notify compaction that a segment was created
+        tree.compaction_semaphore.release();
+        start_compaction_thread(&tree)?;
+
+        Ok(())
     }))
 }

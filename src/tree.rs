@@ -211,6 +211,7 @@ impl Tree {
             lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            compaction_semaphore: Arc::new(Semaphore::new(0)), // TODO: config
         };
 
         // Create subfolders
@@ -289,6 +290,8 @@ impl Tree {
             }
 
             segment_writer.finish()?;
+
+            std::fs::remove_file(dirent.path())?;
         }
 
         // Restore memtable from current commit log
@@ -333,6 +336,7 @@ impl Tree {
             lsn: AtomicU64::new(lsn),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            compaction_semaphore: Arc::new(Semaphore::new(0)), // TODO: config
         };
 
         log::info!("Tree loaded");
@@ -383,10 +387,7 @@ impl Tree {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        /* let start = std::time::Instant::now(); */
-        // let mut lock = self.active_memtable.write().expect("should lock");
         let commit_log = self.commit_log.lock().expect("should lock");
-        /* eprintln!("locked commit log in {}ns", start.elapsed().as_nanos()); */
 
         let value = Value::new(
             key,
@@ -395,9 +396,7 @@ impl Tree {
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
 
-        /* let start = std::time::Instant::now(); */
         self.append_entry(commit_log, value)?;
-        /* eprintln!("appended entry in {}ns", start.elapsed().as_nanos()); */
 
         Ok(())
     }

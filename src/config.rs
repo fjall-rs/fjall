@@ -1,5 +1,11 @@
-use crate::Tree;
-use std::path::{Path, PathBuf};
+use crate::{
+    compaction::{tiered, CompactionStrategy},
+    Tree,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// Tree configuration
 pub struct Config {
@@ -27,6 +33,11 @@ pub struct Config {
     ///
     /// Defaults to 7, like RocksDB
     pub(crate) levels: u8,
+
+    /// Compaction strategy to use
+    ///
+    /// Defaults to SizeTiered
+    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
 impl Default for Config {
@@ -37,6 +48,7 @@ impl Default for Config {
             block_cache_size: 1_000,
             max_memtable_size: 128 * 1_024 * 1_024,
             levels: 7,
+            compaction_strategy: Arc::new(tiered::Strategy::default()),
         }
     }
 }
@@ -81,6 +93,16 @@ impl Config {
     #[must_use]
     pub fn block_cache_size(mut self, block_cache_size: u32) -> Self {
         self.block_cache_size = block_cache_size;
+        self
+    }
+
+    /// Sets the compaction strategy to use (default: Tiered compaction)
+    #[must_use]
+    pub fn compaction_strategy(
+        mut self,
+        strategy: Arc<dyn CompactionStrategy + Send + Sync>,
+    ) -> Self {
+        self.compaction_strategy = strategy;
         self
     }
 

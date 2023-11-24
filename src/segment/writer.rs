@@ -49,6 +49,8 @@ impl MultiWriter {
 
     /// Flushes the current writer, stores its metadata, and sets up a new writer for the next segment
     fn rotate(&mut self) -> crate::Result<()> {
+        log::debug!("Rotating segment writer");
+
         // Flush segment, and start new one
         self.writer.finish()?;
 
@@ -84,7 +86,9 @@ impl MultiWriter {
     ///
     /// Returns the metadata of created segments
     pub fn finish(mut self) -> crate::Result<Vec<Metadata>> {
-        self.writer.finish()?;
+        self.rotate()?;
+        // TODO: this causes empty segments...
+
         Ok(self.created_items)
     }
 }

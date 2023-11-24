@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{segment::Segment, Value};
 
 /// This iterator can iterate through N segments simultaneously in order
@@ -30,7 +32,7 @@ impl<'a> MergeIterator<'a> {
         }
     }
 
-    pub fn from_segments(segments: &Vec<&Segment>) -> crate::Result<Box<MergeIterator<'a>>> {
+    pub fn from_segments(segments: &Vec<Arc<Segment>>) -> crate::Result<Box<MergeIterator<'a>>> {
         let mut iter_vec: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>>>> =
             Vec::new();
 
