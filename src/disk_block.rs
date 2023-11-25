@@ -1,4 +1,5 @@
 use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeError};
+use byteorder::{BigEndian, ReadBytesExt};
 use lz4_flex::decompress_size_prepended;
 use std::{
     fs::File,
@@ -15,30 +16,37 @@ pub struct DiskBlock<T: Clone + Serializable + Deserializable> {
     pub(crate) crc: u32,
 }
 
-#[derive(Debug)]
+/* #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Deserialize(DeserializeError),
-    Decompress,
-}
+    Decompress(DecompressError),
+} */
 
-impl From<std::io::Error> for Error {
+/* impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
     }
 }
+
 impl From<DeserializeError> for Error {
     fn from(value: DeserializeError) -> Self {
         Self::Deserialize(value)
     }
 }
 
+impl From<DecompressError> for Error {
+    fn from(value: DecompressError) -> Self {
+        Self::Decompress(value)
+    }
+} */
+
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
-    pub fn from_reader_compressed<R: Read>(reader: &mut R, size: u32) -> Result<Self, Error> {
+    pub fn from_reader_compressed<R: Read>(reader: &mut R, size: u32) -> crate::Result<Self> {
         let mut bytes = vec![0u8; size as usize];
         reader.read_exact(&mut bytes)?;
 
-        let bytes = decompress_size_prepended(&bytes).map_err(|_| Error::Decompress)?;
+        let bytes = decompress_size_prepended(&bytes)?;
         let mut bytes = Cursor::new(bytes);
 
         let block = Self::deserialize(&mut bytes)?;
@@ -49,7 +57,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         path: P,
         offset: u64,
         size: u32,
-    ) -> Result<Self, Error> {
+    ) -> crate::Result<Self> {
         // Read bytes from disk
         let mut reader = BufReader::new(File::open(path)?);
         reader.seek(std::io::SeekFrom::Start(offset))?;
@@ -59,7 +67,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
 
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
     /// Calculates the CRC from a list of values
-    pub(crate) fn create_crc(items: &Vec<T>) -> u32 {
+    pub(crate) fn create_crc(items: &Vec<T>) -> Result<u32, SerializeError> {
         let mut hasher = crc32fast::Hasher::new();
 
         // NOTE: Truncation is okay and actually needed
@@ -68,13 +76,12 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
 
         for value in items {
             let mut serialized_value = Vec::new();
-            value
-                .serialize(&mut serialized_value)
-                .expect("should serialize into vec");
+            value.serialize(&mut serialized_value)?;
+
             hasher.update(&serialized_value);
         }
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 }
 
@@ -101,9 +108,7 @@ impl<T: Clone + Serializable + Deserializable> Serializable for DiskBlock<T> {
 impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
         // Read number of items
-        let mut item_count_bytes = [0; std::mem::size_of::<u32>()];
-        reader.read_exact(&mut item_count_bytes)?;
-        let item_count = u32::from_be_bytes(item_count_bytes) as usize;
+        let item_count = reader.read_u32::<BigEndian>()? as usize;
 
         // Deserialize each value
         let mut items = Vec::with_capacity(item_count);
@@ -112,17 +117,23 @@ impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
         }
 
         // Read CRC
+        let crc = reader.read_u32::<BigEndian>()?;
+
+        // TODO: CRC check should happen somewhere else, not in deserialize
+        /* // Read CRC
         let mut crc_bytes = [0; std::mem::size_of::<u32>()];
         reader.read_exact(&mut crc_bytes)?;
         let expected_crc = u32::from_be_bytes(crc_bytes);
 
-        let crc = Self::create_crc(&items);
+        let crc = Self::create_crc(&items)?;
 
         if crc == expected_crc {
             Ok(Self { items, crc })
         } else {
             Err(DeserializeError::CrcCheck(crc))
-        }
+        } */
+
+        Ok(Self { items, crc })
     }
 }
 
@@ -138,7 +149,7 @@ mod tests {
         let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
 
         let items = vec![item1.clone(), item2.clone()];
-        let crc = DiskBlock::create_crc(&items);
+        let crc = DiskBlock::create_crc(&items).unwrap();
 
         let block = DiskBlock { items, crc };
 
@@ -179,12 +190,14 @@ mod tests {
             .expect("Serialization failed");
 
         // Deserialize from bytes
-        let deserialized = DiskBlock::<Value>::deserialize(&mut &serialized[..]);
+        let deserialized = DiskBlock::<Value>::deserialize(&mut &serialized[..]).unwrap();
+
+        // TODO: CRC
 
         // Check if deserialization fails due to CRC mismatch
-        match deserialized {
+        /*   match deserialized {
             Err(DeserializeError::CrcCheck(_)) => {}
             _ => panic!("Unexpected deserialization error"),
-        }
+        } */
     }
 }

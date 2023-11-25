@@ -19,7 +19,7 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub fn new<P: AsRef<Path>>(path: P, block_size: u32) -> std::io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: P, block_size: u32) -> crate::Result<Self> {
         let block_writer = File::create(path.as_ref().join("index_blocks"))?;
         let block_writer = BufWriter::with_capacity(u16::MAX.into(), block_writer);
 
@@ -48,10 +48,10 @@ impl Writer {
         })
     }
 
-    fn write_block(&mut self) -> std::io::Result<()> {
+    fn write_block(&mut self) -> crate::Result<()> {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
-        self.block_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.block_chunk.items);
+        self.block_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.block_chunk.items)?;
         self.block_chunk.serialize(&mut bytes).unwrap();
 
         // Compress using LZ4
@@ -92,7 +92,7 @@ impl Writer {
         start_key: Vec<u8>,
         offset: u64,
         size: u32,
-    ) -> std::io::Result<()> {
+    ) -> crate::Result<()> {
         let reference = IndexEntry {
             offset,
             size,
@@ -109,10 +109,10 @@ impl Writer {
         Ok(())
     }
 
-    fn write_meta_index(&mut self) -> std::io::Result<()> {
+    fn write_meta_index(&mut self) -> crate::Result<()> {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
-        self.index_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.index_chunk.items);
+        self.index_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.index_chunk.items)?;
         self.index_chunk.serialize(&mut bytes).unwrap();
 
         // Compress using LZ4
@@ -131,7 +131,7 @@ impl Writer {
         Ok(())
     }
 
-    fn flush_writers(&mut self) -> std::io::Result<()> {
+    fn flush_writers(&mut self) -> crate::Result<()> {
         // fsync data blocks
         self.block_writer.flush()?;
         self.block_writer.get_mut().sync_all()?;
@@ -143,7 +143,7 @@ impl Writer {
         Ok(())
     }
 
-    pub fn finish(&mut self) -> std::io::Result<()> {
+    pub fn finish(&mut self) -> crate::Result<()> {
         if self.block_counter > 0 {
             self.write_block()?;
         }

@@ -1,6 +1,6 @@
 use super::{block::ValueBlock, meta::Metadata};
 use crate::{
-    id::generate_table_id, segment::index::writer::Writer as IndexWriter, serde::Serializable,
+    id::generate_segment_id, segment::index::writer::Writer as IndexWriter, serde::Serializable,
     value::SeqNo, Value,
 };
 use lz4_flex::compress_prepend_size;
@@ -30,7 +30,7 @@ pub struct MultiWriter {
 impl MultiWriter {
     /// Sets up a new `MultiWriter` at the given segments folder
     pub fn new(target_size: u64, opts: Options) -> crate::Result<Self> {
-        let segment_id = generate_table_id();
+        let segment_id = generate_segment_id();
 
         let writer = Writer::new(Options {
             path: opts.path.join(&segment_id),
@@ -54,7 +54,7 @@ impl MultiWriter {
         // Flush segment, and start new one
         self.writer.finish()?;
 
-        let new_segment_id = generate_table_id();
+        let new_segment_id = generate_segment_id();
 
         let new_writer = Writer::new(Options {
             path: self.opts.path.join(&new_segment_id),
@@ -86,8 +86,12 @@ impl MultiWriter {
     ///
     /// Returns the metadata of created segments
     pub fn finish(mut self) -> crate::Result<Vec<Metadata>> {
-        self.rotate()?;
-        // TODO: this causes empty segments...
+        // Finish writer and consume it
+        // Don't use `rotate` because that will start a new writer, creating unneeded, empty segments
+        self.writer.finish()?;
+
+        self.created_items
+            .push(Metadata::from_writer(self.current_segment_id, self.writer));
 
         Ok(self.created_items)
     }
@@ -125,7 +129,7 @@ pub struct Options {
 
 impl Writer {
     /// Sets up a new `MultiWriter` at the given segments folder
-    pub fn new(opts: Options) -> std::io::Result<Self> {
+    pub fn new(opts: Options) -> crate::Result<Self> {
         std::fs::create_dir_all(&opts.path)?;
 
         let block_writer = File::create(opts.path.join("blocks"))?;
@@ -163,7 +167,7 @@ impl Writer {
     /// Writes a compressed block to disk
     ///
     /// This is triggered when a `Writer::write` causes the buffer to grow to the configured `block_size`
-    fn write_block(&mut self) -> std::io::Result<()> {
+    fn write_block(&mut self) -> crate::Result<()> {
         debug_assert!(!self.chunk.items.is_empty());
 
         let uncompressed_chunk_size = self
@@ -177,7 +181,7 @@ impl Writer {
 
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
-        self.chunk.crc = ValueBlock::create_crc(&self.chunk.items);
+        self.chunk.crc = ValueBlock::create_crc(&self.chunk.items)?;
         self.chunk.serialize(&mut bytes).unwrap();
 
         // Compress using LZ4
@@ -216,7 +220,7 @@ impl Writer {
     }
 
     /// Writes an item
-    pub fn write(&mut self, item: Value) -> std::io::Result<()> {
+    pub fn write(&mut self, item: Value) -> crate::Result<()> {
         if item.is_tombstone {
             if self.opts.evict_tombstones {
                 return Ok(());
@@ -253,7 +257,7 @@ impl Writer {
     }
 
     /// Finishes the segment, making sure all data is written durably
-    pub fn finish(&mut self) -> std::io::Result<()> {
+    pub fn finish(&mut self) -> crate::Result<()> {
         if !self.chunk.items.is_empty() {
             self.write_block()?;
         }

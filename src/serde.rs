@@ -13,9 +13,6 @@ pub enum DeserializeError {
     /// I/O error
     Io(std::io::Error),
 
-    /// The CRC value does not match the expected value
-    CrcCheck(u32),
-
     /// Invalid enum tag
     InvalidTag(u8),
 }

@@ -1,7 +1,7 @@
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
-    id::generate_table_id,
+    id::generate_segment_id,
     level::Levels,
     memtable::MemTable,
     prefix::Prefix,
@@ -276,7 +276,7 @@ impl Tree {
 
             let (_, _, memtable) = MemTable::from_file(dirent.path()).unwrap();
 
-            let segment_id = generate_table_id();
+            let segment_id = generate_segment_id();
             let segment_folder = config.path.join(format!("segments/{segment_id}"));
 
             let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {

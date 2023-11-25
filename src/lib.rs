@@ -46,6 +46,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
 #![allow(clippy::missing_const_for_fn)]
+#![warn(clippy::expect_used, clippy::unwrap_used)]
 
 mod batch;
 mod block_cache;

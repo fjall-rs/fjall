@@ -1,3 +1,5 @@
+use lz4_flex::block::DecompressError;
+
 use crate::{serde::DeserializeError, SerializeError};
 
 /// Represents errors that can occur in the LSM-tree
@@ -11,6 +13,11 @@ pub enum Error {
 
     /// Deserialization failed
     Deserialize(DeserializeError),
+
+    /// Decompression failed
+    Decompress(DecompressError),
+    /*  /// The CRC value does not match the expected value
+    // CrcCheck(u32), */
 }
 
 impl std::fmt::Display for Error {
@@ -36,6 +43,12 @@ impl From<SerializeError> for Error {
 impl From<DeserializeError> for Error {
     fn from(value: DeserializeError) -> Self {
         Self::Deserialize(value)
+    }
+}
+
+impl From<DecompressError> for Error {
+    fn from(value: DecompressError) -> Self {
+        Self::Decompress(value)
     }
 }
 

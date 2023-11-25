@@ -65,13 +65,10 @@ pub struct DiskBlockIndex {
 }
 
 impl DiskBlockIndex {
+    /// Creates a new block index
     pub fn new(data: BTreeMap<Vec<u8>, DiskBlockReference>) -> Self {
         Self { data }
     }
-
-    /*  pub fn get(&self, key: &[u8]) -> Option<&DiskBlockReference> {
-        self.data.get(key)
-    } */
 
     /// Returns the first key that is not covered by the given prefix anymore
     pub(crate) fn get_prefix_upper_bound(
@@ -88,6 +85,7 @@ impl DiskBlockIndex {
         }
     }
 
+    /// Returns the block which contains an item with a given key
     pub(crate) fn get_lower_bound_block_info(
         &self,
         key: &[u8],
@@ -95,20 +93,17 @@ impl DiskBlockIndex {
         self.data.range(..=key.to_vec()).next_back()
     }
 
-    /* pub(crate) fn get_upper_bound_block_info(
-        &self,
-        key: &[u8],
-    ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
-        self.data.range(key.to_vec()..).next()
-    } */
-
     /// Returns the key of the first block
     pub fn get_first_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
+        // NOTE: Index never empty
+        #[allow(clippy::unwrap_used)]
         self.data.iter().next().unwrap()
     }
 
     /// Returns the key of the last block
     pub fn get_last_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
+        // NOTE: Index never empty
+        #[allow(clippy::unwrap_used)]
         self.data.iter().next_back().unwrap()
     }
 

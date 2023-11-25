@@ -1,7 +1,7 @@
 pub mod writer;
 
 use crate::block_cache::BlockCache;
-use crate::disk_block::{DiskBlock, Error as DiskBlockError};
+use crate::disk_block::DiskBlock;
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -235,13 +235,6 @@ impl MetaIndex {
         }
     }
 
-    /*    /// Gets the reference to a disk block that should contain the given item
-    pub fn get_ref(&self, key: &[u8]) -> Option<IndexEntry> {
-        let (block_key, block_ref) = self.index.get_lower_bound_block_info(key)?;
-        let index_block = self.load_index_block(block_key, block_ref);
-        index_block.get_lower_bound_block_info(key).cloned()
-    } */
-
     // TODO: use this in Segment::get(_latest) instead
     // TODO: need to use prefix iterator and get last seqno
     pub fn get_latest(&self, key: &[u8]) -> Option<IndexEntry> {
@@ -304,13 +297,13 @@ impl MetaIndex {
         segment_id: String,
         path: P,
         block_cache: Arc<BlockCache>,
-    ) -> Result<Self, DiskBlockError> {
+    ) -> crate::Result<Self> {
         log::debug!("Reading block index from {}", path.as_ref().display());
 
         let size = std::fs::metadata(path.as_ref().join("index"))?.len();
         let index = IndexBlock::from_file_compressed(path.as_ref().join("index"), 0, size as u32)?;
 
-        let crc = DiskBlock::create_crc(&index.items);
+        let crc = DiskBlock::create_crc(&index.items)?;
 
         // TODO: no panic
         assert!(crc == index.crc, "crc fail");
