@@ -19,9 +19,9 @@ pub struct Config {
     /// Defaults to 4 KiB (4096 bytes)
     pub(crate) block_size: u32,
 
-    /// Block cache size in block
+    /// Block cache size in # blocks
     ///
-    /// Defaults to 1,000
+    /// Defaults to 1,024
     pub(crate) block_cache_size: u32,
 
     /// [`MemTable`] maximum size in bytes
@@ -45,7 +45,7 @@ impl Default for Config {
         Self {
             path: ".lsm.data".into(),
             block_size: 4_096,
-            block_cache_size: 1_000,
+            block_cache_size: 1_024,
             max_memtable_size: 128 * 1_024 * 1_024,
             levels: 7,
             compaction_strategy: Arc::new(tiered::Strategy::default()),

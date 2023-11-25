@@ -12,14 +12,14 @@ type Item = Either<Arc<ValueBlock>, Arc<IndexBlock>>;
 
 pub struct BlockCache {
     data: Cache<Key, Item>,
-    //  capacity: usize,
+    capacity: usize,
 }
 
 impl BlockCache {
     pub fn new(capacity: usize) -> Self {
         Self {
             data: Cache::new(capacity),
-            //  capacity,
+            capacity,
         }
     }
 
@@ -28,11 +28,15 @@ impl BlockCache {
     }
 
     pub fn insert_disk_block(&self, segment_id: String, key: Vec<u8>, value: Arc<ValueBlock>) {
-        self.data.insert((0, segment_id, key), Left(value));
+        if self.capacity > 0 {
+            self.data.insert((0, segment_id, key), Left(value));
+        }
     }
 
     pub fn insert_index_block(&self, segment_id: String, key: Vec<u8>, value: Arc<IndexBlock>) {
-        self.data.insert((1, segment_id, key), Right(value));
+        if self.capacity > 0 {
+            self.data.insert((1, segment_id, key), Right(value));
+        }
     }
 
     pub fn get_disk_block(&self, segment_id: String, key: &[u8]) -> Option<Arc<ValueBlock>> {

@@ -1,9 +1,9 @@
 use crate::{
     commit_log::CommitLog,
     compaction::worker::start_compaction_thread,
+    id::generate_table_id,
     memtable::MemTable,
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
-    time::unix_timestamp,
     Tree,
 };
 use std::{
@@ -86,7 +86,7 @@ pub fn start(
     tree.flush_semaphore.acquire();
     log::trace!("Got flush semaphore");
 
-    let segment_id = unix_timestamp().as_micros().to_string();
+    let segment_id = generate_table_id();
     let old_commit_log_path = tree.config.path.join(format!("logs/{segment_id}"));
 
     std::fs::rename(tree.config.path.join("log"), old_commit_log_path.clone())?;

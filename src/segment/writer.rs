@@ -1,6 +1,6 @@
 use super::{block::ValueBlock, meta::Metadata};
 use crate::{
-    segment::index::writer::Writer as IndexWriter, serde::Serializable, time::unix_timestamp,
+    id::generate_table_id, segment::index::writer::Writer as IndexWriter, serde::Serializable,
     value::SeqNo, Value,
 };
 use lz4_flex::compress_prepend_size;
@@ -30,7 +30,7 @@ pub struct MultiWriter {
 impl MultiWriter {
     /// Sets up a new `MultiWriter` at the given segments folder
     pub fn new(target_size: u64, opts: Options) -> crate::Result<Self> {
-        let segment_id = unix_timestamp().as_micros().to_string();
+        let segment_id = generate_table_id();
 
         let writer = Writer::new(Options {
             path: opts.path.join(&segment_id),
@@ -54,7 +54,7 @@ impl MultiWriter {
         // Flush segment, and start new one
         self.writer.finish()?;
 
-        let new_segment_id = unix_timestamp().as_micros().to_string();
+        let new_segment_id = generate_table_id();
 
         let new_writer = Writer::new(Options {
             path: self.opts.path.join(&new_segment_id),

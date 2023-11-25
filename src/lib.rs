@@ -57,6 +57,7 @@ mod disk_block_index;
 mod either;
 mod error;
 mod flush;
+mod id;
 mod level;
 mod memtable;
 mod merge;
