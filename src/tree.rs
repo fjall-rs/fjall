@@ -99,14 +99,14 @@ impl Tree {
     #[doc(hidden)]
     #[must_use]
     pub fn is_compacting(&self) -> bool {
-        let levels = self.levels.read().expect("should lock");
+        let levels = self.levels.read().expect("lock is poisoned");
         levels.is_compacting()
     }
 
     /// Counts the amount of segments currently in the tree
     #[must_use]
     pub fn segment_count(&self) -> usize {
-        self.levels.read().expect("should lock").len()
+        self.levels.read().expect("lock is poisoned").len()
     }
 
     /// Sums the disk space usage of the tree (segments + commit log)
@@ -115,13 +115,13 @@ impl Tree {
         let segment_size: u64 = self
             .levels
             .read()
-            .expect("should lock")
+            .expect("lock is poisoned")
             .get_all_segments()
             .values()
             .map(|x| x.metadata.file_size)
             .sum();
 
-        let memtable = self.active_memtable.read().expect("should lock");
+        let memtable = self.active_memtable.read().expect("lock is poisoned");
 
         segment_size + u64::from(memtable.size_in_bytes)
     }
@@ -154,7 +154,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn len(&self) -> crate::Result<usize> {
         Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
     }
@@ -298,8 +298,7 @@ impl Tree {
 
         log::info!("Restoring memtable");
 
-        let (mut lsn, bytes_written, memtable) =
-            MemTable::from_file(config.path.join("log")).unwrap();
+        let (mut lsn, _, memtable) = MemTable::from_file(config.path.join("log")).unwrap();
 
         // Load segments
 
@@ -346,7 +345,7 @@ impl Tree {
         mut commit_log: MutexGuard<CommitLog>,
         value: Value,
     ) -> crate::Result<()> {
-        let mut memtable = self.active_memtable.write().expect("should lock");
+        let mut memtable = self.active_memtable.write().expect("lock is poisoned");
 
         commit_log.append(value.clone())?;
 
@@ -386,7 +385,7 @@ impl Tree {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        let commit_log = self.commit_log.lock().expect("should lock");
+        let commit_log = self.commit_log.lock().expect("lock is poisoned");
 
         let value = Value::new(
             key,
@@ -425,7 +424,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn remove<K: Into<Vec<u8>>>(&self, key: K) -> crate::Result<()> {
-        let commit_log = self.commit_log.lock().expect("should lock");
+        let commit_log = self.commit_log.lock().expect("lock is poisoned");
 
         let value = Value::new(
             key,
@@ -492,7 +491,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn iter(&self) -> crate::Result<Range<'_>> {
         self.range::<Vec<u8>, _>(..)
     }
@@ -501,7 +500,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
         use std::ops::Bound::{self, Excluded, Included, Unbounded};
 
@@ -530,8 +529,8 @@ impl Tree {
 
         Ok(Range::new(
             crate::range::MemTableGuard {
-                active: self.active_memtable.read().expect("should lock"),
-                immutable: self.immutable_memtables.read().expect("should lock"),
+                active: self.active_memtable.read().expect("lock is poisoned"),
+                immutable: self.immutable_memtables.read().expect("lock is poisoned"),
             },
             bounds,
             segment_info,
@@ -542,7 +541,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error happens
+    /// Will return `Err` if an IO error occurs
     pub fn prefix<K: AsRef<[u8]>>(&self, prefix: &K) -> std::io::Result<Prefix<'_>> {
         use std::ops::Bound::{self};
 
@@ -653,40 +652,35 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
-        let lock = self.active_memtable.read().expect("should lock");
-
-        if let Some(item) = lock.get(&key) {
-            return if item.is_tombstone {
-                Ok(None)
+        fn ignore_tombstone_value(item: Value) -> Option<Value> {
+            if item.is_tombstone {
+                None
             } else {
-                Ok(Some(item))
-            };
+                Some(item)
+            }
         }
 
-        let memtable_lock = self.immutable_memtables.read().expect("should lock");
+        let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
+
+        if let Some(item) = memtable_lock.get(&key) {
+            return Ok(ignore_tombstone_value(item));
+        }
+        drop(memtable_lock);
+
+        let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
         for (_, memtable) in memtable_lock.iter().rev() {
             if let Some(item) = memtable.get(&key) {
-                return if item.is_tombstone {
-                    Ok(None)
-                } else {
-                    Ok(Some(item))
-                };
+                return Ok(ignore_tombstone_value(item));
             }
         }
         drop(memtable_lock);
 
-        let segment_lock = self.levels.read().expect("should lock");
+        let segment_lock = self.levels.read().expect("lock is poisoned");
         let segments = &segment_lock.get_all_segments_flattened();
 
         for segment in segments {
-            let item = segment.get(&key)?;
-
-            if let Some(ref entry) = item {
-                return if entry.is_tombstone {
-                    Ok(None)
-                } else {
-                    Ok(item)
-                };
+            if let Some(item) = segment.get(&key)? {
+                return Ok(ignore_tombstone_value(item));
             }
         }
 
@@ -707,7 +701,7 @@ impl Tree {
     ) -> crate::Result<Option<Vec<u8>>> {
         // TODO: fully lock all shards
 
-        let commit_log_lock = self.commit_log.lock().expect("should lock");
+        let commit_log_lock = self.commit_log.lock().expect("lock is poisoned");
 
         Ok(match self.get(key)? {
             Some(item) => {
@@ -743,7 +737,7 @@ impl Tree {
     ) -> crate::Result<Option<Vec<u8>>> {
         // TODO: fully lock all shards
 
-        let commit_log_lock = self.commit_log.lock().expect("should lock");
+        let commit_log_lock = self.commit_log.lock().expect("lock is poisoned");
 
         Ok(match self.get(key)? {
             Some(item) => {
@@ -770,8 +764,8 @@ impl Tree {
     pub fn force_memtable_flush(
         &self,
     ) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
-        let commit_log = self.commit_log.lock().expect("should lock");
-        let memtable = self.active_memtable.write().expect("should lock");
+        let commit_log = self.commit_log.lock().expect("lock is poisoned");
+        let memtable = self.active_memtable.write().expect("lock is poisoned");
 
         crate::flush::start(self, commit_log, memtable)
     }
@@ -808,7 +802,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn flush(&self) -> crate::Result<()> {
-        let mut lock = self.commit_log.lock().expect("should lock");
+        let mut lock = self.commit_log.lock().expect("lock is poisoned");
         lock.flush()?;
         Ok(())
     }

@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+pub use tiered::Strategy as SizeTiered;
 
 /// Tree configuration
 pub struct Config {
@@ -62,14 +63,18 @@ impl Config {
         }
     }
 
-    /// Sets the compaction strategy to use (default: Tiered compaction)
+    /// Sets the amount of levels of the LSM tree (depth of tree)
+    ///
+    /// Defaults to 7, like RocksDB
     #[must_use]
     pub fn level_count(mut self, count: u8) -> Self {
         self.levels = count;
         self
     }
 
-    /// Sets the maximum memtable size (default: 128 MiB)
+    /// Sets the maximum memtable size
+    ///
+    /// Defaults to 128 MiB
     #[must_use]
     pub fn max_memtable_size(mut self, bytes: u32) -> Self {
         self.max_memtable_size = bytes;
@@ -77,6 +82,8 @@ impl Config {
     }
 
     /// Sets the block size
+    ///
+    /// Defaults to 4 KiB (4096 bytes)
     ///
     /// # Panics
     ///
@@ -89,14 +96,18 @@ impl Config {
         self
     }
 
-    /// Sets the block cache size
+    /// Sets the block cache size in # blocks
+    ///
+    /// Defaults to 1,024
     #[must_use]
     pub fn block_cache_size(mut self, block_cache_size: u32) -> Self {
         self.block_cache_size = block_cache_size;
         self
     }
 
-    /// Sets the compaction strategy to use (default: Tiered compaction)
+    /// Sets the compaction strategy to use
+    ///
+    /// Defaults to [`SizeTiered`]
     #[must_use]
     pub fn compaction_strategy(
         mut self,

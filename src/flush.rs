@@ -55,7 +55,7 @@ fn flush_worker(
                 metadata,
             };
 
-            let mut levels = tree.levels.write().expect("should lock");
+            let mut levels = tree.levels.write().expect("lock is poisoned");
             levels.add(Arc::new(created_segment));
             levels.write_to_disk()?;
             drop(levels);
@@ -94,7 +94,7 @@ pub fn start(
     drop(commit_log_lock);
 
     let old_memtable = Arc::new(std::mem::take(&mut *memtable_lock));
-    let mut immutable_memtables = tree.immutable_memtables.write().expect("should lock");
+    let mut immutable_memtables = tree.immutable_memtables.write().expect("lock is poisoned");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
     drop(memtable_lock);
 

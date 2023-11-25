@@ -40,8 +40,8 @@ impl Batch {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn commit(mut self) -> crate::Result<()> {
-        let mut commit_log = self.tree.commit_log.lock().expect("should lock");
-        let mut lock = self.tree.active_memtable.write().expect("should lock");
+        let mut commit_log = self.tree.commit_log.lock().expect("lock is poisoned");
+        let mut lock = self.tree.active_memtable.write().expect("lock is poisoned");
 
         commit_log.append_batch(self.data.clone())?;
         commit_log.flush()?;
