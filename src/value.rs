@@ -2,6 +2,7 @@ use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeErro
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
+/// Sequence number
 pub type SeqNo = u64;
 
 /// Represents a value in the LSM-tree

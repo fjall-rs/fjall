@@ -35,7 +35,12 @@ fn rewrite_commit_log<P: AsRef<Path>>(path: P, memtable: &MemTable) -> std::io::
 
     std::fs::rename(parent.join("rlog"), &path)?;
 
+    // fsync log file
     let file = std::fs::File::open(&path)?;
+    file.sync_all()?;
+
+    // fsync folder as well
+    let file = std::fs::File::open(parent)?;
     file.sync_all()?;
 
     log::info!("Atomically rewritten commit log");
@@ -88,7 +93,14 @@ impl MemTable {
         let mut lsn = 0;
 
         for item in reader {
-            let item = item?; // TODO: result, RecoveryStrategy
+            let item = match item {
+                Ok(item) => item,
+                Err(error) => {
+                    log::warn!("Undeserializable item found: {:?}", error);
+                    rewrite_commit_log(path, &memtable)?;
+                    return Ok((lsn, byte_count, memtable));
+                }
+            };
 
             match item {
                 Start(batch_size) => {

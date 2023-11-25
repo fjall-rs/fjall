@@ -205,6 +205,7 @@ impl Levels {
         self.writer.get_mut().set_len(0)?;
         serde_json::to_writer_pretty(&mut self.writer, &self.levels).expect("should serialize");
 
+        // fsync levels manifest
         self.writer.flush()?;
         self.writer.get_mut().sync_all()?;
 

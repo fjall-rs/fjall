@@ -194,6 +194,7 @@ impl Tree {
         let marker = config.path.join(".lsm");
         assert!(!marker.try_exists()?);
 
+        // fsync .lsm marker
         let file = std::fs::File::create(marker)?;
         file.sync_all()?;
 
@@ -218,7 +219,7 @@ impl Tree {
         std::fs::create_dir_all(inner.config.path.join("segments"))?;
         std::fs::create_dir_all(inner.config.path.join("logs"))?;
 
-        // Fsync folder
+        // fsync folder
         let folder = std::fs::File::open(&inner.config.path)?;
         folder.sync_all()?;
 
@@ -245,7 +246,7 @@ impl Tree {
                         segments.insert(segment.metadata.id.clone(), Arc::new(segment));
                         log::debug!("Resurrected segment from {:?}", path);
                     } else {
-                        log::warn!("Deleting unfinished segment: {}", path.to_string_lossy());
+                        log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
                         std::fs::remove_dir_all(path)?;
                     }
                 } else {

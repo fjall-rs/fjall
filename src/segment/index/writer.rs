@@ -132,9 +132,11 @@ impl Writer {
     }
 
     fn flush_writers(&mut self) -> std::io::Result<()> {
+        // fsync data blocks
         self.block_writer.flush()?;
         self.block_writer.get_mut().sync_all()?;
 
+        // fsync index blocks
         self.index_writer.flush()?;
         self.index_writer.get_mut().sync_all()?;
 
@@ -148,6 +150,10 @@ impl Writer {
 
         self.write_meta_index()?;
         self.flush_writers()?;
+
+        // fsync folder
+        let file = std::fs::File::open(&self.path)?;
+        file.sync_all()?;
 
         Ok(())
     }

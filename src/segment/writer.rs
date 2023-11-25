@@ -265,7 +265,7 @@ impl Writer {
         self.block_writer.flush()?;
         self.block_writer.get_mut().sync_all()?;
 
-        // Fsync folder
+        // fsync folder
         let folder = std::fs::File::open(&self.opts.path)?;
         folder.sync_all()?;
 

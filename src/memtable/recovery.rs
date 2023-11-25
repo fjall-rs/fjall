@@ -22,10 +22,10 @@ pub struct Strategy {
 
 #[derive(Debug)]
 pub enum Error {
-    MissingBatchEnd,
+    // MissingBatchEnd,
     // UnexpectedBatchStart,
-    UnexpectedBatchEnd,
-    ChecksumCheckFail,
+    // UnexpectedBatchEnd,
+    // ChecksumCheckFail,
     Io(std::io::Error),
     Iterate(CommitIterateError),
     Serialize(SerializeError),
