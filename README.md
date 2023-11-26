@@ -4,13 +4,14 @@
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
+## About
+
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
 
 - Size-tiered or Levelled compaction
-- Partitioned block index to reduce memory footprint
+- Partitioned block index to reduce memory footprint [1]
 - Block caching to keep hot data in memory
 - Bloom filters to avoid expensive disk access for non-existing items
-- MONKEY-optimized bloom filter allocation to optimize the memory footprint of bloom filters in regards to the false positive rate
 - Sharded log & memtable for concurrent writes
 - Atomic batch operations
 - Automatic background compaction & tombstone eviction
@@ -19,6 +20,10 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - LZ4-compresses data
 - CRChecks data blocks
 - 100% safe Rust
+
+###### Footnotes
+
+[1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
 
 #### Performance to expect roughly:
 
