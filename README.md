@@ -6,7 +6,7 @@ A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
 
-- Size-tiered and Levelled (optionally Lazy-Levelled) Compaction
+- Size-tiered or Levelled compaction
 - Partitioned block index to reduce memory footprint
 - Block caching to keep hot data in memory
 - Bloom filters to avoid expensive disk access for non-existing items
