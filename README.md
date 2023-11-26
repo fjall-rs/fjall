@@ -1,10 +1,12 @@
 # LSM-tree
 
-A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)
+{badges}
 
-This is the most feature-rich and fastest LSM-tree implementation in Rust! It features, among other things:
+A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
-- Tiered and Levelled (optionally Lazy-Levelled) Compaction
+This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
+
+- Size-tiered and Levelled (optionally Lazy-Levelled) Compaction
 - Partitioned block index to reduce memory footprint
 - Block caching to keep hot data in memory
 - Bloom filters to avoid expensive disk access for non-existing items
@@ -14,19 +16,24 @@ This is the most feature-rich and fastest LSM-tree implementation in Rust! It fe
 - Automatic background compaction & tombstone eviction
 - 100% safe Rust
 
-## Benchmark
+#### Performance to expect roughly:
 
-Performance to expect roughly:
-
-- Instantaneous startup, even for 500M+ objects
-- ~500k+ writes per second for a single thread
+- Instantaneous startup, even for 500M+ objects, with low memory overhead (<10 MB for 500M+ objects)
+- ~500k+ writes per second for a single writer thread
 - ??? MB/s throughput
 - <1μs reads for hot (cached) data (2M+ reads per second)
 - ??? for cold data (??? reads per second)
 
-i7 7700k
-24 GB RAM
-Linux (Ubuntu)
-M.2 SSD
+## Benchmarks
+
+Testing system:
+- i7 7700k
+- 24 GB RAM
+- Linux (Ubuntu)
+- M.2 SSD
 
 {Add graphs here}
+
+## License
+
+All source code is MIT-licensed.
