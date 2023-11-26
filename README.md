@@ -21,17 +21,13 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - CRChecks data blocks
 - 100% safe Rust
 
-###### Footnotes
+### Performance to expect roughly:
 
-[1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
-
-#### Performance to expect roughly:
-
-- Instantaneous startup, even for 500M+ objects, with low memory overhead (<10 MB for 500M+ objects)
+- Super quick startup, with low memory overhead (<10 MB for 500M+ objects)
 - ~500k+ writes per second for a single writer thread
 - ??? MB/s throughput
-- <1μs reads for hot (cached) data (2M+ reads per second)
-- ??? for cold data (??? reads per second)
+- <1μs reads for hot (cached) data (2M+ reads per second) for a single reader thread
+- <10µs reads for cold data (500k+ reads per second) for a single reader thread
 
 ## Benchmarks
 
@@ -46,3 +42,7 @@ Testing system:
 ## License
 
 All source code is MIT-licensed.
+
+## Footnotes
+
+[1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
