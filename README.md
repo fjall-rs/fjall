@@ -14,6 +14,8 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Sharded log & memtable for concurrent writes
 - Atomic batch operations
 - Automatic background compaction & tombstone eviction
+  - Does not spawn background threads unless actually needed
+- Thread-safe (internally synchronized)
 - 100% safe Rust
 
 #### Performance to expect roughly:
