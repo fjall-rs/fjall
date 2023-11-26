@@ -17,6 +17,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
   - Does not spawn background threads unless actually needed
 - Thread-safe (internally synchronized)
 - LZ4-compresses data
+- CRChecks data blocks
 - 100% safe Rust
 
 #### Performance to expect roughly:
