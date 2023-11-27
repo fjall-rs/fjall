@@ -39,3 +39,6 @@ jobs:
       - name: Build KV example
         run: cargo build
         working-directory: examples/actix-kv
+      - name: Test KV example
+        run: cargo test
+        working-directory: examples/actix-kv
