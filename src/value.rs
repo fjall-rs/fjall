@@ -141,24 +141,20 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_empty_value() {
+    fn test_empty_value() -> crate::Result<()> {
         // Create an empty Value instance
         let value = Value::new(vec![1, 2, 3], vec![], false, 42);
 
         // Serialize the empty Value
         let mut serialized = Vec::new();
-        value
-            .serialize(&mut serialized)
-            .expect("Serialization failed");
+        value.serialize(&mut serialized)?;
 
         // Deserialize the empty Value
-        let deserialized = Value::deserialize(&mut &serialized[..]);
-
-        // Check if deserialization is successful
-        assert!(deserialized.is_ok());
+        let deserialized = Value::deserialize(&mut &serialized[..])?;
 
         // Check if deserialized Value is equivalent to the original empty Value
-        let deserialized = deserialized.expect("Deserialization failed");
         assert_eq!(value, deserialized);
+
+        Ok(())
     }
 }

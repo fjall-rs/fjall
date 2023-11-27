@@ -7,7 +7,11 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    block::ValueBlock, index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range,
+    block::ValueBlock,
+    index::{IndexEntry, MetaIndex},
+    meta::Metadata,
+    prefix::PrefixedReader,
+    range::Range,
     reader::Reader,
 };
 use crate::{block_cache::BlockCache, value::SeqNo, Value};
@@ -51,6 +55,28 @@ impl Segment {
         })
     }
 
+    fn load_block(&self, block_ref: &IndexEntry) -> crate::Result<Arc<ValueBlock>> {
+        let block = ValueBlock::from_file_compressed(
+            self.metadata.path.join("blocks"),
+            block_ref.offset,
+            block_ref.size,
+        )?; // TODO: no panic
+
+        if !block.check_crc(block.crc)? {
+            return Err(crate::Error::CrcCheck);
+        }
+
+        let block = Arc::new(block);
+
+        self.block_cache.insert_disk_block(
+            self.metadata.id.clone(),
+            block_ref.start_key.clone(),
+            Arc::clone(&block),
+        );
+
+        Ok(block)
+    }
+
     /// Retrieves an item from the segment
     ///
     /// # Errors
@@ -61,29 +87,13 @@ impl Segment {
 
         Ok(match block_ref {
             Some(block_ref) => {
-                let real_block = match self
+                let cached_block = self
                     .block_cache
-                    .get_disk_block(self.metadata.id.clone(), &block_ref.start_key)
-                {
+                    .get_disk_block(self.metadata.id.clone(), &block_ref.start_key);
+
+                let real_block = match cached_block {
                     Some(block) => block,
-                    None => {
-                        let block = ValueBlock::from_file_compressed(
-                            self.metadata.path.join("blocks"),
-                            block_ref.offset,
-                            block_ref.size,
-                        )
-                        .unwrap(); // TODO: panic
-
-                        let block = Arc::new(block);
-
-                        self.block_cache.insert_disk_block(
-                            self.metadata.id.clone(),
-                            block_ref.start_key.clone(),
-                            Arc::clone(&block),
-                        );
-
-                        block
-                    }
+                    None => self.load_block(&block_ref)?,
                 };
 
                 let item_index = real_block
@@ -96,22 +106,14 @@ impl Segment {
         })
     }
 
-    /// Counts all items in the segment
+    /* /// Counts all items in the segment
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
     pub fn len(&self) -> crate::Result<usize> {
-        Ok(Reader::new(
-            self.metadata.path.join("blocks"),
-            self.metadata.id.clone(),
-            Arc::clone(&self.block_cache),
-            Arc::clone(&self.block_index),
-            None,
-            None,
-        )?
-        .count())
-    }
+        Ok(self.iter()?.count())
+    } */
 
     /// Creates an iterator over the `Segment`
     ///

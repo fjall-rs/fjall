@@ -8,16 +8,31 @@ use std::{
 use std_semaphore::Semaphore;
 
 pub struct TreeInner {
+    /// Tree configuration
     pub(crate) config: Config,
-    pub(crate) active_memtable: Arc<RwLock<MemTable>>,
-    pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
-    pub(crate) commit_log: Arc<Mutex<CommitLog>>,
-    pub(crate) block_cache: Arc<BlockCache>,
+
+    /// Last-seen sequence number (highest sequence number)
     pub(crate) lsn: AtomicU64,
+
+    /// Commit log aka Journal aka Write-ahead log (WAL)
+    pub(crate) commit_log: Arc<Mutex<CommitLog>>,
+
+    /// Active memtable
+    pub(crate) active_memtable: Arc<RwLock<MemTable>>,
+
+    /// Memtables that are being flushed
+    pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+
+    /// Tree levels that contain segments
     pub(crate) levels: Arc<RwLock<Levels>>,
 
+    /// Concurrent block cache
+    pub(crate) block_cache: Arc<BlockCache>,
+
+    /// Semaphore to limit flush threads
     pub(crate) flush_semaphore: Arc<Semaphore>,
 
+    /// Semaphore to notify compaction threads
     pub(crate) compaction_semaphore: Arc<Semaphore>,
 }
 

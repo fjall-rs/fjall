@@ -16,31 +16,6 @@ pub struct DiskBlock<T: Clone + Serializable + Deserializable> {
     pub(crate) crc: u32,
 }
 
-/* #[derive(Debug)]
-pub enum Error {
-    Io(std::io::Error),
-    Deserialize(DeserializeError),
-    Decompress(DecompressError),
-} */
-
-/* impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<DeserializeError> for Error {
-    fn from(value: DeserializeError) -> Self {
-        Self::Deserialize(value)
-    }
-}
-
-impl From<DecompressError> for Error {
-    fn from(value: DecompressError) -> Self {
-        Self::Decompress(value)
-    }
-} */
-
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
     pub fn from_reader_compressed<R: Read>(reader: &mut R, size: u32) -> crate::Result<Self> {
         let mut bytes = vec![0u8; size as usize];
@@ -67,7 +42,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
 
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
     /// Calculates the CRC from a list of values
-    pub(crate) fn create_crc(items: &Vec<T>) -> Result<u32, SerializeError> {
+    pub(crate) fn create_crc(items: &Vec<T>) -> crate::Result<u32> {
         let mut hasher = crc32fast::Hasher::new();
 
         // NOTE: Truncation is okay and actually needed
@@ -82,6 +57,11 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         }
 
         Ok(hasher.finalize())
+    }
+
+    pub(crate) fn check_crc(&self, expected_crc: u32) -> crate::Result<bool> {
+        let crc = Self::create_crc(&self.items)?;
+        Ok(crc == expected_crc)
     }
 }
 
@@ -119,20 +99,6 @@ impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
         // Read CRC
         let crc = reader.read_u32::<BigEndian>()?;
 
-        // TODO: CRC check should happen somewhere else, not in deserialize
-        /* // Read CRC
-        let mut crc_bytes = [0; std::mem::size_of::<u32>()];
-        reader.read_exact(&mut crc_bytes)?;
-        let expected_crc = u32::from_be_bytes(crc_bytes);
-
-        let crc = Self::create_crc(&items)?;
-
-        if crc == expected_crc {
-            Ok(Self { items, crc })
-        } else {
-            Err(DeserializeError::CrcCheck(crc))
-        } */
-
         Ok(Self { items, crc })
     }
 }
@@ -144,20 +110,18 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_blocky_deserialization_success() {
+    fn test_blocky_deserialization_success() -> crate::Result<()> {
         let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
         let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
 
         let items = vec![item1.clone(), item2.clone()];
-        let crc = DiskBlock::create_crc(&items).unwrap();
+        let crc = DiskBlock::create_crc(&items)?;
 
         let block = DiskBlock { items, crc };
 
         // Serialize to bytes
         let mut serialized = Vec::new();
-        block
-            .serialize(&mut serialized)
-            .expect("Serialization failed");
+        block.serialize(&mut serialized)?;
 
         // Deserialize from bytes
         let deserialized = DiskBlock::deserialize(&mut &serialized[..]);
@@ -171,10 +135,12 @@ mod tests {
             }
             Err(error) => panic!("Deserialization failed: {error:?}"),
         }
+
+        Ok(())
     }
 
     #[test]
-    fn test_blocky_deserialization_failure_crc() {
+    fn test_blocky_deserialization_failure_crc() -> crate::Result<()> {
         let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
         let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
 
@@ -185,19 +151,13 @@ mod tests {
 
         // Serialize to bytes
         let mut serialized = Vec::new();
-        block
-            .serialize(&mut serialized)
-            .expect("Serialization failed");
+        block.serialize(&mut serialized)?;
 
         // Deserialize from bytes
-        let deserialized = DiskBlock::<Value>::deserialize(&mut &serialized[..]).unwrap();
+        let deserialized = DiskBlock::<Value>::deserialize(&mut &serialized[..])?;
 
-        // TODO: CRC
+        assert!(!deserialized.check_crc(54321)?);
 
-        // Check if deserialization fails due to CRC mismatch
-        /*   match deserialized {
-            Err(DeserializeError::CrcCheck(_)) => {}
-            _ => panic!("Unexpected deserialization error"),
-        } */
+        Ok(())
     }
 }

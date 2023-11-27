@@ -203,6 +203,8 @@ impl Tree {
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
 
+        let flush_threads = config.flush_threads.into();
+
         let inner = TreeInner {
             config,
             active_memtable: Arc::new(RwLock::new(MemTable::default())),
@@ -211,8 +213,8 @@ impl Tree {
             block_cache,
             lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
-            flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
-            compaction_semaphore: Arc::new(Semaphore::new(0)), // TODO: config
+            flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
+            compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
         };
 
         // Create subfolders
@@ -323,6 +325,8 @@ impl Tree {
         let levels = Levels::from_disk(&config.path.join("levels.json"), segments)?;
         let log_path = config.path.join("log");
 
+        let flush_threads = config.flush_threads.into();
+
         let inner = TreeInner {
             config,
             active_memtable: Arc::new(RwLock::new(memtable)),
@@ -331,8 +335,8 @@ impl Tree {
             commit_log: Arc::new(Mutex::new(CommitLog::new(log_path)?)),
             lsn: AtomicU64::new(lsn),
             levels: Arc::new(RwLock::new(levels)),
-            flush_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
-            compaction_semaphore: Arc::new(Semaphore::new(0)), // TODO: config
+            flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
+            compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
         };
 
         log::info!("Tree loaded");
@@ -542,15 +546,15 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: &K) -> std::io::Result<Prefix<'_>> {
+    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
         use std::ops::Bound::{self};
 
-        let prefix = prefix.as_ref();
+        let prefix = prefix.into();
 
         let lock = self.levels.read().expect("lock poisoned");
 
         let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
-            (Bound::Included(prefix.into()), std::ops::Bound::Unbounded);
+            (Bound::Included(prefix.clone()), std::ops::Bound::Unbounded);
 
         let segment_info = lock
             .get_all_segments()
@@ -564,7 +568,7 @@ impl Tree {
                 active: self.active_memtable.read().expect("lock poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock poisoned"),
             },
-            prefix.into(),
+            prefix,
             segment_info,
         ))
     }

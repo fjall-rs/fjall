@@ -35,6 +35,13 @@ pub struct Config {
     /// Defaults to 7, like RocksDB
     pub(crate) levels: u8,
 
+    /// Maximum amount of concurrent flush threads
+    ///
+    /// You may want to increase this the more CPU cores you have
+    ///
+    /// Defaults to 4
+    pub(crate) flush_threads: u8,
+
     /// Compaction strategy to use
     ///
     /// Defaults to SizeTiered
@@ -50,6 +57,7 @@ impl Default for Config {
             max_memtable_size: 128 * 1_024 * 1_024,
             levels: 7,
             compaction_strategy: Arc::new(tiered::Strategy::default()),
+            flush_threads: 4,
         }
     }
 }
@@ -63,11 +71,34 @@ impl Config {
         }
     }
 
+    /// Maximum amount of concurrent flush threads
+    ///
+    /// You may want to increase this the more CPU cores you have
+    ///
+    /// Defaults to 4
+    ///
+    /// # Panics
+    ///
+    /// Panics if count is 0
+    #[must_use]
+    pub fn flush_threads(mut self, count: u8) -> Self {
+        assert!(count > 0);
+
+        self.flush_threads = count;
+        self
+    }
+
     /// Sets the amount of levels of the LSM tree (depth of tree)
     ///
-    /// Defaults to 7, like RocksDB
+    /// Defaults to 7, like `LevelDB` and `RocksDB`
+    ///
+    /// # Panics
+    ///
+    /// Panics if count is 0
     #[must_use]
     pub fn level_count(mut self, count: u8) -> Self {
+        assert!(count > 0);
+
         self.levels = count;
         self
     }

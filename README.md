@@ -24,7 +24,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 ### Performance to expect roughly:
 
 - Super quick startup, with low memory overhead (<10 MB for 500M+ objects)
-- ~500k+ writes per second for a single writer thread
+- ~400k+ writes per second for a single writer thread
 - ??? MB/s throughput
 - <1μs reads for hot (cached) data (2M+ reads per second) for a single reader thread
 - <10µs reads for cold data (500k+ reads per second) for a single reader thread

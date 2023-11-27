@@ -109,8 +109,7 @@ pub fn start(
         tree.flush_semaphore.release();
 
         // Flush done, so notify compaction that a segment was created
-        tree.compaction_semaphore.release();
-        start_compaction_thread(&tree)?;
+        start_compaction_thread(&tree);
 
         Ok(())
     }))

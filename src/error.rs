@@ -16,8 +16,9 @@ pub enum Error {
 
     /// Decompression failed
     Decompress(DecompressError),
-    /*  /// The CRC value does not match the expected value
-    // CrcCheck(u32), */
+
+    /// The CRC value does not match the expected value
+    CrcCheck,
 }
 
 impl std::fmt::Display for Error {
