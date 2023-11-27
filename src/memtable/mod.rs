@@ -55,13 +55,6 @@ impl MemTable {
         result.cloned()
     }
 
-    /// Gets the item count
-    ///
-    /// Does not take tombstones into account
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
     pub fn exceeds_threshold(&mut self, threshold: u32) -> bool {
         self.size_in_bytes > threshold
     }
