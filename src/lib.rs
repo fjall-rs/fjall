@@ -62,12 +62,9 @@ mod id;
 mod level;
 mod memtable;
 mod merge;
-#[doc(hidden)]
-pub mod prefix;
-#[doc(hidden)]
-pub mod range;
-#[doc(hidden)]
-pub mod segment;
+mod prefix;
+mod range;
+mod segment;
 mod serde;
 mod time;
 mod tree;
