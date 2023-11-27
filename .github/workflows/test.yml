@@ -36,3 +36,6 @@ jobs:
         run: cargo clippy
       - name: Run tests
         run: cargo test -v -- --nocapture
+      - name: Build KV example
+        run: cargo build
+        working-directory: examples/actix-kv

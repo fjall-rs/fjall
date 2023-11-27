@@ -106,14 +106,14 @@ impl Segment {
         })
     }
 
-    /* /// Counts all items in the segment
+    /// Counts all items in the segment
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
     pub fn len(&self) -> crate::Result<usize> {
         Ok(self.iter()?.count())
-    } */
+    }
 
     /// Creates an iterator over the `Segment`
     ///
