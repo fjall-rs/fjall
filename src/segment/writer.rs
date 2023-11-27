@@ -65,8 +65,11 @@ impl MultiWriter {
         let old_writer = std::mem::replace(&mut self.writer, new_writer);
         let old_segment_id = std::mem::replace(&mut self.current_segment_id, new_segment_id);
 
-        self.created_items
-            .push(Metadata::from_writer(old_segment_id, old_writer));
+        let metadata = Metadata::from_writer(old_segment_id, old_writer);
+
+        if metadata.item_count > 0 {
+            self.created_items.push(metadata);
+        }
 
         Ok(())
     }
@@ -90,8 +93,11 @@ impl MultiWriter {
         // Don't use `rotate` because that will start a new writer, creating unneeded, empty segments
         self.writer.finish()?;
 
-        self.created_items
-            .push(Metadata::from_writer(self.current_segment_id, self.writer));
+        let metadata = Metadata::from_writer(self.current_segment_id, self.writer);
+
+        if metadata.item_count > 0 {
+            self.created_items.push(metadata);
+        }
 
         Ok(self.created_items)
     }
