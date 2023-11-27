@@ -1,5 +1,6 @@
 //! Contains compaction strategies
 
+pub(crate) mod major;
 pub(crate) mod tiered;
 pub(crate) mod worker;
 

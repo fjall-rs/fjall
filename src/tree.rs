@@ -1,6 +1,7 @@
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
+    compaction::CompactionStrategy,
     id::generate_segment_id,
     level::Levels,
     memtable::MemTable,
@@ -779,6 +780,26 @@ impl Tree {
     pub fn wait_for_memtable_flush(&self) -> crate::Result<()> {
         let flush_thread = self.force_memtable_flush()?;
         flush_thread.join().expect("should join")
+    }
+
+    /// Perform major compaction
+    #[doc(hidden)]
+    #[must_use]
+    pub fn do_major_compaction(&self) -> std::thread::JoinHandle<crate::Result<()>> {
+        log::info!("Starting major compaction thread");
+        let tree = self.clone();
+
+        std::thread::spawn(move || {
+            let levels = tree.levels.write().expect("lock is poisoned");
+            let compactor = crate::compaction::major::Strategy::default();
+
+            let choice = compactor.choose(&levels);
+
+            if let crate::compaction::Choice::DoCompact(payload) = choice {
+                crate::compaction::worker::do_compaction(&tree, &payload, levels)?;
+            }
+            Ok(())
+        })
     }
 
     /// Flushes the commit log to disk, making sure all written data is persisted

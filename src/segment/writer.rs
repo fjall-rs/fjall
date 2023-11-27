@@ -65,9 +65,8 @@ impl MultiWriter {
         let old_writer = std::mem::replace(&mut self.writer, new_writer);
         let old_segment_id = std::mem::replace(&mut self.current_segment_id, new_segment_id);
 
-        let metadata = Metadata::from_writer(old_segment_id, old_writer);
-
-        if metadata.item_count > 0 {
+        if old_writer.item_count > 0 {
+            let metadata = Metadata::from_writer(old_segment_id, old_writer);
             self.created_items.push(metadata);
         }
 
@@ -93,9 +92,8 @@ impl MultiWriter {
         // Don't use `rotate` because that will start a new writer, creating unneeded, empty segments
         self.writer.finish()?;
 
-        let metadata = Metadata::from_writer(self.current_segment_id, self.writer);
-
-        if metadata.item_count > 0 {
+        if self.writer.item_count > 0 {
+            let metadata = Metadata::from_writer(self.current_segment_id, self.writer);
             self.created_items.push(metadata);
         }
 
@@ -266,6 +264,16 @@ impl Writer {
     pub fn finish(&mut self) -> crate::Result<()> {
         if !self.chunk.items.is_empty() {
             self.write_block()?;
+        }
+
+        // No items written! Just deleted segment folder and return nothing
+        if self.item_count == 0 {
+            log::debug!(
+                "Deleting empty segment folder ({}) because no items were written",
+                self.opts.path.display()
+            );
+            std::fs::remove_dir_all(&self.opts.path)?;
+            return Ok(());
         }
 
         // TODO: bloom etc

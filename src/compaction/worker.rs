@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-fn do_compaction(
+pub(crate) fn do_compaction(
     tree: &Tree,
     payload: &crate::compaction::Options,
     mut segments_lock: RwLockWriteGuard<'_, Levels>,
@@ -55,8 +55,6 @@ fn do_compaction(
     }
 
     let created_segments = segment_writer.finish()?;
-
-    debug_assert!(!created_segments.is_empty());
 
     for metadata in &created_segments {
         metadata.write_to_file()?;
