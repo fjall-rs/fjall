@@ -1,6 +1,6 @@
 use log::trace;
 
-use crate::{Tree, Value};
+use crate::{value::SeqNo, Tree, Value};
 
 /// An atomic write batch
 pub struct Batch {
@@ -42,6 +42,15 @@ impl Batch {
     pub fn commit(mut self) -> crate::Result<()> {
         let mut commit_log = self.tree.commit_log.lock().expect("lock is poisoned");
         let mut memtable = self.tree.active_memtable.write().expect("lock is poisoned");
+
+        let batch_seqno = self
+            .tree
+            .lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        for item in &mut self.data {
+            item.seqno = batch_seqno;
+        }
 
         let bytes_written = commit_log.append_batch(self.data.clone())?;
         commit_log.flush()?;
