@@ -15,8 +15,8 @@ pub struct Metadata {
     /// Segment ID
     pub id: String,
 
-    /// Creation time as unix timestamp
-    pub created_at: u64,
+    /// Creation time as unix timestamp (in µs)
+    pub created_at: u128,
 
     /// Number of items in the segment
     ///
@@ -58,7 +58,11 @@ impl Metadata {
             path: writer.opts.path,
             block_count: writer.block_count as u32,
             block_size: writer.opts.block_size,
-            created_at: unix_timestamp().as_secs(),
+
+            // NOTE: Using seconds is not granular enough
+            // But because millis already returns u128, might as well use micros :)
+            created_at: unix_timestamp().as_micros(),
+
             file_size: writer.file_pos,
             is_compressed: true,
             item_count: writer.item_count as u64,
