@@ -252,34 +252,35 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_get_all() {
+    fn test_get_all() -> crate::Result<()> {
         const ITEM_COUNT: u64 = 100_000;
 
-        let folder = tempfile::tempdir().unwrap().into_path();
+        let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-        })
-        .unwrap();
+        })?;
 
         let items = (0u64..ITEM_COUNT)
             .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
 
         for item in items {
-            writer.write(item).unwrap();
+            writer.write(item)?;
         }
 
-        writer.finish().unwrap();
+        writer.finish()?;
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-        metadata.write_to_file().unwrap();
+        metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(
-            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
-        );
+        let meta_index = Arc::new(MetaIndex::from_file(
+            metadata.id.clone(),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
 
         log::info!("Getting every item");
 
@@ -290,11 +291,10 @@ mod tests {
             Arc::clone(&meta_index),
             None,
             None,
-        )
-        .unwrap();
+        )?;
 
         for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
-            let item = iter.next().unwrap().expect("item should exist");
+            let item = iter.next().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }
 
@@ -307,12 +307,13 @@ mod tests {
             Arc::clone(&meta_index),
             None,
             None,
-        )
-        .unwrap();
+        )?;
 
         for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
-            let item = iter.next_back().unwrap().expect("item should exist");
+            let item = iter.next_back().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }
+
+        Ok(())
     }
 }

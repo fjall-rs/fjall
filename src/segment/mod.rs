@@ -45,8 +45,7 @@ impl Segment {
             metadata.id.clone(),
             folder.as_ref(),
             Arc::clone(&block_cache),
-        )
-        .unwrap();
+        )?;
 
         Ok(Self {
             metadata,
@@ -83,6 +82,12 @@ impl Segment {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
+        if !self.key_range_contains(&key) {
+            return Ok(None);
+        }
+
+        // TODO: bloom
+
         let block_ref = self.block_index.get_latest(key.as_ref());
 
         Ok(match block_ref {

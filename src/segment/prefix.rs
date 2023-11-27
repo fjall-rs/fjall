@@ -22,7 +22,6 @@ impl PrefixedReader {
     ) -> crate::Result<Self> {
         let prefix = prefix.into();
 
-        //TODO: optimize upper bound
         let upper_bound = block_index.get_prefix_upper_bound(&prefix);
         let upper_bound = upper_bound.map(|x| x.start_key).map_or(Unbounded, Excluded);
 
@@ -107,16 +106,15 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_lots_of_prefixed() {
+    fn test_lots_of_prefixed() -> crate::Result<()> {
         for item_count in [1, 10, 100, 1_000, 10_000] {
-            let folder = tempfile::tempdir().unwrap().into_path();
+            let folder = tempfile::tempdir()?.into_path();
 
             let mut writer = Writer::new(Options {
                 path: folder.clone(),
                 evict_tombstones: false,
                 block_size: 4096,
-            })
-            .unwrap();
+            })?;
 
             for x in 0_u64..item_count {
                 let item = Value::new(
@@ -129,7 +127,7 @@ mod tests {
                     false,
                     0,
                 );
-                writer.write(item).unwrap();
+                writer.write(item)?;
             }
 
             for x in 0_u64..item_count {
@@ -143,7 +141,7 @@ mod tests {
                     false,
                     0,
                 );
-                writer.write(item).unwrap();
+                writer.write(item)?;
             }
 
             for x in 0_u64..item_count {
@@ -157,19 +155,20 @@ mod tests {
                     false,
                     0,
                 );
-                writer.write(item).unwrap();
+                writer.write(item)?;
             }
 
-            writer.finish().unwrap();
+            writer.finish()?;
 
             let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-            metadata.write_to_file().unwrap();
+            metadata.write_to_file()?;
 
             let block_cache = Arc::new(BlockCache::new(usize::MAX));
-            let meta_index = Arc::new(
-                MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache))
-                    .unwrap(),
-            );
+            let meta_index = Arc::new(MetaIndex::from_file(
+                metadata.id.clone(),
+                &folder,
+                Arc::clone(&block_cache),
+            )?);
 
             let iter = Reader::new(
                 folder.join("blocks"),
@@ -178,8 +177,7 @@ mod tests {
                 Arc::clone(&meta_index),
                 None,
                 None,
-            )
-            .unwrap();
+            )?;
             assert_eq!(iter.count() as u64, item_count * 3);
 
             let iter = PrefixedReader::new(
@@ -188,8 +186,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 b"a/b/".to_vec(),
-            )
-            .unwrap();
+            )?;
 
             assert_eq!(iter.count() as u64, item_count);
 
@@ -199,23 +196,23 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 b"a/b/".to_vec(),
-            )
-            .unwrap();
+            )?;
 
             assert_eq!(iter.rev().count() as u64, item_count);
         }
+
+        Ok(())
     }
 
     #[test]
-    fn test_prefixed() {
-        let folder = tempfile::tempdir().unwrap().into_path();
+    fn test_prefixed() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-        })
-        .unwrap();
+        })?;
 
         let items = [
             b"a".to_vec(),
@@ -235,18 +232,20 @@ mod tests {
         .map(|(idx, key)| Value::new(key, nanoid::nanoid!(), false, idx as SeqNo));
 
         for item in items {
-            writer.write(item).unwrap();
+            writer.write(item)?;
         }
 
-        writer.finish().unwrap();
+        writer.finish()?;
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-        metadata.write_to_file().unwrap();
+        metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(
-            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
-        );
+        let meta_index = Arc::new(MetaIndex::from_file(
+            metadata.id.clone(),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
 
         let expected = [
             (b"a".to_vec(), 9),
@@ -266,10 +265,11 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 prefix_key,
-            )
-            .unwrap();
+            )?;
 
             assert_eq!(iter.count(), item_count);
         }
+
+        Ok(())
     }
 }

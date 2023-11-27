@@ -98,7 +98,7 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_write() -> std::io::Result<()> {
+    fn test_write() -> crate::Result<()> {
         let folder = tempdir()?.into_path();
         let log_path = folder.join("commit_log");
         let mut commit_log = CommitLog::new(&log_path)?;
@@ -108,7 +108,7 @@ mod tests {
             Value::new(vec![7, 8, 9], vec![], false, 43),
         ];
 
-        commit_log.append_batch(items).unwrap();
+        commit_log.append_batch(items)?;
         commit_log.flush()?;
 
         let file_content = std::fs::read(log_path)?;

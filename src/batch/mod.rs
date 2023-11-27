@@ -1,6 +1,6 @@
 use log::trace;
 
-use crate::{value::SeqNo, Tree, Value};
+use crate::{Tree, Value};
 
 /// An atomic write batch
 pub struct Batch {
@@ -20,18 +20,13 @@ impl Batch {
 
     /// Inserts a key-value pair into the batch
     pub fn insert<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(&mut self, key: K, value: V) {
-        self.data.push(Value::new(
-            key.into(),
-            value.into(),
-            false,
-            0, /* TODO: */
-        ));
+        self.data
+            .push(Value::new(key.into(), value.into(), false, 0));
     }
 
     /// Adds a tombstone marker for a key
     pub fn remove<K: Into<Vec<u8>>>(&mut self, key: K) {
-        self.data
-            .push(Value::new(key.into(), vec![], true, 0 /* TODO: */));
+        self.data.push(Value::new(key.into(), vec![], true, 0));
     }
 
     /// Commits the batch to the LSM-tree atomically

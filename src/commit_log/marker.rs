@@ -83,18 +83,20 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_serialize_and_deserialize_success() {
+    fn test_serialize_and_deserialize_success() -> crate::Result<()> {
         let item = Marker::Item(Value::new(vec![1, 2, 3], vec![], false, 42));
 
         // Serialize
         let mut serialized_data = Vec::new();
-        item.serialize(&mut serialized_data).unwrap();
+        item.serialize(&mut serialized_data)?;
 
         // Deserialize
         let mut reader = &serialized_data[..];
-        let deserialized_item = Marker::deserialize(&mut reader).unwrap();
+        let deserialized_item = Marker::deserialize(&mut reader)?;
 
         assert_eq!(item, deserialized_item);
+
+        Ok(())
     }
 
     #[test]

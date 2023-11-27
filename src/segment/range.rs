@@ -38,7 +38,7 @@ impl Range {
         let iterator = Reader::new(
             path,
             segment_id,
-            Arc::clone(&block_cache),
+            block_cache,
             block_index,
             offset_lo.as_ref(),
             offset_hi.as_ref(),
@@ -166,32 +166,33 @@ mod tests {
     const ITEM_COUNT: u64 = 100_000;
 
     #[test]
-    fn test_unbounded_range() {
-        let folder = tempfile::tempdir().unwrap().into_path();
+    fn test_unbounded_range() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-        })
-        .unwrap();
+        })?;
 
         let items = (0u64..ITEM_COUNT)
             .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
 
         for item in items {
-            writer.write(item).unwrap();
+            writer.write(item)?;
         }
 
-        writer.finish().unwrap();
+        writer.finish()?;
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-        metadata.write_to_file().unwrap();
+        metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(
-            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
-        );
+        let meta_index = Arc::new(MetaIndex::from_file(
+            metadata.id.clone(),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
 
         {
             log::info!("Getting every item");
@@ -202,11 +203,10 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..),
-            )
-            .unwrap();
+            )?;
 
             for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
-                let item = iter.next().unwrap().expect("item should exist");
+                let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
 
@@ -218,11 +218,10 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..),
-            )
-            .unwrap();
+            )?;
 
             for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
-                let item = iter.next_back().unwrap().expect("item should exist");
+                let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
         }
@@ -236,11 +235,10 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
-            )
-            .unwrap();
+            )?;
 
             for key in (0..5_000).map(u64::to_be_bytes) {
-                let item = iter.next().unwrap().expect("item should exist");
+                let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
 
@@ -252,11 +250,10 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
-            )
-            .unwrap();
+            )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
-                let item = iter.next_back().unwrap().expect("item should exist");
+                let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
         }
@@ -270,11 +267,10 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(&(1_000_u64.to_be_bytes().to_vec()..)),
-            )
-            .unwrap();
+            )?;
 
             for key in (1_000..5_000).map(u64::to_be_bytes) {
-                let item = iter.next().unwrap().expect("item should exist");
+                let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
 
@@ -288,14 +284,15 @@ mod tests {
                 range_bounds_to_tuple(
                     &(1_000_u64.to_be_bytes().to_vec()..5_000_u64.to_be_bytes().to_vec()),
                 ),
-            )
-            .unwrap();
+            )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
-                let item = iter.next_back().unwrap().expect("item should exist");
+                let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
         }
+
+        Ok(())
     }
 
     fn range_bounds_to_tuple<T: Clone>(range: &impl RangeBounds<T>) -> (Bound<T>, Bound<T>) {
@@ -347,32 +344,33 @@ mod tests {
     }
 
     #[test]
-    fn test_bounded_ranges() {
-        let folder = tempfile::tempdir().unwrap().into_path();
+    fn test_bounded_ranges() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-        })
-        .unwrap();
+        })?;
 
         let items = (0u64..ITEM_COUNT)
             .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
 
         for item in items {
-            writer.write(item).unwrap();
+            writer.write(item)?;
         }
 
-        writer.finish().unwrap();
+        writer.finish()?;
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-        metadata.write_to_file().unwrap();
+        metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(
-            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
-        );
+        let meta_index = Arc::new(MetaIndex::from_file(
+            metadata.id.clone(),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
 
         let ranges: Vec<(Bound<u64>, Bound<u64>)> = vec![
             range_bounds_to_tuple(&(0..1_000)),
@@ -397,16 +395,12 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 bounds_u64_to_bytes(&bounds),
-            )
-            .unwrap();
+            )?;
 
             for key in range.map(u64::to_be_bytes) {
-                let item = iter
-                    .next()
-                    .unwrap_or_else(|| {
-                        panic!("item should exist: {:?} ({})", key, u64::from_be_bytes(key))
-                    })
-                    .unwrap();
+                let item = iter.next().unwrap_or_else(|| {
+                    panic!("item should exist: {:?} ({})", key, u64::from_be_bytes(key))
+                })?;
 
                 assert_eq!(key, &*item.key);
             }
@@ -420,19 +414,17 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 bounds_u64_to_bytes(&bounds),
-            )
-            .unwrap();
+            )?;
 
             for key in range.rev().map(u64::to_be_bytes) {
-                let item = iter
-                    .next_back()
-                    .unwrap_or_else(|| {
-                        panic!("item should exist: {:?} ({})", key, u64::from_be_bytes(key))
-                    })
-                    .unwrap();
+                let item = iter.next_back().unwrap_or_else(|| {
+                    panic!("item should exist: {:?} ({})", key, u64::from_be_bytes(key))
+                })?;
 
                 assert_eq!(key, &*item.key);
             }
         }
+
+        Ok(())
     }
 }
