@@ -5,29 +5,29 @@ use test_log::test;
 fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?.into_path();
 
-    let db = Config::new(folder).open()?;
+    let tree = Config::new(folder).open()?;
 
     let key = "1";
     let value = b"oldvalue";
 
-    assert_eq!(db.len()?, 0);
-    db.insert(key, *value)?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.len()?, 0);
+    tree.insert(key, *value)?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
-    db.wait_for_memtable_flush()?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    tree.wait_for_memtable_flush()?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
     let value = b"newvalue";
 
-    db.insert(key, *value)?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    tree.insert(key, *value)?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
-    db.wait_for_memtable_flush()?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    tree.wait_for_memtable_flush()?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
     Ok(())
 }
@@ -36,28 +36,28 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
 fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?.into_path();
 
-    let db = Config::new(folder).open().unwrap();
+    let tree = Config::new(folder).open().unwrap();
 
     let key = "1";
     let value = b"oldvalue";
 
-    assert_eq!(db.len()?, 0);
-    db.insert(key, *value)?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.len()?, 0);
+    tree.insert(key, *value)?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
-    db.wait_for_memtable_flush()?;
-    assert_eq!(db.len()?, 1);
-    assert_eq!(db.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    tree.wait_for_memtable_flush()?;
+    assert_eq!(tree.len()?, 1);
+    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
 
-    db.remove(key)?;
+    tree.remove(key)?;
     eprint!("removed key {:?}", key);
-    assert_eq!(db.len()?, 0);
-    assert!(db.get(key)?.is_none());
+    assert_eq!(tree.len()?, 0);
+    assert!(tree.get(key)?.is_none());
 
-    db.wait_for_memtable_flush()?;
-    assert_eq!(db.len()?, 0);
-    assert!(db.get(key)?.is_none());
+    tree.wait_for_memtable_flush()?;
+    assert_eq!(tree.len()?, 0);
+    assert!(tree.get(key)?.is_none());
 
     Ok(())
 }

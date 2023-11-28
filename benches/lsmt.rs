@@ -102,12 +102,7 @@ fn disk_point_reads(c: &mut Criterion) {
         tree.insert(key, value).unwrap();
     }
 
-    tree.force_memtable_flush()
-        .expect("Flush error")
-        .join()
-        .expect("Join failed")
-        .expect("Flush thread failed");
-
+    tree.wait_for_memtable_flush().expect("Flush thread failed");
     assert_eq!(tree.len().unwrap() as u32, max);
 
     for thread_count in [1_u32, 2, 4, 8] {
@@ -157,11 +152,7 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
         tree.insert(key, value).unwrap();
     }
 
-    tree.force_memtable_flush()
-        .expect("Flush error")
-        .join()
-        .expect("Join failed")
-        .expect("Flush thread failed");
+    tree.wait_for_memtable_flush().expect("Flush thread failed");
     assert_eq!(tree.len().unwrap() as u32, max);
 
     for thread_count in [1_u32, 2, 4, 8] {
@@ -250,25 +241,21 @@ fn scan_vs_query(c: &mut Criterion) {
     let mut group = c.benchmark_group("scan vs query");
 
     for size in [100_000, 1_000_000, 2_000_000, 5_000_000] {
-        let db = Config::new(tempdir().unwrap()).open().unwrap();
+        let tree = Config::new(tempdir().unwrap()).open().unwrap();
 
         for x in 0..size as u64 {
             let key = x.to_be_bytes().to_vec();
             let value = nanoid::nanoid!().as_bytes().to_vec();
-            db.insert(key, value).expect("Insert error");
+            tree.insert(key, value).expect("Insert error");
         }
 
-        db.force_memtable_flush()
-            .expect("Flush error")
-            .join()
-            .expect("Join failed")
-            .expect("Flush thread failed");
-        assert_eq!(db.len().unwrap(), size);
+        tree.wait_for_memtable_flush().expect("Flush thread failed");
+        assert_eq!(tree.len().unwrap(), size);
 
         group.sample_size(10);
         group.bench_function(format!("scan {}", size), |b| {
             b.iter(|| {
-                let iter = db.iter().unwrap();
+                let iter = tree.iter().unwrap();
                 let iter = iter.into_iter();
                 let count = iter
                     .filter(|x| match x {
@@ -286,7 +273,7 @@ fn scan_vs_query(c: &mut Criterion) {
         });
         group.bench_function(format!("query {}", size), |b| {
             b.iter(|| {
-                let iter = db
+                let iter = tree
                     .range((
                         Included(60000_u64.to_be_bytes().to_vec()),
                         Excluded(61000_u64.to_be_bytes().to_vec()),
@@ -298,7 +285,7 @@ fn scan_vs_query(c: &mut Criterion) {
         });
         group.bench_function(format!("query rev {}", size), |b| {
             b.iter(|| {
-                let iter = db
+                let iter = tree
                     .range((
                         Included(60000_u64.to_be_bytes().to_vec()),
                         Excluded(61000_u64.to_be_bytes().to_vec()),
@@ -311,6 +298,57 @@ fn scan_vs_query(c: &mut Criterion) {
     }
 }
 
+fn scan_vs_prefix(c: &mut Criterion) {
+    let mut group = c.benchmark_group("scan vs prefix");
+
+    for size in [100_000_u64, 1_000_000, 2_000_000, 5_000_000] {
+        let tree = Config::new(tempdir().unwrap()).open().unwrap();
+
+        for _ in 0..size {
+            let key = nanoid::nanoid!();
+            let value = nanoid::nanoid!();
+            tree.insert(key, value).expect("Insert error");
+        }
+
+        let prefix = "hello$$$";
+
+        for _ in 0..1000_u64 {
+            let key = format!("{}:{}", prefix, nanoid::nanoid!());
+            let value = nanoid::nanoid!();
+            tree.insert(key, value).expect("Insert error");
+        }
+
+        tree.wait_for_memtable_flush().expect("Flush thread failed");
+        assert_eq!(tree.len().unwrap() as u64, size + 1000);
+
+        group.sample_size(10);
+        group.bench_function(format!("scan {}", size), |b| {
+            b.iter(|| {
+                let iter = tree.iter().unwrap();
+                let iter = iter.into_iter().filter(|x| match x {
+                    Ok(item) => item.key.starts_with(prefix.as_bytes()),
+                    Err(_) => false,
+                });
+                assert_eq!(iter.count(), 1000);
+            });
+        });
+        group.bench_function(format!("prefix {}", size), |b| {
+            b.iter(|| {
+                let iter = tree.prefix(prefix).unwrap();
+                let iter = iter.into_iter();
+                assert_eq!(iter.count(), 1000);
+            });
+        });
+        group.bench_function(format!("prefix rev {}", size), |b| {
+            b.iter(|| {
+                let iter = tree.prefix(prefix).unwrap();
+                let iter = iter.into_iter();
+                assert_eq!(iter.rev().count(), 1000);
+            });
+        });
+    }
+}
+
 criterion_group!(
     benches,
     // insert,
@@ -318,7 +356,8 @@ criterion_group!(
     disk_point_reads,
     cached_retrieve_disk_random,
     full_scan,
-    scan_vs_query
+    scan_vs_query,
+    scan_vs_prefix
 );
 
 criterion_main!(benches);
