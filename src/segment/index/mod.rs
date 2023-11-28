@@ -293,6 +293,19 @@ impl MetaIndex {
         }
     }
 
+    /// Only used for tests
+    pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> Self {
+        let index_block_index = IndexBlockIndex(Arc::clone(&block_cache));
+
+        Self {
+            path: ".".into(),
+            block_cache,
+            segment_id,
+            blocks: index_block_index,
+            index: DiskBlockIndex::new(BTreeMap::default()),
+        }
+    }
+
     pub fn from_file<P: AsRef<Path>>(
         segment_id: String,
         path: P,

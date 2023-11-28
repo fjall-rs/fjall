@@ -1,10 +1,11 @@
+mod level;
+
+use self::level::{Level, ResolvedLevel};
 use crate::segment::Segment;
-use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{BufWriter, Seek, Write},
-    ops::{Bound, DerefMut},
     path::Path,
     sync::Arc,
 };
@@ -13,86 +14,13 @@ use std::{
 use crate::time::unix_timestamp;
 #[cfg(feature = "segment_history")]
 use serde_json::json;
-#[cfg(feature = "segment_history")]
-use std::io::Write;
  */
 pub type HiddenSet = HashSet<String>;
 pub type ResolvedView = Vec<ResolvedLevel>;
 
-#[derive(Serialize, Deserialize)]
-pub struct Level(Vec<String>);
-
-impl std::ops::Deref for Level {
-    type Target = Vec<String>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Level {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl Default for Level {
-    fn default() -> Self {
-        Self(Vec::with_capacity(20))
-    }
-}
-
 /* #[cfg(feature = "segment_history")]
 const SEGMENT_HISTORY_PATH: &str = "./segment_history.jsonl";
  */
-pub struct ResolvedLevel(Vec<Arc<Segment>>);
-
-impl ResolvedLevel {
-    pub fn new(
-        level: &Level,
-        hidden_set: &HiddenSet,
-        segments: &HashMap<String, Arc<Segment>>,
-    ) -> Self {
-        let mut new_level = Vec::new();
-
-        for segment_id in level.iter() {
-            if !hidden_set.contains(segment_id) {
-                new_level.push(
-                    segments
-                        .get(segment_id)
-                        .cloned()
-                        .expect("where's the segment at?"),
-                );
-            }
-        }
-
-        Self(new_level)
-    }
-
-    pub fn get_overlapping_segments(&self, start: Vec<u8>, end: Vec<u8>) -> Vec<&String> {
-        let bounds = (Bound::Included(start), Bound::Included(end));
-
-        self.0
-            .iter()
-            .filter(|x| Segment::check_key_range_overlap(x, &bounds))
-            .map(|x| &x.metadata.id)
-            .collect()
-    }
-}
-
-impl std::ops::Deref for ResolvedLevel {
-    type Target = Vec<Arc<Segment>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ResolvedLevel {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 
 /// Represents the levels of a log-structured merge tree.
 pub struct Levels {
@@ -150,7 +78,7 @@ impl Levels {
         !self.hidden_set.is_empty()
     }
 
-    pub(crate) fn create_new<P: AsRef<Path>>(level_count: u8, path: P) -> std::io::Result<Self> {
+    pub(crate) fn create_new<P: AsRef<Path>>(level_count: u8, path: P) -> crate::Result<Self> {
         assert!(level_count > 1, "level_count should be > 1");
 
         let levels = (0..level_count)
@@ -198,7 +126,7 @@ impl Levels {
         Ok(levels)
     }
 
-    pub(crate) fn write_to_disk(&mut self) -> std::io::Result<()> {
+    pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
         self.writer.seek(std::io::SeekFrom::Start(0))?;
@@ -220,7 +148,11 @@ impl Levels {
         let last_level_index = self.level_count - 1;
         let index = level_no.clamp(0, last_level_index);
 
-        let level = self.levels.get_mut(index as usize).unwrap();
+        let level = self
+            .levels
+            .get_mut(index as usize)
+            .expect("level should exist");
+
         level.push(segment.metadata.id.clone());
         self.segments.insert(segment.metadata.id.clone(), segment);
 
@@ -336,18 +268,20 @@ impl Levels {
 
 #[cfg(test)]
 mod tests {
-    /* use super::ResolvedLevel;
+    use super::ResolvedLevel;
     use crate::{
-        bloom::BloomFilter,
-        segment::{meta::Metadata, BlockCache, BlockIndex, DescriptorTable, Segment},
+        block_cache::BlockCache,
+        segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::{collections::BTreeMap, sync::Arc}; */
+    use std::sync::Arc;
 
-    /* fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Segment {
-        Segment {
-            path: ".".into(),
-            block_index: Arc::new(BlockIndex::new(BTreeMap::new())),
+    fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
+        let block_cache = Arc::new(BlockCache::new(0));
+
+        Arc::new(Segment {
+            block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
+                path: ".".into(),
                 block_count: 0,
                 block_size: 0,
                 created_at: 0,
@@ -358,19 +292,18 @@ mod tests {
                 key_range,
                 tombstone_count: 0,
                 uncompressed_size: 0,
+                seqnos: (0, 0),
             },
-            block_cache: Arc::new(BlockCache::with_capacity(1)),
-            descriptor_table: DescriptorTable::new(&".").unwrap(),
-            bloom_filter: BloomFilter::new(1),
-        }
-    } */
+            block_cache,
+        })
+    }
 
-    /*  #[test]
+    #[test]
     fn level_overlaps() {
         let seg0 = fixture_segment("1".into(), (b"c".to_vec(), b"k".to_vec()));
         let seg1 = fixture_segment("2".into(), (b"l".to_vec(), b"z".to_vec()));
 
-        let level = ResolvedLevel(vec![&seg0, &seg1]);
+        let level = ResolvedLevel(vec![seg0, seg1]);
 
         assert_eq!(
             Vec::<&str>::new(),
@@ -386,5 +319,5 @@ mod tests {
             vec!["1", "2"],
             level.get_overlapping_segments(b"f".to_vec(), b"x".to_vec()),
         );
-    } */
+    }
 }

@@ -4,7 +4,7 @@ pub(crate) mod major;
 pub(crate) mod tiered;
 pub(crate) mod worker;
 
-use crate::level::Levels;
+use crate::levels::Levels;
 
 /// Configuration for compaction
 #[derive(Debug, Eq, PartialEq)]

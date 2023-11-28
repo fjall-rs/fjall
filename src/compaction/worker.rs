@@ -1,6 +1,6 @@
 use crate::{
     compaction::Choice,
-    level::Levels,
+    levels::Levels,
     merge::MergeIterator,
     segment::{index::MetaIndex, writer::MultiWriter, Segment},
     Tree,

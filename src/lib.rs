@@ -59,7 +59,7 @@ mod either;
 mod error;
 mod flush;
 mod id;
-mod level;
+mod levels;
 mod memtable;
 mod merge;
 mod prefix;

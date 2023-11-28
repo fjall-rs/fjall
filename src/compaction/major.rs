@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy, Options};
-use crate::level::Levels;
+use crate::levels::Levels;
 use std::sync::Arc;
 
 /// Major compaction

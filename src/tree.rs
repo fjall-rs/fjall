@@ -3,7 +3,7 @@ use crate::{
     commit_log::CommitLog,
     compaction::CompactionStrategy,
     id::generate_segment_id,
-    level::Levels,
+    levels::Levels,
     memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
@@ -156,6 +156,9 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
+    #[deprecated(
+        note = "len() isn't deprecated per se, however it performs a full tree scan and should be avoided"
+    )]
     pub fn len(&self) -> crate::Result<usize> {
         Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
     }
@@ -494,6 +497,8 @@ impl Tree {
     #[allow(clippy::iter_not_returning_iterator)]
     /// Returns an iterator that scans through the entire Tree
     ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
@@ -502,6 +507,8 @@ impl Tree {
     }
 
     /// Returns an iterator over a range of items
+    ///
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited)
     ///
     /// # Errors
     ///
@@ -543,6 +550,8 @@ impl Tree {
     }
 
     /// Returns an iterator over a prefixed set of items
+    ///
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited)
     ///
     /// # Errors
     ///

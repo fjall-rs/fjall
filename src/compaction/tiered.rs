@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy, Options};
-use crate::level::Levels;
+use crate::levels::Levels;
 use std::sync::Arc;
 
 /// Size-tiered compaction strategy (STCS)
@@ -77,22 +77,24 @@ impl CompactionStrategy for Strategy {
     }
 }
 
-/* #[cfg(test)]
+#[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, sync::Arc};
-
-    use super::{CompactionChoice, Strategy};
+    use super::Strategy;
     use crate::{
         block_cache::BlockCache,
-        compaction::{CompactionStrategy, SingleSegmentPayload},
+        compaction::{Choice, CompactionStrategy, Options},
+        levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
+    use std::sync::Arc;
 
-    fn fixture_segment(id: String) -> Segment {
-        Segment {
-            path: ".".into(),
-            block_index: Arc::new(MetaIndex::new(BTreeMap::new())),
+    fn fixture_segment(id: String) -> Arc<Segment> {
+        let block_cache = Arc::new(BlockCache::new(0));
+
+        Arc::new(Segment {
+            block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
+                path: ".".into(),
                 block_count: 0,
                 block_size: 0,
                 created_at: 0,
@@ -103,50 +105,59 @@ mod tests {
                 key_range: (vec![], vec![]),
                 tombstone_count: 0,
                 uncompressed_size: 0,
+                seqnos: (0, 0),
             },
-            block_cache: Arc::new(BlockCache::new(0)),
-        }
+            block_cache,
+        })
     }
 
     #[test]
-    fn empty_levels() {
+    fn empty_levels() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let levels = Levels::create_new(4);
+        let levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
 
-        assert_eq!(compactor.choose(&levels), CompactionChoice::DoNothing);
+        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+
+        Ok(())
     }
 
     #[test]
-    fn default_l0() {
+    fn default_l0() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let mut levels = Levels::create_new(4);
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
 
         levels.add(fixture_segment("1".into()));
-        assert_eq!(compactor.choose(&levels), CompactionChoice::DoNothing);
+        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.add(fixture_segment("2".into()));
-        assert_eq!(compactor.choose(&levels), CompactionChoice::DoNothing);
+        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.add(fixture_segment("3".into()));
-        assert_eq!(compactor.choose(&levels), CompactionChoice::DoNothing);
+        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.add(fixture_segment("4".into()));
         assert_eq!(
             compactor.choose(&levels),
-            CompactionChoice::SingleSegment(SingleSegmentPayload {
+            Choice::DoCompact(Options {
                 dest_level: 1,
-                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()]
+                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
+                target_size: u64::MAX,
             })
         );
+
+        Ok(())
     }
 
     #[test]
-    fn more_than_min() {
+    fn more_than_min() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(2, 8);
 
-        let mut levels = Levels::create_new(4);
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
         levels.add(fixture_segment("1".into()));
         levels.add(fixture_segment("2".into()));
         levels.add(fixture_segment("3".into()));
@@ -159,18 +170,22 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            CompactionChoice::SingleSegment(SingleSegmentPayload {
+            Choice::DoCompact(Options {
                 dest_level: 1,
-                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()]
+                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
+                target_size: u64::MAX,
             })
         );
+
+        Ok(())
     }
 
     #[test]
-    fn many_segments() {
+    fn many_segments() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(2, 2);
 
-        let mut levels = Levels::create_new(4);
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
         levels.add(fixture_segment("1".into()));
         levels.add(fixture_segment("2".into()));
         levels.add(fixture_segment("3".into()));
@@ -178,18 +193,22 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            CompactionChoice::SingleSegment(SingleSegmentPayload {
+            Choice::DoCompact(Options {
                 dest_level: 1,
-                segment_ids: vec!["1".into(), "2".into()]
+                segment_ids: vec!["1".into(), "2".into()],
+                target_size: u64::MAX,
             })
         );
+
+        Ok(())
     }
 
     #[test]
-    fn deeper_level() {
+    fn deeper_level() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(2, 4);
 
-        let mut levels = Levels::create_new(4);
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
         levels.add(fixture_segment("1".into()));
 
         levels.insert_into_level(1, fixture_segment("2".into()));
@@ -197,35 +216,42 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            CompactionChoice::SingleSegment(SingleSegmentPayload {
+            Choice::DoCompact(Options {
                 dest_level: 2,
-                segment_ids: vec!["2".into(), "3".into()]
+                segment_ids: vec!["2".into(), "3".into()],
+                target_size: u64::MAX,
             })
         );
 
-        let mut levels = Levels::create_new(4);
+        let tempdir = tempfile::tempdir()?;
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
 
         levels.insert_into_level(2, fixture_segment("2".into()));
         levels.insert_into_level(2, fixture_segment("3".into()));
 
         assert_eq!(
             compactor.choose(&levels),
-            CompactionChoice::SingleSegment(SingleSegmentPayload {
+            Choice::DoCompact(Options {
                 dest_level: 3,
-                segment_ids: vec!["2".into(), "3".into()]
+                segment_ids: vec!["2".into(), "3".into()],
+                target_size: u64::MAX,
             })
         );
+
+        Ok(())
     }
 
     #[test]
-    fn last_level() {
+    fn last_level() -> crate::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(2, 4);
 
-        let mut levels = Levels::create_new(4);
+        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
         levels.insert_into_level(3, fixture_segment("2".into()));
         levels.insert_into_level(3, fixture_segment("3".into()));
 
-        assert_eq!(compactor.choose(&levels), CompactionChoice::DoNothing);
+        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+
+        Ok(())
     }
 }
- */
