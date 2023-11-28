@@ -27,7 +27,7 @@ pub struct Config {
 
     /// [`MemTable`] maximum size in bytes
     ///
-    /// Defaults to 128 MiB
+    /// Defaults to 64 MiB, like RocksDB
     pub(crate) max_memtable_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree)
@@ -105,7 +105,7 @@ impl Config {
 
     /// Sets the maximum memtable size
     ///
-    /// Defaults to 128 MiB
+    /// Defaults to 64 MiB, like `RocksDB`
     #[must_use]
     pub fn max_memtable_size(mut self, bytes: u32) -> Self {
         self.max_memtable_size = bytes;
