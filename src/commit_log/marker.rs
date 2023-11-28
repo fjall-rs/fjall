@@ -27,9 +27,32 @@ pub enum Marker {
     End(u32),
 }
 
-const MARKER_START_TAG: u8 = 0;
-const MARKER_ITEM_TAG: u8 = 1;
-const MARKER_END_TAG: u8 = 2;
+enum MarkerTag {
+    Start = 0,
+    Item = 1,
+    End = 2,
+}
+
+impl TryFrom<u8> for MarkerTag {
+    type Error = DeserializeError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        use MarkerTag::{End, Item, Start};
+
+        match value {
+            0 => Ok(Start),
+            1 => Ok(Item),
+            2 => Ok(End),
+            _ => Err(DeserializeError::InvalidTag(value)),
+        }
+    }
+}
+
+impl From<MarkerTag> for u8 {
+    fn from(val: MarkerTag) -> Self {
+        val as Self
+    }
+}
 
 impl Serializable for Marker {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
@@ -37,15 +60,15 @@ impl Serializable for Marker {
 
         match self {
             Start(val) => {
-                writer.write_u8(MARKER_START_TAG)?;
+                writer.write_u8(MarkerTag::Start.into())?;
                 writer.write_u32::<BigEndian>(*val)?;
             }
             Item(value) => {
-                writer.write_u8(MARKER_ITEM_TAG)?;
+                writer.write_u8(MarkerTag::Item.into())?;
                 value.serialize(writer)?;
             }
             End(val) => {
-                writer.write_u8(MARKER_END_TAG)?;
+                writer.write_u8(MarkerTag::End.into())?;
                 writer.write_u32::<BigEndian>(*val)?;
             }
         }
@@ -55,24 +78,19 @@ impl Serializable for Marker {
 
 impl Deserializable for Marker {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
-        use Marker::{End, Item, Start};
-
-        let tag = reader.read_u8()?;
-
-        match tag {
-            MARKER_START_TAG => {
+        match reader.read_u8()?.try_into()? {
+            MarkerTag::Start => {
                 let item_count = reader.read_u32::<BigEndian>()?;
-                Ok(Start(item_count))
+                Ok(Self::Start(item_count))
             }
-            MARKER_ITEM_TAG => {
+            MarkerTag::Item => {
                 let value = Value::deserialize(reader)?;
-                Ok(Item(value))
+                Ok(Self::Item(value))
             }
-            MARKER_END_TAG => {
+            MarkerTag::End => {
                 let crc = reader.read_u32::<BigEndian>()?;
-                Ok(End(crc))
+                Ok(Self::End(crc))
             }
-            tag => Err(DeserializeError::InvalidTag(tag)),
         }
     }
 }
@@ -114,7 +132,7 @@ mod tests {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
-                _ => panic!("should throw InvalidTag"),
+                _ => panic!("should throw UnexpectedEof"),
             },
         }
     }
