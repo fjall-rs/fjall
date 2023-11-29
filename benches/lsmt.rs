@@ -192,7 +192,10 @@ fn full_scan(c: &mut Criterion) {
     let item_count = 500_000;
 
     group.bench_function("full scan uncached", |b| {
-        let tree = Config::new(tempdir().unwrap()).open().unwrap();
+        let tree = Config::new(tempdir().unwrap())
+            .block_cache_size(0)
+            .open()
+            .unwrap();
 
         for x in 0_u32..item_count {
             let key = x.to_be_bytes();
@@ -212,10 +215,7 @@ fn full_scan(c: &mut Criterion) {
     });
 
     group.bench_function("full scan cached", |b| {
-        let tree = Config::new(tempdir().unwrap())
-            .block_cache_size(100_000)
-            .open()
-            .unwrap();
+        let tree = Config::new(tempdir().unwrap()).open().unwrap();
 
         for x in 0_u32..item_count {
             let key = x.to_be_bytes();

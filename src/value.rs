@@ -31,6 +31,18 @@ pub struct Value {
     pub is_tombstone: bool,
 }
 
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.key.partial_cmp(&other.key)
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
 impl Value {
     /// Creates a new [`Value`].
     ///
