@@ -8,6 +8,8 @@ A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 use lsm_tree::{Config, Tree};
 
 let folder = "data";
+
+// A tree is a single logical keyspace/index/... and supports a BTreeMap-like API, but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
 
 tree.insert("my_key", "this is the actual value of the object")?;
@@ -32,7 +34,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Sharded journal & memtable for concurrent writes
 - Journal truncation on recovery for consistency
 - Atomic write batches
-- Automatic background compaction & tombstone eviction
+- Automatic background compaction
   - Does not spawn background threads unless actually needed
 - Thread-safe (internally synchronized)
 - LZ4-compresses data
