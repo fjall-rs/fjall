@@ -4,6 +4,23 @@
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
+```rs
+use lsm_tree::{Config, Tree};
+
+let folder = "data";
+let tree = Config::new(folder).open()?;
+
+tree.insert("my_key", "this is the actual value of the object")?;
+
+let item = tree.get("my_key")?;
+assert!(item.is_some());
+
+// Flush to definitely make sure data is persisted
+tree.flush()?;
+
+// TODO: range & prefix
+```
+
 ## About
 
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
@@ -14,7 +31,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Bloom filters to avoid expensive disk access for non-existing items
 - Sharded journal & memtable for concurrent writes
 - Journal truncation on recovery for consistency
-- Atomic batch operations
+- Atomic write batches
 - Automatic background compaction & tombstone eviction
   - Does not spawn background threads unless actually needed
 - Thread-safe (internally synchronized)
