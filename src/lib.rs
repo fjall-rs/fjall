@@ -19,7 +19,7 @@
 //! use lsm_tree::{Tree, Config};
 //!
 //! # let folder = tempfile::tempdir()?;
-//! let mut tree = Config::new(folder).open()?;
+//! let tree = Config::new(folder).open()?;
 //!
 //! assert!(tree.is_empty()?);
 //! tree.insert("my_key", "this is the actual value of the object")?;
