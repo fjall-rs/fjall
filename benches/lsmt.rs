@@ -42,7 +42,10 @@ use tempfile::tempdir;
 fn memtable_point_reads(c: &mut Criterion) {
     let mut group = c.benchmark_group("memtable point reads");
 
-    let tree = Config::new(tempdir().unwrap()).open().unwrap();
+    let tree = Config::new(tempdir().unwrap())
+        .max_memtable_size(128_000_000)
+        .open()
+        .unwrap();
 
     let max = 1_000_000;
     let lookup_count = 100_000;
@@ -284,7 +287,7 @@ fn scan_vs_query(c: &mut Criterion) {
                 assert_eq!(iter.count(), 1000);
             })
         });
-        group.bench_function(format!("query rev {}", size), |b| {
+        /* group.bench_function(format!("query rev {}", size), |b| {
             b.iter(|| {
                 let iter = tree
                     .range((
@@ -295,7 +298,7 @@ fn scan_vs_query(c: &mut Criterion) {
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             })
-        });
+        }); */
     }
 }
 
@@ -340,13 +343,13 @@ fn scan_vs_prefix(c: &mut Criterion) {
                 assert_eq!(iter.count(), 1000);
             });
         });
-        group.bench_function(format!("prefix rev {}", size), |b| {
+        /* group.bench_function(format!("prefix rev {}", size), |b| {
             b.iter(|| {
                 let iter = tree.prefix(prefix).unwrap();
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             });
-        });
+        }); */
     }
 }
 
