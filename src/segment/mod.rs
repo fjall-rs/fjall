@@ -61,9 +61,10 @@ impl Segment {
             block_ref.size,
         )?; // TODO: no panic
 
-        if !block.check_crc(block.crc)? {
+        // TODO: option to check CRC? Steals ~10µs per read :(
+        /* if !block.check_crc(block.crc)? {
             return Err(crate::Error::CrcCheck);
-        }
+        } */
 
         let block = Arc::new(block);
 
