@@ -91,7 +91,8 @@ impl Value {
         std::mem::size_of::<Self>() + key_size + value_size
     }
 
-    /* /// Computes the internal key based on the user key + seqno
+    /* TODO: use writer instead as input */
+    /// Computes the internal key based on the user key + seqno + tombstone
     ///
     /// ### Example
     ///
@@ -99,16 +100,18 @@ impl Value {
     /// # use lsm_tree::Value;
     /// #
     /// let value = Value::new("abc", "my-value", false, 5);
-    /// assert_eq!(&[0x61, 0x62, 0x63, 0, 0, 0, 0, 0, 0, 0, 5], &*value.get_internal_key());
+    /// assert_eq!(&[0x61, 0x62, 0x63, 255, 255, 255, 255, 255, 255, 255, 250, 0], &*value.get_internal_key());
     /// ```
     #[must_use]
     #[doc(hidden)]
     pub fn get_internal_key(&self) -> Vec<u8> {
         let mut internal_key = Vec::with_capacity(self.key.len() + std::mem::size_of::<u64>());
         internal_key.extend_from_slice(&self.key);
-        internal_key.extend_from_slice(&self.seqno.to_be_bytes());
+        // NOTE: We invert the seqno, so the items are stored in descending order
+        internal_key.extend_from_slice(&(!self.seqno).to_be_bytes());
+        internal_key.extend_from_slice(&u8::from(self.is_tombstone).to_be_bytes());
         internal_key
-    } */
+    }
 }
 
 impl Serializable for Value {
