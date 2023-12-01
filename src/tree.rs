@@ -1,7 +1,7 @@
 use crate::{
     block_cache::BlockCache,
     commit_log::CommitLog,
-    compaction::CompactionStrategy,
+    compaction::{worker::start_compaction_thread, CompactionStrategy},
     id::generate_segment_id,
     levels::Levels,
     memtable::MemTable,
@@ -34,6 +34,14 @@ impl std::ops::Deref for Tree {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+fn ignore_tombstone_value(item: Value) -> Option<Value> {
+    if item.is_tombstone {
+        None
+    } else {
+        Some(item)
     }
 }
 
@@ -329,6 +337,7 @@ impl Tree {
         let levels = Levels::from_disk(&config.path.join("levels.json"), segments)?;
         let log_path = config.path.join("log");
 
+        let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
 
         let inner = TreeInner {
@@ -340,12 +349,19 @@ impl Tree {
             lsn: AtomicU64::new(lsn),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
-            compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
         };
+
+        let tree = Self(Arc::new(inner));
+
+        log::debug!("Starting {compaction_threads} compaction threads");
+        for _ in 0..compaction_threads {
+            start_compaction_thread(&tree);
+        }
 
         log::info!("Tree loaded");
 
-        Ok(Self(Arc::new(inner)))
+        Ok(tree)
     }
 
     fn append_entry(
@@ -537,7 +553,7 @@ impl Tree {
             .values()
             .filter(|x| x.check_key_range_overlap(&bounds))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(Range::new(
             crate::range::MemTableGuard {
@@ -666,14 +682,6 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
-        fn ignore_tombstone_value(item: Value) -> Option<Value> {
-            if item.is_tombstone {
-                None
-            } else {
-                Some(item)
-            }
-        }
-
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
 
         if let Some(item) = memtable_lock.get(&key) {
