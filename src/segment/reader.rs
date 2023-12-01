@@ -240,6 +240,8 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
+    // TODO: rev test with seqnos...
+
     #[test]
     fn test_get_all() -> crate::Result<()> {
         const ITEM_COUNT: u64 = 100_000;

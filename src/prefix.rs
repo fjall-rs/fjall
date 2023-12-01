@@ -1,4 +1,10 @@
-use crate::{merge::MergeIterator, range::MemTableGuard, segment::Segment, Value};
+use crate::{
+    merge::MergeIterator,
+    range::MemTableGuard,
+    segment::Segment,
+    value::{ParsedInternalKey, SeqNo},
+    Value,
+};
 use std::sync::Arc;
 
 pub struct Prefix<'a> {
@@ -39,9 +45,10 @@ impl<'a> PrefixIterator<'a> {
             iters.push(Box::new(
                 memtable
                     .items
-                    .range::<Vec<u8>, _>(lock.prefix.clone()..)
-                    .filter(|(key, _)| key.starts_with(&lock.prefix))
-                    .map(|(_, value)| Ok(value.clone())),
+                    // NOTE: See memtable.rs for range explanation
+                    .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
+                    .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
+                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
             ));
         }
 
@@ -49,15 +56,18 @@ impl<'a> PrefixIterator<'a> {
             lock.guard
                 .active
                 .items
-                .range::<Vec<u8>, _>(lock.prefix.clone()..)
-                .filter(|(key, _)| key.starts_with(&lock.prefix))
-                .map(|(_, value)| Ok(value.clone())),
+                // NOTE: See memtable.rs for range explanation
+                .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
+                .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
+                .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
         ));
 
-        let iter = Box::new(MergeIterator::new(iters).filter(|x| match x {
-            Ok(value) => !value.is_tombstone,
-            Err(_) => true,
-        }));
+        let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
+            |x| match x {
+                Ok(value) => !value.is_tombstone,
+                Err(_) => true,
+            },
+        ));
 
         Self { iter }
     }
@@ -71,11 +81,12 @@ impl<'a> Iterator for PrefixIterator<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for PrefixIterator<'a> {
+/* impl<'a> DoubleEndedIterator for PrefixIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!();
         self.iter.next_back()
     }
-}
+} */
 
 impl<'a> IntoIterator for &'a Prefix<'a> {
     type IntoIter = PrefixIterator<'a>;

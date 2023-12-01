@@ -1,4 +1,10 @@
-use crate::{memtable::MemTable, merge::MergeIterator, segment::Segment, Value};
+use crate::{
+    memtable::MemTable,
+    merge::MergeIterator,
+    segment::Segment,
+    value::{ParsedInternalKey, SeqNo},
+    Value,
+};
 use std::{
     collections::BTreeMap,
     ops::Bound,
@@ -52,23 +58,58 @@ impl<'a> RangeIterator<'a> {
             iters.push(Box::new(
                 memtable
                     .items
-                    .range::<Vec<u8>, _>(lock.bounds.clone())
-                    .map(|(_, value)| Ok(value.clone())),
+                    .iter()
+                    // TODO: optimize range start + how to filter
+                    // .range::<Vec<u8>, _>(lock.bounds.clone())
+                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
             ));
         }
+
+        let lo = match &lock.bounds.0 {
+            // NOTE: See memtable.rs for range explanation
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, SeqNo::MAX, true)),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, SeqNo::MAX, true)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let hi = match &lock.bounds.0 {
+            // NOTE: See memtable.rs for range explanation, this is the reverse case
+            // where we need to go all the way to the last seqno of an item
+            //
+            // Example: We search for (Unbounded..Excluded(abdef))
+            //
+            // key -> seqno
+            //
+            // a   -> 7 <<< This is the lowest key that matches the range
+            // abc -> 5
+            // abc -> 4
+            // abc -> 3 <<< This is the highest key that matches the range
+            // abcdef -> 6
+            // abcdef -> 5
+            //
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, 0, false)),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, 0, false)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let range = (lo, hi);
 
         iters.push(Box::new(
             lock.guard
                 .active
                 .items
-                .range::<Vec<u8>, _>(lock.bounds.clone())
-                .map(|(_, value)| Ok(value.clone())),
+                // NOTE: See memtable.rs for range explanation
+                // TODO: fix & optimize upper bound
+                .range(range)
+                .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
         ));
 
-        let iter = Box::new(MergeIterator::new(iters).filter(|x| match x {
-            Ok(value) => !value.is_tombstone,
-            Err(_) => true,
-        }));
+        let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
+            |x| match x {
+                Ok(value) => !value.is_tombstone,
+                Err(_) => true,
+            },
+        ));
 
         Self { iter }
     }
@@ -82,11 +123,12 @@ impl<'a> Iterator for RangeIterator<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for RangeIterator<'a> {
+/* impl<'a> DoubleEndedIterator for RangeIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!();
         self.iter.next_back()
     }
-}
+} */
 
 impl<'a> IntoIterator for &'a Range<'a> {
     type IntoIter = RangeIterator<'a>;

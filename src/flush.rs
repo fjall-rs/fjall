@@ -7,8 +7,10 @@ use crate::{
     Tree,
 };
 use std::{
+    fs::File,
+    io::BufReader,
     path::Path,
-    sync::{Arc, MutexGuard, RwLockWriteGuard},
+    sync::{Arc, Mutex, MutexGuard, RwLockWriteGuard},
 };
 
 fn flush_worker(
@@ -31,8 +33,8 @@ fn flush_worker(
     );
 
     // TODO: this clone hurts
-    for value in old_memtable.items.values().cloned() {
-        segment_writer.write(value)?;
+    for (key, value) in &old_memtable.items {
+        segment_writer.write(crate::Value::from(((key.clone()), value.clone())))?;
     }
 
     segment_writer.finish()?;
@@ -50,6 +52,7 @@ fn flush_worker(
     {
         Ok(meta_index) => {
             let created_segment = Segment {
+                file: Mutex::new(BufReader::new(File::open(metadata.path.join("blocks"))?)),
                 block_index: meta_index,
                 block_cache: Arc::clone(&tree.block_cache),
                 metadata,

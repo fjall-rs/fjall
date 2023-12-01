@@ -1,6 +1,7 @@
 pub mod recovery;
 
 use crate::commit_log::CommitLog;
+use crate::value::{ParsedInternalKey, SeqNo, UserData};
 use crate::Value;
 use crate::{
     commit_log::{marker::Marker, reader::Reader as CommitLogReader},
@@ -16,21 +17,26 @@ use std::path::Path;
 /// In case of a program crash, the current `MemTable` can be rebuilt from the commit log
 #[derive(Default)]
 pub struct MemTable {
-    pub(crate) items: BTreeMap<Vec<u8>, Value>,
+    pub(crate) items: BTreeMap<ParsedInternalKey, UserData>,
     pub(crate) size_in_bytes: u32,
 }
 
+// TODO: replace all this stuff with log truncation...
 fn rewrite_commit_log<P: AsRef<Path>>(path: P, memtable: &MemTable) -> std::io::Result<()> {
     log::info!("Rewriting commit log");
 
     let parent = path.as_ref().parent().unwrap();
-    /* let file = std::fs::File::create(parent.join("rlog"))?; */
     let mut repaired_log = CommitLog::new(parent.join("rlog"))?;
 
-    repaired_log
-        .append_batch(memtable.items.values().cloned().collect())
-        .unwrap();
+    let items = memtable
+        .items
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .map(Value::from)
+        .collect();
 
+    repaired_log.append_batch(items).unwrap();
+    // TODO: replace all this stuff with log truncation...
     repaired_log.flush()?;
 
     std::fs::rename(parent.join("rlog"), &path)?;
@@ -50,9 +56,36 @@ fn rewrite_commit_log<P: AsRef<Path>>(path: P, memtable: &MemTable) -> std::io::
 
 impl MemTable {
     /// Returns the item by key if it exists
+    ///
+    /// The item with the highest seqno will be returned
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Value> {
-        let result = self.items.get(key.as_ref());
-        result.cloned()
+        let prefix = key.as_ref();
+
+        // NOTE: This range start deserves some explanation...
+        // InternalKeys are multi-sorted by 2 categories: user_key and Reverse(seqno). (tombstone doesn't really matter)
+        // We search for the lowest entry that is greater or equal the user's prefix key
+        // and has the highest seqno (because the seqno is stored in reverse order)
+        //
+        // Example: We search for "asd"
+        //
+        // key -> seqno
+        //
+        // a   -> 7
+        // abc -> 5 <<< This is the lowest key that matches the range
+        // abc -> 4
+        // abc -> 3
+        // abcdef -> 6
+        // abcdef -> 5
+        //
+        let range = ParsedInternalKey::new(&key, SeqNo::MAX, true)..;
+
+        let item = self
+            .items
+            .range(range)
+            .find(|(key, _)| key.user_key.starts_with(prefix));
+
+        item.map(|(key, value)| (key.clone(), value.clone()))
+            .map(Value::from)
     }
 
     pub fn exceeds_threshold(&mut self, threshold: u32) -> bool {
@@ -60,9 +93,11 @@ impl MemTable {
     }
 
     /// Inserts an item into the `MemTable`
-    pub fn insert(&mut self, entry: Value, bytes_written: u32) {
-        self.items.insert(entry.key.clone(), entry);
-        self.size_in_bytes += bytes_written;
+    pub fn insert(&mut self, entry: Value) {
+        let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.is_tombstone);
+        let value = entry.value;
+
+        self.items.insert(key, value);
     }
 
     /// Creates a [`MemTable`] from a commit log on disk
@@ -186,7 +221,7 @@ impl MemTable {
                     // but in this case probably not
                     #[allow(clippy::iter_with_drain)]
                     for item in items.drain(..) {
-                        memtable.insert(item, 0);
+                        memtable.insert(item);
                     }
                 }
                 Item(item) => {
@@ -225,5 +260,56 @@ impl MemTable {
         memtable.size_in_bytes = byte_count as u32;
 
         Ok((lsn, byte_count, memtable))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    fn test_memtable_get() {
+        let mut memtable = MemTable::default();
+
+        let value = Value::new("abc", "abc", false, 0);
+
+        memtable.insert(value.clone());
+
+        assert_eq!(Some(value), memtable.get("abc"));
+    }
+
+    #[test]
+    fn test_memtable_get_highest_seqno() {
+        let mut memtable = MemTable::default();
+
+        memtable.insert(Value::new("abc", "abc", false, 0));
+        memtable.insert(Value::new("abc", "abc", false, 1));
+        memtable.insert(Value::new("abc", "abc", false, 2));
+        memtable.insert(Value::new("abc", "abc", false, 3));
+        memtable.insert(Value::new("abc", "abc", false, 4));
+
+        assert_eq!(
+            Some(Value::new("abc", "abc", false, 4)),
+            memtable.get("abc")
+        );
+    }
+
+    #[test]
+    fn test_memtable_get_prefix() {
+        let mut memtable = MemTable::default();
+
+        memtable.insert(Value::new("abc0", "abc", false, 0));
+        memtable.insert(Value::new("abc", "abc", false, 255));
+
+        assert_eq!(
+            Some(Value::new("abc", "abc", false, 255)),
+            memtable.get("abc")
+        );
+
+        assert_eq!(
+            Some(Value::new("abc0", "abc", false, 0)),
+            memtable.get("abc0")
+        );
     }
 }

@@ -6,6 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{BufWriter, Seek, Write},
+    ops::Deref,
     path::Path,
     sync::Arc,
 };
@@ -74,6 +75,11 @@ fn write_segment_history_entry(event: String, levels: &Levels) {
 }
  */
 impl Levels {
+    pub(crate) fn list_ids(&self) -> Vec<String> {
+        let items = self.levels.iter().map(|f| f.deref()).cloned();
+        items.flatten().collect()
+    }
+
     pub(crate) fn is_compacting(&self) -> bool {
         !self.hidden_set.is_empty()
     }
@@ -100,7 +106,7 @@ impl Levels {
         Ok(levels)
     }
 
-    pub(crate) fn from_disk<P: AsRef<Path>>(
+    pub(crate) fn recover<P: AsRef<Path>>(
         path: &P,
         segments: HashMap<String, Arc<Segment>>,
     ) -> crate::Result<Self> {
@@ -126,6 +132,7 @@ impl Levels {
         Ok(levels)
     }
 
+    // TODO: atomic rewrite
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
@@ -144,6 +151,20 @@ impl Levels {
         self.insert_into_level(0, segment);
     }
 
+    pub(crate) fn add_id(&mut self, segment_id: String) {
+        self.levels.first_mut().unwrap().push(segment_id);
+    }
+
+    pub(crate) fn sort_levels(&mut self) {
+        for level in &mut self.levels {
+            level.sort_by(|a, b| {
+                let seg_a = self.segments.get(a).expect("where's the segment at");
+                let seg_b = self.segments.get(b).expect("where's the segment at");
+                seg_b.metadata.created_at.cmp(&seg_a.metadata.created_at)
+            });
+        }
+    }
+
     pub(crate) fn insert_into_level(&mut self, level_no: u8, segment: Arc<Segment>) {
         let last_level_index = self.level_count - 1;
         let index = level_no.clamp(0, last_level_index);
@@ -156,13 +177,7 @@ impl Levels {
         level.push(segment.metadata.id.clone());
         self.segments.insert(segment.metadata.id.clone(), segment);
 
-        for level in &mut self.levels {
-            level.sort_by(|a, b| {
-                let seg_a = self.segments.get(a).expect("where's the segment at");
-                let seg_b = self.segments.get(b).expect("where's the segment at");
-                seg_b.metadata.created_at.cmp(&seg_a.metadata.created_at)
-            });
-        }
+        self.sort_levels();
 
         /* #[cfg(feature = "segment_history")]
         write_segment_history_entry("insert".into(), self); */
@@ -273,12 +288,17 @@ mod tests {
         block_cache::BlockCache,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::sync::Arc;
+    use std::{
+        fs::File,
+        io::BufReader,
+        sync::{Arc, Mutex},
+    };
 
     fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
+            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
             block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),

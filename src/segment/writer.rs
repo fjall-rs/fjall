@@ -310,35 +310,36 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn test_write_and_read() {
+    fn test_write_and_read() -> crate::Result<()> {
         const ITEM_COUNT: u64 = 100_000;
 
-        let folder = tempfile::tempdir().unwrap().into_path();
+        let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-        })
-        .unwrap();
+        })?;
 
         let items =
             (0u64..ITEM_COUNT).map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 0));
 
         for item in items {
-            writer.write(item).unwrap();
+            writer.write(item)?;
         }
 
-        writer.finish().unwrap();
+        writer.finish()?;
 
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
-        metadata.write_to_file().unwrap();
+        metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(
-            MetaIndex::from_file(metadata.id.clone(), &folder, Arc::clone(&block_cache)).unwrap(),
-        );
+        let meta_index = Arc::new(MetaIndex::from_file(
+            metadata.id.clone(),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
         let iter = Reader::new(
             folder.join("blocks"),
             metadata.id,
@@ -346,110 +347,10 @@ mod tests {
             Arc::clone(&meta_index),
             None,
             None,
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(ITEM_COUNT, iter.count() as u64);
 
-        /*  log::info!("Getting every item");
-
-        let mut iter =
-            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
-
-        for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
-            let item = iter.next().unwrap().expect("item should exist");
-            assert_eq!(key, &*item.key);
-        }
-
-        log::info!("Getting every item in reverse");
-
-        let mut iter =
-            Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
-
-        for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
-            let item = iter.next_back().unwrap().expect("item should exist");
-            assert_eq!(key, &*item.key);
-        }
-
-        log::info!("Getting every item in range");
-
-        let mut iter = Range::new(
-            folder.join("blocks"),
-            Arc::clone(&meta_index),
-            (
-                Included(0u64.to_be_bytes().into()),
-                Excluded(100u64.to_be_bytes().into()),
-            ),
-        )
-        .unwrap();
-
-        for key in (0u64..100).map(u64::to_be_bytes) {
-            let item = iter.next().unwrap().expect("item should exist");
-            assert_eq!(key, &*item.key);
-        }
-
-        log::info!("Getting every item in range in reverse");
-
-        let mut iter = Range::new(
-            folder.join("blocks"),
-            Arc::clone(&meta_index),
-            (
-                Included(0u64.to_be_bytes().into()),
-                Excluded(100u64.to_be_bytes().into()),
-            ),
-        )
-        .unwrap();
-
-        for key in (0u64..100).rev().map(u64::to_be_bytes) {
-            let item = iter.next_back().unwrap().expect("item should exist");
-            assert_eq!(key, &*item.key);
-        } */
-
-        //   Reader::new(folder.join("blocks"), Arc::clone(&meta_index), None, None).unwrap();
-
-        /* for thread_count in [1, 1, 2, 4, 8, 16] {
-            let start = std::time::Instant::now();
-
-            let threads = (0..thread_count)
-                .map(|thread_no| {
-                    let meta_index = meta_index.clone();
-
-                    std::thread::spawn(move || {
-                        let item_count = ITEM_COUNT / thread_count;
-                        let start = thread_no * item_count;
-                        let range = start..(start + item_count);
-
-                        for key in range.map(u64::to_be_bytes) {
-                            let item = meta_index.get_latest(&key);
-
-                            match item {
-                                Some(item) => {
-                                    assert_eq!(key, &*item.key);
-                                }
-                                None => {
-                                    panic!("item should exist: {}", u64::from_be_bytes(key))
-                                }
-                            }
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            for thread in threads {
-                thread.join().unwrap();
-            }
-
-            let elapsed = start.elapsed();
-            let nanos = elapsed.as_nanos();
-            let nanos_per_item = nanos / u128::from(ITEM_COUNT);
-            let reads_per_second = (std::time::Duration::from_secs(1)).as_nanos() / nanos_per_item;
-
-            eprintln!(
-                "done in {:?}s, {}ns per item - {} RPS",
-                elapsed.as_secs_f64(),
-                nanos_per_item,
-                reads_per_second
-            );
-        } */
+        Ok(())
     }
 }

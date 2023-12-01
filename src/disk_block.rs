@@ -1,11 +1,7 @@
 use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeError};
 use byteorder::{BigEndian, ReadBytesExt};
 use lz4_flex::decompress_size_prepended;
-use std::{
-    fs::File,
-    io::{BufReader, Cursor, Read, Seek, Write},
-    path::Path,
-};
+use std::io::{Cursor, Read, Write};
 
 /// Contains the items of a block after decompressing & deserializing.
 ///
@@ -28,15 +24,14 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         Ok(block)
     }
 
-    pub fn from_file_compressed<P: AsRef<Path>>(
-        path: P,
+    pub fn from_file_compressed<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
         offset: u64,
         size: u32,
     ) -> crate::Result<Self> {
         // Read bytes from disk
-        let mut reader = BufReader::new(File::open(path)?);
         reader.seek(std::io::SeekFrom::Start(offset))?;
-        Self::from_reader_compressed(&mut reader, size)
+        Self::from_reader_compressed(reader, size)
     }
 }
 

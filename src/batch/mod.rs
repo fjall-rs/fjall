@@ -54,7 +54,7 @@ impl Batch {
 
         trace!("Applying {} batched items to memtable", self.data.len());
         for entry in std::mem::take(&mut self.data) {
-            memtable.insert(entry, 0);
+            memtable.insert(entry);
         }
 
         if memtable.exceeds_threshold(self.tree.config.max_memtable_size) {

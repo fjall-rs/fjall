@@ -6,9 +6,10 @@ use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Points to a block on file
 ///
@@ -81,6 +82,8 @@ impl IndexBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct MetaIndex {
+    pub file: Mutex<BufReader<File>>,
+
     /// Base folder path
     path: PathBuf,
 
@@ -214,12 +217,11 @@ impl MetaIndex {
         match self.blocks.get(self.segment_id.clone(), block_key) {
             Some(block) => block,
             None => {
-                let block = IndexBlock::from_file_compressed(
-                    self.path.join("index_blocks"),
-                    block_ref.offset,
-                    block_ref.size,
-                )
-                .unwrap(); // TODO:
+                let mut file = self.file.lock().unwrap();
+
+                let block =
+                    IndexBlock::from_file_compressed(&mut *file, block_ref.offset, block_ref.size)
+                        .unwrap(); // TODO:
 
                 let block = Arc::new(block);
 
@@ -235,20 +237,24 @@ impl MetaIndex {
         }
     }
 
-    // TODO: use this in Segment::get(_latest) instead
-    // TODO: need to use prefix iterator and get last seqno
-    pub fn get_latest(&self, key: &[u8]) -> Option<IndexEntry> {
+    pub fn get_latest<K: AsRef<[u8]>>(&self, key: K) -> Option<IndexEntry> {
+        let key = key.as_ref();
+
         let (block_key, index_block_ref) = self.index.get_lower_bound_block_info(key)?;
 
         let index_block = match self.blocks.get(self.segment_id.clone(), block_key) {
             Some(block) => block,
             None => {
+                let mut file = self.file.lock().unwrap();
+
                 let block = IndexBlock::from_file_compressed(
-                    self.path.join("index_blocks"),
+                    &mut *file,
                     index_block_ref.offset,
                     index_block_ref.size,
                 )
                 .unwrap(); // TODO:
+
+                drop(file);
 
                 let block = Arc::new(block);
 
@@ -285,6 +291,9 @@ impl MetaIndex {
         }
 
         Self {
+            file: Mutex::new(BufReader::new(
+                File::open(path.as_ref().join("index_blocks")).unwrap(),
+            )),
             path: path.as_ref().into(),
             segment_id,
             index: DiskBlockIndex::new(tree),
@@ -298,6 +307,7 @@ impl MetaIndex {
         let index_block_index = IndexBlockIndex(Arc::clone(&block_cache));
 
         Self {
+            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
             path: ".".into(),
             block_cache,
             segment_id,
@@ -314,7 +324,11 @@ impl MetaIndex {
         log::debug!("Reading block index from {}", path.as_ref().display());
 
         let size = std::fs::metadata(path.as_ref().join("index"))?.len();
-        let index = IndexBlock::from_file_compressed(path.as_ref().join("index"), 0, size as u32)?;
+        let index = IndexBlock::from_file_compressed(
+            &mut BufReader::new(File::open(path.as_ref().join("index")).unwrap()), // TODO:
+            0,
+            size as u32,
+        )?;
 
         if !index.check_crc(index.crc)? {
             return Err(crate::Error::CrcCheck);

@@ -7,7 +7,7 @@ use crate::{
     memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
-    segment::{self, Segment},
+    segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
     Batch, Config, Value,
 };
@@ -245,28 +245,42 @@ impl Tree {
         block_cache: &Arc<BlockCache>,
     ) -> crate::Result<HashMap<String, Arc<Segment>>> {
         let folder = folder.as_ref();
+
+        // NOTE: First we load the level manifest without any
+        // segments just to get the IDs
+        // Then we recover the segments and build the actual level manifest
+        let levels = Levels::recover(&folder.join("levels.json"), HashMap::new())?;
+        let segment_ids_to_recover = levels.list_ids();
+
         let mut segments = HashMap::new();
 
-        if folder.exists() {
-            log::info!("Reading existing segments from folder {}", folder.display());
+        for dirent in std::fs::read_dir(folder.join("segments"))? {
+            let dirent = dirent?;
+            let path = dirent.path();
 
-            for dirent in std::fs::read_dir(folder)? {
-                let dirent = dirent?;
-                let path = dirent.path();
+            assert!(path.is_dir());
 
-                if path.is_dir() {
-                    if path.join("meta.json").exists() {
-                        let segment = Segment::recover(&path, Arc::clone(block_cache))?;
-                        segments.insert(segment.metadata.id.clone(), Arc::new(segment));
-                        log::debug!("Resurrected segment from {:?}", path);
-                    } else {
-                        log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
-                        std::fs::remove_dir_all(path)?;
-                    }
-                } else {
-                    log::debug!("Segment folder is not a folder after all");
-                }
+            let segment_id = dirent.file_name().to_str().unwrap().to_owned();
+            log::debug!("Recovering segment from {}", path.display());
+
+            if segment_ids_to_recover.contains(&segment_id) {
+                let segment = Segment::recover(&path, Arc::clone(block_cache))?;
+                segments.insert(segment.metadata.id.clone(), Arc::new(segment));
+                log::debug!("Recovered segment from {}", path.display());
+            } else {
+                log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
+                std::fs::remove_dir_all(path)?;
             }
+        }
+
+        if segments.len() < segment_ids_to_recover.len() {
+            log::error!("Expected segments : {segment_ids_to_recover:?}");
+            log::error!(
+                "Recovered segments: {:?}",
+                segments.keys().collect::<Vec<_>>()
+            );
+
+            panic!("Some segments were not recovered")
         }
 
         Ok(segments)
@@ -278,12 +292,18 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     fn recover(config: Config) -> crate::Result<Self> {
+        let start = std::time::Instant::now();
+
         // Flush orphaned logs
+
+        // NOTE: Load previous levels manifest
+        // Add all flushed segments to it, then recover properly
+        let mut levels = Levels::recover(&config.path.join("levels.json"), HashMap::new())?;
 
         for dirent in std::fs::read_dir(&config.path.join("logs"))? {
             let dirent = dirent?;
 
-            log::warn!(
+            log::info!(
                 "Flushing orphaned journal {} to segment",
                 dirent.path().to_string_lossy()
             );
@@ -291,7 +311,7 @@ impl Tree {
             let (_, _, memtable) = MemTable::from_file(dirent.path()).unwrap();
 
             let segment_id = generate_segment_id();
-            let segment_folder = config.path.join(format!("segments/{segment_id}"));
+            let segment_folder = config.path.join("segments").join(&segment_id);
 
             let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {
                 path: segment_folder.clone(),
@@ -299,12 +319,24 @@ impl Tree {
                 block_size: config.block_size,
             })?;
 
-            for value in memtable.items.into_values() {
-                segment_writer.write(value)?;
+            for (key, value) in memtable.items {
+                segment_writer.write(Value::from((key, value)))?;
             }
 
             segment_writer.finish()?;
 
+            let metadata = Metadata::from_writer(segment_id, segment_writer);
+            metadata.write_to_file()?;
+
+            log::info!("Written segment from orphaned journal: {:?}", metadata.id);
+
+            levels.add_id(metadata.id);
+            levels.write_to_disk()?;
+
+            // TODO: if an IO happens here, that'd be bad
+            // TODO: because on NEXT restart it would be flushed again
+            // TODO: the log file/(folder when sharded) should have the same ID as the segment
+            // TODO: so the log can be discarded
             std::fs::remove_file(dirent.path())?;
         }
 
@@ -319,7 +351,7 @@ impl Tree {
         log::info!("Restoring segments");
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
-        let segments = Self::recover_segments(&config.path.join("segments"), &block_cache)?;
+        let segments = Self::recover_segments(&config.path, &block_cache)?;
 
         // Check if a segment has a higher seqno and then take it
         lsn = lsn.max(
@@ -332,9 +364,11 @@ impl Tree {
 
         // Finalize Tree
 
-        log::info!("Loading level manifest");
+        log::debug!("Loading level manifest");
 
-        let levels = Levels::from_disk(&config.path.join("levels.json"), segments)?;
+        let mut levels = Levels::recover(&config.path.join("levels.json"), segments)?;
+        levels.sort_levels();
+
         let log_path = config.path.join("log");
 
         let compaction_threads = 4; // TODO: config
@@ -359,7 +393,7 @@ impl Tree {
             start_compaction_thread(&tree);
         }
 
-        log::info!("Tree loaded");
+        log::info!("Tree loaded in {}s", start.elapsed().as_secs_f32());
 
         Ok(tree)
     }
@@ -376,7 +410,8 @@ impl Tree {
         // NOTE: Add value key length to take into account the overhead of keys
         // inside the MemTable
         let size = value.size() + value.key.len();
-        memtable.insert(value, size as u32);
+        memtable.insert(value);
+        memtable.size_in_bytes += size as u32;
 
         if memtable.exceeds_threshold(self.config.max_memtable_size) {
             crate::flush::start(self, commit_log, memtable)?;
@@ -630,7 +665,7 @@ impl Tree {
         Ok(item)
     }
 
-    /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
+    /* /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
     /// #
     /// # Example usage
     ///
@@ -659,7 +694,7 @@ impl Tree {
     pub fn last_key_value(&self) -> crate::Result<Option<Value>> {
         let item = self.iter()?.into_iter().next_back().transpose()?;
         Ok(item)
-    }
+    } */
 
     /// Retrieves an item from the tree
     ///
