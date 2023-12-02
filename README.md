@@ -9,7 +9,9 @@ use lsm_tree::{Config, Tree};
 
 let folder = "data";
 
-// A tree is a single logical keyspace/index/... and supports a BTreeMap-like API, but all data is persisted to disk.
+// A tree is a single logical keyspace/index/...
+// and supports a BTreeMap-like API
+// but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
 
 tree.insert("my_key", "this is the actual value of the object")?;
