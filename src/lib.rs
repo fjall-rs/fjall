@@ -61,7 +61,7 @@ mod flush;
 mod id;
 mod journal;
 mod levels;
-// mod memtable;
+mod memtable;
 mod merge;
 mod prefix;
 mod range;

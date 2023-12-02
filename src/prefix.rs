@@ -45,39 +45,21 @@ impl<'a> PrefixIterator<'a> {
                     .items
                     // NOTE: See memtable.rs for range explanation
                     .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
-                    .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
-                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
+                    .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
+                    .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone())))),
             ));
         }
 
         let memtable_iter = {
-            let mut iters: Vec<BoxedIterator<'a>> = vec![];
-
-            for shard in &lock.guard.active {
-                let iter = shard
-                    .memtable
-                    .items
-                    .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
-                    .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
-                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone()))));
-
-                iters.push(Box::new(iter));
-            }
-
-            MergeIterator::new(iters)
-        };
-
-        iters.push(Box::new(memtable_iter));
-
-        /* iters.push(Box::new(
             lock.guard
                 .active
                 .items
-                // NOTE: See memtable.rs for range explanation
                 .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
-                .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
-                .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
-        )); */
+                .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
+                .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone()))))
+        };
+
+        iters.push(Box::new(memtable_iter));
 
         let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
             |x| match x {

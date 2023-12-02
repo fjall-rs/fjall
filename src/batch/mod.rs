@@ -35,6 +35,9 @@ impl Batch {
     pub fn commit(mut self) -> crate::Result<()> {
         let mut shard = self.tree.journal.lock_shard();
 
+        // NOTE: Fully (write) lock, so the batch can be committed atomically
+        let memtable_lock = self.tree.active_memtable.write().expect("lock poisoned");
+
         let batch_seqno = self
             .tree
             .lsn
@@ -47,18 +50,23 @@ impl Batch {
         let bytes_written = shard.write_batch(self.data.clone())?;
         shard.flush()?;
 
-        // TODO: size adjustments
-        /* memtable.size_in_bytes += bytes_written as u32;
+        let memtable_size = self
+            .tree
+            .approx_memtable_size_bytes
+            .fetch_add(bytes_written as u32, std::sync::atomic::Ordering::SeqCst);
 
-        trace!("Applying {} batched items to memtable", self.data.len());
+        log::trace!("Applying {} batched items to memtable", self.data.len());
         for entry in std::mem::take(&mut self.data) {
-            memtable.insert(entry);
-        } */
+            memtable_lock.insert(entry);
+        }
 
-        // TODO: check
-        /* if memtable.exceeds_threshold(self.tree.config.max_memtable_size) {
-            crate::flush::start(&self.tree, commit_log, memtable)?;
-        } */
+        drop(memtable_lock);
+        drop(shard);
+
+        if memtable_size > self.tree.config.max_memtable_size {
+            log::debug!("Memtable reached threshold size");
+            crate::flush::start(&self.tree)?;
+        }
 
         Ok(())
     }

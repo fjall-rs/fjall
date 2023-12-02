@@ -1,8 +1,5 @@
 use crate::{
-    block_cache::BlockCache,
-    journal::{mem_table::MemTable, Journal},
-    levels::Levels,
-    Config,
+    block_cache::BlockCache, journal::Journal, levels::Levels, memtable::MemTable, Config,
 };
 use std::{
     collections::BTreeMap,
@@ -20,13 +17,14 @@ pub struct TreeInner {
     /// Last-seen sequence number (highest sequence number)
     pub(crate) lsn: AtomicU64,
 
+    // TODO: move into memtable
     /// Approximate memtable size
     /// If this grows to large, a flush is triggered
     pub(crate) approx_memtable_size_bytes: AtomicU32,
 
+    pub(crate) active_memtable: Arc<RwLock<MemTable>>,
+
     /// Journal aka Commit log aka Write-ahead log (WAL)
-    ///
-    /// This also contains the active memtable, sharded by journal shard
     pub(crate) journal: Journal,
 
     /// Memtables that are being flushed

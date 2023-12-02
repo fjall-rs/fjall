@@ -1,12 +1,14 @@
 use self::shard::JournalShard;
-use crate::{sharded::Sharded, Value};
+use crate::{
+    journal::{marker::Marker, recovery::LogRecovery},
+    memtable::MemTable,
+    sharded::Sharded,
+};
 use std::{
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };
 mod marker;
-pub mod mem_table;
-pub mod rebuild;
 mod recovery;
 pub mod shard;
 
@@ -22,51 +24,46 @@ fn get_shard_path<P: AsRef<Path>>(base: P, idx: u8) -> PathBuf {
 }
 
 impl Journal {
-    pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        if path.as_ref().exists() {
-            Self::recover(path)
-        } else {
-            Self::create_new(path)
-        }
-    }
-
-    fn recover<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, MemTable)> {
         log::info!("Recovering journal from {}", path.as_ref().display());
 
         let path = path.as_ref();
 
-        // NOTE: Don't listen to clippy!
-        // We need to collect the threads
-        #[allow(clippy::needless_collect)]
+        let memtable = MemTable::default();
+
+        for idx in 0..SHARD_COUNT {
+            let shard_path = get_shard_path(path, idx);
+
+            let recoverer = LogRecovery::new(shard_path)?;
+
+            for item in recoverer {
+                let item = item?;
+
+                if let Marker::Item(item) = item {
+                    memtable.insert(item);
+                }
+            }
+
+            log::trace!("Recovered journal shard {idx}");
+        }
+
         let shards = (0..SHARD_COUNT)
             .map(|idx| {
-                let shard_path = get_shard_path(path, idx);
-                std::thread::spawn(move || {
-                    Ok::<_, crate::Error>(RwLock::new(JournalShard::recover(shard_path)?))
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let shards = shards
-            .into_iter()
-            .map(|t| {
-                let shard = t.join().expect("should join")?;
-                log::debug!("Recovered journal shard");
-                Ok(shard)
+                Ok(RwLock::new(JournalShard::recover(get_shard_path(
+                    path, idx,
+                ))?))
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
         log::info!("Recovered all journal shards");
 
-        Ok(Self {
-            shards: Sharded::new(shards),
-            path: path.to_path_buf(),
-        })
-    }
-
-    pub fn get_path(&self) -> PathBuf {
-        let lock = self.lock_shard();
-        lock.path.parent().unwrap().into()
+        Ok((
+            Self {
+                shards: Sharded::new(shards),
+                path: path.to_path_buf(),
+            },
+            memtable,
+        ))
     }
 
     pub fn rotate<P: AsRef<Path>>(
@@ -82,8 +79,6 @@ impl Journal {
         for (idx, shard) in shards.iter_mut().enumerate() {
             shard.rotate(path.join(idx.to_string()))?;
         }
-
-        // TODO: OH OH NEED TO RESET PATH HERE
 
         Ok(())
     }
@@ -116,25 +111,5 @@ impl Journal {
             shard.flush()?;
         }
         Ok(())
-    }
-
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Value> {
-        let mut item: Option<Value> = None;
-
-        for shard in self.shards.iter() {
-            let lock = shard.read().expect("lock is poisoned");
-
-            if let Some(retrieved) = lock.memtable.get(&key) {
-                if let Some(inner) = &item {
-                    if retrieved.seqno > inner.seqno {
-                        item = Some(retrieved);
-                    }
-                } else {
-                    item = Some(retrieved);
-                }
-            }
-        }
-
-        item
     }
 }

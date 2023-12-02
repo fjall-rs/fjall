@@ -1,6 +1,5 @@
+use super::marker::Marker;
 use crate::{journal::recovery::LogRecovery, serde::Serializable, SerializeError, Value};
-
-use super::{marker::Marker, mem_table::MemTable};
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -8,7 +7,6 @@ use std::{
 };
 
 pub struct JournalShard {
-    pub(crate) memtable: MemTable,
     pub(crate) path: PathBuf,
     file: BufWriter<File>,
 }
@@ -33,9 +31,9 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
 
 impl JournalShard {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
-        let file = File::create(path)?;
-        self.memtable = MemTable::default();
+        let file = File::create(&path)?;
         self.file = BufWriter::new(file);
+        self.path = path.as_ref().to_path_buf();
         Ok(())
     }
 
@@ -44,7 +42,6 @@ impl JournalShard {
         let file = File::create(path)?;
 
         Ok(Self {
-            memtable: MemTable::default(),
             file: BufWriter::new(file),
             path: path.to_path_buf(),
         })
@@ -52,7 +49,6 @@ impl JournalShard {
 
     pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
-        let mut memtable = MemTable::default();
 
         if !path.exists() {
             return Ok(Self {
@@ -62,28 +58,12 @@ impl JournalShard {
                         .append(true)
                         .open(path)?,
                 ),
-                memtable,
                 path: path.to_path_buf(),
             });
         }
 
-        let recoverer = LogRecovery::new(path)?;
-
-        for item in recoverer {
-            let item = item?;
-
-            // TODO: proper recovery
-
-            if let Marker::Item(item) = item {
-                memtable.insert(item);
-            }
-        }
-
-        log::trace!("Recovered journal shard {} items", memtable.len());
-
         Ok(Self {
             file: BufWriter::new(std::fs::OpenOptions::new().append(true).open(path)?),
-            memtable,
             path: path.to_path_buf(),
         })
     }
@@ -123,10 +103,6 @@ impl JournalShard {
 
         let crc = hasher.finalize();
         byte_count += write_end(&mut self.file, crc)?;
-
-        for item in items {
-            self.memtable.insert(item);
-        }
 
         Ok(byte_count)
     }

@@ -1,7 +1,8 @@
 use crate::{
     compaction::worker::start_compaction_thread,
     id::generate_segment_id,
-    journal::{mem_table::MemTable, rebuild::rebuild_full_memtable, Journal},
+    journal::Journal,
+    memtable::MemTable,
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
     Tree,
 };
@@ -32,7 +33,9 @@ fn flush_worker(
     );
 
     // TODO: this clone hurts
-    for (key, value) in &old_memtable.items {
+    for entry in &old_memtable.items {
+        let key = entry.key();
+        let value = entry.value();
         segment_writer.write(crate::Value::from(((key.clone()), value.clone())))?;
     }
 
@@ -90,10 +93,10 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     tree.flush_semaphore.acquire();
     log::trace!("Got flush semaphore");
 
-    // TODO: ArcSwap the journal so we can drop the lock before fully processing the old memtable
     let mut lock = tree.journal.shards.full_lock();
+    let mut memtable_lock = tree.active_memtable.write().expect("lock poisoned");
 
-    let old_journal_folder = tree.journal.get_path();
+    let old_journal_folder = lock[0].path.parent().unwrap().to_path_buf();
 
     let segment_id = old_journal_folder
         .file_name()
@@ -102,12 +105,16 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .unwrap()
         .to_string();
 
-    let old_memtable = Arc::new(rebuild_full_memtable(&mut lock)?);
-    tree.approx_memtable_size_bytes
-        .store(0, std::sync::atomic::Ordering::SeqCst);
+    let old_memtable = std::mem::take(&mut *memtable_lock);
+    let old_memtable = Arc::new(old_memtable);
 
     let mut immutable_memtables = tree.immutable_memtables.write().expect("lock is poisoned");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
+
+    tree.approx_memtable_size_bytes
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+
+    drop(memtable_lock);
 
     let new_journal_path = tree
         .config
@@ -116,8 +123,16 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .join(generate_segment_id());
     Journal::rotate(new_journal_path, &mut lock)?;
 
+    log::trace!(
+        "Marking journal {} as flushable",
+        old_journal_folder.display()
+    );
+
     let marker = File::create(old_journal_folder.join(".flush"))?;
     marker.sync_all()?;
+
+    let folder = File::open(&old_journal_folder)?;
+    folder.sync_all()?;
 
     drop(immutable_memtables);
     drop(lock);

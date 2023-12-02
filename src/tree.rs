@@ -1,18 +1,15 @@
 use crate::{
     block_cache::BlockCache,
-    //commit_log::CommitLog,
     compaction::{worker::start_compaction_thread, CompactionStrategy},
     id::generate_segment_id,
-    journal::{rebuild::rebuild_full_memtable, shard::JournalShard, Journal},
+    journal::{shard::JournalShard, Journal},
     levels::Levels,
-    //memtable::MemTable,
+    memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
     segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
-    Batch,
-    Config,
-    Value,
+    Batch, Config, Value,
 };
 use std::{
     collections::HashMap,
@@ -136,12 +133,12 @@ impl Tree {
             .map(|x| x.metadata.file_size)
             .sum();
 
-        // TODO:
-        // let memtable = self.active_memtable.read().expect("lock is poisoned");
+        let memtable_size = u64::from(
+            self.approx_memtable_size_bytes
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
 
-        //segment_size + u64::from(memtable.size_in_bytes)
-
-        todo!()
+        segment_size + memtable_size
     }
 
     /// Returns the folder path used by the tree
@@ -232,6 +229,7 @@ impl Tree {
         let inner = TreeInner {
             config,
             journal: Journal::create_new(first_journal_path)?,
+            active_memtable: Arc::new(RwLock::new(MemTable::default())),
             immutable_memtables: Arc::default(),
             block_cache,
             lsn: AtomicU64::new(0),
@@ -330,8 +328,8 @@ impl Tree {
                 {
                     log::info!("Setting {} as active journal", journal_path.display());
 
-                    let recovered_journal = Journal::new(journal_path.clone())?;
-                    active_journal = Some(recovered_journal);
+                    let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
+                    active_journal = Some((recovered_journal, memtable));
 
                     continue;
                 }
@@ -351,11 +349,8 @@ impl Tree {
 
             // TODO: optimize this
 
-            let recovered_journal = Journal::new(journal_path.clone())?;
-
+            let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
             log::trace!("Recovered old journal");
-
-            let memtable = rebuild_full_memtable(&mut recovered_journal.shards.full_lock())?;
             drop(recovered_journal);
 
             let segment_id = dirent.file_name().to_str().unwrap().to_string();
@@ -395,11 +390,16 @@ impl Tree {
             std::fs::remove_dir_all(journal_path)?;
         }
 
-        // Restore memtable from current commit log
-
         log::info!("Restoring memtable");
 
-        // let (mut lsn, _, memtable) = MemTable::from_file(config.path.join("log")).unwrap();
+        let (journal, memtable) = match active_journal {
+            Some((recovered_journal, memtable)) => (recovered_journal, memtable),
+            None => {
+                let next_journal_path = config.path.join("journals").join(generate_segment_id());
+
+                (Journal::create_new(next_journal_path)?, MemTable::default())
+            }
+        };
 
         // Load segments
 
@@ -426,14 +426,13 @@ impl Tree {
         let mut levels = Levels::recover(&config.path.join("levels.json"), segments)?;
         levels.sort_levels();
 
-        let next_journal_path = config.path.join("journals").join(generate_segment_id());
-
         let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
 
         let inner = TreeInner {
             config,
-            journal: active_journal.map_or_else(|| Journal::create_new(next_journal_path), Ok)?,
+            journal,
+            active_memtable: Arc::new(RwLock::new(memtable)),
             immutable_memtables: Arc::default(),
             block_cache,
             lsn: AtomicU64::new(lsn),
@@ -460,12 +459,17 @@ impl Tree {
         mut shard: RwLockWriteGuard<'_, JournalShard>,
         value: Value,
     ) -> crate::Result<()> {
-        let size = shard.write(value)?;
-        drop(shard);
+        let size = shard.write(value.clone())?;
+
+        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
+        memtable_lock.insert(value);
 
         let memtable_size = self
             .approx_memtable_size_bytes
             .fetch_add(size as u32, std::sync::atomic::Ordering::SeqCst);
+
+        drop(memtable_lock);
+        drop(shard);
 
         if memtable_size > self.config.max_memtable_size {
             log::debug!("Memtable reached threshold size");
@@ -647,7 +651,7 @@ impl Tree {
 
         Ok(Range::new(
             crate::range::MemTableGuard {
-                active: self.journal.shards.read_all(),
+                active: self.active_memtable.read().expect("lock poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock is poisoned"),
             },
             bounds,
@@ -681,7 +685,7 @@ impl Tree {
 
         Ok(Prefix::new(
             MemTableGuard {
-                active: self.journal.shards.read_all(),
+                active: self.active_memtable.read().expect("lock poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock poisoned"),
             },
             prefix,
@@ -772,10 +776,12 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
-        // First look in active memtable (shards)
-        if let Some(item) = self.journal.get(&key) {
+        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
+
+        if let Some(item) = memtable_lock.get(&key) {
             return Ok(ignore_tombstone_value(item));
         };
+        drop(memtable_lock);
 
         // Now look in immutable memtables
         let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
