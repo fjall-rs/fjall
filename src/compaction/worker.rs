@@ -106,12 +106,16 @@ pub(crate) fn do_compaction(
         segments_lock.remove(key);
     }
 
+    // NOTE: This is really important
+    // Write the segment with the removed segments first
+    // Otherwise the folder is deleted, but the segment is still referenced!
+    segments_lock.write_to_disk()?;
+
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
         std::fs::remove_dir_all(tree.path().join("segments").join(key))?;
     }
 
-    segments_lock.write_to_disk()?;
     segments_lock.show_segments(&payload.segment_ids);
 
     drop(memtable_lock);

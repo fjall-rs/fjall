@@ -1,9 +1,15 @@
 use crate::{
-    block_cache::BlockCache, commit_log::CommitLog, levels::Levels, memtable::MemTable, Config,
+    block_cache::BlockCache,
+    journal::{mem_table::MemTable, Journal},
+    levels::Levels,
+    Config,
 };
 use std::{
     collections::BTreeMap,
-    sync::{atomic::AtomicU64, Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicU32, AtomicU64},
+        Arc, RwLock,
+    },
 };
 use std_semaphore::Semaphore;
 
@@ -14,11 +20,14 @@ pub struct TreeInner {
     /// Last-seen sequence number (highest sequence number)
     pub(crate) lsn: AtomicU64,
 
-    /// Commit log aka Journal aka Write-ahead log (WAL)
-    pub(crate) commit_log: Arc<Mutex<CommitLog>>,
+    /// Approximate memtable size
+    /// If this grows to large, a flush is triggered
+    pub(crate) approx_memtable_size_bytes: AtomicU32,
 
-    /// Active memtable
-    pub(crate) active_memtable: Arc<RwLock<MemTable>>,
+    /// Journal aka Commit log aka Write-ahead log (WAL)
+    ///
+    /// This also contains the active memtable, sharded by journal shard
+    pub(crate) journal: Journal,
 
     /// Memtables that are being flushed
     pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
@@ -40,11 +49,9 @@ impl Drop for TreeInner {
     fn drop(&mut self) {
         log::debug!("Dropping TreeInner");
 
-        log::trace!("Trying to flush commit log");
-        if let Ok(mut lock) = self.commit_log.lock() {
-            if let Err(error) = lock.flush() {
-                log::warn!("Failed to flush commit log: {:?}", error);
-            }
+        log::trace!("Trying to flush journal");
+        if let Err(error) = self.journal.flush() {
+            log::warn!("Failed to flush journal: {:?}", error);
         }
     }
 }

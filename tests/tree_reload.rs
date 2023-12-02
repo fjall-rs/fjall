@@ -4,6 +4,35 @@ use test_log::test;
 const ITEM_COUNT: usize = 100_000;
 
 #[test]
+fn tree_reload_empty() -> lsm_tree::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let tree = Config::new(&folder).block_size(1_024).open()?;
+
+        assert_eq!(tree.len()?, 0);
+        assert_eq!(tree.iter()?.into_iter().filter(Result::is_ok).count(), 0);
+        /* assert_eq!(
+            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            0
+        ); */
+    }
+
+    {
+        let tree = Config::new(&folder).open()?;
+
+        assert_eq!(tree.len()?, 0);
+        assert_eq!(tree.iter()?.into_iter().filter(Result::is_ok).count(), 0);
+        /* assert_eq!(
+            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            0
+        ); */
+    }
+
+    Ok(())
+}
+
+#[test]
 fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -36,7 +65,7 @@ fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
     }
 
     {
-        let tree = Config::new(&folder).open()?;
+        let tree = Config::new(&folder).block_size(1_024).open()?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(

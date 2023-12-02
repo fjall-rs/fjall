@@ -1,6 +1,6 @@
 use crate::{
-    memtable::MemTable,
-    merge::MergeIterator,
+    journal::{mem_table::MemTable, shard::JournalShard},
+    merge::{BoxedIterator, MergeIterator},
     segment::Segment,
     value::{ParsedInternalKey, SeqNo},
     Value,
@@ -12,7 +12,7 @@ use std::{
 };
 
 pub struct MemTableGuard<'a> {
-    pub(crate) active: RwLockReadGuard<'a, MemTable>,
+    pub(crate) active: Vec<RwLockReadGuard<'a, JournalShard>>,
     pub(crate) immutable: RwLockReadGuard<'a, BTreeMap<String, Arc<MemTable>>>,
 }
 
@@ -38,21 +38,19 @@ impl<'a> Range<'a> {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RangeIterator<'a> {
-    iter: Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>,
+    iter: BoxedIterator<'a>,
 }
 
 impl<'a> RangeIterator<'a> {
     fn new(lock: &'a Range<'a>) -> Self {
-        let mut segment_iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![];
+        let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
             let reader = segment.range(lock.bounds.clone()).unwrap();
             segment_iters.push(Box::new(reader));
         }
 
-        let mut iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![Box::new(MergeIterator::new(segment_iters))];
+        let mut iters: Vec<BoxedIterator<'a>> = vec![Box::new(MergeIterator::new(segment_iters))];
 
         for (_, memtable) in lock.guard.immutable.iter() {
             iters.push(Box::new(
@@ -94,15 +92,28 @@ impl<'a> RangeIterator<'a> {
 
         let range = (lo, hi);
 
-        iters.push(Box::new(
-            lock.guard
-                .active
-                .items
-                // NOTE: See memtable.rs for range explanation
-                // TODO: fix & optimize upper bound
-                .range(range)
-                .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
-        ));
+        let memtable_iter = {
+            let mut iters: Vec<BoxedIterator<'a>> = vec![];
+
+            for shard in &lock.guard.active {
+                let iter = shard
+                    .memtable
+                    .items
+                    .range(range.clone())
+                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone()))));
+
+                iters.push(Box::new(iter));
+            }
+
+            MergeIterator::new(iters)
+        };
+
+        /*   let iter = lock.guard.active[0]
+        .items
+        .range(range)
+        .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))); */
+
+        iters.push(Box::new(memtable_iter));
 
         let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
             |x| match x {

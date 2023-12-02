@@ -5,7 +5,7 @@ use test_log::test;
 fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?.into_path();
 
-    let tree = Config::new(folder).open()?;
+    let tree = Config::new(folder).block_size(1_024).open()?;
 
     let key = "1";
     let value = b"oldvalue";
@@ -36,7 +36,7 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
 fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?.into_path();
 
-    let tree = Config::new(folder).open().unwrap();
+    let tree = Config::new(folder).block_size(1_024).open().unwrap();
 
     let key = "1";
     let value = b"oldvalue";

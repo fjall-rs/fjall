@@ -323,6 +323,28 @@ impl MetaIndex {
     ) -> crate::Result<Self> {
         log::debug!("Reading block index from {}", path.as_ref().display());
 
+        // TODO: change to debug asserts
+        assert!(
+            path.as_ref().exists(),
+            "{} missing",
+            path.as_ref().display()
+        );
+        assert!(
+            path.as_ref().join("index").exists(),
+            "{} missing",
+            path.as_ref().display()
+        );
+        assert!(
+            path.as_ref().join("index_blocks").exists(),
+            "{} missing",
+            path.as_ref().display()
+        );
+        assert!(
+            path.as_ref().join("blocks").exists(),
+            "{} missing",
+            path.as_ref().display()
+        );
+
         let size = std::fs::metadata(path.as_ref().join("index"))?.len();
         let index = IndexBlock::from_file_compressed(
             &mut BufReader::new(File::open(path.as_ref().join("index")).unwrap()), // TODO:

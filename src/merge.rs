@@ -2,7 +2,7 @@ use crate::{segment::Segment, Value};
 use min_max_heap::MinMaxHeap;
 use std::sync::Arc;
 
-type BoxedIterator<'a> = Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>;
+pub type BoxedIterator<'a> = Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>;
 
 type IteratorIndex = usize;
 

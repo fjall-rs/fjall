@@ -4,10 +4,9 @@ use self::level::{Level, ResolvedLevel};
 use crate::segment::Segment;
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File, OpenOptions},
-    io::{BufWriter, Seek, Write},
+    fs::{self, File},
     ops::Deref,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -25,6 +24,8 @@ const SEGMENT_HISTORY_PATH: &str = "./segment_history.jsonl";
 
 /// Represents the levels of a log-structured merge tree.
 pub struct Levels {
+    path: PathBuf,
+
     /// Amount of levels of the LSM tree
     ///
     /// RocksDB has 7 by default
@@ -33,8 +34,7 @@ pub struct Levels {
     segments: HashMap<String, Arc<Segment>>,
     levels: Vec<Level>,
 
-    writer: BufWriter<File>,
-
+    //writer: BufWriter<File>,
     /// Set of segment IDs that are masked
     ///
     /// While consuming segments (because of compaction) they will not appear in the list of segments
@@ -75,6 +75,10 @@ fn write_segment_history_entry(event: String, levels: &Levels) {
 }
  */
 impl Levels {
+    pub(crate) fn contains_id(&self, id: &str) -> bool {
+        self.levels.iter().any(|lvl| lvl.contains_id(id))
+    }
+
     pub(crate) fn list_ids(&self) -> Vec<String> {
         let items = self.levels.iter().map(|f| f.deref()).cloned();
         items.flatten().collect()
@@ -92,11 +96,11 @@ impl Levels {
             .collect::<Vec<_>>();
 
         let mut levels = Self {
+            path: path.as_ref().to_path_buf(),
             segments: HashMap::new(),
             level_count,
             levels,
             hidden_set: HashSet::new(),
-            writer: BufWriter::new(OpenOptions::new().write(true).create_new(true).open(path)?),
         };
         levels.write_to_disk()?;
 
@@ -123,7 +127,7 @@ impl Levels {
             level_count,
             levels,
             hidden_set: HashSet::new(),
-            writer: BufWriter::new(OpenOptions::new().write(true).open(path)?),
+            path: path.as_ref().to_path_buf(),
         };
 
         /* #[cfg(feature = "segment_history")]
@@ -132,17 +136,18 @@ impl Levels {
         Ok(levels)
     }
 
-    // TODO: atomic rewrite
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
-        self.writer.seek(std::io::SeekFrom::Start(0))?;
-        self.writer.get_mut().set_len(0)?;
-        serde_json::to_writer_pretty(&mut self.writer, &self.levels).expect("should serialize");
+        let temp_path = self.path.parent().unwrap().join("~levels.json");
+        let mut temp_file = File::create(&temp_path)?;
+        serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
+
+        fs::rename(&temp_path, &self.path)?;
 
         // fsync levels manifest
-        self.writer.flush()?;
-        self.writer.get_mut().sync_all()?;
+        let file = File::open(&self.path)?;
+        file.sync_all()?;
 
         Ok(())
     }

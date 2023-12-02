@@ -1,8 +1,7 @@
 use crate::{
-    commit_log::CommitLog,
     compaction::worker::start_compaction_thread,
     id::generate_segment_id,
-    memtable::MemTable,
+    journal::{mem_table::MemTable, rebuild::rebuild_full_memtable, Journal},
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
     Tree,
 };
@@ -10,16 +9,16 @@ use std::{
     fs::File,
     io::BufReader,
     path::Path,
-    sync::{Arc, Mutex, MutexGuard, RwLockWriteGuard},
+    sync::{Arc, Mutex},
 };
 
 fn flush_worker(
     tree: &Tree,
     old_memtable: &Arc<MemTable>,
     segment_id: &str,
-    old_commit_log_path: &Path,
+    old_journal_folder: &Path,
 ) -> crate::Result<()> {
-    let segment_folder = tree.config.path.join(format!("segments/{segment_id}"));
+    let segment_folder = tree.config.path.join("segments").join(segment_id);
 
     let mut segment_writer = Writer::new(crate::segment::writer::Options {
         path: segment_folder.clone(),
@@ -51,6 +50,8 @@ fn flush_worker(
     .map(Arc::new)
     {
         Ok(meta_index) => {
+            log::debug!("Read MetaIndex");
+
             let created_segment = Segment {
                 file: Mutex::new(BufReader::new(File::open(metadata.path.join("blocks"))?)),
                 block_index: meta_index,
@@ -63,15 +64,19 @@ fn flush_worker(
             levels.write_to_disk()?;
             drop(levels);
 
-            log::trace!("Destroying old memtable");
+            log::debug!("Destroying old memtable");
             let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
             memtable_lock.remove(segment_id);
             drop(memtable_lock);
 
-            std::fs::remove_file(old_commit_log_path)?;
+            log::debug!(
+                "Deleting old journal folder: {}",
+                old_journal_folder.display()
+            );
+            std::fs::remove_dir_all(old_journal_folder)?;
         }
         Err(error) => {
-            log::error!("Flush error: {:?}", error);
+            log::error!("Flush worker error: {:?}", error);
         }
     }
 
@@ -80,32 +85,50 @@ fn flush_worker(
     Ok(())
 }
 
-pub fn start(
-    tree: &Tree,
-    mut commit_log_lock: MutexGuard<CommitLog>,
-    mut memtable_lock: RwLockWriteGuard<MemTable>,
-) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
+pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
     log::trace!("Preparing memtable flush thread");
     tree.flush_semaphore.acquire();
     log::trace!("Got flush semaphore");
 
-    let segment_id = generate_segment_id();
-    let old_commit_log_path = tree.config.path.join(format!("logs/{segment_id}"));
+    // TODO: ArcSwap the journal so we can drop the lock before fully processing the old memtable
+    let mut lock = tree.journal.shards.full_lock();
 
-    std::fs::rename(tree.config.path.join("log"), old_commit_log_path.clone())?;
-    *commit_log_lock = CommitLog::new(tree.config.path.join("log"))?;
-    drop(commit_log_lock);
+    let old_journal_folder = tree.journal.get_path();
 
-    let old_memtable = Arc::new(std::mem::take(&mut *memtable_lock));
+    let segment_id = old_journal_folder
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let old_memtable = Arc::new(rebuild_full_memtable(&mut lock)?);
+    tree.approx_memtable_size_bytes
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+
     let mut immutable_memtables = tree.immutable_memtables.write().expect("lock is poisoned");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
-    drop(memtable_lock);
+
+    let new_journal_path = tree
+        .config
+        .path
+        .join("journals")
+        .join(generate_segment_id());
+    Journal::rotate(new_journal_path, &mut lock)?;
+
+    let marker = File::create(old_journal_folder.join(".flush"))?;
+    marker.sync_all()?;
+
+    drop(immutable_memtables);
+    drop(lock);
 
     let tree = tree.clone();
 
     Ok(std::thread::spawn(move || {
-        if let Err(error) = flush_worker(&tree, &old_memtable, &segment_id, &old_commit_log_path) {
-            log::error!("Flush error: {error:?}");
+        log::debug!("Starting flush worker");
+
+        if let Err(error) = flush_worker(&tree, &old_memtable, &segment_id, &old_journal_folder) {
+            log::error!("Flush thread error: {error:?}");
         };
 
         log::trace!("Post flush semaphore");

@@ -1,5 +1,3 @@
-use log::trace;
-
 use crate::{Tree, Value};
 
 /// An atomic write batch
@@ -35,8 +33,7 @@ impl Batch {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn commit(mut self) -> crate::Result<()> {
-        let mut commit_log = self.tree.commit_log.lock().expect("lock is poisoned");
-        let mut memtable = self.tree.active_memtable.write().expect("lock is poisoned");
+        let mut shard = self.tree.journal.lock_shard();
 
         let batch_seqno = self
             .tree
@@ -47,19 +44,21 @@ impl Batch {
             item.seqno = batch_seqno;
         }
 
-        let bytes_written = commit_log.append_batch(self.data.clone())?;
-        commit_log.flush()?;
+        let bytes_written = shard.write_batch(self.data.clone())?;
+        shard.flush()?;
 
-        memtable.size_in_bytes += bytes_written as u32;
+        // TODO: size adjustments
+        /* memtable.size_in_bytes += bytes_written as u32;
 
         trace!("Applying {} batched items to memtable", self.data.len());
         for entry in std::mem::take(&mut self.data) {
             memtable.insert(entry);
-        }
+        } */
 
-        if memtable.exceeds_threshold(self.tree.config.max_memtable_size) {
+        // TODO: check
+        /* if memtable.exceeds_threshold(self.tree.config.max_memtable_size) {
             crate::flush::start(&self.tree, commit_log, memtable)?;
-        }
+        } */
 
         Ok(())
     }

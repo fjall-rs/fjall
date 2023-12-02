@@ -1,5 +1,5 @@
 use crate::{
-    merge::MergeIterator,
+    merge::{BoxedIterator, MergeIterator},
     range::MemTableGuard,
     segment::Segment,
     value::{ParsedInternalKey, SeqNo},
@@ -25,21 +25,19 @@ impl<'a> Prefix<'a> {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PrefixIterator<'a> {
-    iter: Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>,
+    iter: BoxedIterator<'a>,
 }
 
 impl<'a> PrefixIterator<'a> {
     fn new(lock: &'a Prefix<'a>) -> Self {
-        let mut segment_iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![];
+        let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
             let reader = segment.prefix(lock.prefix.clone()).unwrap();
             segment_iters.push(Box::new(reader));
         }
 
-        let mut iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![Box::new(MergeIterator::new(segment_iters))];
+        let mut iters: Vec<BoxedIterator<'a>> = vec![Box::new(MergeIterator::new(segment_iters))];
 
         for (_, memtable) in lock.guard.immutable.iter() {
             iters.push(Box::new(
@@ -52,7 +50,26 @@ impl<'a> PrefixIterator<'a> {
             ));
         }
 
-        iters.push(Box::new(
+        let memtable_iter = {
+            let mut iters: Vec<BoxedIterator<'a>> = vec![];
+
+            for shard in &lock.guard.active {
+                let iter = shard
+                    .memtable
+                    .items
+                    .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
+                    .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
+                    .map(|(key, value)| Ok(Value::from((key.clone(), value.clone()))));
+
+                iters.push(Box::new(iter));
+            }
+
+            MergeIterator::new(iters)
+        };
+
+        iters.push(Box::new(memtable_iter));
+
+        /* iters.push(Box::new(
             lock.guard
                 .active
                 .items
@@ -60,7 +77,7 @@ impl<'a> PrefixIterator<'a> {
                 .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
                 .filter(|(key, _)| key.user_key.starts_with(&lock.prefix))
                 .map(|(key, value)| Ok(Value::from((key.clone(), value.clone())))),
-        ));
+        )); */
 
         let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
             |x| match x {
