@@ -14,7 +14,7 @@ let folder = "data";
 // but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
 
-tree.insert("my_key", "this is the actual value of the object")?;
+tree.insert("my_key", "my_value")?;
 
 let item = tree.get("my_key")?;
 assert!(item.is_some());
