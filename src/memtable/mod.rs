@@ -49,9 +49,7 @@ impl MemTable {
     /// Inserts an item into the `MemTable`
     pub fn insert(&self, entry: Value) {
         let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.is_tombstone);
-        let value = entry.value;
-
-        self.items.insert(key, value);
+        self.items.insert(key, entry.value);
     }
 }
 

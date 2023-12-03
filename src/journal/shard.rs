@@ -79,10 +79,10 @@ impl JournalShard {
 
     /// Appends a single item wrapped in a batch to the commit log
     pub(crate) fn write(&mut self, item: &Value) -> crate::Result<usize> {
-        self.write_batch(&vec![item])
+        self.write_batch(&[item])
     }
 
-    pub fn write_batch(&mut self, items: &Vec<&Value>) -> crate::Result<usize> {
+    pub fn write_batch(&mut self, items: &[&Value]) -> crate::Result<usize> {
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
         let item_count = items.len() as u32;

@@ -47,7 +47,8 @@ impl Batch {
             item.seqno = batch_seqno;
         }
 
-        let bytes_written = shard.write_batch(&self.data.iter().collect())?;
+        let items = self.data.iter().collect::<Vec<_>>();
+        let bytes_written = shard.write_batch(&items)?;
         shard.flush()?;
 
         let memtable_size = self
