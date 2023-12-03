@@ -68,7 +68,7 @@ fn flush_worker(
             drop(levels);
 
             log::debug!("Destroying old memtable");
-            let mut memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
+            let mut memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
             memtable_lock.remove(segment_id);
             drop(memtable_lock);
 
@@ -94,7 +94,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     log::trace!("Got flush semaphore");
 
     let mut lock = tree.journal.shards.full_lock();
-    let mut memtable_lock = tree.active_memtable.write().expect("lock poisoned");
+    let mut memtable_lock = tree.active_memtable.write().expect("lock is poisoned");
 
     if memtable_lock.items.is_empty() {
         log::debug!("MemTable is empty (so another thread beat us to it) - aborting flush");
@@ -103,13 +103,17 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         return Ok(std::thread::spawn(|| Ok(())));
     }
 
-    let old_journal_folder = lock[0].path.parent().unwrap().to_path_buf();
+    let old_journal_folder = lock[0]
+        .path
+        .parent()
+        .expect("journal shard should have parent folder")
+        .to_path_buf();
 
     let segment_id = old_journal_folder
         .file_name()
-        .unwrap()
+        .expect("invalid journal folder name")
         .to_str()
-        .unwrap()
+        .expect("invalid journal folder name")
         .to_string();
 
     let old_memtable = std::mem::take(&mut *memtable_lock);
@@ -119,13 +123,6 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
 
     drop(memtable_lock);
-
-    let new_journal_path = tree
-        .config
-        .path
-        .join("journals")
-        .join(generate_segment_id());
-    Journal::rotate(new_journal_path, &mut lock)?;
 
     log::trace!(
         "Marking journal {} as flushable",
@@ -137,6 +134,13 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
 
     let folder = File::open(&old_journal_folder)?;
     folder.sync_all()?;
+
+    let new_journal_path = tree
+        .config
+        .path
+        .join("journals")
+        .join(generate_segment_id());
+    Journal::rotate(new_journal_path, &mut lock)?;
 
     tree.active_journal_size_bytes
         .store(0, std::sync::atomic::Ordering::Relaxed);

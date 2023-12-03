@@ -16,17 +16,17 @@ pub struct OccupiedEntry {
 }
 
 impl OccupiedEntry {
-    /// Gets the entry's value
+    /// Gets the entry's value.
     #[must_use]
     pub fn get(&self) -> Vec<u8> {
         self.value.clone()
     }
 
-    /// Updates the entry
+    /// Updates the entry.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn update<V: Into<Vec<u8>>>(&mut self, value: V) -> crate::Result<()> {
         self.value = value.into();
         self.tree.insert(self.key.clone(), self.value.clone())?;
@@ -35,11 +35,11 @@ impl OccupiedEntry {
 }
 
 impl VacantEntry {
-    /// Inserts the entry, making sure it exists and returns the value
+    /// Inserts the entry, making sure it exists and returns the value.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn insert<V: Into<Vec<u8>>>(&self, value: V) -> crate::Result<Vec<u8>> {
         let value = value.into();
         self.tree.insert(self.key.clone(), value.clone())?;
@@ -47,7 +47,7 @@ impl VacantEntry {
     }
 }
 
-/// Represents a single entry in the tree, which may or may not exist
+/// Represents a single entry in the tree, which may or may not exist.
 pub enum Entry {
     /// Represents a missing entry in the tree
     Vacant(VacantEntry),
@@ -68,11 +68,11 @@ impl Entry {
         }
     }
 
-    /// Updates the value if it exists before any potential inserts
+    /// Updates the value if it exists before any potential inserts.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn and_update<V: Into<Vec<u8>>, F: FnOnce(&Vec<u8>) -> V>(
         mut self,
         f: F,
@@ -84,11 +84,11 @@ impl Entry {
         Ok(self)
     }
 
-    /// Ensures a value is in the entry by inserting the default if empty, and returns that value
+    /// Ensures a value is in the entry by inserting the default if empty, and returns that value.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn or_insert<V: Into<Vec<u8>>>(&self, value: V) -> crate::Result<Vec<u8>> {
         match self {
             Vacant(entry) => entry.insert(value),
@@ -96,11 +96,11 @@ impl Entry {
         }
     }
 
-    /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value
+    /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn or_insert_with<V: Into<Vec<u8>>, F: FnOnce() -> V>(
         &self,
         f: F,
@@ -111,11 +111,11 @@ impl Entry {
         }
     }
 
-    /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value
+    /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn or_insert_with_key<V: Into<Vec<u8>>, F: FnOnce(&Vec<u8>) -> V>(
         &self,
         f: F,

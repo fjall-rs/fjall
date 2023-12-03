@@ -186,7 +186,9 @@ impl Writer {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
         self.chunk.crc = ValueBlock::create_crc(&self.chunk.items)?;
-        self.chunk.serialize(&mut bytes).unwrap();
+        self.chunk
+            .serialize(&mut bytes)
+            .expect("should serialize block");
 
         // Compress using LZ4
         let bytes = compress_prepend_size(&bytes);

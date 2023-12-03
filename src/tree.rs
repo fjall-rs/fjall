@@ -53,8 +53,8 @@ fn ignore_tombstone_value(item: Value) -> Option<Value> {
 impl Tree {
     /// Opens the tree at the given folder.
     ///
-    /// Will create a new tree if the folder is not in use or recover a previous state
-    /// if it exists
+    /// Will create a new tree if the folder is not in use
+    /// or recover a previous state if it exists.
     ///
     /// # Examples
     ///
@@ -71,7 +71,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn open(config: Config) -> crate::Result<Self> {
         if config.path.join(".lsm").exists() {
             Self::recover(config)
@@ -104,7 +104,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<crate::entry::Entry> {
         let key = key.as_ref();
         let item = self.get_internal_entry(key, true)?;
@@ -122,7 +122,9 @@ impl Tree {
         })
     }
 
-    /// Initializes a new, atomic write batch
+    /// Initializes a new, atomic write batch.
+    ///
+    /// Call [`Batch::commit`] to commit the batch to the tree.
     ///
     /// # Examples
     ///
@@ -144,14 +146,12 @@ impl Tree {
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
-    ///
-    /// Call [`Batch::commit`] to commit the batch to the LSM-tree
     #[must_use]
     pub fn batch(&self) -> Batch {
         Batch::new(self.clone())
     }
 
-    /// Returns `true` if there are some segments that are being compacted
+    /// Returns `true` if there are some segments that are being compacted.
     #[doc(hidden)]
     #[must_use]
     pub fn is_compacting(&self) -> bool {
@@ -159,23 +159,22 @@ impl Tree {
         levels.is_compacting()
     }
 
-    /// Counts the amount of segments currently in the tree
+    /// Counts the amount of segments currently in the tree.
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.levels.read().expect("lock is poisoned").len()
     }
-
-    /// Sums the disk space usage of the tree (segments + journals)
+    /// Sums the disk space usage of the tree (segments + journals).
     #[must_use]
     pub fn disk_space(&self) -> u64 {
-        let segment_size: u64 = self
+        let segment_size = self
             .levels
             .read()
             .expect("lock is poisoned")
             .get_all_segments()
             .values()
             .map(|x| x.metadata.file_size)
-            .sum();
+            .sum::<u64>();
 
         let memtable_size = u64::from(
             self.active_journal_size_bytes
@@ -185,15 +184,15 @@ impl Tree {
         segment_size + memtable_size
     }
 
-    /// Returns the folder path used by the tree
+    /// Returns the folder path used by the tree.
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.config.path.clone()
     }
 
-    /// Scans the entire Tree, returning the amount of items
+    /// Scans the entire Tree, returning the amount of items.
     ///
-    /// # Example usage
+    /// # Examples
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
@@ -213,7 +212,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     #[deprecated(
         note = "len() isn't deprecated per se, however it performs a full tree scan and should be avoided"
     )]
@@ -221,9 +220,9 @@ impl Tree {
         Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
     }
 
-    /// Returns `true` if the tree is empty
+    /// Returns `true` if the tree is empty.
     ///
-    /// This operation has O(1) complexity
+    /// This operation has O(1) complexity.
     ///
     /// # Examples
     ///
@@ -242,7 +241,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// - Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn is_empty(&self) -> crate::Result<bool> {
         self.first_key_value().map(|x| x.is_none())
     }
@@ -317,7 +316,11 @@ impl Tree {
 
             assert!(path.is_dir());
 
-            let segment_id = dirent.file_name().to_str().unwrap().to_owned();
+            let segment_id = dirent
+                .file_name()
+                .to_str()
+                .expect("invalid segment folder name")
+                .to_owned();
             log::debug!("Recovering segment from {}", path.display());
 
             if segment_ids_to_recover.contains(&segment_id) {
@@ -343,19 +346,8 @@ impl Tree {
         Ok(segments)
     }
 
-    /// Tries to recover a tree from a folder.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs
-    fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering tree from {}", config.path.display());
-
-        let start = std::time::Instant::now();
-
-        // Flush orphaned logs
-
-        // NOTE: Load previous levels manifest
+    fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
+        // Load previous levels manifest
         // Add all flushed segments to it, then recover properly
         let mut levels = Levels::recover(&config.path.join("levels.json"), HashMap::new())?;
 
@@ -367,13 +359,20 @@ impl Tree {
 
             assert!(journal_path.is_dir());
 
+            // TODO: replace fs extra with Journal::disk_space
+            let journal_size = fs_extra::dir::get_size(&journal_path)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
+
+            if journal_size == 0 {
+                std::fs::remove_dir_all(&journal_path)?;
+                continue;
+            }
+
             if !journal_path.join(".flush").exists() {
                 // TODO: handle this
                 assert!(active_journal.is_none(), "Second active journal found :(");
 
-                // TODO: replace fs extra with Journal::disk_space
-                if fs_extra::dir::get_size(&journal_path).unwrap() < config.max_memtable_size.into()
-                {
+                if journal_size < config.max_memtable_size.into() {
                     log::info!("Setting {} as active journal", journal_path.display());
 
                     let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
@@ -401,7 +400,11 @@ impl Tree {
             log::trace!("Recovered old journal");
             drop(recovered_journal);
 
-            let segment_id = dirent.file_name().to_str().unwrap().to_string();
+            let segment_id = dirent
+                .file_name()
+                .to_str()
+                .expect("invalid journal folder name")
+                .to_string();
             let segment_folder = config.path.join("segments").join(&segment_id);
 
             if !levels.contains_id(&segment_id) {
@@ -438,15 +441,29 @@ impl Tree {
             std::fs::remove_dir_all(journal_path)?;
         }
 
+        Ok(active_journal)
+    }
+
+    /// Tries to recover a tree from a folder.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    fn recover(config: Config) -> crate::Result<Self> {
+        log::info!("Recovering tree from {}", config.path.display());
+
+        let start = std::time::Instant::now();
+
+        log::info!("Restoring journal");
+        let active_journal = Self::recover_active_journal(&config)?;
+
         log::info!("Restoring memtable");
 
-        let (journal, memtable) = match active_journal {
-            Some((recovered_journal, memtable)) => (recovered_journal, memtable),
-            None => {
-                let next_journal_path = config.path.join("journals").join(generate_segment_id());
-
-                (Journal::create_new(next_journal_path)?, MemTable::default())
-            }
+        let (journal, memtable) = if let Some(active_journal) = active_journal {
+            active_journal
+        } else {
+            let next_journal_path = config.path.join("journals").join(generate_segment_id());
+            (Journal::create_new(next_journal_path)?, MemTable::default())
         };
 
         // Load segments
@@ -510,7 +527,7 @@ impl Tree {
         let size = shard.write(&value)?;
         drop(shard);
 
-        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
+        let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value);
 
         let memtable_size = self
@@ -545,7 +562,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(
         &self,
         key: K,
@@ -565,7 +582,7 @@ impl Tree {
         Ok(())
     }
 
-    /// Deletes an item from the tree
+    /// Deletes an item from the tree.
     ///
     /// # Examples
     ///
@@ -589,7 +606,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn remove<K: Into<Vec<u8>>>(&self, key: K) -> crate::Result<()> {
         let shard = self.journal.lock_shard();
 
@@ -605,9 +622,9 @@ impl Tree {
         Ok(())
     }
 
-    /// Removes the item and returns its value if it was previously in the tree
+    /// Removes the item and returns its value if it was previously in the tree.
     ///
-    /// This is less efficient than just deleting because it needs to do a read before deleting
+    /// This is less efficient than just deleting because it needs to do a read before deleting.
     ///
     /// # Examples
     ///
@@ -630,7 +647,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn remove_entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
         let key = key.as_ref();
 
@@ -642,7 +659,7 @@ impl Tree {
         })
     }
 
-    /// Returns `true` if the tree contains the specified key
+    /// Returns `true` if the tree contains the specified key.
     ///
     /// # Examples
     ///
@@ -661,26 +678,26 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
         self.get(key).map(|x| x.is_some())
     }
 
     #[allow(clippy::iter_not_returning_iterator)]
-    /// Returns an iterator that scans through the entire Tree
+    /// Returns an iterator that scans through the entire Tree.
     ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn iter(&self) -> crate::Result<Range<'_>> {
         self.range::<Vec<u8>, _>(..)
     }
 
-    /// Returns an iterator over a range of items
+    /// Returns an iterator over a range of items.
     ///
-    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited)
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     ///
     /// # Examples
     ///
@@ -698,7 +715,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
         use std::ops::Bound::{self, Excluded, Included, Unbounded};
 
@@ -716,7 +733,7 @@ impl Tree {
 
         let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (lo, hi);
 
-        let lock = self.levels.read().expect("lock poisoned");
+        let lock = self.levels.read().expect("lock is poisoned");
 
         let segment_info = lock
             .get_all_segments()
@@ -727,7 +744,7 @@ impl Tree {
 
         Ok(Range::new(
             crate::range::MemTableGuard {
-                active: self.active_memtable.read().expect("lock poisoned"),
+                active: self.active_memtable.read().expect("lock is poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock is poisoned"),
             },
             bounds,
@@ -735,9 +752,9 @@ impl Tree {
         ))
     }
 
-    /// Returns an iterator over a prefixed set of items
+    /// Returns an iterator over a prefixed set of items.
     ///
-    /// Avoid using an empty prefix as it may scan a lot of items (unless limited)
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     ///
     /// # Examples
     ///
@@ -757,13 +774,13 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
         use std::ops::Bound::{self};
 
         let prefix = prefix.into();
 
-        let lock = self.levels.read().expect("lock poisoned");
+        let lock = self.levels.read().expect("lock is poisoned");
 
         let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
             (Bound::Included(prefix.clone()), std::ops::Bound::Unbounded);
@@ -777,17 +794,18 @@ impl Tree {
 
         Ok(Prefix::new(
             MemTableGuard {
-                active: self.active_memtable.read().expect("lock poisoned"),
-                immutable: self.immutable_memtables.read().expect("lock poisoned"),
+                active: self.active_memtable.read().expect("lock is poisoned"),
+                immutable: self.immutable_memtables.read().expect("lock is poisoned"),
             },
             prefix,
             segment_info,
         ))
     }
 
-    /// Returns the first key-value pair in the LSM-tree. The key in this pair is the minimum key in the LSM-tree
+    /// Returns the first key-value pair in the tree.
+    /// The key in this pair is the minimum key in the tree.
     ///
-    /// # Example usage
+    /// # Examples
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
@@ -808,14 +826,15 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
         self.iter()?.into_iter().next().transpose()
     }
 
-    /* /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
-    /// #
-    /// # Example usage
+    /// Returns the last key-value pair in the tree.
+    /// The key in this pair is the maximum key in the tree.
+    ///
+    /// # Examples
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
@@ -836,11 +855,10 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
-    pub fn last_key_value(&self) -> crate::Result<Option<Value>> {
-        let item = self.iter()?.into_iter().next_back().transpose()?;
-        Ok(item)
-    } */
+    /// Will return `Err` if an IO error occurs.
+    pub fn last_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+        self.iter()?.into_iter().next_back().transpose()
+    }
 
     #[doc(hidden)]
     pub fn get_internal_entry<K: AsRef<[u8]>>(
@@ -848,7 +866,7 @@ impl Tree {
         key: K,
         evict_tombstone: bool,
     ) -> crate::Result<Option<Value>> {
-        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
+        let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
 
         if let Some(item) = memtable_lock.get(&key) {
             if evict_tombstone {
@@ -886,7 +904,7 @@ impl Tree {
         Ok(None)
     }
 
-    /// Retrieves an item from the tree
+    /// Retrieves an item from the tree.
     ///
     /// # Examples
     ///
@@ -905,7 +923,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
         Ok(self.get_internal_entry(key, true)?.map(|x| x.value))
     }
@@ -914,13 +932,13 @@ impl Tree {
         self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
     }
 
-    /// Atomically fetches and updates an item if it exists
+    /// Atomically fetches and updates an item if it exists.
     ///
-    /// Returns the previous value if the item exists
+    /// Returns the previous value if the item exists.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn fetch_update<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
         &self,
         key: K,
@@ -950,13 +968,13 @@ impl Tree {
         })
     }
 
-    /// Atomically fetches and updates an item if it exists
+    /// Atomically fetches and updates an item if it exists.
     ///
-    /// Returns the updated value if the item exists
+    /// Returns the updated value if the item exists.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn update_fetch<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
         &self,
         key: K,
@@ -986,7 +1004,7 @@ impl Tree {
         })
     }
 
-    /// Force-starts a memtable flush thread
+    /// Force-starts a memtable flush thread.
     #[doc(hidden)]
     pub fn force_memtable_flush(
         &self,
@@ -994,14 +1012,14 @@ impl Tree {
         crate::flush::start(self)
     }
 
-    /// Force-starts a memtable flush thread and waits until its completely done
+    /// Force-starts a memtable flush thread and waits until its completely done.
     #[doc(hidden)]
     pub fn wait_for_memtable_flush(&self) -> crate::Result<()> {
         let flush_thread = self.force_memtable_flush()?;
         flush_thread.join().expect("should join")
     }
 
-    /// Perform major compaction
+    /// Performs major compaction.
     #[doc(hidden)]
     #[must_use]
     pub fn do_major_compaction(&self) -> std::thread::JoinHandle<crate::Result<()>> {
@@ -1021,8 +1039,8 @@ impl Tree {
         })
     }
 
-    /// Flushes the journal to disk, making sure all written data is persisted
-    /// and crash-safe
+    /// Flushes the journal to disk, making sure all written data
+    /// is persisted and crash-safe.
     ///
     /// # Examples
     ///
@@ -1044,7 +1062,7 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn flush(&self) -> crate::Result<()> {
         self.journal.flush()?;
         Ok(())

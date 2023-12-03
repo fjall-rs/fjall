@@ -84,7 +84,7 @@ pub fn do_compaction(
         .collect::<crate::Result<Vec<_>>>()?;
 
     log::trace!("Acquiring segment lock");
-    let mut segments_lock = tree.levels.write().expect("lock poisoned");
+    let mut segments_lock = tree.levels.write().expect("lock is poisoned");
 
     log::debug!(
         "Compacted in {}ms ({} segments created)",
@@ -94,7 +94,7 @@ pub fn do_compaction(
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
     log::trace!("Acquiring memtable lock");
-    let memtable_lock = tree.immutable_memtables.write().expect("lock poisoned");
+    let memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
 
     for segment in created_segments {
         log::trace!("Persisting segment {}", segment.metadata.id);
@@ -128,11 +128,33 @@ pub fn do_compaction(
 pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
     loop {
         log::trace!("Acquiring segment lock");
-        let segments_lock = tree.levels.write().expect("lock poisoned");
+        let mut segments_lock = tree.levels.write().expect("lock is poisoned");
 
         match tree.config.compaction_strategy.choose(&segments_lock) {
             Choice::DoCompact(payload) => {
                 do_compaction(tree, &payload, segments_lock)?;
+            }
+            Choice::DeleteSegments(payload) => {
+                // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
+                log::trace!("Acquiring memtable lock");
+                let _memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
+
+                for key in &payload {
+                    log::trace!("Removing segment {}", key);
+                    segments_lock.remove(key);
+                }
+
+                // NOTE: This is really important
+                // Write the segment with the removed segments first
+                // Otherwise the folder is deleted, but the segment is still referenced!
+                segments_lock.write_to_disk()?;
+
+                for key in &payload {
+                    log::trace!("rm -rf segment folder {}", key);
+                    std::fs::remove_dir_all(tree.path().join("segments").join(key))?;
+                }
+
+                log::trace!("Deleted {} segments", payload.len());
             }
             Choice::DoNothing => {
                 log::trace!("Compactor chose to do nothing");

@@ -75,7 +75,7 @@ impl<'a> MergeIterator<'a> {
     }
 
     fn advance_iter(&mut self, idx: usize) -> crate::Result<()> {
-        let iterator = self.iterators.get_mut(idx).unwrap();
+        let iterator = self.iterators.get_mut(idx).expect("iter should exist");
 
         if let Some(value) = iterator.next() {
             self.heap.push(IteratorValue((idx, value?)));
@@ -84,15 +84,15 @@ impl<'a> MergeIterator<'a> {
         Ok(())
     }
 
-    /* fn advance_iter_backwards(&mut self, idx: usize) -> crate::Result<()> {
-        let iterator = self.iterators.get_mut(idx).unwrap();
+    fn advance_iter_backwards(&mut self, idx: usize) -> crate::Result<()> {
+        let iterator = self.iterators.get_mut(idx).expect("iter should exist");
 
         if let Some(value) = iterator.next_back() {
             self.heap.push(IteratorValue((idx, value?)));
         }
 
         Ok(())
-    } */
+    }
 
     fn push_next(&mut self) -> crate::Result<()> {
         for idx in 0..self.iterators.len() {
@@ -102,13 +102,13 @@ impl<'a> MergeIterator<'a> {
         Ok(())
     }
 
-    /* fn push_next_back(&mut self) -> crate::Result<()> {
+    fn push_next_back(&mut self) -> crate::Result<()> {
         for idx in 0..self.iterators.len() {
             self.advance_iter_backwards(idx)?;
         }
 
         Ok(())
-    } */
+    }
 }
 
 impl<'a> Iterator for MergeIterator<'a> {
@@ -153,27 +153,49 @@ impl<'a> Iterator for MergeIterator<'a> {
     }
 }
 
-// TODO: how to handle rev???
-// TODO: the seqnos are reversed per user key
 impl<'a> DoubleEndedIterator for MergeIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        unimplemented!()
-        /*  if self.heap.is_empty() {
+        // unimplemented!()
+
+        if self.heap.is_empty() {
             if let Err(e) = self.push_next_back() {
                 return Some(Err(e));
             };
         }
 
-        if let Some(head) = self.heap.pop_max() {
+        if let Some(mut head) = self.heap.pop_max() {
             let (iter_idx_consumed, _) = head.0;
             if let Err(e) = self.advance_iter_backwards(iter_idx_consumed) {
                 return Some(Err(e));
             }
 
+            if self.evict_old_versions {
+                while let Some(next) = self.heap.pop_max() {
+                    if next.key == head.key {
+                        let (iter_idx_consumed, _) = next.0;
+                        if let Err(e) = self.advance_iter_backwards(iter_idx_consumed) {
+                            return Some(Err(e));
+                        }
+
+                        // Keep popping off heap until we reach the next key
+                        // Because the seqno's are stored in descending order
+                        // The next item will definitely have a higher seqno, so
+                        // we can just take it
+                        head = next;
+                    } else {
+                        // Reached next user key now
+                        // Push back non-conflicting item and exit
+                        self.heap.push(next);
+
+                        break;
+                    }
+                }
+            }
+
             Some(Ok(head.clone()))
         } else {
             None
-        } */
+        }
     }
 }
 
@@ -312,7 +334,7 @@ mod tests {
         Ok(())
     }
 
-    /*    #[test]
+    #[test]
     fn test_rev_merge() -> crate::Result<()> {
         let vec0 = vec![
             crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
@@ -329,23 +351,18 @@ mod tests {
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
         let iter1 = Box::new(vec1.iter().cloned().map(Ok));
 
-        let merge_iter = MergeIterator::new(vec![iter0, iter1]);
+        let merge_iter = MergeIterator::new(vec![iter0, iter1]).evict_old_versions(true);
         let items = merge_iter.rev().collect::<crate::Result<Vec<_>>>()?;
 
-        // TODO: how to handle rev???
-        // TODO: the seqnos are reversed per user key
         assert_eq!(
             items,
             vec![
-                crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(3u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(2u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(1u64.to_be_bytes(), "new", false, 1),
             ]
         );
 
         Ok(())
-    } */
+    }
 }

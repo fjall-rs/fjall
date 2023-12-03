@@ -23,6 +23,8 @@
 //!
 //! assert!(tree.is_empty()?);
 //! tree.insert("my_key", "my_value")?;
+//! // Note compared to the BTreeMap API, operations return a Result<T>
+//! // So you can handle I/O errors if they occur
 //!
 //! let item = tree.get("my_key")?;
 //! assert_eq!(Some("my_value".as_bytes().to_vec()), item);
@@ -45,7 +47,8 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![forbid(unsafe_code)]
 #![allow(clippy::missing_const_for_fn)]
-#![warn(clippy::expect_used, clippy::unwrap_used)]
+#![warn(clippy::expect_used)]
+#![deny(clippy::unwrap_used)]
 
 mod batch;
 mod block_cache;

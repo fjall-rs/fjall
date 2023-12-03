@@ -65,7 +65,7 @@ impl Reader {
 
     fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
         Ok(
-            if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key) {
+            if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key)? {
                 if let Some(block) = self
                     .block_cache
                     .get_disk_block(self.segment_id.clone(), &block_ref.start_key)
@@ -98,7 +98,10 @@ impl Iterator for Reader {
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_lo.is_none() {
             // Initialize first block
-            let new_block_offset = self.block_index.get_first_block_key();
+            let new_block_offset = match self.block_index.get_first_block_key() {
+                Ok(x) => x,
+                Err(e) => return Some(Err(e)),
+            };
             self.current_lo = Some(new_block_offset.start_key.clone());
 
             if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
@@ -113,13 +116,13 @@ impl Iterator for Reader {
             }
         }
 
-        if self.current_hi == self.current_lo && self.current_lo.is_some() {
-            // We've reached the highest (last) block (bound by the hi marker)
-            // Just consume from it instead
-            let block = self
-                .blocks
-                .get_mut(&self.current_lo.as_ref().unwrap().clone());
-            return block.and_then(VecDeque::pop_front).map(Ok);
+        if let Some(current_lo) = &self.current_lo {
+            if self.current_hi == self.current_lo {
+                // We've reached the highest (last) block (bound by the hi marker)
+                // Just consume from it instead
+                let block = self.blocks.get_mut(&current_lo.clone());
+                return block.and_then(VecDeque::pop_front).map(Ok);
+            }
         }
 
         if let Some(current_lo) = &self.current_lo {
@@ -134,7 +137,10 @@ impl Iterator for Reader {
                         self.blocks.remove(current_lo);
 
                         if let Some(new_block_offset) =
-                            self.block_index.get_next_block_key(current_lo)
+                            match self.block_index.get_next_block_key(current_lo) {
+                                Ok(x) => x,
+                                Err(e) => return Some(Err(e)),
+                            }
                         {
                             self.current_lo = Some(new_block_offset.start_key.clone());
 
@@ -164,7 +170,10 @@ impl DoubleEndedIterator for Reader {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_hi.is_none() {
             // Initialize next block
-            let new_block_offset = self.block_index.get_last_block_key();
+            let new_block_offset = match self.block_index.get_last_block_key() {
+                Ok(x) => x,
+                Err(e) => return Some(Err(e)),
+            };
             self.current_hi = Some(new_block_offset.start_key.clone());
 
             if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
@@ -179,13 +188,13 @@ impl DoubleEndedIterator for Reader {
             }
         }
 
-        if self.current_hi == self.current_lo && self.current_hi.is_some() {
-            // We've reached the lowest (first) block (bound by the lo marker)
-            // Just consume from it instead
-            let block = self
-                .blocks
-                .get_mut(&self.current_hi.as_ref().unwrap().clone());
-            return block.and_then(VecDeque::pop_back).map(Ok);
+        if let Some(current_hi) = &self.current_hi {
+            if self.current_hi == self.current_lo {
+                // We've reached the lowest (first) block (bound by the lo marker)
+                // Just consume from it instead
+                let block = self.blocks.get_mut(&current_hi.clone());
+                return block.and_then(VecDeque::pop_back).map(Ok);
+            }
         }
 
         if let Some(current_hi) = &self.current_hi {
@@ -200,7 +209,10 @@ impl DoubleEndedIterator for Reader {
                         self.blocks.remove(current_hi);
 
                         if let Some(new_block_offset) =
-                            self.block_index.get_previous_block_key(current_hi)
+                            match self.block_index.get_previous_block_key(current_hi) {
+                                Ok(x) => x,
+                                Err(e) => return Some(Err(e)),
+                            }
                         {
                             self.current_hi = Some(new_block_offset.start_key.clone());
                             if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
@@ -285,6 +297,8 @@ mod tests {
         )?;
 
         for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
             let item = iter.next().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }
@@ -301,6 +315,8 @@ mod tests {
         )?;
 
         for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
             let item = iter.next_back().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }

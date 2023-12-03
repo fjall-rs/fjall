@@ -79,7 +79,10 @@ impl<'a> RangeIterator<'a> {
         let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
-            let reader = segment.range(lock.bounds.clone()).unwrap();
+            let reader = segment
+                .range(lock.bounds.clone())
+                .expect("failed to init range iter");
+
             segment_iters.push(Box::new(reader));
         }
 
@@ -120,12 +123,11 @@ impl<'a> Iterator for RangeIterator<'a> {
     }
 }
 
-/* impl<'a> DoubleEndedIterator for RangeIterator<'a> {
+impl<'a> DoubleEndedIterator for RangeIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        unimplemented!();
-        self.iter.next_back()
+        Some(self.iter.next_back()?.map(|x| (x.key, x.value)))
     }
-} */
+}
 
 impl<'a> IntoIterator for &'a Range<'a> {
     type IntoIter = RangeIterator<'a>;

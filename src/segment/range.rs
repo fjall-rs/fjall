@@ -24,14 +24,14 @@ impl Range {
         let offset_lo = match range.start_bound() {
             Bound::Unbounded => None,
             Bound::Included(start) | Bound::Excluded(start) => block_index
-                .get_lower_bound_block_info(start)
+                .get_lower_bound_block_info(start)?
                 .map(|x| x.start_key),
         };
 
         let offset_hi = match range.end_bound() {
             Bound::Unbounded => None,
             Bound::Included(end) | Bound::Excluded(end) => block_index
-                .get_upper_bound_block_info(end)
+                .get_upper_bound_block_info(end)?
                 .map(|x| x.start_key),
         };
 

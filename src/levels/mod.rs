@@ -138,7 +138,12 @@ impl Levels {
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
-        let temp_path = self.path.parent().unwrap().join("~levels.json");
+        let temp_path = self
+            .path
+            .parent()
+            .expect("level manifest should have parent folder")
+            .join("~levels.json");
+
         let mut temp_file = File::create(&temp_path)?;
         serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
 
@@ -156,7 +161,10 @@ impl Levels {
     }
 
     pub(crate) fn add_id(&mut self, segment_id: String) {
-        self.levels.first_mut().unwrap().push(segment_id);
+        self.levels
+            .first_mut()
+            .expect("should have at least one level")
+            .push(segment_id);
     }
 
     pub(crate) fn sort_levels(&mut self) {
@@ -302,8 +310,14 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
-            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
-            block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
+            file: Mutex::new(BufReader::new(
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
+                File::open("Cargo.toml").expect("should fopen"),
+            )),
+            block_index: Arc::new(
+                MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
+            ),
             metadata: Metadata {
                 path: ".".into(),
                 block_count: 0,

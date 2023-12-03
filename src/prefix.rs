@@ -33,7 +33,10 @@ impl<'a> PrefixIterator<'a> {
         let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
-            let reader = segment.prefix(lock.prefix.clone()).unwrap();
+            let reader = segment
+                .prefix(lock.prefix.clone())
+                .expect("failed to init prefix iter");
+
             segment_iters.push(Box::new(reader));
         }
 
@@ -80,12 +83,11 @@ impl<'a> Iterator for PrefixIterator<'a> {
     }
 }
 
-/* impl<'a> DoubleEndedIterator for PrefixIterator<'a> {
+impl<'a> DoubleEndedIterator for PrefixIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        unimplemented!();
-        self.iter.next_back()
+        Some(self.iter.next_back()?.map(|x| (x.key, x.value)))
     }
-} */
+}
 
 impl<'a> IntoIterator for &'a Prefix<'a> {
     type IntoIter = PrefixIterator<'a>;

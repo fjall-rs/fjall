@@ -22,7 +22,7 @@ impl PrefixedReader {
     ) -> crate::Result<Self> {
         let prefix = prefix.into();
 
-        let upper_bound = block_index.get_prefix_upper_bound(&prefix);
+        let upper_bound = block_index.get_prefix_upper_bound(&prefix)?;
         let upper_bound = upper_bound.map(|x| x.start_key).map_or(Unbounded, Excluded);
 
         let iterator = Range::new(

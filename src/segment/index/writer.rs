@@ -52,7 +52,9 @@ impl Writer {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
         self.block_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.block_chunk.items)?;
-        self.block_chunk.serialize(&mut bytes).unwrap();
+        self.block_chunk
+            .serialize(&mut bytes)
+            .expect("should serialize block");
 
         // Compress using LZ4
         let bytes = compress_prepend_size(&bytes);
@@ -113,7 +115,9 @@ impl Writer {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
         self.index_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.index_chunk.items)?;
-        self.index_chunk.serialize(&mut bytes).unwrap();
+        self.index_chunk
+            .serialize(&mut bytes)
+            .expect("should serialize index block");
 
         // Compress using LZ4
         let bytes = compress_prepend_size(&bytes);

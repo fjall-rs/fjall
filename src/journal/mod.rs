@@ -34,17 +34,19 @@ impl Journal {
         for idx in 0..SHARD_COUNT {
             let shard_path = get_shard_path(path, idx);
 
-            let recoverer = LogRecovery::new(shard_path)?;
+            if shard_path.exists() {
+                let recoverer = LogRecovery::new(shard_path)?;
 
-            for item in recoverer {
-                let item = item?;
+                for item in recoverer {
+                    let item = item?;
 
-                if let Marker::Item(item) = item {
-                    memtable.insert(item);
+                    if let Marker::Item(item) = item {
+                        memtable.insert(item);
+                    }
                 }
-            }
 
-            log::trace!("Recovered journal shard {idx}");
+                log::trace!("Recovered journal shard {idx}");
+            }
         }
 
         let shards = (0..SHARD_COUNT)

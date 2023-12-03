@@ -152,7 +152,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// - Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn open(self) -> crate::Result<Tree> {
         Tree::open(self)
     }

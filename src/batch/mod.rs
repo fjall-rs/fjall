@@ -27,16 +27,16 @@ impl Batch {
         self.data.push(Value::new(key.into(), vec![], true, 0));
     }
 
-    /// Commits the batch to the LSM-tree atomically
+    /// Commits the batch to the LSM-tree atomically.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn commit(mut self) -> crate::Result<()> {
         let mut shard = self.tree.journal.lock_shard();
 
         // NOTE: Fully (write) lock, so the batch can be committed atomically
-        let memtable_lock = self.tree.active_memtable.write().expect("lock poisoned");
+        let memtable_lock = self.tree.active_memtable.write().expect("lock is poisoned");
 
         let batch_seqno = self.tree.increment_lsn();
 

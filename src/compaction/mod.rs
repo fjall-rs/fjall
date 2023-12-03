@@ -1,5 +1,6 @@
 //! Contains compaction strategies
 
+pub(crate) mod fifo;
 pub(crate) mod major;
 pub(crate) mod tiered;
 pub(crate) mod worker;
@@ -30,6 +31,9 @@ pub enum Choice {
 
     /// Compacts some segments into a new level
     DoCompact(Options),
+
+    /// Delete segments without doing compaction
+    DeleteSegments(Vec<String>),
 }
 
 /// Trait for a compaction strategy
@@ -41,4 +45,5 @@ pub trait CompactionStrategy {
     fn choose(&self, _: &Levels) -> Choice;
 }
 
+pub use fifo::Strategy as Fifo;
 pub use tiered::Strategy as SizeTiered;

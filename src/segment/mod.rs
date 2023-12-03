@@ -46,7 +46,7 @@ pub struct Segment {
 }
 
 impl Segment {
-    /// Tries to recover a segment from a folder
+    /// Tries to recover a segment from a folder.
     pub fn recover<P: AsRef<Path>>(folder: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
         let metadata = Metadata::from_disk(folder.as_ref().join("meta.json"))?;
         let block_index = MetaIndex::from_file(
@@ -64,7 +64,7 @@ impl Segment {
     }
 
     fn load_block(&self, block_ref: &IndexEntry) -> crate::Result<Arc<ValueBlock>> {
-        let mut file = self.file.lock().unwrap();
+        let mut file = self.file.lock().expect("lock is poisoned");
 
         let block = ValueBlock::from_file_compressed(&mut *file, block_ref.offset, block_ref.size)?; // TODO: no panic
 
@@ -86,11 +86,11 @@ impl Segment {
         Ok(block)
     }
 
-    /// Retrieves an item from the segment
+    /// Retrieves an item from the segment.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
         if !self.key_range_contains(&key) {
             //eprintln!("{:?} NOT CONTAINED :)", key.as_ref());
@@ -101,7 +101,7 @@ impl Segment {
 
         //eprintln!("{:?} DISK ACCESS :(", key.as_ref());
 
-        let block_ref = self.block_index.get_latest(key.as_ref());
+        let block_ref = self.block_index.get_latest(key.as_ref())?;
 
         Ok(match block_ref {
             Some(block_ref) => {
@@ -124,11 +124,11 @@ impl Segment {
         })
     }
 
-    /// Creates an iterator over the `Segment`
+    /// Creates an iterator over the `Segment`.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn iter(&self) -> crate::Result<Reader> {
         let reader = Reader::new(
             self.metadata.path.join("blocks"),
@@ -142,11 +142,11 @@ impl Segment {
         Ok(reader)
     }
 
-    /// Creates a ranged iterator over the `Segment`
+    /// Creates a ranged iterator over the `Segment`.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> crate::Result<Range> {
         let range = Range::new(
             self.metadata.path.join("blocks"),
@@ -159,11 +159,11 @@ impl Segment {
         Ok(range)
     }
 
-    /// Creates a prefixed iterator over the `Segment`
+    /// Creates a prefixed iterator over the `Segment`.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs.
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
         let reader = PrefixedReader::new(
             self.metadata.path.join("blocks"),
@@ -176,22 +176,22 @@ impl Segment {
         Ok(reader)
     }
 
-    /// Returns the highest sequence number in the segment
+    /// Returns the highest sequence number in the segment.
     pub fn lsn(&self) -> SeqNo {
         self.metadata.seqnos.1
     }
 
-    /// Returns the amount of tombstone markers in the `Segment`
+    /// Returns the amount of tombstone markers in the `Segment`.
     pub fn tombstone_count(&self) -> u64 {
         self.metadata.tombstone_count
     }
 
-    /// Returns true if the key is contained in the segment's key range
+    /// Returns true if the key is contained in the segment's key range.
     pub(crate) fn key_range_contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
         self.metadata.key_range_contains(key)
     }
 
-    /// Checks if a key range is (partially or fully) contained in this segment
+    /// Checks if a key range is (partially or fully) contained in this segment.
     pub(crate) fn check_key_range_overlap(
         &self,
         bounds: &(Bound<Vec<u8>>, Bound<Vec<u8>>),

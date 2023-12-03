@@ -9,7 +9,7 @@ use lsm_tree::{Config, Tree};
 
 let folder = "data";
 
-// A tree is a single logical keyspace/index/...
+// A tree is a single physical keyspace/index/...
 // and supports a BTreeMap-like API
 // but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
@@ -55,7 +55,6 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 ## Future
 
 - Snapshots
-- Reverse iteration
 - Range tombstones
 
 ## Benchmarks

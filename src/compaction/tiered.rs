@@ -96,8 +96,14 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
-            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
-            block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
+            file: Mutex::new(BufReader::new(
+                File::open("Cargo.toml").expect("should fopen"),
+            )),
+            block_index: Arc::new(
+                MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
+            ),
             metadata: Metadata {
                 path: ".".into(),
                 block_count: 0,
