@@ -738,9 +738,7 @@ impl Tree {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let item = tree.first_key_value()?;
-    /// assert!(item.is_some());
-    /// let item = item.unwrap();
+    /// let item = tree.first()?.expect("item should exist");
     /// assert_eq!(item.key, "1".as_bytes());
     ///
     /// # Ok::<(), TreeError>(())
@@ -749,7 +747,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn first_key_value(&self) -> crate::Result<Option<Value>> {
+    pub fn first(&self) -> crate::Result<Option<Value>> {
         let item = self.iter()?.into_iter().next().transpose()?;
         Ok(item)
     }
@@ -769,7 +767,7 @@ impl Tree {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     /// #
-    /// let item = tree.last_key_value()?;
+    /// let item = tree.last()?;
     /// assert!(item.is_some());
     /// let item = item.unwrap();
     /// assert_eq!(item.key, "5".as_bytes());
@@ -780,7 +778,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn last_key_value(&self) -> crate::Result<Option<Value>> {
+    pub fn last(&self) -> crate::Result<Option<Value>> {
         let item = self.iter()?.into_iter().next_back().transpose()?;
         Ok(item)
     } */

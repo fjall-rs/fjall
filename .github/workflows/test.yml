@@ -28,6 +28,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: ${{ runner.os }}-cargo
+          workspaces: >
+                      . -> target
+                      examples/actix-kv -> target
       - name: Build
         run: cargo build -v
       - name: Format
