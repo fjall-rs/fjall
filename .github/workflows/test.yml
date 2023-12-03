@@ -31,6 +31,7 @@ jobs:
           workspaces: >
             . -> target
             examples/actix-kv -> target
+            examples/actix-triplestore -> target
       - name: Build
         run: cargo build -v
       - name: Format

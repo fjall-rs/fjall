@@ -8,7 +8,6 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::MyResult;
-use log::info;
 use lsm_tree::{Config, Tree};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -137,13 +136,13 @@ async fn main() -> std::io::Result<()> {
     let port = port.parse::<u16>().expect("invalid port");
 
     let data_folder = std::env::var("DATA_FOLDER").unwrap_or(".data".into());
-    info!("Opening database at {data_folder}");
+    log::info!("Opening database at {data_folder}");
     let db = Config::new(&data_folder)
         .block_cache_size(25_600) // 100 MB
         .open()
         .expect("failed to open db");
 
-    info!("Starting on port {port}");
+    log::info!("Starting on port {port}");
 
     HttpServer::new(move || {
         App::new()
