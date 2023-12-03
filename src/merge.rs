@@ -1,4 +1,4 @@
-use crate::{segment::Segment, Value};
+use crate::{segment::Segment, value::SeqNo, Value};
 use min_max_heap::MinMaxHeap;
 use std::sync::Arc;
 
@@ -45,6 +45,7 @@ pub struct MergeIterator<'a> {
     iterators: Vec<BoxedIterator<'a>>,
     heap: MinMaxHeap<IteratorValue>,
     evict_old_versions: bool,
+    seqno: Option<SeqNo>,
 }
 
 impl<'a> MergeIterator<'a> {
@@ -54,11 +55,17 @@ impl<'a> MergeIterator<'a> {
             iterators,
             heap: MinMaxHeap::new(),
             evict_old_versions: false,
+            seqno: None,
         }
     }
 
     pub fn evict_old_versions(mut self, v: bool) -> Self {
         self.evict_old_versions = v;
+        self
+    }
+
+    pub fn snapshot_seqno(mut self, v: SeqNo) -> Self {
+        self.seqno = Some(v);
         self
     }
 
@@ -121,7 +128,7 @@ impl<'a> Iterator for MergeIterator<'a> {
             };
         }
 
-        if let Some(head) = self.heap.pop_min() {
+        while let Some(mut head) = self.heap.pop_min() {
             let (iter_idx_consumed, _) = head.0;
             if let Err(e) = self.advance_iter(iter_idx_consumed) {
                 return Some(Err(e));
@@ -136,6 +143,13 @@ impl<'a> Iterator for MergeIterator<'a> {
                         if let Err(e) = self.advance_iter(iter_idx_consumed) {
                             return Some(Err(e));
                         }
+
+                        // Filter seqnos that are too high
+                        if let Some(seqno) = self.seqno {
+                            if head.seqno >= seqno {
+                                head = next;
+                            }
+                        }
                     } else {
                         // Reached next user key now
                         // Push back non-conflicting item and exit
@@ -146,10 +160,17 @@ impl<'a> Iterator for MergeIterator<'a> {
                 }
             }
 
-            Some(Ok(head.clone()))
-        } else {
-            None
+            if let Some(seqno) = self.seqno {
+                if head.seqno >= seqno {
+                    // Filter out seqnos that are too high
+                    continue;
+                }
+            }
+
+            return Some(Ok(head.clone()));
         }
+
+        None
     }
 }
 
@@ -163,7 +184,7 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
             };
         }
 
-        if let Some(mut head) = self.heap.pop_max() {
+        while let Some(mut head) = self.heap.pop_max() {
             let (iter_idx_consumed, _) = head.0;
             if let Err(e) = self.advance_iter_backwards(iter_idx_consumed) {
                 return Some(Err(e));
@@ -177,11 +198,18 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                             return Some(Err(e));
                         }
 
-                        // Keep popping off heap until we reach the next key
-                        // Because the seqno's are stored in descending order
-                        // The next item will definitely have a higher seqno, so
-                        // we can just take it
-                        head = next;
+                        // Filter seqnos that are too high
+                        if let Some(seqno) = self.seqno {
+                            if head.seqno >= seqno {
+                                head = next;
+                            }
+                        } else {
+                            // Keep popping off heap until we reach the next key
+                            // Because the seqno's are stored in descending order
+                            // The next item will definitely have a higher seqno, so
+                            // we can just take it
+                            head = next;
+                        }
                     } else {
                         // Reached next user key now
                         // Push back non-conflicting item and exit
@@ -192,10 +220,17 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                 }
             }
 
-            Some(Ok(head.clone()))
-        } else {
-            None
+            if let Some(seqno) = self.seqno {
+                if head.seqno >= seqno {
+                    // Filter out seqnos that are too high
+                    continue;
+                }
+            }
+
+            return Some(Ok(head.clone()));
         }
+
+        None
     }
 }
 
@@ -204,6 +239,67 @@ mod tests {
 
     use super::*;
     use test_log::test;
+
+    #[test]
+    fn test_snapshot_iter() -> crate::Result<()> {
+        let vec0 = vec![
+            crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
+            crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
+            crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
+        ];
+
+        let vec1 = vec![
+            crate::Value::new(1u64.to_be_bytes(), "new", false, 1),
+            crate::Value::new(2u64.to_be_bytes(), "new", false, 1),
+            crate::Value::new(3u64.to_be_bytes(), "new", false, 1),
+        ];
+
+        {
+            let iter0 = Box::new(vec0.iter().cloned().map(Ok));
+            let iter1 = Box::new(vec1.iter().cloned().map(Ok));
+
+            let merge_iter = MergeIterator::new(vec![iter0, iter1])
+                .evict_old_versions(true)
+                // NOTE: "1" because the seqno starts at 0
+                // When we insert an item, the tree LSN is at 1
+                // So the snapshot to get all items with seqno = 0 should have seqno = 1
+                .snapshot_seqno(1);
+            let items = merge_iter.collect::<crate::Result<Vec<_>>>()?;
+
+            assert_eq!(
+                items,
+                vec![
+                    crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
+                    crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
+                    crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
+                ]
+            );
+        }
+
+        {
+            let iter0 = Box::new(vec0.iter().cloned().map(Ok));
+            let iter1 = Box::new(vec1.iter().cloned().map(Ok));
+
+            let merge_iter = MergeIterator::new(vec![iter0, iter1])
+                .evict_old_versions(true)
+                // NOTE: "1" because the seqno starts at 0
+                // When we insert an item, the tree LSN is at 1
+                // So the snapshot to get all items with seqno = 0 should have seqno = 1
+                .snapshot_seqno(1);
+            let items = merge_iter.rev().collect::<crate::Result<Vec<_>>>()?;
+
+            assert_eq!(
+                items,
+                vec![
+                    crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
+                    crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
+                    crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
+                ]
+            );
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn test_non_overlapping() -> crate::Result<()> {
@@ -249,18 +345,15 @@ mod tests {
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
         let iter1 = Box::new(vec1.iter().cloned().map(Ok));
 
-        let merge_iter = MergeIterator::new(vec![iter0, iter1]);
+        let merge_iter = MergeIterator::new(vec![iter0, iter1]).evict_old_versions(true);
         let items = merge_iter.collect::<crate::Result<Vec<_>>>()?;
 
         assert_eq!(
             items,
             vec![
                 crate::Value::new(1u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(2u64.to_be_bytes(), "new", false, 2),
-                crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(3u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
             ]
         );
 
@@ -284,18 +377,15 @@ mod tests {
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
         let iter1 = Box::new(vec1.iter().cloned().map(Ok));
 
-        let merge_iter = MergeIterator::new(vec![iter0, iter1]);
+        let merge_iter = MergeIterator::new(vec![iter0, iter1]).evict_old_versions(true);
         let items = merge_iter.collect::<crate::Result<Vec<_>>>()?;
 
         assert_eq!(
             items,
             vec![
                 crate::Value::new(1u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(1u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(2u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(2u64.to_be_bytes(), "old", false, 0),
                 crate::Value::new(3u64.to_be_bytes(), "new", false, 1),
-                crate::Value::new(3u64.to_be_bytes(), "old", false, 0),
             ]
         );
 

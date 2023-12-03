@@ -4,7 +4,7 @@ use crate::{
 use std::{
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicU32, AtomicU64},
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
         Arc, RwLock,
     },
 };
@@ -41,15 +41,25 @@ pub struct TreeInner {
 
     /// Semaphore to notify compaction threads
     pub(crate) compaction_semaphore: Arc<Semaphore>,
+
+    /// Keeps track of open snapshots
+    pub(crate) open_snapshots: AtomicU32,
+
+    /// Notifies compaction threads that the tree is dropping
+    pub(crate) stop_signal: AtomicBool,
 }
 
 impl Drop for TreeInner {
     fn drop(&mut self) {
         log::debug!("Dropping TreeInner");
 
-        log::trace!("Trying to flush journal");
+        log::debug!("Trying to flush journal");
         if let Err(error) = self.journal.flush() {
             log::warn!("Failed to flush journal: {:?}", error);
         }
+
+        log::debug!("Sending stop signal to compaction threads");
+        self.stop_signal
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 }

@@ -20,6 +20,7 @@ pub struct Range<'a> {
     guard: MemTableGuard<'a>,
     bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
     segments: Vec<Arc<Segment>>,
+    seqno: Option<SeqNo>,
 }
 
 impl<'a> Range<'a> {
@@ -27,11 +28,13 @@ impl<'a> Range<'a> {
         guard: MemTableGuard<'a>,
         bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
         segments: Vec<Arc<Segment>>,
+        seqno: Option<SeqNo>,
     ) -> Self {
         Self {
             guard,
             bounds,
             segments,
+            seqno,
         }
     }
 }
@@ -42,7 +45,7 @@ pub struct RangeIterator<'a> {
 }
 
 impl<'a> RangeIterator<'a> {
-    fn new(lock: &'a Range<'a>) -> Self {
+    fn new(lock: &'a Range<'a>, seqno: Option<SeqNo>) -> Self {
         let lo = match &lock.bounds.0 {
             // NOTE: See memtable.rs for range explanation
             Bound::Included(key) => {
@@ -104,12 +107,16 @@ impl<'a> RangeIterator<'a> {
 
         iters.push(Box::new(memtable_iter));
 
-        let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
-            |x| match x {
-                Ok(value) => !value.is_tombstone,
-                Err(_) => true,
-            },
-        ));
+        let mut iter = MergeIterator::new(iters).evict_old_versions(true);
+
+        if let Some(seqno) = seqno {
+            iter = iter.snapshot_seqno(seqno);
+        }
+
+        let iter = Box::new(iter.filter(|x| match x {
+            Ok(value) => !value.is_tombstone,
+            Err(_) => true,
+        }));
 
         Self { iter }
     }
@@ -134,6 +141,6 @@ impl<'a> IntoIterator for &'a Range<'a> {
     type Item = <Self::IntoIter as Iterator>::Item;
 
     fn into_iter(self) -> Self::IntoIter {
-        RangeIterator::new(self)
+        RangeIterator::new(self, self.seqno)
     }
 }

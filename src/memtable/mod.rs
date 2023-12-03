@@ -16,7 +16,7 @@ impl MemTable {
     /// Returns the item by key if it exists
     ///
     /// The item with the highest seqno will be returned
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Value> {
+    pub fn get<K: AsRef<[u8]>>(&self, key: K, seqno: Option<SeqNo>) -> Option<Value> {
         let prefix = key.as_ref();
 
         // NOTE: This range start deserves some explanation...
@@ -37,10 +37,18 @@ impl MemTable {
         //
         let range = ParsedInternalKey::new(key.as_ref().to_vec(), SeqNo::MAX, true)..;
 
-        let item = self
-            .items
-            .range(range)
-            .find(|entry| entry.key().user_key.starts_with(prefix));
+        let item = self.items.range(range).find(|entry| {
+            let key = entry.key();
+
+            // If seqno (snapshot) value is defined, filter for it
+            if let Some(seqno) = seqno {
+                if key.seqno > seqno {
+                    return false;
+                }
+            }
+
+            key.user_key.starts_with(prefix)
+        });
 
         item.map(|entry| (entry.key().clone(), entry.value().clone()))
             .map(Value::from)
@@ -66,7 +74,7 @@ mod tests {
 
         memtable.insert(value.clone());
 
-        assert_eq!(Some(value), memtable.get("abc"));
+        assert_eq!(Some(value), memtable.get("abc", None));
     }
 
     #[test]
@@ -81,7 +89,7 @@ mod tests {
 
         assert_eq!(
             Some(Value::new("abc", "abc", false, 4)),
-            memtable.get("abc")
+            memtable.get("abc", None)
         );
     }
 
@@ -94,12 +102,30 @@ mod tests {
 
         assert_eq!(
             Some(Value::new("abc", "abc", false, 255)),
-            memtable.get("abc")
+            memtable.get("abc", None)
         );
 
         assert_eq!(
             Some(Value::new("abc0", "abc", false, 0)),
-            memtable.get("abc0")
+            memtable.get("abc0", None)
+        );
+    }
+
+    #[test]
+    fn test_memtable_get_old_version() {
+        let memtable = MemTable::default();
+
+        memtable.insert(Value::new("abc", "abc", false, 0));
+        memtable.insert(Value::new("abc", "abc", false, 255));
+
+        assert_eq!(
+            Some(Value::new("abc", "abc", false, 255)),
+            memtable.get("abc", None)
+        );
+
+        assert_eq!(
+            Some(Value::new("abc", "abc", false, 0)),
+            memtable.get("abc", Some(100))
         );
     }
 }

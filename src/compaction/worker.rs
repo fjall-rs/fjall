@@ -17,6 +17,11 @@ pub fn do_compaction(
     payload: &crate::compaction::Options,
     mut segments_lock: RwLockWriteGuard<'_, Levels>,
 ) -> crate::Result<()> {
+    if tree.is_stopped() {
+        log::debug!("Got stop signal: compaction thread is stopping");
+        return Ok(());
+    }
+
     let start = Instant::now();
 
     log::debug!(
@@ -36,8 +41,15 @@ pub fn do_compaction(
                 .collect()
         };
 
-        MergeIterator::from_segments(&to_merge)?
-            .evict_old_versions(false /* TODO: evict if there are no open snapshots */)
+        // NOTE: When there are open snapshots
+        // we don't want to GC old versions of items
+        // otherwise snapshots will lose data
+        let snapshot_count = tree
+            .open_snapshots
+            .load(std::sync::atomic::Ordering::Acquire);
+        let no_snapshots_open = snapshot_count == 0;
+
+        MergeIterator::from_segments(&to_merge)?.evict_old_versions(no_snapshots_open)
     };
 
     segments_lock.hide_segments(&payload.segment_ids);
@@ -57,8 +69,13 @@ pub fn do_compaction(
         },
     )?;
 
-    for item in merge_iter {
+    for (idx, item) in merge_iter.enumerate() {
         segment_writer.write(item?)?;
+
+        if idx % 100_000 == 0 && tree.is_stopped() {
+            log::debug!("Got stop signal: compaction thread is stopping");
+            return Ok(());
+        }
     }
 
     let created_segments = segment_writer.finish()?;
@@ -129,6 +146,11 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
     loop {
         log::trace!("Acquiring segment lock");
         let mut segments_lock = tree.levels.write().expect("lock is poisoned");
+
+        if tree.is_stopped() {
+            log::debug!("Got stop signal: compaction thread is stopping");
+            return Ok(());
+        }
 
         match tree.config.compaction_strategy.choose(&segments_lock) {
             Choice::DoCompact(payload) => {

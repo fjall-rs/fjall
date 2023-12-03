@@ -70,6 +70,7 @@ mod range;
 mod segment;
 mod serde;
 mod sharded;
+mod snapshot;
 mod time;
 mod tree;
 mod tree_inner;
@@ -80,6 +81,7 @@ pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
+    snapshot::Snapshot,
     tree::Tree,
     value::Value,
 };

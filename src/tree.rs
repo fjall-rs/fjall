@@ -11,14 +11,14 @@ use crate::{
     segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
     value::SeqNo,
-    Batch, Config, Value,
+    Batch, Config, Snapshot, Value,
 };
 use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU32, AtomicU64},
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
         Arc, RwLock, RwLockWriteGuard,
     },
 };
@@ -117,7 +117,7 @@ impl Tree {
     /// Will return `Err` if an IO error occurs.
     pub fn entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<crate::entry::Entry> {
         let key = key.as_ref();
-        let item = self.get_internal_entry(key, true)?;
+        let item = self.get_internal_entry(key, true, None)?;
 
         Ok(match item {
             Some(item) => crate::entry::Entry::Occupied(OccupiedEntry {
@@ -130,6 +130,19 @@ impl Tree {
                 key: key.to_vec(),
             }),
         })
+    }
+
+    /// Opens a read-only point-in-time snapshot of the tree
+    ///
+    /// Dropping the snapshot will close the snapshot
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
+        self.open_snapshots
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+
+        let seqno = self.lsn.load(std::sync::atomic::Ordering::Acquire);
+
+        Snapshot::new(self.clone(), seqno)
     }
 
     /// Initializes a new, atomic write batch.
@@ -200,7 +213,7 @@ impl Tree {
         self.config.path.clone()
     }
 
-    /// Scans the entire Tree, returning the amount of items.
+    /// Scans the entire tree, returning the amount of items.
     ///
     /// # Examples
     ///
@@ -293,6 +306,8 @@ impl Tree {
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
             active_journal_size_bytes: AtomicU32::default(),
+            open_snapshots: AtomicU32::new(0),
+            stop_signal: AtomicBool::new(false),
         };
 
         // fsync folder
@@ -522,6 +537,8 @@ impl Tree {
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
             active_journal_size_bytes: AtomicU32::default(),
+            open_snapshots: AtomicU32::new(0),
+            stop_signal: AtomicBool::new(false),
         };
 
         let tree = Self(Arc::new(inner));
@@ -700,8 +717,12 @@ impl Tree {
         self.get(key).map(|x| x.is_some())
     }
 
+    pub(crate) fn create_iter(&self, seqno: Option<SeqNo>) -> crate::Result<Range<'_>> {
+        self.create_range::<Vec<u8>, _>(.., seqno)
+    }
+
     #[allow(clippy::iter_not_returning_iterator)]
-    /// Returns an iterator that scans through the entire Tree.
+    /// Returns an iterator that scans through the entire tree.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
@@ -709,31 +730,14 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn iter(&self) -> crate::Result<Range<'_>> {
-        self.range::<Vec<u8>, _>(..)
+        self.create_iter(None)
     }
 
-    /// Returns an iterator over a range of items.
-    ///
-    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # let folder = tempfile::tempdir()?;
-    /// use lsm_tree::{Config, Tree};
-    ///
-    /// let tree = Config::new(folder).open()?;
-    ///
-    /// tree.insert("a", nanoid::nanoid!())?;
-    /// assert_eq!(1, tree.range("a"..="z")?.into_iter().count());
-    /// #
-    /// # Ok::<(), lsm_tree::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
+    pub(crate) fn create_range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        range: R,
+        seqno: Option<SeqNo>,
+    ) -> crate::Result<Range<'_>> {
         use std::ops::Bound::{self, Excluded, Included, Unbounded};
 
         let lo: Bound<Vec<u8>> = match range.start_bound() {
@@ -766,6 +770,64 @@ impl Tree {
             },
             bounds,
             segment_info,
+            seqno,
+        ))
+    }
+
+    /// Returns an iterator over a range of items.
+    ///
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert_eq!(1, tree.range("a"..="z")?.into_iter().count());
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
+        self.create_range(range, None)
+    }
+
+    pub(crate) fn create_prefix<K: Into<Vec<u8>>>(
+        &self,
+        prefix: K,
+        seqno: Option<SeqNo>,
+    ) -> crate::Result<Prefix<'_>> {
+        use std::ops::Bound::{self};
+
+        let prefix = prefix.into();
+
+        let lock = self.levels.read().expect("lock is poisoned");
+
+        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
+            (Bound::Included(prefix.clone()), std::ops::Bound::Unbounded);
+
+        let segment_info = lock
+            .get_all_segments()
+            .values()
+            .filter(|x| x.check_key_range_overlap(&bounds))
+            .cloned()
+            .collect();
+
+        Ok(Prefix::new(
+            MemTableGuard {
+                active: self.active_memtable.read().expect("lock is poisoned"),
+                immutable: self.immutable_memtables.read().expect("lock is poisoned"),
+            },
+            prefix,
+            segment_info,
+            seqno,
         ))
     }
 
@@ -793,30 +855,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
-        use std::ops::Bound::{self};
-
-        let prefix = prefix.into();
-
-        let lock = self.levels.read().expect("lock is poisoned");
-
-        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
-            (Bound::Included(prefix.clone()), std::ops::Bound::Unbounded);
-
-        let segment_info = lock
-            .get_all_segments()
-            .values()
-            .filter(|x| x.check_key_range_overlap(&bounds))
-            .cloned()
-            .collect();
-
-        Ok(Prefix::new(
-            MemTableGuard {
-                active: self.active_memtable.read().expect("lock is poisoned"),
-                immutable: self.immutable_memtables.read().expect("lock is poisoned"),
-            },
-            prefix,
-            segment_info,
-        ))
+        self.create_prefix(prefix, None)
     }
 
     /// Returns the first key-value pair in the tree.
@@ -882,10 +921,11 @@ impl Tree {
         &self,
         key: K,
         evict_tombstone: bool,
+        seqno: Option<SeqNo>,
     ) -> crate::Result<Option<Value>> {
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
 
-        if let Some(item) = memtable_lock.get(&key) {
+        if let Some(item) = memtable_lock.get(&key, seqno) {
             if evict_tombstone {
                 return Ok(ignore_tombstone_value(item));
             }
@@ -896,7 +936,7 @@ impl Tree {
         // Now look in immutable memtables
         let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
         for (_, memtable) in memtable_lock.iter().rev() {
-            if let Some(item) = memtable.get(&key) {
+            if let Some(item) = memtable.get(&key, seqno) {
                 if evict_tombstone {
                     return Ok(ignore_tombstone_value(item));
                 }
@@ -910,7 +950,7 @@ impl Tree {
         let segments = &segment_lock.get_all_segments_flattened();
 
         for segment in segments {
-            if let Some(item) = segment.get(&key)? {
+            if let Some(item) = segment.get(&key, seqno)? {
                 if evict_tombstone {
                     return Ok(ignore_tombstone_value(item));
                 }
@@ -942,7 +982,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
-        Ok(self.get_internal_entry(key, true)?.map(|x| x.value))
+        Ok(self.get_internal_entry(key, true, None)?.map(|x| x.value))
     }
 
     pub(crate) fn increment_lsn(&self) -> SeqNo {
@@ -1188,5 +1228,9 @@ impl Tree {
     pub fn flush(&self) -> crate::Result<()> {
         self.journal.flush()?;
         Ok(())
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.stop_signal.load(std::sync::atomic::Ordering::Acquire)
     }
 }

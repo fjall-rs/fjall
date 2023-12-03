@@ -11,14 +11,21 @@ pub struct Prefix<'a> {
     guard: MemTableGuard<'a>,
     prefix: Vec<u8>,
     segments: Vec<Arc<Segment>>,
+    seqno: Option<SeqNo>,
 }
 
 impl<'a> Prefix<'a> {
-    pub fn new(guard: MemTableGuard<'a>, prefix: Vec<u8>, segments: Vec<Arc<Segment>>) -> Self {
+    pub fn new(
+        guard: MemTableGuard<'a>,
+        prefix: Vec<u8>,
+        segments: Vec<Arc<Segment>>,
+        seqno: Option<SeqNo>,
+    ) -> Self {
         Self {
             guard,
             prefix,
             segments,
+            seqno,
         }
     }
 }
@@ -29,7 +36,7 @@ pub struct PrefixIterator<'a> {
 }
 
 impl<'a> PrefixIterator<'a> {
-    fn new(lock: &'a Prefix<'a>) -> Self {
+    fn new(lock: &'a Prefix<'a>, seqno: Option<SeqNo>) -> Self {
         let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
@@ -64,12 +71,16 @@ impl<'a> PrefixIterator<'a> {
 
         iters.push(Box::new(memtable_iter));
 
-        let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
-            |x| match x {
-                Ok(value) => !value.is_tombstone,
-                Err(_) => true,
-            },
-        ));
+        let mut iter = MergeIterator::new(iters).evict_old_versions(true);
+
+        if let Some(seqno) = seqno {
+            iter = iter.snapshot_seqno(seqno);
+        }
+
+        let iter = Box::new(iter.filter(|x| match x {
+            Ok(value) => !value.is_tombstone,
+            Err(_) => true,
+        }));
 
         Self { iter }
     }
@@ -94,6 +105,6 @@ impl<'a> IntoIterator for &'a Prefix<'a> {
     type Item = <Self::IntoIter as Iterator>::Item;
 
     fn into_iter(self) -> Self::IntoIter {
-        PrefixIterator::new(self)
+        PrefixIterator::new(self, self.seqno)
     }
 }

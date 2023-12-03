@@ -91,37 +91,26 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
+    pub fn get<K: AsRef<[u8]>>(
+        &self,
+        key: K,
+        seqno: Option<SeqNo>,
+    ) -> crate::Result<Option<Value>> {
         if !self.key_range_contains(&key) {
-            //eprintln!("{:?} NOT CONTAINED :)", key.as_ref());
             return Ok(None);
         }
 
         // TODO: bloom
 
-        //eprintln!("{:?} DISK ACCESS :(", key.as_ref());
+        let key = key.as_ref();
 
-        let block_ref = self.block_index.get_latest(key.as_ref())?;
+        let mut iter = self.prefix(key)?;
 
-        Ok(match block_ref {
-            Some(block_ref) => {
-                let cached_block = self
-                    .block_cache
-                    .get_disk_block(self.metadata.id.clone(), &block_ref.start_key);
-
-                let real_block = match cached_block {
-                    Some(block) => block,
-                    None => self.load_block(&block_ref)?,
-                };
-
-                let item_index = real_block
-                    .items
-                    .binary_search_by(|x| (*x.key).cmp(key.as_ref()));
-
-                item_index.map_or(None, |idx| Some(real_block.items[idx].clone()))
-            }
-            None => None,
+        iter.find(|x| match x {
+            Ok(item) => seqno.map_or(true, |s| item.seqno < s),
+            Err(_) => true,
         })
+        .transpose()
     }
 
     /// Creates an iterator over the `Segment`.
