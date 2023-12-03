@@ -314,7 +314,7 @@ impl Tree {
 
         let mut active_journal = None;
 
-        for dirent in std::fs::read_dir(&config.path.join("journals"))? {
+        for dirent in std::fs::read_dir(config.path.join("journals"))? {
             let dirent = dirent?;
             let journal_path = dirent.path();
 
@@ -620,6 +620,20 @@ impl Tree {
     ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited)
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// assert_eq!(1, tree.range("a"..="z")?.into_iter().count());
+    ///
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
@@ -662,6 +676,22 @@ impl Tree {
     /// Returns an iterator over a prefixed set of items
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// tree.insert("ab", nanoid::nanoid!())?;
+    /// tree.insert("abc", nanoid::nanoid!())?;
+    /// assert_eq!(2, tree.prefix("ab")?.into_iter().count());
+    ///
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///

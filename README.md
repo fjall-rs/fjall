@@ -22,7 +22,15 @@ assert!(item.is_some());
 // Flush to definitely make sure data is persisted
 tree.flush()?;
 
-// TODO: range & prefix
+// Search by prefix
+for item in tree.prefix("prefix")?.into_iter() {
+  // ...
+}
+
+// Search by range
+for item in tree.range("a"..="z")?.into_iter() {
+  // ...
+}
 ```
 
 ## About
