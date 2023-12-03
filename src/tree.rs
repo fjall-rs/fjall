@@ -179,6 +179,8 @@ impl Tree {
 
     /// Returns `true` if the tree is empty
     ///
+    /// This operation has O(1) complexity
+    ///
     /// # Examples
     ///
     /// ```
