@@ -29,8 +29,8 @@ jobs:
         with:
           prefix-key: ${{ runner.os }}-cargo
           workspaces: >
-                      . -> target
-                      examples/actix-kv -> target
+            . -> target
+            examples/actix-kv -> target
       - name: Build
         run: cargo build -v
       - name: Format
