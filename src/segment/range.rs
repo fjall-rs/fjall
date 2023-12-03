@@ -206,6 +206,8 @@ mod tests {
             )?;
 
             for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
@@ -221,6 +223,8 @@ mod tests {
             )?;
 
             for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
@@ -238,6 +242,8 @@ mod tests {
             )?;
 
             for key in (0..5_000).map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
@@ -253,6 +259,8 @@ mod tests {
             )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
@@ -270,6 +278,8 @@ mod tests {
             )?;
 
             for key in (1_000..5_000).map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }
@@ -287,6 +297,8 @@ mod tests {
             )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 let item = iter.next_back().expect("item should exist")?;
                 assert_eq!(key, &*item.key);
             }

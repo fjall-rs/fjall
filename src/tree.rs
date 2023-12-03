@@ -24,6 +24,16 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
+pub struct CompareAndSwapError {
+    /// The value currently in the tree that caused the CAS error
+    pub prev: Option<Vec<u8>>,
+
+    /// The value that was proposed
+    pub next: Option<Vec<u8>>,
+}
+
+pub type CompareAndSwapResult = Result<(), CompareAndSwapError>;
+
 /// A log-structured merge tree (LSM-tree/LSMT)
 ///
 /// The tree is internally synchronized (Send + Sync), so it does not need to be wrapped in a lock nor an Arc.
@@ -932,76 +942,181 @@ impl Tree {
         self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
     }
 
-    /// Atomically fetches and updates an item if it exists.
-    ///
-    /// Returns the previous value if the item exists.
+    /// Compare-and-swap an entry
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+    pub fn compare_and_swap<K: AsRef<[u8]>>(
+        &self,
+        key: K,
+        expected: Option<&Vec<u8>>,
+        next: Option<&Vec<u8>>,
+    ) -> crate::Result<CompareAndSwapResult> {
+        let key = key.as_ref();
+
+        match self.get(key)? {
+            Some(current_value) => {
+                match expected {
+                    Some(expected_value) => {
+                        // We expected Some and got Some
+                        // Check if the value is as expected
+                        if current_value != *expected_value {
+                            return Ok(Err(CompareAndSwapError {
+                                prev: Some(current_value),
+                                next: next.cloned(),
+                            }));
+                        }
+
+                        // Set or delete the object now
+                        match next {
+                            Some(next_value) => {
+                                self.insert(key, next_value.clone())?;
+                                Ok(Ok(()))
+                            }
+                            None => {
+                                self.remove(key)?;
+                                Ok(Ok(()))
+                            }
+                        }
+                    }
+                    None => {
+                        // We expected Some but got None
+                        // CAS error!
+                        Ok(Err(CompareAndSwapError {
+                            prev: None,
+                            next: next.cloned(),
+                        }))
+                    }
+                }
+            }
+            None => match expected {
+                Some(_) => {
+                    // We expected Some but got None
+                    // CAS error!
+                    Ok(Err(CompareAndSwapError {
+                        prev: None,
+                        next: next.cloned(),
+                    }))
+                }
+                None => match next {
+                    // We expected None and got None
+                    // Set or delete the object now
+                    Some(next_value) => {
+                        self.insert(key, next_value.clone())?;
+                        Ok(Ok(()))
+                    }
+                    None => {
+                        self.remove(key)?;
+                        Ok(Ok(()))
+                    }
+                },
+            },
+        }
+    }
+
+    /// Atomically fetches and updates an item if it exists.
+    ///
+    /// Returns the previous value if the item exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("key", "a")?;
+    ///
+    /// let prev = tree.fetch_update("key", |_| Some("b"))?.expect("item should exist");
+    /// assert_eq!("a".as_bytes(), prev);
+    ///
+    /// let item = tree.get("key")?.expect("item should exist");
+    /// assert_eq!("b".as_bytes(), item);
+    ///
+    /// let prev = tree.fetch_update("key", |_| None::<String>)?.expect("item should exist");
+    /// assert_eq!("b".as_bytes(), prev);
+    ///
+    /// assert!(tree.is_empty()?);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn fetch_update<K: AsRef<[u8]>, V: Into<Vec<u8>>, F: Fn(Option<&Vec<u8>>) -> Option<V>>(
         &self,
         key: K,
         f: F,
     ) -> crate::Result<Option<Vec<u8>>> {
-        // TODO: fully lock all shards
+        let key = key.as_ref();
 
-        let shard = self.journal.lock_shard();
+        let mut fetched = self.get(key)?;
 
-        Ok(match self.get_internal_entry(key, true)? {
-            Some(item) => {
-                let updated_value = f(&item.value);
+        loop {
+            let expected = fetched.as_ref();
+            let next = f(expected).map(Into::into);
 
-                self.append_entry(
-                    shard,
-                    Value {
-                        key: item.key,
-                        value: updated_value,
-                        is_tombstone: false,
-                        seqno: self.increment_lsn(),
-                    },
-                )?;
-
-                Some(item.value)
+            match self.compare_and_swap(key, expected, next.as_ref())? {
+                Ok(_) => return Ok(fetched),
+                Err(err) => {
+                    fetched = err.prev;
+                }
             }
-            None => None,
-        })
+        }
     }
 
     /// Atomically fetches and updates an item if it exists.
     ///
     /// Returns the updated value if the item exists.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("key", "a")?;
+    ///
+    /// let prev = tree.update_fetch("key", |_| Some("b"))?.expect("item should exist");
+    /// assert_eq!("b".as_bytes(), prev);
+    ///
+    /// let item = tree.get("key")?.expect("item should exist");
+    /// assert_eq!("b".as_bytes(), item);
+    ///
+    /// let prev = tree.update_fetch("key", |_| None::<String>)?;
+    /// assert_eq!(None, prev);
+    ///
+    /// assert!(tree.is_empty()?);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+    pub fn update_fetch<K: AsRef<[u8]>, V: Into<Vec<u8>>, F: Fn(Option<&Vec<u8>>) -> Option<V>>(
         &self,
         key: K,
         f: F,
     ) -> crate::Result<Option<Vec<u8>>> {
-        // TODO: fully lock all shards
+        let key = key.as_ref();
 
-        let shard = self.journal.lock_shard();
+        let mut fetched = self.get(key)?;
 
-        Ok(match self.get_internal_entry(key, true)? {
-            Some(item) => {
-                let updated_value = f(&item.value);
+        loop {
+            let expected = fetched.as_ref();
+            let next = f(expected).map(Into::into);
 
-                self.append_entry(
-                    shard,
-                    Value {
-                        key: item.key,
-                        value: updated_value.clone(),
-                        is_tombstone: false,
-                        seqno: self.increment_lsn(),
-                    },
-                )?;
-
-                Some(updated_value)
+            match self.compare_and_swap(key, expected, next.as_ref())? {
+                Ok(_) => return Ok(next),
+                Err(err) => {
+                    fetched = err.prev;
+                }
             }
-            None => None,
-        })
+        }
     }
 
     /// Force-starts a memtable flush thread.
