@@ -23,7 +23,7 @@ impl LogRecovery {
     }
 
     fn truncate_file(&mut self) -> crate::Result<()> {
-        eprintln!("truncating log to {}", self.last_valid_pos);
+        log::debug!("truncating log to {}", self.last_valid_pos);
         self.reader.get_mut().set_len(self.last_valid_pos)?;
         self.reader.get_mut().sync_all()?;
         Ok(())
