@@ -44,7 +44,7 @@ impl<'a> PrefixIterator<'a> {
                 memtable
                     .items
                     // NOTE: See memtable.rs for range explanation
-                    .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
+                    .range(ParsedInternalKey::new(lock.prefix.clone(), SeqNo::MAX, true)..)
                     .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
                     .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone())))),
             ));
@@ -54,7 +54,7 @@ impl<'a> PrefixIterator<'a> {
             lock.guard
                 .active
                 .items
-                .range(ParsedInternalKey::new(&lock.prefix, SeqNo::MAX, true)..)
+                .range(ParsedInternalKey::new(lock.prefix.clone(), SeqNo::MAX, true)..)
                 .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
                 .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone()))))
         };

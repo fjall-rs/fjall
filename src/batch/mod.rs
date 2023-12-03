@@ -47,7 +47,7 @@ impl Batch {
             item.seqno = batch_seqno;
         }
 
-        let bytes_written = shard.write_batch(self.data.clone())?;
+        let bytes_written = shard.write_batch(&self.data.iter().collect())?;
         shard.flush()?;
 
         let memtable_size = self

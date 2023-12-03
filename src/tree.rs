@@ -459,17 +459,17 @@ impl Tree {
         mut shard: RwLockWriteGuard<'_, JournalShard>,
         value: Value,
     ) -> crate::Result<()> {
-        let size = shard.write(value.clone())?;
+        let size = shard.write(&value)?;
+        drop(shard);
 
         let memtable_lock = self.active_memtable.read().expect("lock poisoned");
         memtable_lock.insert(value);
 
         let memtable_size = self
             .approx_memtable_size_bytes
-            .fetch_add(size as u32, std::sync::atomic::Ordering::SeqCst);
+            .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed);
 
         drop(memtable_lock);
-        drop(shard);
 
         if memtable_size > self.config.max_memtable_size {
             log::debug!("Memtable reached threshold size");
@@ -509,7 +509,7 @@ impl Tree {
             key,
             value,
             false,
-            self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
         );
 
         self.append_entry(shard, value)?;
@@ -548,7 +548,7 @@ impl Tree {
             key,
             vec![],
             true,
-            self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
         );
 
         self.append_entry(shard, value)?;

@@ -19,9 +19,9 @@ pub struct ParsedInternalKey {
 }
 
 impl ParsedInternalKey {
-    pub fn new<K: AsRef<[u8]>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
+    pub fn new<K: Into<Vec<u8>>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
         Self {
-            user_key: user_key.as_ref().to_vec(),
+            user_key: user_key.into(),
             seqno,
             is_tombstone,
         }

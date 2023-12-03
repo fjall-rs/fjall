@@ -45,8 +45,12 @@ impl<'a> RangeIterator<'a> {
     fn new(lock: &'a Range<'a>) -> Self {
         let lo = match &lock.bounds.0 {
             // NOTE: See memtable.rs for range explanation
-            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, SeqNo::MAX, true)),
-            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, SeqNo::MAX, true)),
+            Bound::Included(key) => {
+                Bound::Included(ParsedInternalKey::new(key.clone(), SeqNo::MAX, true))
+            }
+            Bound::Excluded(key) => {
+                Bound::Excluded(ParsedInternalKey::new(key.clone(), SeqNo::MAX, true))
+            }
             Bound::Unbounded => Bound::Unbounded,
         };
 
@@ -65,8 +69,8 @@ impl<'a> RangeIterator<'a> {
             // abcdef -> 6
             // abcdef -> 5
             //
-            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, 0, false)),
-            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, 0, false)),
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key.clone(), 0, false)),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key.clone(), 0, false)),
             Bound::Unbounded => Bound::Unbounded,
         };
 

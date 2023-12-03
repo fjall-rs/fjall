@@ -96,6 +96,13 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     let mut lock = tree.journal.shards.full_lock();
     let mut memtable_lock = tree.active_memtable.write().expect("lock poisoned");
 
+    if memtable_lock.items.is_empty() {
+        log::debug!("MemTable is empty (so another thread beat us to it) - aborting flush");
+
+        // TODO: this is a bit stupid, change it
+        return Ok(std::thread::spawn(|| Ok(())));
+    }
+
     let old_journal_folder = lock[0].path.parent().unwrap().to_path_buf();
 
     let segment_id = old_journal_folder

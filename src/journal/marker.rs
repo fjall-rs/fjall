@@ -27,7 +27,7 @@ pub enum Marker {
     End(u32),
 }
 
-enum Tag {
+pub enum Tag {
     Start = 0,
     Item = 1,
     End = 2,

@@ -36,7 +36,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
 - Block caching to keep hot data in memory
 - Bloom filters to avoid expensive disk access for non-existing items
-- Sharded journal & memtable for concurrent writes
+- Sharded journal for concurrent writes
 - Journal truncation on recovery for consistency
 - Atomic write batches
 - Automatic background compaction

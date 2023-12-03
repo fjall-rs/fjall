@@ -1,5 +1,7 @@
-use super::marker::Marker;
-use crate::{journal::recovery::LogRecovery, serde::Serializable, SerializeError, Value};
+use byteorder::WriteBytesExt;
+
+use super::marker::{Marker, Tag};
+use crate::{serde::Serializable, SerializeError, Value};
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -76,11 +78,11 @@ impl JournalShard {
     }
 
     /// Appends a single item wrapped in a batch to the commit log
-    pub(crate) fn write(&mut self, item: Value) -> crate::Result<usize> {
-        self.write_batch(vec![item])
+    pub(crate) fn write(&mut self, item: &Value) -> crate::Result<usize> {
+        self.write_batch(&vec![item])
     }
 
-    pub fn write_batch(&mut self, items: Vec<Value>) -> crate::Result<usize> {
+    pub fn write_batch(&mut self, items: &Vec<&Value>) -> crate::Result<usize> {
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
         let item_count = items.len() as u32;
@@ -90,11 +92,12 @@ impl JournalShard {
 
         byte_count += write_start(&mut self.file, item_count)?;
 
-        for item in &items {
-            let marker = Marker::Item(item.clone());
-
+        for item in items {
+            // NOTE: Not using Marker::Item(item).serialize to avoid an item clone
             let mut bytes = Vec::new();
-            marker.serialize(&mut bytes)?;
+            bytes.write_u8(Tag::Item.into())?;
+            item.serialize(&mut bytes)?;
+
             self.file.write_all(&bytes)?;
 
             hasher.update(&bytes);

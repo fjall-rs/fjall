@@ -35,7 +35,7 @@ impl MemTable {
         // abcdef -> 6
         // abcdef -> 5
         //
-        let range = ParsedInternalKey::new(&key, SeqNo::MAX, true)..;
+        let range = ParsedInternalKey::new(key.as_ref().to_vec(), SeqNo::MAX, true)..;
 
         let item = self
             .items
