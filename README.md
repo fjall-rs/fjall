@@ -31,6 +31,11 @@ for item in tree.prefix("prefix")?.into_iter() {
 for item in tree.range("a"..="z")?.into_iter() {
   // ...
 }
+
+// Iterators implement DoubleEndedIterator, so you can search backwards, too!
+for item in tree.prefix("prefix")?.into_iter().rev() {
+  // ...
+}
 ```
 
 ## About
