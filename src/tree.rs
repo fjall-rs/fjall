@@ -197,7 +197,7 @@ impl Tree {
     ///
     /// - Will return `Err` if an IO error occurs
     pub fn is_empty(&self) -> crate::Result<bool> {
-        self.first_key_value().map(|x| x.is_none())
+        self.first().map(|x| x.is_none())
     }
 
     /// Creates a new tree in a folder.
