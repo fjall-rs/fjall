@@ -50,7 +50,6 @@
 
 mod batch;
 mod block_cache;
-// mod commit_log;
 pub mod compaction;
 mod config;
 mod disk_block;

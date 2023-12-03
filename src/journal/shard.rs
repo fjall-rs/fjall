@@ -13,7 +13,7 @@ pub struct JournalShard {
     file: BufWriter<File>,
 }
 
-/// Writes a batch start marker to the commit log
+/// Writes a batch start marker to the journal
 fn write_start(writer: &mut BufWriter<File>, len: u32) -> Result<usize, SerializeError> {
     let mut bytes = Vec::new();
     Marker::Start(len).serialize(&mut bytes)?;
@@ -22,7 +22,7 @@ fn write_start(writer: &mut BufWriter<File>, len: u32) -> Result<usize, Serializ
     Ok(bytes.len())
 }
 
-/// Writes a batch end marker to the commit log
+/// Writes a batch end marker to the journal
 fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeError> {
     let mut bytes = Vec::new();
     Marker::End(crc).serialize(&mut bytes)?;
@@ -70,14 +70,14 @@ impl JournalShard {
         })
     }
 
-    /// Flushes the commit log file
+    /// Flushes the journal file
     pub(crate) fn flush(&mut self) -> crate::Result<()> {
         self.file.flush()?;
         self.file.get_mut().sync_all()?;
         Ok(())
     }
 
-    /// Appends a single item wrapped in a batch to the commit log
+    /// Appends a single item wrapped in a batch to the journal
     pub(crate) fn write(&mut self, item: &Value) -> crate::Result<usize> {
         self.write_batch(&[item])
     }

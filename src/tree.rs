@@ -121,7 +121,7 @@ impl Tree {
         self.levels.read().expect("lock is poisoned").len()
     }
 
-    /// Sums the disk space usage of the tree (segments + commit log)
+    /// Sums the disk space usage of the tree (segments + journals)
     #[must_use]
     pub fn disk_space(&self) -> u64 {
         let segment_size: u64 = self
@@ -942,7 +942,7 @@ impl Tree {
         })
     }
 
-    /// Flushes the commit log to disk, making sure all written data is persisted
+    /// Flushes the journal to disk, making sure all written data is persisted
     /// and crash-safe
     ///
     /// # Examples

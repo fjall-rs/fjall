@@ -6,7 +6,7 @@ use crossbeam_skiplist::SkipMap;
 ///
 /// If the `MemTable`'s size exceeds a certain threshold, it will be written to disk as a Segment and cleared
 ///
-/// In case of a program crash, the current `MemTable` can be rebuilt from the commit log
+/// In case of a program crash, the current `MemTable` can be rebuilt from the last active journal
 #[derive(Default)]
 pub struct MemTable {
     pub(crate) items: SkipMap<ParsedInternalKey, UserData>,
