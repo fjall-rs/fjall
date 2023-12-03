@@ -842,7 +842,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn fetch_replace<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
         &self,
         key: K,
         f: F,
@@ -878,7 +878,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
+    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(&[u8]) -> Vec<u8>>(
         &self,
         key: K,
         f: F,
