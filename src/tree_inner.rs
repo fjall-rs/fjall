@@ -20,7 +20,7 @@ pub struct TreeInner {
     // TODO: move into memtable
     /// Approximate memtable size
     /// If this grows to large, a flush is triggered
-    pub(crate) approx_memtable_size_bytes: AtomicU32,
+    pub(crate) active_journal_size_bytes: AtomicU32,
 
     pub(crate) active_memtable: Arc<RwLock<MemTable>>,
 
