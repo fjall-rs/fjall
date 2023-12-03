@@ -122,11 +122,11 @@ async fn list_by_verb(
     let mut edges = vec![];
 
     for item in all {
-        let item = item?;
+        let (key, _) = item?;
 
-        let key = std::str::from_utf8(&item).unwrap();
-        let verb_key = key.split(':').nth(4).unwrap();
-        let object_key = key.split(':').nth(6).unwrap();
+        let composite_key = std::str::from_utf8(&key).unwrap();
+        let verb_key = composite_key.split(':').nth(4).unwrap();
+        let object_key = composite_key.split(':').nth(6).unwrap();
         let relation_data =
             serde_json::from_str::<serde_json::Value>(std::str::from_utf8(&item).unwrap()).unwrap();
 
