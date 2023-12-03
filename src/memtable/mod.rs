@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn test_memtable_get() {
-        let mut memtable = MemTable::default();
+        let memtable = MemTable::default();
 
         let value = Value::new("abc", "abc", false, 0);
 
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_memtable_get_highest_seqno() {
-        let mut memtable = MemTable::default();
+        let memtable = MemTable::default();
 
         memtable.insert(Value::new("abc", "abc", false, 0));
         memtable.insert(Value::new("abc", "abc", false, 1));
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_memtable_get_prefix() {
-        let mut memtable = MemTable::default();
+        let memtable = MemTable::default();
 
         memtable.insert(Value::new("abc0", "abc", false, 0));
         memtable.insert(Value::new("abc", "abc", false, 255));

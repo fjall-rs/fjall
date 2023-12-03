@@ -5,7 +5,6 @@ use crate::segment::Segment;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
-    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -80,7 +79,7 @@ impl Levels {
     }
 
     pub(crate) fn list_ids(&self) -> Vec<String> {
-        let items = self.levels.iter().map(|f| f.deref()).cloned();
+        let items = self.levels.iter().map(|f| &**f).cloned();
         items.flatten().collect()
     }
 

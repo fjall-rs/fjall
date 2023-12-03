@@ -278,7 +278,7 @@ mod tests {
 
             let mut iter = Range::new(
                 folder.join("blocks"),
-                metadata.id.clone(),
+                metadata.id,
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
                 range_bounds_to_tuple(

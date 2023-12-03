@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-pub(crate) fn do_compaction(
+pub fn do_compaction(
     tree: &Tree,
     payload: &crate::compaction::Options,
     mut segments_lock: RwLockWriteGuard<'_, Levels>,

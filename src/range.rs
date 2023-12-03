@@ -95,7 +95,7 @@ impl<'a> RangeIterator<'a> {
             lock.guard
                 .active
                 .items
-                .range(range.clone())
+                .range(range)
                 .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone()))))
         };
 
