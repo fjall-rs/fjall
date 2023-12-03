@@ -169,7 +169,8 @@ impl MetaIndex {
 
     /// Returns the previous index block's key, if it exists, or None
     pub fn get_previous_block_key(&self, key: &[u8]) -> crate::Result<Option<IndexEntry>> {
-        let Some((first_block_key, first_block_ref)) = self.index.get_lower_bound_block_info(key) else {
+        let Some((first_block_key, first_block_ref)) = self.index.get_lower_bound_block_info(key)
+        else {
             return Ok(None);
         };
 
@@ -181,9 +182,10 @@ impl MetaIndex {
             Some(item) => Ok(Some(item).cloned()),
             None => {
                 let Some((prev_block_key, prev_block_ref)) =
-                    self.index.get_previous_block_key(first_block_key) else {
-                        return Ok(None);
-                    };
+                    self.index.get_previous_block_key(first_block_key)
+                else {
+                    return Ok(None);
+                };
 
                 let index_block = self.load_index_block(prev_block_key, prev_block_ref)?;
 
@@ -194,7 +196,8 @@ impl MetaIndex {
 
     /// Returns the next index block's key, if it exists, or None
     pub fn get_next_block_key(&self, key: &[u8]) -> crate::Result<Option<IndexEntry>> {
-        let Some((first_block_key, first_block_ref)) = self.index.get_lower_bound_block_info(key) else {
+        let Some((first_block_key, first_block_ref)) = self.index.get_lower_bound_block_info(key)
+        else {
             return Ok(None);
         };
 
@@ -206,9 +209,10 @@ impl MetaIndex {
             Some(item) => Ok(Some(item).cloned()),
             None => {
                 let Some((next_block_key, next_block_ref)) =
-                    self.index.get_next_block_key(first_block_key) else {
-                        return Ok(None);
-                    };
+                    self.index.get_next_block_key(first_block_key)
+                else {
+                    return Ok(None);
+                };
 
                 let index_block = self.load_index_block(next_block_key, next_block_ref)?;
 
