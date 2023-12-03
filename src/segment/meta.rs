@@ -100,7 +100,12 @@ impl Metadata {
                 .expect("Failed to serialize to JSON")
                 .as_bytes(),
         )?;
+        writer.flush()?;
         writer.sync_all()?;
+
+        // fsync folder
+        let folder = std::fs::File::open(&self.path)?;
+        folder.sync_all()?;
 
         Ok(())
     }

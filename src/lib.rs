@@ -19,7 +19,7 @@
 //! use lsm_tree::{Tree, Config};
 //!
 //! # let folder = tempfile::tempdir()?;
-//! let mut tree = Config::new(folder).open()?;
+//! let tree = Config::new(folder).open()?;
 //!
 //! assert!(tree.is_empty()?);
 //! tree.insert("my_key", "this is the actual value of the object")?;
@@ -50,7 +50,7 @@
 
 mod batch;
 mod block_cache;
-mod commit_log;
+// mod commit_log;
 pub mod compaction;
 mod config;
 mod disk_block;
@@ -59,6 +59,7 @@ mod either;
 mod error;
 mod flush;
 mod id;
+mod journal;
 mod levels;
 mod memtable;
 mod merge;
@@ -66,6 +67,7 @@ mod prefix;
 mod range;
 mod segment;
 mod serde;
+mod sharded;
 mod time;
 mod tree;
 mod tree_inner;

@@ -29,6 +29,9 @@ tree.flush()?;
 
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
 
+- Block based tables with LZ4 compression
+- Prefix searching
+- Range searching
 - Size-tiered or Levelled compaction with concurrency support
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
 - Block caching to keep hot data in memory
@@ -39,9 +42,13 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Automatic background compaction
   - Does not spawn background threads unless actually needed
 - Thread-safe (internally synchronized)
-- LZ4-compresses data
-- CRChecks data blocks
 - 100% safe Rust
+
+## Future
+
+- Snapshots
+- Reverse iteration
+- Range tombstones
 
 ## Benchmarks
 

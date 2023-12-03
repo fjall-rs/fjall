@@ -6,7 +6,9 @@ use crate::{
     Tree,
 };
 use std::{
-    sync::{Arc, RwLockWriteGuard},
+    fs::File,
+    io::BufReader,
+    sync::{Arc, Mutex, RwLockWriteGuard},
     time::Instant,
 };
 
@@ -35,17 +37,22 @@ pub(crate) fn do_compaction(
         };
 
         MergeIterator::from_segments(&to_merge)?
+            .evict_old_versions(false /* TODO: evict if there are no open snapshots */)
     };
 
     segments_lock.hide_segments(&payload.segment_ids);
     drop(segments_lock);
     log::trace!("Freed segment lock");
 
+    // NOTE: Only evict tombstones when reaching the last level,
+    // That way we don't resurrect data beneath the tombstone
+    let should_evict_tombstones = payload.dest_level == (tree.config.levels - 1);
+
     let mut segment_writer = MultiWriter::new(
         payload.target_size,
         crate::segment::writer::Options {
             block_size: tree.config.block_size,
-            evict_tombstones: payload.dest_level == (tree.config.levels - 1),
+            evict_tombstones: should_evict_tombstones,
             path: tree.path().join("segments"),
         },
     )?;
@@ -67,6 +74,7 @@ pub(crate) fn do_compaction(
             let path = metadata.path.clone();
 
             Ok(Segment {
+                file: Mutex::new(BufReader::new(File::open(path.join("blocks"))?)),
                 metadata,
                 block_cache: Arc::clone(&tree.block_cache),
                 block_index: MetaIndex::from_file(segment_id, path, Arc::clone(&tree.block_cache))?
@@ -98,12 +106,16 @@ pub(crate) fn do_compaction(
         segments_lock.remove(key);
     }
 
+    // NOTE: This is really important
+    // Write the segment with the removed segments first
+    // Otherwise the folder is deleted, but the segment is still referenced!
+    segments_lock.write_to_disk()?;
+
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
         std::fs::remove_dir_all(tree.path().join("segments").join(key))?;
     }
 
-    segments_lock.write_to_disk()?;
     segments_lock.show_segments(&payload.segment_ids);
 
     drop(memtable_lock);

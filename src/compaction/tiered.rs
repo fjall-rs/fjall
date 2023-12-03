@@ -86,12 +86,17 @@ mod tests {
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::sync::Arc;
+    use std::{
+        fs::File,
+        io::BufReader,
+        sync::{Arc, Mutex},
+    };
 
     fn fixture_segment(id: String) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
+            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
             block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),

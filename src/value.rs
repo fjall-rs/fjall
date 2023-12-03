@@ -1,9 +1,47 @@
 use crate::serde::{Deserializable, DeserializeError, Serializable, SerializeError};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Write};
+use std::{
+    cmp::Reverse,
+    io::{Read, Write},
+};
+
+/// User defined data
+pub type UserData = Vec<u8>;
 
 /// Sequence number
 pub type SeqNo = u64;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedInternalKey {
+    pub user_key: Vec<u8>,
+    pub seqno: SeqNo,
+    pub is_tombstone: bool,
+}
+
+impl ParsedInternalKey {
+    pub fn new<K: AsRef<[u8]>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
+        Self {
+            user_key: user_key.as_ref().to_vec(),
+            seqno,
+            is_tombstone,
+        }
+    }
+}
+
+impl PartialOrd for ParsedInternalKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Order by user key, THEN by sequence number
+// This is one of the most important functions
+// Otherwise queries will not match expected behaviour
+impl Ord for ParsedInternalKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.user_key, Reverse(self.seqno)).cmp(&(&other.user_key, Reverse(other.seqno)))
+    }
+}
 
 /// Represents a value in the LSM-tree
 ///
@@ -22,13 +60,26 @@ pub struct Value {
     /// User-defined value - an arbitrary byte array
     ///
     /// Supports up to 2^32 bytes
-    pub value: Vec<u8>,
+    pub value: UserData,
 
     /// Sequence number
     pub seqno: SeqNo,
 
     /// Tombstone marker - if this is true, the value has been deleted
     pub is_tombstone: bool,
+}
+
+impl From<(ParsedInternalKey, Vec<u8>)> for Value {
+    fn from(val: (ParsedInternalKey, Vec<u8>)) -> Self {
+        let key = val.0;
+
+        Self {
+            key: key.user_key,
+            seqno: key.seqno,
+            is_tombstone: key.is_tombstone,
+            value: val.1,
+        }
+    }
 }
 
 impl PartialOrd for Value {
@@ -39,7 +90,15 @@ impl PartialOrd for Value {
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.key.cmp(&other.key)
+        use std::cmp::Ordering;
+
+        let eq = self.key.cmp(&other.key);
+
+        if eq == Ordering::Equal {
+            other.seqno.cmp(&self.seqno)
+        } else {
+            eq
+        }
     }
 }
 
@@ -90,25 +149,16 @@ impl Value {
         let value_size = self.value.len();
         std::mem::size_of::<Self>() + key_size + value_size
     }
+}
 
-    /* /// Computes the internal key based on the user key + seqno
-    ///
-    /// ### Example
-    ///
-    /// ```
-    /// # use lsm_tree::Value;
-    /// #
-    /// let value = Value::new("abc", "my-value", false, 5);
-    /// assert_eq!(&[0x61, 0x62, 0x63, 0, 0, 0, 0, 0, 0, 0, 5], &*value.get_internal_key());
-    /// ```
-    #[must_use]
-    #[doc(hidden)]
-    pub fn get_internal_key(&self) -> Vec<u8> {
-        let mut internal_key = Vec::with_capacity(self.key.len() + std::mem::size_of::<u64>());
-        internal_key.extend_from_slice(&self.key);
-        internal_key.extend_from_slice(&self.seqno.to_be_bytes());
-        internal_key
-    } */
+impl From<Value> for ParsedInternalKey {
+    fn from(val: Value) -> Self {
+        Self {
+            user_key: val.key,
+            seqno: val.seqno,
+            is_tombstone: val.is_tombstone,
+        }
+    }
 }
 
 impl Serializable for Value {

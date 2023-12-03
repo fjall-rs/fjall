@@ -4,9 +4,9 @@ use self::level::{Level, ResolvedLevel};
 use crate::segment::Segment;
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File, OpenOptions},
-    io::{BufWriter, Seek, Write},
-    path::Path,
+    fs::{self, File},
+    ops::Deref,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -24,6 +24,8 @@ const SEGMENT_HISTORY_PATH: &str = "./segment_history.jsonl";
 
 /// Represents the levels of a log-structured merge tree.
 pub struct Levels {
+    path: PathBuf,
+
     /// Amount of levels of the LSM tree
     ///
     /// RocksDB has 7 by default
@@ -32,8 +34,7 @@ pub struct Levels {
     segments: HashMap<String, Arc<Segment>>,
     levels: Vec<Level>,
 
-    writer: BufWriter<File>,
-
+    //writer: BufWriter<File>,
     /// Set of segment IDs that are masked
     ///
     /// While consuming segments (because of compaction) they will not appear in the list of segments
@@ -74,6 +75,15 @@ fn write_segment_history_entry(event: String, levels: &Levels) {
 }
  */
 impl Levels {
+    pub(crate) fn contains_id(&self, id: &str) -> bool {
+        self.levels.iter().any(|lvl| lvl.contains_id(id))
+    }
+
+    pub(crate) fn list_ids(&self) -> Vec<String> {
+        let items = self.levels.iter().map(|f| f.deref()).cloned();
+        items.flatten().collect()
+    }
+
     pub(crate) fn is_compacting(&self) -> bool {
         !self.hidden_set.is_empty()
     }
@@ -86,11 +96,11 @@ impl Levels {
             .collect::<Vec<_>>();
 
         let mut levels = Self {
+            path: path.as_ref().to_path_buf(),
             segments: HashMap::new(),
             level_count,
             levels,
             hidden_set: HashSet::new(),
-            writer: BufWriter::new(OpenOptions::new().write(true).create_new(true).open(path)?),
         };
         levels.write_to_disk()?;
 
@@ -100,7 +110,7 @@ impl Levels {
         Ok(levels)
     }
 
-    pub(crate) fn from_disk<P: AsRef<Path>>(
+    pub(crate) fn recover<P: AsRef<Path>>(
         path: &P,
         segments: HashMap<String, Arc<Segment>>,
     ) -> crate::Result<Self> {
@@ -117,7 +127,7 @@ impl Levels {
             level_count,
             levels,
             hidden_set: HashSet::new(),
-            writer: BufWriter::new(OpenOptions::new().write(true).open(path)?),
+            path: path.as_ref().to_path_buf(),
         };
 
         /* #[cfg(feature = "segment_history")]
@@ -129,19 +139,35 @@ impl Levels {
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
-        self.writer.seek(std::io::SeekFrom::Start(0))?;
-        self.writer.get_mut().set_len(0)?;
-        serde_json::to_writer_pretty(&mut self.writer, &self.levels).expect("should serialize");
+        let temp_path = self.path.parent().unwrap().join("~levels.json");
+        let mut temp_file = File::create(&temp_path)?;
+        serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
+
+        fs::rename(&temp_path, &self.path)?;
 
         // fsync levels manifest
-        self.writer.flush()?;
-        self.writer.get_mut().sync_all()?;
+        let file = File::open(&self.path)?;
+        file.sync_all()?;
 
         Ok(())
     }
 
     pub(crate) fn add(&mut self, segment: Arc<Segment>) {
         self.insert_into_level(0, segment);
+    }
+
+    pub(crate) fn add_id(&mut self, segment_id: String) {
+        self.levels.first_mut().unwrap().push(segment_id);
+    }
+
+    pub(crate) fn sort_levels(&mut self) {
+        for level in &mut self.levels {
+            level.sort_by(|a, b| {
+                let seg_a = self.segments.get(a).expect("where's the segment at");
+                let seg_b = self.segments.get(b).expect("where's the segment at");
+                seg_b.metadata.created_at.cmp(&seg_a.metadata.created_at)
+            });
+        }
     }
 
     pub(crate) fn insert_into_level(&mut self, level_no: u8, segment: Arc<Segment>) {
@@ -156,13 +182,7 @@ impl Levels {
         level.push(segment.metadata.id.clone());
         self.segments.insert(segment.metadata.id.clone(), segment);
 
-        for level in &mut self.levels {
-            level.sort_by(|a, b| {
-                let seg_a = self.segments.get(a).expect("where's the segment at");
-                let seg_b = self.segments.get(b).expect("where's the segment at");
-                seg_b.metadata.created_at.cmp(&seg_a.metadata.created_at)
-            });
-        }
+        self.sort_levels();
 
         /* #[cfg(feature = "segment_history")]
         write_segment_history_entry("insert".into(), self); */
@@ -273,12 +293,17 @@ mod tests {
         block_cache::BlockCache,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::sync::Arc;
+    use std::{
+        fs::File,
+        io::BufReader,
+        sync::{Arc, Mutex},
+    };
 
     fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
+            file: Mutex::new(BufReader::new(File::open("Cargo.toml").unwrap())),
             block_index: Arc::new(MetaIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),

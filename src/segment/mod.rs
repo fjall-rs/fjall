@@ -15,7 +15,13 @@ use self::{
     reader::Reader,
 };
 use crate::{block_cache::BlockCache, value::SeqNo, Value};
-use std::{ops::Bound, path::Path, sync::Arc};
+use std::{
+    fs::File,
+    io::BufReader,
+    ops::Bound,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
@@ -25,6 +31,8 @@ use std::{ops::Bound, path::Path, sync::Arc};
 ///
 /// Segments can be merged together to remove duplicates, reducing disk space and improving read performance.
 pub struct Segment {
+    pub file: Mutex<BufReader<File>>,
+
     /// Segment metadata object (will be stored in a JSON file)
     pub metadata: meta::Metadata,
 
@@ -48,6 +56,7 @@ impl Segment {
         )?;
 
         Ok(Self {
+            file: Mutex::new(BufReader::new(File::open(folder.as_ref().join("blocks"))?)),
             metadata,
             block_index: Arc::new(block_index),
             block_cache,
@@ -55,15 +64,16 @@ impl Segment {
     }
 
     fn load_block(&self, block_ref: &IndexEntry) -> crate::Result<Arc<ValueBlock>> {
-        let block = ValueBlock::from_file_compressed(
-            self.metadata.path.join("blocks"),
-            block_ref.offset,
-            block_ref.size,
-        )?; // TODO: no panic
+        let mut file = self.file.lock().unwrap();
 
-        if !block.check_crc(block.crc)? {
+        let block = ValueBlock::from_file_compressed(&mut *file, block_ref.offset, block_ref.size)?; // TODO: no panic
+
+        drop(file);
+
+        // TODO: option to check CRC? Steals ~10µs per read :(
+        /* if !block.check_crc(block.crc)? {
             return Err(crate::Error::CrcCheck);
-        }
+        } */
 
         let block = Arc::new(block);
 
@@ -83,10 +93,13 @@ impl Segment {
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
         if !self.key_range_contains(&key) {
+            //eprintln!("{:?} NOT CONTAINED :)", key.as_ref());
             return Ok(None);
         }
 
         // TODO: bloom
+
+        //eprintln!("{:?} DISK ACCESS :(", key.as_ref());
 
         let block_ref = self.block_index.get_latest(key.as_ref());
 

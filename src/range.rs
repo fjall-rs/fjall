@@ -1,4 +1,10 @@
-use crate::{memtable::MemTable, merge::MergeIterator, segment::Segment, Value};
+use crate::{
+    memtable::MemTable,
+    merge::{BoxedIterator, MergeIterator},
+    segment::Segment,
+    value::{ParsedInternalKey, SeqNo},
+    Value,
+};
 use std::{
     collections::BTreeMap,
     ops::Bound,
@@ -32,43 +38,71 @@ impl<'a> Range<'a> {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RangeIterator<'a> {
-    iter: Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>,
+    iter: BoxedIterator<'a>,
 }
 
 impl<'a> RangeIterator<'a> {
     fn new(lock: &'a Range<'a>) -> Self {
-        let mut segment_iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![];
+        let lo = match &lock.bounds.0 {
+            // NOTE: See memtable.rs for range explanation
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, SeqNo::MAX, true)),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, SeqNo::MAX, true)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let hi = match &lock.bounds.0 {
+            // NOTE: See memtable.rs for range explanation, this is the reverse case
+            // where we need to go all the way to the last seqno of an item
+            //
+            // Example: We search for (Unbounded..Excluded(abdef))
+            //
+            // key -> seqno
+            //
+            // a   -> 7 <<< This is the lowest key that matches the range
+            // abc -> 5
+            // abc -> 4
+            // abc -> 3 <<< This is the highest key that matches the range
+            // abcdef -> 6
+            // abcdef -> 5
+            //
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key, 0, false)),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key, 0, false)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let range = (lo, hi);
+
+        let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
             let reader = segment.range(lock.bounds.clone()).unwrap();
             segment_iters.push(Box::new(reader));
         }
 
-        let mut iters: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>> =
-            vec![Box::new(MergeIterator::new(segment_iters))];
+        let mut iters: Vec<BoxedIterator<'a>> = vec![Box::new(MergeIterator::new(segment_iters))];
 
         for (_, memtable) in lock.guard.immutable.iter() {
-            iters.push(Box::new(
-                memtable
-                    .items
-                    .range::<Vec<u8>, _>(lock.bounds.clone())
-                    .map(|(_, value)| Ok(value.clone())),
-            ));
+            iters.push(Box::new(memtable.items.range(range.clone()).map(|entry| {
+                Ok(Value::from((entry.key().clone(), entry.value().clone())))
+            })));
         }
 
-        iters.push(Box::new(
+        let memtable_iter = {
             lock.guard
                 .active
                 .items
-                .range::<Vec<u8>, _>(lock.bounds.clone())
-                .map(|(_, value)| Ok(value.clone())),
-        ));
+                .range(range.clone())
+                .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone()))))
+        };
 
-        let iter = Box::new(MergeIterator::new(iters).filter(|x| match x {
-            Ok(value) => !value.is_tombstone,
-            Err(_) => true,
-        }));
+        iters.push(Box::new(memtable_iter));
+
+        let iter = Box::new(MergeIterator::new(iters).evict_old_versions(true).filter(
+            |x| match x {
+                Ok(value) => !value.is_tombstone,
+                Err(_) => true,
+            },
+        ));
 
         Self { iter }
     }
@@ -82,11 +116,12 @@ impl<'a> Iterator for RangeIterator<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for RangeIterator<'a> {
+/* impl<'a> DoubleEndedIterator for RangeIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!();
         self.iter.next_back()
     }
-}
+} */
 
 impl<'a> IntoIterator for &'a Range<'a> {
     type IntoIter = RangeIterator<'a>;

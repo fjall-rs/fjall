@@ -54,7 +54,7 @@ impl Default for Config {
             path: ".lsm.data".into(),
             block_size: 4_096,
             block_cache_size: 1_024,
-            max_memtable_size: 128 * 1_024 * 1_024,
+            max_memtable_size: 64 * 1_024 * 1_024,
             levels: 7,
             compaction_strategy: Arc::new(tiered::Strategy::default()),
             flush_threads: 4,

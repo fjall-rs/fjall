@@ -1,13 +1,13 @@
 use crate::{
     block_cache::BlockCache,
-    commit_log::CommitLog,
-    compaction::CompactionStrategy,
+    compaction::{worker::start_compaction_thread, CompactionStrategy},
     id::generate_segment_id,
+    journal::{shard::JournalShard, Journal},
     levels::Levels,
     memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
-    segment::{self, Segment},
+    segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
     Batch, Config, Value,
 };
@@ -15,7 +15,10 @@ use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::{Path, PathBuf},
-    sync::{atomic::AtomicU64, Arc, Mutex, MutexGuard, RwLock},
+    sync::{
+        atomic::{AtomicU32, AtomicU64},
+        Arc, RwLock, RwLockWriteGuard,
+    },
 };
 use std_semaphore::Semaphore;
 
@@ -34,6 +37,14 @@ impl std::ops::Deref for Tree {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+fn ignore_tombstone_value(item: Value) -> Option<Value> {
+    if item.is_tombstone {
+        None
+    } else {
+        Some(item)
     }
 }
 
@@ -122,9 +133,12 @@ impl Tree {
             .map(|x| x.metadata.file_size)
             .sum();
 
-        let memtable = self.active_memtable.read().expect("lock is poisoned");
+        let memtable_size = u64::from(
+            self.approx_memtable_size_bytes
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
 
-        segment_size + u64::from(memtable.size_in_bytes)
+        segment_size + memtable_size
     }
 
     /// Returns the folder path used by the tree
@@ -193,7 +207,10 @@ impl Tree {
     /// - Will return `Err` if an IO error occurs
     /// - Will fail, if the folder already occupied
     fn create_new(config: Config) -> crate::Result<Self> {
+        // Setup folders
         std::fs::create_dir_all(&config.path)?;
+        std::fs::create_dir_all(config.path.join("segments"))?;
+        std::fs::create_dir_all(config.path.join("journals"))?;
 
         let marker = config.path.join(".lsm");
         assert!(!marker.try_exists()?);
@@ -202,7 +219,7 @@ impl Tree {
         let file = std::fs::File::create(marker)?;
         file.sync_all()?;
 
-        let log_path = config.path.join("log");
+        let first_journal_path = config.path.join("journals").join(generate_segment_id());
         let levels = Levels::create_new(config.levels, config.path.join("levels.json"))?;
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
@@ -211,22 +228,23 @@ impl Tree {
 
         let inner = TreeInner {
             config,
+            journal: Journal::create_new(first_journal_path)?,
             active_memtable: Arc::new(RwLock::new(MemTable::default())),
             immutable_memtables: Arc::default(),
-            commit_log: Arc::new(Mutex::new(CommitLog::new(log_path)?)),
             block_cache,
             lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            approx_memtable_size_bytes: AtomicU32::default(),
         };
-
-        // Create subfolders
-        std::fs::create_dir_all(inner.config.path.join("segments"))?;
-        std::fs::create_dir_all(inner.config.path.join("logs"))?;
 
         // fsync folder
         let folder = std::fs::File::open(&inner.config.path)?;
+        folder.sync_all()?;
+
+        // fsync folder
+        let folder = std::fs::File::open(inner.config.path.join("journals"))?;
         folder.sync_all()?;
 
         Ok(Self(Arc::new(inner)))
@@ -237,28 +255,42 @@ impl Tree {
         block_cache: &Arc<BlockCache>,
     ) -> crate::Result<HashMap<String, Arc<Segment>>> {
         let folder = folder.as_ref();
+
+        // NOTE: First we load the level manifest without any
+        // segments just to get the IDs
+        // Then we recover the segments and build the actual level manifest
+        let levels = Levels::recover(&folder.join("levels.json"), HashMap::new())?;
+        let segment_ids_to_recover = levels.list_ids();
+
         let mut segments = HashMap::new();
 
-        if folder.exists() {
-            log::info!("Reading existing segments from folder {}", folder.display());
+        for dirent in std::fs::read_dir(folder.join("segments"))? {
+            let dirent = dirent?;
+            let path = dirent.path();
 
-            for dirent in std::fs::read_dir(folder)? {
-                let dirent = dirent?;
-                let path = dirent.path();
+            assert!(path.is_dir());
 
-                if path.is_dir() {
-                    if path.join("meta.json").exists() {
-                        let segment = Segment::recover(&path, Arc::clone(block_cache))?;
-                        segments.insert(segment.metadata.id.clone(), Arc::new(segment));
-                        log::debug!("Resurrected segment from {:?}", path);
-                    } else {
-                        log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
-                        std::fs::remove_dir_all(path)?;
-                    }
-                } else {
-                    log::debug!("Segment folder is not a folder after all");
-                }
+            let segment_id = dirent.file_name().to_str().unwrap().to_owned();
+            log::debug!("Recovering segment from {}", path.display());
+
+            if segment_ids_to_recover.contains(&segment_id) {
+                let segment = Segment::recover(&path, Arc::clone(block_cache))?;
+                segments.insert(segment.metadata.id.clone(), Arc::new(segment));
+                log::debug!("Recovered segment from {}", path.display());
+            } else {
+                log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
+                std::fs::remove_dir_all(path)?;
             }
+        }
+
+        if segments.len() < segment_ids_to_recover.len() {
+            log::error!("Expected segments : {segment_ids_to_recover:?}");
+            log::error!(
+                "Recovered segments: {:?}",
+                segments.keys().collect::<Vec<_>>()
+            );
+
+            panic!("Some segments were not recovered")
         }
 
         Ok(segments)
@@ -270,100 +302,178 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     fn recover(config: Config) -> crate::Result<Self> {
+        log::info!("Recovering tree from {}", config.path.display());
+
+        let start = std::time::Instant::now();
+
         // Flush orphaned logs
 
-        for dirent in std::fs::read_dir(&config.path.join("logs"))? {
-            let dirent = dirent?;
+        // NOTE: Load previous levels manifest
+        // Add all flushed segments to it, then recover properly
+        let mut levels = Levels::recover(&config.path.join("levels.json"), HashMap::new())?;
 
-            log::warn!(
+        let mut active_journal = None;
+
+        for dirent in std::fs::read_dir(&config.path.join("journals"))? {
+            let dirent = dirent?;
+            let journal_path = dirent.path();
+
+            assert!(journal_path.is_dir());
+
+            if !journal_path.join(".flush").exists() {
+                // TODO: handle this
+                assert!(active_journal.is_none(), "Second active journal found :(");
+
+                if fs_extra::dir::get_size(&journal_path).unwrap() < config.max_memtable_size.into()
+                {
+                    log::info!("Setting {} as active journal", journal_path.display());
+
+                    let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
+                    active_journal = Some((recovered_journal, memtable));
+
+                    continue;
+                }
+
+                log::info!(
+                    "Flushing active journal because it is too large: {}",
+                    dirent.path().to_string_lossy()
+                );
+                // Journal is too large to be continued to be used
+                // Just flush it
+            }
+
+            log::info!(
                 "Flushing orphaned journal {} to segment",
                 dirent.path().to_string_lossy()
             );
 
-            let (_, _, memtable) = MemTable::from_file(dirent.path()).unwrap();
+            // TODO: optimize this
 
-            let segment_id = generate_segment_id();
-            let segment_folder = config.path.join(format!("segments/{segment_id}"));
+            let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
+            log::trace!("Recovered old journal");
+            drop(recovered_journal);
 
-            let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {
-                path: segment_folder.clone(),
-                evict_tombstones: false,
-                block_size: config.block_size,
-            })?;
+            let segment_id = dirent.file_name().to_str().unwrap().to_string();
+            let segment_folder = config.path.join("segments").join(&segment_id);
 
-            for value in memtable.items.into_values() {
-                segment_writer.write(value)?;
+            if !levels.contains_id(&segment_id) {
+                // The level manifest does not contain the segment
+                // If the segment is maybe half written, clean it up here
+                // and then write it
+                if segment_folder.exists() {
+                    std::fs::remove_dir_all(&segment_folder)?;
+                }
+
+                let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {
+                    path: segment_folder.clone(),
+                    evict_tombstones: false,
+                    block_size: config.block_size,
+                })?;
+
+                for (key, value) in memtable.items {
+                    segment_writer.write(Value::from((key, value)))?;
+                }
+
+                segment_writer.finish()?;
+
+                if segment_writer.item_count > 0 {
+                    let metadata = Metadata::from_writer(segment_id, segment_writer);
+                    metadata.write_to_file()?;
+
+                    log::info!("Written segment from orphaned journal: {:?}", metadata.id);
+
+                    levels.add_id(metadata.id);
+                    levels.write_to_disk()?;
+                }
             }
 
-            segment_writer.finish()?;
-
-            std::fs::remove_file(dirent.path())?;
+            std::fs::remove_dir_all(journal_path)?;
         }
-
-        // Restore memtable from current commit log
 
         log::info!("Restoring memtable");
 
-        let (mut lsn, _, memtable) = MemTable::from_file(config.path.join("log")).unwrap();
+        let (journal, memtable) = match active_journal {
+            Some((recovered_journal, memtable)) => (recovered_journal, memtable),
+            None => {
+                let next_journal_path = config.path.join("journals").join(generate_segment_id());
+
+                (Journal::create_new(next_journal_path)?, MemTable::default())
+            }
+        };
 
         // Load segments
 
         log::info!("Restoring segments");
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
-        let segments = Self::recover_segments(&config.path.join("segments"), &block_cache)?;
+        let segments = Self::recover_segments(&config.path, &block_cache)?;
 
+        // TODO: LSN!!!
         // Check if a segment has a higher seqno and then take it
-        lsn = lsn.max(
+        /* lsn = lsn.max(
             segments
                 .values()
                 .map(|x| x.metadata.seqnos.1)
                 .max()
                 .unwrap_or(0),
-        );
+        ); */
+        let lsn = 0;
 
         // Finalize Tree
 
-        log::info!("Loading level manifest");
+        log::debug!("Loading level manifest");
 
-        let levels = Levels::from_disk(&config.path.join("levels.json"), segments)?;
-        let log_path = config.path.join("log");
+        let mut levels = Levels::recover(&config.path.join("levels.json"), segments)?;
+        levels.sort_levels();
 
+        let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
 
         let inner = TreeInner {
             config,
+            journal,
             active_memtable: Arc::new(RwLock::new(memtable)),
             immutable_memtables: Arc::default(),
             block_cache,
-            commit_log: Arc::new(Mutex::new(CommitLog::new(log_path)?)),
             lsn: AtomicU64::new(lsn),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
-            compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
+            approx_memtable_size_bytes: AtomicU32::default(),
         };
 
-        log::info!("Tree loaded");
+        let tree = Self(Arc::new(inner));
 
-        Ok(Self(Arc::new(inner)))
+        log::debug!("Starting {compaction_threads} compaction threads");
+        for _ in 0..compaction_threads {
+            start_compaction_thread(&tree);
+        }
+
+        log::info!("Tree loaded in {}s", start.elapsed().as_secs_f32());
+
+        Ok(tree)
     }
 
     fn append_entry(
         &self,
-        mut commit_log: MutexGuard<CommitLog>,
+        mut shard: RwLockWriteGuard<'_, JournalShard>,
         value: Value,
     ) -> crate::Result<()> {
-        let mut memtable = self.active_memtable.write().expect("lock is poisoned");
+        let size = shard.write(value.clone())?;
 
-        commit_log.append(value.clone())?;
+        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
+        memtable_lock.insert(value);
 
-        // NOTE: Add value key length to take into account the overhead of keys
-        // inside the MemTable
-        let size = value.size() + value.key.len();
-        memtable.insert(value, size as u32);
+        let memtable_size = self
+            .approx_memtable_size_bytes
+            .fetch_add(size as u32, std::sync::atomic::Ordering::SeqCst);
 
-        if memtable.exceeds_threshold(self.config.max_memtable_size) {
-            crate::flush::start(self, commit_log, memtable)?;
+        drop(memtable_lock);
+        drop(shard);
+
+        if memtable_size > self.config.max_memtable_size {
+            log::debug!("Memtable reached threshold size");
+            crate::flush::start(self)?;
         }
 
         Ok(())
@@ -393,7 +503,7 @@ impl Tree {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        let commit_log = self.commit_log.lock().expect("lock is poisoned");
+        let shard = self.journal.lock_shard();
 
         let value = Value::new(
             key,
@@ -402,7 +512,7 @@ impl Tree {
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
 
-        self.append_entry(commit_log, value)?;
+        self.append_entry(shard, value)?;
 
         Ok(())
     }
@@ -432,7 +542,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn remove<K: Into<Vec<u8>>>(&self, key: K) -> crate::Result<()> {
-        let commit_log = self.commit_log.lock().expect("lock is poisoned");
+        let shard = self.journal.lock_shard();
 
         let value = Value::new(
             key,
@@ -441,7 +551,7 @@ impl Tree {
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
 
-        self.append_entry(commit_log, value)?;
+        self.append_entry(shard, value)?;
 
         Ok(())
     }
@@ -537,11 +647,11 @@ impl Tree {
             .values()
             .filter(|x| x.check_key_range_overlap(&bounds))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(Range::new(
             crate::range::MemTableGuard {
-                active: self.active_memtable.read().expect("lock is poisoned"),
+                active: self.active_memtable.read().expect("lock poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock is poisoned"),
             },
             bounds,
@@ -614,7 +724,7 @@ impl Tree {
         Ok(item)
     }
 
-    /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
+    /* /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
     /// #
     /// # Example usage
     ///
@@ -643,7 +753,7 @@ impl Tree {
     pub fn last_key_value(&self) -> crate::Result<Option<Value>> {
         let item = self.iter()?.into_iter().next_back().transpose()?;
         Ok(item)
-    }
+    } */
 
     /// Retrieves an item from the tree
     ///
@@ -666,21 +776,14 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
-        fn ignore_tombstone_value(item: Value) -> Option<Value> {
-            if item.is_tombstone {
-                None
-            } else {
-                Some(item)
-            }
-        }
-
-        let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
+        let memtable_lock = self.active_memtable.read().expect("lock poisoned");
 
         if let Some(item) = memtable_lock.get(&key) {
             return Ok(ignore_tombstone_value(item));
-        }
+        };
         drop(memtable_lock);
 
+        // Now look in immutable memtables
         let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
         for (_, memtable) in memtable_lock.iter().rev() {
             if let Some(item) = memtable.get(&key) {
@@ -689,6 +792,7 @@ impl Tree {
         }
         drop(memtable_lock);
 
+        // Now look in segments... this may involve disk I/O
         let segment_lock = self.levels.read().expect("lock is poisoned");
         let segments = &segment_lock.get_all_segments_flattened();
 
@@ -715,14 +819,14 @@ impl Tree {
     ) -> crate::Result<Option<Vec<u8>>> {
         // TODO: fully lock all shards
 
-        let commit_log_lock = self.commit_log.lock().expect("lock is poisoned");
+        let shard = self.journal.lock_shard();
 
         Ok(match self.get(key)? {
             Some(item) => {
                 let updated_value = f(&item.value);
 
                 self.append_entry(
-                    commit_log_lock,
+                    shard,
                     Value {
                         key: item.key,
                         value: updated_value,
@@ -751,14 +855,14 @@ impl Tree {
     ) -> crate::Result<Option<Vec<u8>>> {
         // TODO: fully lock all shards
 
-        let commit_log_lock = self.commit_log.lock().expect("lock is poisoned");
+        let shard = self.journal.lock_shard();
 
         Ok(match self.get(key)? {
             Some(item) => {
                 let updated_value = f(&item.value);
 
                 self.append_entry(
-                    commit_log_lock,
+                    shard,
                     Value {
                         key: item.key,
                         value: updated_value.clone(),
@@ -778,10 +882,7 @@ impl Tree {
     pub fn force_memtable_flush(
         &self,
     ) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
-        let commit_log = self.commit_log.lock().expect("lock is poisoned");
-        let memtable = self.active_memtable.write().expect("lock is poisoned");
-
-        crate::flush::start(self, commit_log, memtable)
+        crate::flush::start(self)
     }
 
     /// Force-starts a memtable flush thread and waits until its completely done
@@ -836,8 +937,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs
     pub fn flush(&self) -> crate::Result<()> {
-        let mut lock = self.commit_log.lock().expect("lock is poisoned");
-        lock.flush()?;
+        self.journal.flush()?;
         Ok(())
     }
 }

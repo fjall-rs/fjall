@@ -1,7 +1,7 @@
 use super::{block::ValueBlock, index::MetaIndex};
 use crate::{block_cache::BlockCache, Value};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     fs::File,
     io::{BufReader, Seek, SeekFrom},
     path::Path,
@@ -19,8 +19,6 @@ pub struct Reader {
     block_cache: Arc<BlockCache>,
 
     blocks: HashMap<Vec<u8>, VecDeque<Value>>,
-    processed_blocks: HashSet<Vec<u8>>,
-
     current_lo: Option<Vec<u8>>,
     current_hi: Option<Vec<u8>>,
 }
@@ -45,8 +43,6 @@ impl Reader {
             block_index,
 
             blocks: HashMap::with_capacity(2),
-            processed_blocks: HashSet::with_capacity(100),
-
             current_lo: None,
             current_hi: None,
         };
@@ -75,6 +71,7 @@ impl Reader {
                     .get_disk_block(self.segment_id.clone(), &block_ref.start_key)
                 {
                     // Cache hit: Copy from block
+
                     self.blocks.insert(key.to_vec(), block.items.clone().into());
                 } else {
                     // Cache miss: load from disk
@@ -82,8 +79,7 @@ impl Reader {
                     self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
 
                     let block =
-                        ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)
-                            .unwrap();
+                        ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)?;
 
                     self.blocks.insert(key.to_vec(), block.items.into());
                 }
@@ -108,8 +104,7 @@ impl Iterator for Reader {
             if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
                 // If the high bound is already at this block
                 // Read from the block that was already loaded by hi
-            } else if !self.processed_blocks.contains(&new_block_offset.start_key) {
-                // Load first block for real, then take item from it
+            } else {
                 let load_result = self.load_block(&new_block_offset.start_key);
 
                 if let Err(error) = load_result {
@@ -137,22 +132,19 @@ impl Iterator for Reader {
                     if block.is_empty() {
                         // Load next block
                         self.blocks.remove(current_lo);
-                        self.processed_blocks.insert(current_lo.clone());
 
                         if let Some(new_block_offset) =
                             self.block_index.get_next_block_key(current_lo)
                         {
-                            if !self.processed_blocks.contains(&new_block_offset.start_key) {
-                                self.current_lo = Some(new_block_offset.start_key.clone());
+                            self.current_lo = Some(new_block_offset.start_key.clone());
 
-                                if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
-                                    // Do nothing
-                                    // Next item consumed will use the existing higher block
-                                } else {
-                                    let load_result = self.load_block(&new_block_offset.start_key);
-                                    if let Err(error) = load_result {
-                                        return Some(Err(error));
-                                    }
+                            if Some(&new_block_offset.start_key) == self.current_hi.as_ref() {
+                                // Do nothing
+                                // Next item consumed will use the existing higher block
+                            } else {
+                                let load_result = self.load_block(&new_block_offset.start_key);
+                                if let Err(error) = load_result {
+                                    return Some(Err(error));
                                 }
                             }
                         }
@@ -178,7 +170,7 @@ impl DoubleEndedIterator for Reader {
             if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
                 // If the low bound is already at this block
                 // Read from the block that was already loaded by lo
-            } else if !self.processed_blocks.contains(&new_block_offset.start_key) {
+            } else {
                 // Load first block for real, then take item from it
                 let load_result = self.load_block(&new_block_offset.start_key);
                 if let Err(error) = load_result {
@@ -206,21 +198,18 @@ impl DoubleEndedIterator for Reader {
                     if block.is_empty() {
                         // Load next block
                         self.blocks.remove(current_hi);
-                        self.processed_blocks.insert(current_hi.clone());
 
                         if let Some(new_block_offset) =
                             self.block_index.get_previous_block_key(current_hi)
                         {
-                            if !self.processed_blocks.contains(&new_block_offset.start_key) {
-                                self.current_hi = Some(new_block_offset.start_key.clone());
-                                if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
-                                    // Do nothing
-                                    // Next item consumed will use the existing lower block
-                                } else {
-                                    let load_result = self.load_block(&new_block_offset.start_key);
-                                    if let Err(error) = load_result {
-                                        return Some(Err(error));
-                                    }
+                            self.current_hi = Some(new_block_offset.start_key.clone());
+                            if Some(&new_block_offset.start_key) == self.current_lo.as_ref() {
+                                // Do nothing
+                                // Next item consumed will use the existing lower block
+                            } else {
+                                let load_result = self.load_block(&new_block_offset.start_key);
+                                if let Err(error) = load_result {
+                                    return Some(Err(error));
                                 }
                             }
                         }
@@ -250,6 +239,8 @@ mod tests {
     };
     use std::sync::Arc;
     use test_log::test;
+
+    // TODO: rev test with seqnos...
 
     #[test]
     fn test_get_all() -> crate::Result<()> {
