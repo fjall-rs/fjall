@@ -22,18 +22,17 @@
 //! let tree = Config::new(folder).open()?;
 //!
 //! assert!(tree.is_empty()?);
-//! tree.insert("my_key", "this is the actual value of the object")?;
+//! tree.insert("my_key", "my_value")?;
+//!
 //! let item = tree.get("my_key")?;
-//! assert!(item.is_some());
-//! let item = item.unwrap();
-//! assert_eq!(item.key, "my_key".as_bytes());
-//! assert_eq!(item.value, "this is the actual value of the object".as_bytes());
+//! assert_eq!(Some("my_value".as_bytes().to_vec()), item);
 //!
 //! let item = tree.get("another_key")?;
-//! assert!(item.is_none());
+//! assert_eq!(None, item);
 //!
 //! tree.insert("my_key2", "another item")?;
 //! assert_eq!(tree.len()?, 2);
+//!
 //! tree.remove("my_key")?;
 //! assert_eq!(tree.len()?, 1);
 //!
@@ -55,6 +54,7 @@ mod config;
 mod disk_block;
 mod disk_block_index;
 mod either;
+pub mod entry;
 mod error;
 mod flush;
 mod id;

@@ -73,10 +73,10 @@ impl<'a> PrefixIterator<'a> {
 }
 
 impl<'a> Iterator for PrefixIterator<'a> {
-    type Item = crate::Result<Value>;
+    type Item = crate::Result<(Vec<u8>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        Some(self.iter.next()?.map(|x| (x.key, x.value)))
     }
 }
 

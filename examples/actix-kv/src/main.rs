@@ -114,7 +114,7 @@ async fn get_item(path: web::Path<String>, data: web::Data<AppState>) -> MyResul
         Some(item) => Ok(HttpResponse::Ok()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("application/json; utf-8")
-            .body(item.value)),
+            .body(item)),
         None => {
             let body = json!(null);
 
@@ -138,7 +138,7 @@ async fn main() -> std::io::Result<()> {
     let data_folder = std::env::var("DATA_FOLDER").unwrap_or(".data".into());
     log::info!("Opening database at {data_folder}");
     let db = Config::new(&data_folder)
-        .block_cache_size(25_600) // 100 MB
+        .block_cache_capacity(25_600) // 100 MB
         .open()
         .expect("failed to open db");
 
@@ -174,7 +174,7 @@ mod tests {
 
         let data_folder = tempfile::tempdir()?;
         let db = Config::new(data_folder)
-            .block_cache_size(25_600) // 100 MB
+            .block_cache_capacity(25_600) // 100 MB
             .open()
             .expect("failed to open db");
 

@@ -92,7 +92,7 @@ async fn get_subject(path: web::Path<String>, data: web::Data<AppState>) -> MyRe
         Some(item) => Ok(HttpResponse::Ok()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("application/json; utf-8")
-            .body(item.value)),
+            .body(item)),
         None => Ok(HttpResponse::NotFound()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("text:html; utf-8")
@@ -117,8 +117,6 @@ async fn list_by_verb(
         .take(query.limit.unwrap_or(10_000) as usize)
         .collect::<Vec<_>>();
 
-    // let mut joined = String::with_capacity(100);
-
     let count = all.len();
 
     let mut edges = vec![];
@@ -130,15 +128,13 @@ async fn list_by_verb(
         let verb_key = key.split(':').nth(4).unwrap();
         let object_key = key.split(':').nth(6).unwrap();
         let relation_data =
-            serde_json::from_str::<serde_json::Value>(std::str::from_utf8(&item.value).unwrap())
-                .unwrap();
+            serde_json::from_str::<serde_json::Value>(std::str::from_utf8(&item).unwrap()).unwrap();
 
         let object_data = data
             .db
             .get(format!("s:{object_key}"))?
             .map(|x| {
-                serde_json::from_str::<serde_json::Value>(std::str::from_utf8(&x.value).unwrap())
-                    .unwrap()
+                serde_json::from_str::<serde_json::Value>(std::str::from_utf8(&x).unwrap()).unwrap()
             })
             .unwrap_or(serde_json::Value::Null);
 
@@ -175,7 +171,7 @@ async fn main() -> std::io::Result<()> {
     let data_folder = std::env::var("DATA_FOLDER").unwrap_or(".data".into());
     log::info!("Opening database at {data_folder}");
     let db = Config::new(&data_folder)
-        .block_cache_size(25_600) // 100 MB
+        .block_cache_capacity(25_600) // 100 MB
         .open()
         .expect("failed to open db");
 

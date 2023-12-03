@@ -93,7 +93,7 @@ fn disk_point_reads(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache_size(0)
+        .block_cache_capacity(0)
         .open()
         .unwrap();
 
@@ -143,7 +143,7 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache_size(62 * 1_000) // 256 MB
+        .block_cache_capacity(62 * 1_000) // 256 MB
         .open()
         .unwrap();
 
@@ -196,7 +196,7 @@ fn full_scan(c: &mut Criterion) {
 
     group.bench_function("full scan uncached", |b| {
         let tree = Config::new(tempdir().unwrap())
-            .block_cache_size(0)
+            .block_cache_capacity(0)
             .open()
             .unwrap();
 
@@ -263,8 +263,8 @@ fn scan_vs_query(c: &mut Criterion) {
                 let iter = iter.into_iter();
                 let count = iter
                     .filter(|x| match x {
-                        Ok(item) => {
-                            let buf = &item.key[..8];
+                        Ok((key, _)) => {
+                            let buf = &key[..8];
                             let (int_bytes, _rest) = buf.split_at(std::mem::size_of::<u64>());
                             let num = u64::from_be_bytes(int_bytes.try_into().unwrap());
                             (60000..61000).contains(&num)
@@ -330,7 +330,7 @@ fn scan_vs_prefix(c: &mut Criterion) {
             b.iter(|| {
                 let iter = tree.iter().unwrap();
                 let iter = iter.into_iter().filter(|x| match x {
-                    Ok(item) => item.key.starts_with(prefix.as_bytes()),
+                    Ok((key, _)) => key.starts_with(prefix.as_bytes()),
                     Err(_) => false,
                 });
                 assert_eq!(iter.count(), 1000);

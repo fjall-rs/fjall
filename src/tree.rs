@@ -1,6 +1,7 @@
 use crate::{
     block_cache::BlockCache,
     compaction::{worker::start_compaction_thread, CompactionStrategy},
+    entry::{OccupiedEntry, VacantEntry},
     id::generate_segment_id,
     journal::{shard::JournalShard, Journal},
     levels::Levels,
@@ -9,6 +10,7 @@ use crate::{
     range::{MemTableGuard, Range},
     segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
+    value::SeqNo,
     Batch, Config, Value,
 };
 use std::{
@@ -26,7 +28,7 @@ use std_semaphore::Semaphore;
 ///
 /// The tree is internally synchronized (Send + Sync), so it does not need to be wrapped in a lock nor an Arc.
 ///
-/// To share the tree with threads, use `Arc::clone(&tree)` or `tree.clone()`.
+/// To share the tree between threads, use `Arc::clone(&tree)` or `tree.clone()`.
 #[doc(alias = "keyspace")]
 #[doc(alias = "table")]
 #[derive(Clone)]
@@ -69,13 +71,55 @@ impl Tree {
     ///
     /// # Errors
     ///
-    /// - Will return `Err` if an IO error occurs
+    /// Will return `Err` if an IO error occurs
     pub fn open(config: Config) -> crate::Result<Self> {
         if config.path.join(".lsm").exists() {
             Self::recover(config)
         } else {
             Self::create_new(config)
         }
+    }
+
+    /// Gets the given key’s corresponding entry in the map for in-place manipulation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let value = tree.entry("a")?.or_insert("abc")?;
+    /// assert_eq!("abc".as_bytes(), &value);
+    ///
+    /// let value = tree.entry("a")?.or_insert("def")?;
+    /// assert_eq!("abc".as_bytes(), &value);
+    ///
+    /// let value = tree.entry("a")?.and_update(|_| "def")?.or_insert("abc")?;
+    /// assert_eq!("def".as_bytes(), &value);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<crate::entry::Entry> {
+        let key = key.as_ref();
+        let item = self.get_internal_entry(key, true)?;
+
+        Ok(match item {
+            Some(item) => crate::entry::Entry::Occupied(OccupiedEntry {
+                tree: self.clone(),
+                key: key.to_vec(),
+                value: item.value,
+            }),
+            None => crate::entry::Entry::Vacant(VacantEntry {
+                tree: self.clone(),
+                key: key.to_vec(),
+            }),
+        })
     }
 
     /// Initializes a new, atomic write batch
@@ -97,7 +141,7 @@ impl Tree {
     /// batch.commit()?;
     ///
     /// assert_eq!(3, tree.len()?);
-    ///
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -134,7 +178,7 @@ impl Tree {
             .sum();
 
         let memtable_size = u64::from(
-            self.approx_memtable_size_bytes
+            self.active_journal_size_bytes
                 .load(std::sync::atomic::Ordering::Relaxed),
         );
 
@@ -192,6 +236,7 @@ impl Tree {
     ///
     /// tree.insert("a", nanoid::nanoid!())?;
     /// assert!(!tree.is_empty()?);
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -199,7 +244,7 @@ impl Tree {
     ///
     /// - Will return `Err` if an IO error occurs
     pub fn is_empty(&self) -> crate::Result<bool> {
-        self.first().map(|x| x.is_none())
+        self.first_key_value().map(|x| x.is_none())
     }
 
     /// Creates a new tree in a folder.
@@ -224,7 +269,7 @@ impl Tree {
         let first_journal_path = config.path.join("journals").join(generate_segment_id());
         let levels = Levels::create_new(config.levels, config.path.join("levels.json"))?;
 
-        let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
+        let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
 
         let flush_threads = config.flush_threads.into();
 
@@ -238,7 +283,7 @@ impl Tree {
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
-            approx_memtable_size_bytes: AtomicU32::default(),
+            active_journal_size_bytes: AtomicU32::default(),
         };
 
         // fsync folder
@@ -326,6 +371,7 @@ impl Tree {
                 // TODO: handle this
                 assert!(active_journal.is_none(), "Second active journal found :(");
 
+                // TODO: replace fs extra with Journal::disk_space
                 if fs_extra::dir::get_size(&journal_path).unwrap() < config.max_memtable_size.into()
                 {
                     log::info!("Setting {} as active journal", journal_path.display());
@@ -407,7 +453,7 @@ impl Tree {
 
         log::info!("Restoring segments");
 
-        let block_cache = Arc::new(BlockCache::new(config.block_cache_size as usize));
+        let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
         let segments = Self::recover_segments(&config.path, &block_cache)?;
 
         // TODO: LSN!!!
@@ -441,7 +487,7 @@ impl Tree {
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
-            approx_memtable_size_bytes: AtomicU32::default(),
+            active_journal_size_bytes: AtomicU32::default(),
         };
 
         let tree = Self(Arc::new(inner));
@@ -468,7 +514,7 @@ impl Tree {
         memtable_lock.insert(value);
 
         let memtable_size = self
-            .approx_memtable_size_bytes
+            .active_journal_size_bytes
             .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed);
 
         drop(memtable_lock);
@@ -493,7 +539,7 @@ impl Tree {
     ///
     /// let tree = Config::new(folder).open()?;
     /// tree.insert("a", nanoid::nanoid!())?;
-    ///
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -528,15 +574,16 @@ impl Tree {
     /// use lsm_tree::{Config, Tree};
     ///
     /// let tree = Config::new(folder).open()?;
-    /// tree.insert("a", nanoid::nanoid!())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let item = tree.get("a")?;
-    /// assert!(item.is_some());
+    /// let item = tree.get("a")?.expect("should have item");
+    /// assert_eq!("abc".as_bytes(), item);
     ///
     /// tree.remove("a")?;
     ///
     /// let item = tree.get("a")?;
-    /// assert!(item.is_none());
+    /// assert_eq!(None, item);
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -558,6 +605,43 @@ impl Tree {
         Ok(())
     }
 
+    /// Removes the item and returns its value if it was previously in the tree
+    ///
+    /// This is less efficient than just deleting because it needs to do a read before deleting
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// let item = tree.remove_entry("a")?;
+    /// assert_eq!(None, item);
+    ///
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let item = tree.remove_entry("a")?.expect("should have removed item");
+    /// assert_eq!("abc".as_bytes(), item);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn remove_entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+        let key = key.as_ref();
+
+        Ok(if let Some(item) = self.get(key)? {
+            self.remove(key)?;
+            Some(item)
+        } else {
+            None
+        })
+    }
+
     /// Returns `true` if the tree contains the specified key
     ///
     /// # Examples
@@ -571,6 +655,7 @@ impl Tree {
     ///
     /// tree.insert("a", nanoid::nanoid!())?;
     /// assert!(tree.contains_key("a")?);
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -579,31 +664,6 @@ impl Tree {
     /// Will return `Err` if an IO error occurs
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
         self.get(key).map(|x| x.is_some())
-    }
-
-    /// Returns `true` if the tree contains the specified item
-    ///
-    /// Alias for [`Tree::contains_key`]
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # let folder = tempfile::tempdir()?;
-    /// use lsm_tree::{Config, Tree};
-    ///
-    /// let tree = Config::new(folder).open()?;
-    /// assert!(!tree.contains("a")?);
-    ///
-    /// tree.insert("a", nanoid::nanoid!())?;
-    /// assert!(tree.contains("a")?);
-    /// # Ok::<(), lsm_tree::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs
-    pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.contains_key(key)
     }
 
     #[allow(clippy::iter_not_returning_iterator)]
@@ -632,7 +692,7 @@ impl Tree {
     ///
     /// tree.insert("a", nanoid::nanoid!())?;
     /// assert_eq!(1, tree.range("a"..="z")?.into_iter().count());
-    ///
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -691,7 +751,7 @@ impl Tree {
     /// tree.insert("ab", nanoid::nanoid!())?;
     /// tree.insert("abc", nanoid::nanoid!())?;
     /// assert_eq!(2, tree.prefix("ab")?.into_iter().count());
-    ///
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -740,8 +800,8 @@ impl Tree {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let item = tree.first()?.expect("item should exist");
-    /// assert_eq!(item.key, "1".as_bytes());
+    /// let (key, _) = tree.first_key_value()?.expect("item should exist");
+    /// assert_eq!(key, "1".as_bytes());
     ///
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -749,9 +809,8 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn first(&self) -> crate::Result<Option<Value>> {
-        let item = self.iter()?.into_iter().next().transpose()?;
-        Ok(item)
+    pub fn first_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+        self.iter()?.into_iter().next().transpose()
     }
 
     /* /// Returns the last key-value pair in the LSM-tree. The key in this pair is the maximum key in the LSM-tree
@@ -769,10 +828,8 @@ impl Tree {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     /// #
-    /// let item = tree.last()?;
-    /// assert!(item.is_some());
-    /// let item = item.unwrap();
-    /// assert_eq!(item.key, "5".as_bytes());
+    /// let (key, _) = tree.last_key_value()?.expect("item should exist");
+    /// assert_eq!(key, "5".as_bytes());
     ///
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -780,36 +837,24 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs
-    pub fn last(&self) -> crate::Result<Option<Value>> {
+    pub fn last_key_value(&self) -> crate::Result<Option<Value>> {
         let item = self.iter()?.into_iter().next_back().transpose()?;
         Ok(item)
     } */
 
-    /// Retrieves an item from the tree
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # let folder = tempfile::tempdir()?;
-    /// use lsm_tree::{Config, Tree};
-    ///
-    /// let tree = Config::new(folder).open()?;
-    /// tree.insert("a", nanoid::nanoid!())?;
-    ///
-    /// let item = tree.get("a")?;
-    /// assert!(item.is_some());
-    ///
-    /// # Ok::<(), lsm_tree::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Value>> {
+    #[doc(hidden)]
+    pub fn get_internal_entry<K: AsRef<[u8]>>(
+        &self,
+        key: K,
+        evict_tombstone: bool,
+    ) -> crate::Result<Option<Value>> {
         let memtable_lock = self.active_memtable.read().expect("lock poisoned");
 
         if let Some(item) = memtable_lock.get(&key) {
-            return Ok(ignore_tombstone_value(item));
+            if evict_tombstone {
+                return Ok(ignore_tombstone_value(item));
+            }
+            return Ok(Some(item));
         };
         drop(memtable_lock);
 
@@ -817,7 +862,10 @@ impl Tree {
         let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
         for (_, memtable) in memtable_lock.iter().rev() {
             if let Some(item) = memtable.get(&key) {
-                return Ok(ignore_tombstone_value(item));
+                if evict_tombstone {
+                    return Ok(ignore_tombstone_value(item));
+                }
+                return Ok(Some(item));
             }
         }
         drop(memtable_lock);
@@ -828,11 +876,42 @@ impl Tree {
 
         for segment in segments {
             if let Some(item) = segment.get(&key)? {
-                return Ok(ignore_tombstone_value(item));
+                if evict_tombstone {
+                    return Ok(ignore_tombstone_value(item));
+                }
+                return Ok(Some(item));
             }
         }
 
         Ok(None)
+    }
+
+    /// Retrieves an item from the tree
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert_eq!(Some("my_value".as_bytes().to_vec()), item);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+        Ok(self.get_internal_entry(key, true)?.map(|x| x.value))
+    }
+
+    pub(crate) fn increment_lsn(&self) -> SeqNo {
+        self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
     }
 
     /// Atomically fetches and updates an item if it exists
@@ -851,7 +930,7 @@ impl Tree {
 
         let shard = self.journal.lock_shard();
 
-        Ok(match self.get(key)? {
+        Ok(match self.get_internal_entry(key, true)? {
             Some(item) => {
                 let updated_value = f(&item.value);
 
@@ -861,7 +940,7 @@ impl Tree {
                         key: item.key,
                         value: updated_value,
                         is_tombstone: false,
-                        seqno: self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                        seqno: self.increment_lsn(),
                     },
                 )?;
 
@@ -887,7 +966,7 @@ impl Tree {
 
         let shard = self.journal.lock_shard();
 
-        Ok(match self.get(key)? {
+        Ok(match self.get_internal_entry(key, true)? {
             Some(item) => {
                 let updated_value = f(&item.value);
 
@@ -897,7 +976,7 @@ impl Tree {
                         key: item.key,
                         value: updated_value.clone(),
                         is_tombstone: false,
-                        seqno: self.lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                        seqno: self.increment_lsn(),
                     },
                 )?;
 
@@ -959,7 +1038,7 @@ impl Tree {
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_some());
-    ///
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///

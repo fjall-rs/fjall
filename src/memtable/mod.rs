@@ -1,4 +1,4 @@
-use crate::value::{ParsedInternalKey, SeqNo, UserData};
+use crate::value::{ParsedInternalKey, SeqNo};
 use crate::Value;
 use crossbeam_skiplist::SkipMap;
 
@@ -9,7 +9,7 @@ use crossbeam_skiplist::SkipMap;
 /// In case of a program crash, the current `MemTable` can be rebuilt from the last active journal
 #[derive(Default)]
 pub struct MemTable {
-    pub(crate) items: SkipMap<ParsedInternalKey, UserData>,
+    pub(crate) items: SkipMap<ParsedInternalKey, Vec<u8>>,
 }
 
 impl MemTable {

@@ -118,9 +118,6 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     let mut immutable_memtables = tree.immutable_memtables.write().expect("lock is poisoned");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
 
-    tree.approx_memtable_size_bytes
-        .store(0, std::sync::atomic::Ordering::SeqCst);
-
     drop(memtable_lock);
 
     let new_journal_path = tree
@@ -140,6 +137,9 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
 
     let folder = File::open(&old_journal_folder)?;
     folder.sync_all()?;
+
+    tree.active_journal_size_bytes
+        .store(0, std::sync::atomic::Ordering::Relaxed);
 
     drop(immutable_memtables);
     drop(lock);

@@ -38,10 +38,7 @@ impl Batch {
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         let memtable_lock = self.tree.active_memtable.write().expect("lock poisoned");
 
-        let batch_seqno = self
-            .tree
-            .lsn
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let batch_seqno = self.tree.increment_lsn();
 
         for item in &mut self.data {
             item.seqno = batch_seqno;
@@ -53,8 +50,8 @@ impl Batch {
 
         let memtable_size = self
             .tree
-            .approx_memtable_size_bytes
-            .fetch_add(bytes_written as u32, std::sync::atomic::Ordering::SeqCst);
+            .active_journal_size_bytes
+            .fetch_add(bytes_written as u32, std::sync::atomic::Ordering::AcqRel);
 
         log::trace!("Applying {} batched items to memtable", self.data.len());
         for entry in std::mem::take(&mut self.data) {

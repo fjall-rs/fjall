@@ -13,21 +13,21 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 0);
     tree.insert(key, *value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     let value = b"newvalue";
 
     tree.insert(key, *value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     Ok(())
 }
@@ -44,11 +44,11 @@ fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 0);
     tree.insert(key, *value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?.map(|x| x.value), Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     tree.remove(key)?;
     eprint!("removed key {:?}", key);
@@ -82,7 +82,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "old".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "old".as_bytes().to_vec()));
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
@@ -94,7 +94,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
 
     tree.wait_for_memtable_flush()?;
 
@@ -102,7 +102,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
 
     Ok(())
 }
@@ -129,7 +129,7 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "old".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "old".as_bytes().to_vec()));
 
     for x in 0..ITEM_COUNT as u64 {
         let value = "new";
@@ -143,7 +143,7 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
 
     tree.wait_for_memtable_flush()?;
 
@@ -153,7 +153,7 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().value == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
 
     Ok(())
 }
