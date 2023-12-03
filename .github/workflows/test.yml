@@ -46,3 +46,9 @@ jobs:
       - name: Test KV example
         run: cargo test
         working-directory: examples/actix-kv
+      - name: Build triplestore example
+        run: cargo build
+        working-directory: examples/actix-triplestore
+      - name: Test triplestore example
+        run: cargo test
+        working-directory: examples/actix-triplestore
