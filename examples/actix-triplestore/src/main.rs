@@ -124,7 +124,7 @@ async fn list_by_verb(
     for item in all {
         let item = item?;
 
-        let key = std::str::from_utf8(&item.key).unwrap();
+        let key = std::str::from_utf8(&item).unwrap();
         let verb_key = key.split(':').nth(4).unwrap();
         let object_key = key.split(':').nth(6).unwrap();
         let relation_data =
