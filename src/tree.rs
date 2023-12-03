@@ -476,26 +476,33 @@ impl Tree {
             (Journal::create_new(next_journal_path)?, MemTable::default())
         };
 
-        // Load segments
+        // TODO: optimize this... do on journal load...
+        let lsn = memtable
+            .items
+            .iter()
+            .map(|x| {
+                let key = x.key();
+                key.seqno
+            })
+            .max()
+            .unwrap_or(0);
 
+        // Load segments
         log::info!("Restoring segments");
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
         let segments = Self::recover_segments(&config.path, &block_cache)?;
 
-        // TODO: LSN!!!
         // Check if a segment has a higher seqno and then take it
-        /* lsn = lsn.max(
+        let lsn = lsn.max(
             segments
                 .values()
                 .map(|x| x.metadata.seqnos.1)
                 .max()
                 .unwrap_or(0),
-        ); */
-        let lsn = 0;
+        );
 
         // Finalize Tree
-
         log::debug!("Loading level manifest");
 
         let mut levels = Levels::recover(&config.path.join("levels.json"), segments)?;
