@@ -912,14 +912,14 @@ impl Tree {
         prefix: K,
         seqno: Option<SeqNo>,
     ) -> crate::Result<Prefix<'_>> {
-        use std::ops::Bound::{self};
+        use std::ops::Bound::{self, Included, Unbounded};
 
         let prefix = prefix.into();
 
         let lock = self.levels.read().expect("lock is poisoned");
 
         let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
-            (Bound::Included(prefix.clone()), std::ops::Bound::Unbounded);
+            (Included(prefix.clone()), Unbounded);
 
         let segment_info = lock
             .get_all_segments()
