@@ -1,4 +1,4 @@
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockWriteGuard};
 
 type Shard<T> = RwLock<T>;
 
@@ -41,14 +41,6 @@ impl<T> Sharded<T> {
         self.shards
             .iter()
             .map(|shard| shard.write().expect("lock is poisoned"))
-            .collect()
-    }
-
-    /// Read-locks the entire structure
-    pub fn read_all(&self) -> Vec<RwLockReadGuard<'_, T>> {
-        self.shards
-            .iter()
-            .map(|shard| shard.read().expect("lock is poisoned"))
             .collect()
     }
 }

@@ -295,7 +295,7 @@ impl Tree {
     /// use lsm_tree::{Tree, Config};
     ///
     /// let folder = tempfile::tempdir()?;
-    /// let mut tree = Config::new(folder).open()?;
+    /// let tree = Config::new(folder).open()?;
     ///
     /// assert_eq!(tree.len()?, 0);
     /// tree.insert("1", "abc")?;
@@ -517,6 +517,7 @@ impl Tree {
                     path: segment_folder.clone(),
                     evict_tombstones: false,
                     block_size: config.block_size,
+                    approx_item_count: memtable.len(),
                 })?;
 
                 for (key, value) in memtable.items {
@@ -786,7 +787,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<bool> {
         self.get(key).map(|x| x.is_some())
     }
 
@@ -1008,7 +1009,7 @@ impl Tree {
     }
 
     #[doc(hidden)]
-    pub fn get_internal_entry<K: AsRef<[u8]>>(
+    pub fn get_internal_entry<K: AsRef<[u8]> + std::hash::Hash>(
         &self,
         key: K,
         evict_tombstone: bool,
@@ -1072,7 +1073,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
         Ok(self.get_internal_entry(key, true, None)?.map(|x| x.value))
     }
 

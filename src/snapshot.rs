@@ -43,7 +43,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
         Ok(self
             .tree
             .get_internal_entry(key, true, Some(self.seqno))?
@@ -228,7 +228,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<bool> {
         self.get(key).map(|x| x.is_some())
     }
 
@@ -276,7 +276,7 @@ impl Snapshot {
     /// use lsm_tree::{Tree, Config};
     ///
     /// # let folder = tempfile::tempdir()?;
-    /// let mut tree = Config::new(folder).open()?;
+    /// let tree = Config::new(folder).open()?;
     /// let snapshot = tree.snapshot();
     ///
     /// assert_eq!(snapshot.len()?, 0);

@@ -82,7 +82,7 @@ impl IndexBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct MetaIndex {
-    pub file: Mutex<BufReader<File>>,
+    file: Mutex<BufReader<File>>,
 
     /// Base folder path
     path: PathBuf,
@@ -93,7 +93,7 @@ pub struct MetaIndex {
     /// Level-0 index ("fence pointers"). Is read-only and always fully loaded.
     ///
     /// This index points to index blocks inside the level-1 index.
-    pub index: DiskBlockIndex,
+    index: DiskBlockIndex,
 
     /// Level-1 index. This index is only partially loaded into memory, decreasing memory usage, compared to a fully loaded one.
     ///
@@ -101,9 +101,9 @@ pub struct MetaIndex {
     ///
     /// To find a reference to a segment block, first the level-0 index needs to be checked,
     /// then the corresponding index block needs to be loaded, which contains the wanted disk block reference.
-    pub blocks: IndexBlockIndex,
+    blocks: IndexBlockIndex,
 
-    pub block_cache: Arc<BlockCache>,
+    block_cache: Arc<BlockCache>,
 }
 
 impl IndexBlock {
@@ -340,6 +340,7 @@ impl MetaIndex {
     }
 
     /// Only used for tests
+    #[allow(dead_code)]
     pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
         let index_block_index = IndexBlockIndex(Arc::clone(&block_cache));
 

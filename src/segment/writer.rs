@@ -1,7 +1,7 @@
 use super::{block::ValueBlock, meta::Metadata};
 use crate::{
-    id::generate_segment_id, segment::index::writer::Writer as IndexWriter, serde::Serializable,
-    value::SeqNo, Value,
+    bloom::BloomFilter, id::generate_segment_id, segment::index::writer::Writer as IndexWriter,
+    serde::Serializable, value::SeqNo, Value,
 };
 use lz4_flex::compress_prepend_size;
 use std::{
@@ -36,6 +36,7 @@ impl MultiWriter {
             path: opts.path.join(&segment_id),
             evict_tombstones: opts.evict_tombstones,
             block_size: opts.block_size,
+            approx_item_count: opts.approx_item_count,
         })?;
 
         Ok(Self {
@@ -60,6 +61,7 @@ impl MultiWriter {
             path: self.opts.path.join(&new_segment_id),
             evict_tombstones: self.opts.evict_tombstones,
             block_size: self.opts.block_size,
+            approx_item_count: self.opts.approx_item_count,
         })?;
 
         let old_writer = std::mem::replace(&mut self.writer, new_writer);
@@ -123,12 +125,16 @@ pub struct Writer {
 
     pub lowest_seqno: SeqNo,
     pub highest_seqno: SeqNo,
+
+    #[cfg(feature = "bloom")]
+    bloom_filter: BloomFilter,
 }
 
 pub struct Options {
     pub path: PathBuf,
     pub evict_tombstones: bool,
     pub block_size: u32,
+    pub approx_item_count: usize,
 }
 
 impl Writer {
@@ -145,6 +151,8 @@ impl Writer {
             items: Vec::with_capacity(1_000),
             crc: 0,
         };
+
+        let approx_item_count = opts.approx_item_count;
 
         Ok(Self {
             opts,
@@ -165,6 +173,7 @@ impl Writer {
 
             lowest_seqno: SeqNo::MAX,
             highest_seqno: 0,
+            bloom_filter: BloomFilter::new(approx_item_count),
         })
     }
 
@@ -207,7 +216,11 @@ impl Writer {
         self.index_writer
             .register_block(first.key.clone(), self.file_pos, bytes_written)?;
 
-        // TODO:  Add to bloom filter
+        // Add to bloom filter
+        #[cfg(feature = "bloom")]
+        for item in &self.chunk.items {
+            self.bloom_filter.insert(&item.key);
+        }
 
         // Adjust metadata
         log::trace!(
@@ -278,7 +291,9 @@ impl Writer {
             return Ok(());
         }
 
-        // TODO: bloom etc
+        #[cfg(feature = "bloom")]
+        self.bloom_filter
+            .write_to_file(self.opts.path.join("bloom"))?;
 
         self.index_writer.finish()?;
 
@@ -321,6 +336,7 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
+            approx_item_count: ITEM_COUNT as usize,
         })?;
 
         let items =

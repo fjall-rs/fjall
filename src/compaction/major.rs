@@ -16,6 +16,7 @@ impl Strategy {
     ///
     /// Panics, if `target_size` is below 1024 bytes
     #[must_use]
+    #[allow(dead_code)]
     pub fn new(target_size: u64) -> Arc<Self> {
         assert!(target_size >= 1024);
 

@@ -298,6 +298,7 @@ mod tests {
     use super::ResolvedLevel;
     use crate::{
         block_cache::BlockCache,
+        bloom::BloomFilter,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
     use std::{
@@ -333,6 +334,7 @@ mod tests {
                 seqnos: (0, 0),
             },
             block_cache,
+            bloom_filter: BloomFilter::new(1),
         })
     }
 

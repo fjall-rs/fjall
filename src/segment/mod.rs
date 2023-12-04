@@ -18,6 +18,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(feature = "bloom")]
+use crate::bloom::BloomFilter;
+
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
 /// The block offset and size in the file is saved in the "block index".
@@ -38,23 +41,31 @@ pub struct Segment {
     ///
     /// Stores index and data blocks
     pub block_cache: Arc<BlockCache>,
+
+    #[cfg(feature = "bloom")]
+    pub(crate) bloom_filter: BloomFilter,
 }
 
 impl Segment {
     /// Tries to recover a segment from a folder.
     pub fn recover<P: AsRef<Path>>(folder: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
-        let metadata = Metadata::from_disk(folder.as_ref().join("meta.json"))?;
-        let block_index = MetaIndex::from_file(
-            metadata.id.clone(),
-            folder.as_ref(),
-            Arc::clone(&block_cache),
-        )?;
+        let folder = folder.as_ref();
+
+        let metadata = Metadata::from_disk(folder.join("meta.json"))?;
+        let block_index =
+            MetaIndex::from_file(metadata.id.clone(), folder, Arc::clone(&block_cache))?;
+
+        #[cfg(feature = "bloom")]
+        let bloom_filter = BloomFilter::from_file(folder.join("bloom"))?;
 
         Ok(Self {
-            file: Mutex::new(BufReader::new(File::open(folder.as_ref().join("blocks"))?)),
+            file: Mutex::new(BufReader::new(File::open(folder.join("blocks"))?)),
             metadata,
             block_index: Arc::new(block_index),
             block_cache,
+
+            #[cfg(feature = "bloom")]
+            bloom_filter,
         })
     }
 
@@ -63,7 +74,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(
+    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(
         &self,
         key: K,
         seqno: Option<SeqNo>,
@@ -72,7 +83,12 @@ impl Segment {
             return Ok(None);
         }
 
-        // TODO: bloom
+        #[cfg(feature = "bloom")]
+        {
+            if !self.bloom_filter.contains(&key) {
+                return Ok(None);
+            };
+        }
 
         let key = key.as_ref();
 

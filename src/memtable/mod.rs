@@ -54,6 +54,10 @@ impl MemTable {
             .map(Value::from)
     }
 
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
     /// Inserts an item into the `MemTable`
     pub fn insert(&self, entry: Value) {
         let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.is_tombstone);

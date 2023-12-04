@@ -80,6 +80,7 @@ mod tests {
     use super::Strategy;
     use crate::{
         block_cache::BlockCache,
+        bloom::BloomFilter,
         compaction::{Choice, CompactionStrategy},
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
@@ -117,6 +118,7 @@ mod tests {
                 seqnos: (0, 0),
             },
             block_cache,
+            bloom_filter: BloomFilter::new(1),
         })
     }
 
