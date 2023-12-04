@@ -23,7 +23,7 @@ fn tree_delete_by_prefix() -> lsm_tree::Result<()> {
     assert_eq!(tree.prefix("b:")?.into_iter().count(), ITEM_COUNT);
     assert_eq!(tree.prefix("c:")?.into_iter().count(), ITEM_COUNT);
 
-    for item in tree.prefix("b:")?.into_iter() {
+    for item in &tree.prefix("b:")? {
         let (key, _) = item?;
         tree.remove(key)?;
     }
@@ -54,7 +54,7 @@ fn tree_delete_by_range() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, 6);
 
-    for item in tree.range("c"..="e")?.into_iter() {
+    for item in &tree.range("c"..="e")? {
         let (key, _) = item?;
         tree.remove(key)?;
     }

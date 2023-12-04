@@ -19,25 +19,36 @@
 //! use lsm_tree::{Tree, Config};
 //!
 //! # let folder = tempfile::tempdir()?;
+//! // A tree is a single physical keyspace/index/...
+//! // and supports a BTreeMap-like API
+//! // but all data is persisted to disk.
 //! let tree = Config::new(folder).open()?;
 //!
-//! assert!(tree.is_empty()?);
-//! tree.insert("my_key", "my_value")?;
 //! // Note compared to the BTreeMap API, operations return a Result<T>
 //! // So you can handle I/O errors if they occur
+//! tree.insert("my_key", "my_value")?;
 //!
 //! let item = tree.get("my_key")?;
 //! assert_eq!(Some("my_value".as_bytes().to_vec()), item);
 //!
-//! let item = tree.get("another_key")?;
-//! assert_eq!(None, item);
+//! // Flush to definitely make sure data is persisted
+//! tree.flush()?;
 //!
-//! tree.insert("my_key2", "another item")?;
-//! assert_eq!(tree.len()?, 2);
+//! // Search by prefix
+//! for item in &tree.prefix("prefix")? {
+//!   // ...
+//! }
 //!
-//! tree.remove("my_key")?;
-//! assert_eq!(tree.len()?, 1);
+//! // Search by range
+//! for item in &tree.range("a"..="z")? {
+//!   // ...
+//! }
 //!
+//! // Iterators implement DoubleEndedIterator, so you can search backwards, too!
+//! for item in tree.prefix("prefix")?.into_iter().rev() {
+//!   // ...
+//! }
+//! #
 //! # Ok::<(), lsm_tree::Error>(())
 //! ```
 

@@ -59,7 +59,7 @@ pub struct Value {
 
     /// User-defined value - an arbitrary byte array
     ///
-    /// Supports up to 2^32 bytes
+    /// Supports up to 2^16 bytes
     pub value: UserData,
 
     /// Sequence number
@@ -107,7 +107,7 @@ impl Value {
     ///
     /// # Panics
     ///
-    /// Panics if the key length is empty or greater than 2^16, or the value length is greater than 2^32
+    /// Panics if the key length is empty or greater than 2^16, or the value length is greater than 2^16
     ///
     /// # Examples
     ///
@@ -132,7 +132,7 @@ impl Value {
 
         assert!(!k.is_empty());
         assert!(k.len() <= u16::MAX.into());
-        assert!(u32::try_from(v.len()).is_ok());
+        assert!(v.len() <= u16::MAX.into());
 
         Self {
             key: k,
@@ -173,7 +173,7 @@ impl Serializable for Value {
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
-        writer.write_u32::<BigEndian>(self.value.len() as u32)?;
+        writer.write_u16::<BigEndian>(self.value.len() as u16)?;
         writer.write_all(&self.value)?;
 
         Ok(())
@@ -189,7 +189,7 @@ impl Deserializable for Value {
         let mut key = vec![0; key_len.into()];
         reader.read_exact(&mut key)?;
 
-        let value_len = reader.read_u32::<BigEndian>()?;
+        let value_len = reader.read_u16::<BigEndian>()?;
         let mut value = vec![0; value_len as usize];
         reader.read_exact(&mut value)?;
 

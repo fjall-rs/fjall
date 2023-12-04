@@ -76,6 +76,7 @@ impl Tree {
     /// // Same as
     /// # let folder = tempfile::tempdir()?;
     /// let tree = Config::new(folder).open()?;
+    /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
     ///
@@ -155,12 +156,7 @@ impl Tree {
     /// ```
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
-        self.open_snapshots
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-
-        let seqno = self.lsn.load(std::sync::atomic::Ordering::Acquire);
-
-        Snapshot::new(self.clone(), seqno)
+        Snapshot::new(self.clone())
     }
 
     /// Initializes a new, atomic write batch.
@@ -773,14 +769,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove_entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
-        let key = key.as_ref();
-
-        Ok(if let Some(item) = self.get(key)? {
-            self.remove(key)?;
-            Some(item)
-        } else {
-            None
-        })
+        self.fetch_update(key, |_| None::<Vec<u8>>)
     }
 
     /// Returns `true` if the tree contains the specified key.

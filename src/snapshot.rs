@@ -16,8 +16,14 @@ pub struct Snapshot {
 
 impl Snapshot {
     /// Creates a snapshot
-    pub(crate) fn new(tree: Tree, seqno: SeqNo) -> Self {
+    pub(crate) fn new(tree: Tree) -> Self {
+        tree.open_snapshots
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+
+        let seqno = tree.lsn.load(std::sync::atomic::Ordering::Acquire);
+
         log::debug!("Opening snapshot with seqno: {seqno}");
+
         Self { tree, seqno }
     }
 

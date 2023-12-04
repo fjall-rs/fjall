@@ -14,6 +14,8 @@ let folder = "data";
 // but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
 
+// Note compared to the BTreeMap API, operations return a Result<T>
+// So you can handle I/O errors if they occur
 tree.insert("my_key", "my_value")?;
 
 let item = tree.get("my_key")?;
@@ -23,12 +25,12 @@ assert_eq!(Some("my_value".as_bytes().to_vec()), item);
 tree.flush()?;
 
 // Search by prefix
-for item in tree.prefix("prefix")?.into_iter() {
+for item in &tree.prefix("prefix")? {
   // ...
 }
 
 // Search by range
-for item in tree.range("a"..="z")?.into_iter() {
+for item in &tree.range("a"..="z")? {
   // ...
 }
 
