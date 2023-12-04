@@ -63,29 +63,6 @@ impl Segment {
         })
     }
 
-    fn load_block(&self, block_ref: &IndexEntry) -> crate::Result<Arc<ValueBlock>> {
-        let mut file = self.file.lock().expect("lock is poisoned");
-
-        let block = ValueBlock::from_file_compressed(&mut *file, block_ref.offset, block_ref.size)?; // TODO: no panic
-
-        drop(file);
-
-        // TODO: option to check CRC? Steals ~10µs per read :(
-        /* if !block.check_crc(block.crc)? {
-            return Err(crate::Error::CrcCheck);
-        } */
-
-        let block = Arc::new(block);
-
-        self.block_cache.insert_disk_block(
-            self.metadata.id.clone(),
-            block_ref.start_key.clone(),
-            Arc::clone(&block),
-        );
-
-        Ok(block)
-    }
-
     /// Retrieves an item from the segment.
     ///
     /// # Errors
@@ -175,7 +152,7 @@ impl Segment {
         self.metadata.tombstone_count
     }
 
-    /// Returns true if the key is contained in the segment's key range.
+    /// Returns `true` if the key is contained in the segment's key range.
     pub(crate) fn key_range_contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
         self.metadata.key_range_contains(key)
     }

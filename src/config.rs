@@ -8,39 +8,40 @@ use std::{
 };
 pub use tiered::Strategy as SizeTiered;
 
+#[derive(Clone)]
 /// Tree configuration
 pub struct Config {
     /// Folder path
     ///
     /// Defaults to `./.lsm.data`
-    pub(crate) path: PathBuf,
+    pub path: PathBuf,
 
     /// Block size of data and index blocks
     ///
     /// Defaults to 4 KiB (4096 bytes)
-    pub(crate) block_size: u32,
+    pub block_size: u32,
 
     /// Block cache size in # blocks
     ///
     /// Defaults to 1,024
-    pub(crate) block_cache_capacity: u32,
+    pub block_cache_capacity: u32,
 
-    /// [`MemTable`] maximum size in bytes
+    /// Maximum size in bytes of the write buffer
     ///
     /// Defaults to 64 MiB, like RocksDB
-    pub(crate) max_memtable_size: u32,
+    pub max_memtable_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree)
     ///
     /// Defaults to 7, like RocksDB
-    pub(crate) levels: u8,
+    pub levels: u8,
 
     /// Maximum amount of concurrent flush threads
     ///
     /// You may want to increase this the more CPU cores you have
     ///
     /// Defaults to 4
-    pub(crate) flush_threads: u8,
+    pub flush_threads: u8,
 
     /// Compaction strategy to use
     ///

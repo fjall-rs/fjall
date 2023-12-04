@@ -57,7 +57,7 @@ mod config;
 mod disk_block;
 mod disk_block_index;
 mod either;
-pub mod entry;
+mod entry;
 mod error;
 mod flush;
 mod id;
@@ -76,12 +76,15 @@ mod tree;
 mod tree_inner;
 mod value;
 
+#[doc(hidden)]
+pub use value::Value;
+
 pub use {
     crate::serde::{DeserializeError, SerializeError},
     batch::Batch,
     config::Config,
+    entry::Entry,
     error::{Error, Result},
     snapshot::Snapshot,
     tree::Tree,
-    value::Value,
 };

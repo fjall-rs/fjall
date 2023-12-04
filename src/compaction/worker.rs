@@ -14,7 +14,7 @@ use std::{
 
 pub fn do_compaction(
     tree: &Tree,
-    payload: &crate::compaction::Options,
+    payload: &crate::compaction::CompactionInput,
     mut segments_lock: RwLockWriteGuard<'_, Levels>,
 ) -> crate::Result<()> {
     if tree.is_stopped() {
@@ -65,7 +65,7 @@ pub fn do_compaction(
         crate::segment::writer::Options {
             block_size: tree.config.block_size,
             evict_tombstones: should_evict_tombstones,
-            path: tree.path().join("segments"),
+            path: tree.config().path.join("segments"),
         },
     )?;
 
@@ -130,7 +130,7 @@ pub fn do_compaction(
 
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
-        std::fs::remove_dir_all(tree.path().join("segments").join(key))?;
+        std::fs::remove_dir_all(tree.config().path.join("segments").join(key))?;
     }
 
     segments_lock.show_segments(&payload.segment_ids);
@@ -173,7 +173,7 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
-                    std::fs::remove_dir_all(tree.path().join("segments").join(key))?;
+                    std::fs::remove_dir_all(tree.config().path.join("segments").join(key))?;
                 }
 
                 log::trace!("Deleted {} segments", payload.len());

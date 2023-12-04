@@ -1,4 +1,4 @@
-use super::{Choice, CompactionStrategy, Options};
+use super::{Choice, CompactionInput, CompactionStrategy};
 use crate::levels::Levels;
 use std::sync::Arc;
 
@@ -16,6 +16,14 @@ pub struct Strategy {
 
 impl Strategy {
     /// Configures a new `SizeTiered` compaction strategy
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lsm_tree::{Config, compaction::SizeTiered};
+    ///
+    /// let config = Config::default().compaction_strategy(SizeTiered::new(4, 8));
+    /// ```
     ///
     /// # Panics
     ///
@@ -60,7 +68,7 @@ impl CompactionStrategy for Strategy {
                 #[allow(clippy::cast_possible_truncation)]
                 let next_level_index = (level_index + 1) as u8;
 
-                return Choice::DoCompact(Options {
+                return Choice::DoCompact(CompactionInput {
                     segment_ids: level
                         .iter()
                         .take(self.max_threshold)
@@ -82,7 +90,7 @@ mod tests {
     use super::Strategy;
     use crate::{
         block_cache::BlockCache,
-        compaction::{Choice, CompactionStrategy, Options},
+        compaction::{Choice, CompactionInput, CompactionStrategy},
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
@@ -153,7 +161,7 @@ mod tests {
         levels.add(fixture_segment("4".into()));
         assert_eq!(
             compactor.choose(&levels),
-            Choice::DoCompact(Options {
+            Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
                 target_size: u64::MAX,
@@ -181,7 +189,7 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            Choice::DoCompact(Options {
+            Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
                 target_size: u64::MAX,
@@ -204,7 +212,7 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            Choice::DoCompact(Options {
+            Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into()],
                 target_size: u64::MAX,
@@ -227,7 +235,7 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            Choice::DoCompact(Options {
+            Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["2".into(), "3".into()],
                 target_size: u64::MAX,
@@ -242,7 +250,7 @@ mod tests {
 
         assert_eq!(
             compactor.choose(&levels),
-            Choice::DoCompact(Options {
+            Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["2".into(), "3".into()],
                 target_size: u64::MAX,

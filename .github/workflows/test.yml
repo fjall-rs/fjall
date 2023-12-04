@@ -16,6 +16,9 @@ jobs:
   test_stable:
     strategy:
       matrix:
+        rust_version:
+          - stable
+          - "1.68.2"
         os:
           - ubuntu-latest
           # - windows-latest
@@ -24,6 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust_version }}
       - name: Set up cargo cache
         uses: Swatinem/rust-cache@v2
         with:

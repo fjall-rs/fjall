@@ -57,7 +57,7 @@ impl<'a> RangeIterator<'a> {
             Bound::Unbounded => Bound::Unbounded,
         };
 
-        let hi = match &lock.bounds.0 {
+        let hi = match &lock.bounds.1 {
             // NOTE: See memtable.rs for range explanation, this is the reverse case
             // where we need to go all the way to the last seqno of an item
             //

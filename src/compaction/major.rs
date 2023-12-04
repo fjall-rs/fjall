@@ -1,4 +1,4 @@
-use super::{Choice, CompactionStrategy, Options};
+use super::{Choice, CompactionStrategy, CompactionInput};
 use crate::levels::Levels;
 use std::sync::Arc;
 
@@ -36,7 +36,7 @@ impl CompactionStrategy for Strategy {
         let segments = levels.get_segments();
         let segment_ids = segments.values().map(|s| s.metadata.id.clone()).collect();
 
-        Choice::DoCompact(Options {
+        Choice::DoCompact(CompactionInput {
             segment_ids,
             dest_level: levels.depth() as u8 - 1,
             target_size: self.target_size,

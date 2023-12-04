@@ -60,6 +60,20 @@ use Entry::{Occupied, Vacant};
 
 impl Entry {
     /// Returns a reference to this entry's key
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let entry = tree.entry("a")?;
+    /// assert_eq!("a".as_bytes(), entry.key());
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     #[must_use]
     pub fn key(&self) -> &Vec<u8> {
         match self {
@@ -69,6 +83,23 @@ impl Entry {
     }
 
     /// Updates the value if it exists before any potential inserts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let value = tree.entry("a")?.or_insert("abc")?;
+    /// assert_eq!("abc".as_bytes(), &value);
+    ///
+    /// let value = tree.entry("a")?.and_update(|_| "def")?.or_insert("abc")?;
+    /// assert_eq!("def".as_bytes(), &value);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -86,6 +117,20 @@ impl Entry {
 
     /// Ensures a value is in the entry by inserting the default if empty, and returns that value.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let value = tree.entry("a")?.or_insert("abc")?;
+    /// assert_eq!("abc".as_bytes(), &value);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -97,6 +142,20 @@ impl Entry {
     }
 
     /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let value = tree.entry("a")?.or_insert_with(|| "abc")?;
+    /// assert_eq!("abc".as_bytes(), &value);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -112,6 +171,20 @@ impl Entry {
     }
 
     /// Ensures a value is in the entry by inserting the result of the default function if empty, and returns that value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Tree::open(Config::new(folder))?;
+    ///
+    /// let value = tree.entry("a")?.or_insert_with_key(|k| k.clone())?;
+    /// assert_eq!("a".as_bytes(), &value);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     ///
     /// # Errors
     ///

@@ -22,6 +22,16 @@ pub struct Strategy {
 
 impl Strategy {
     /// Configures a new `Fifo` compaction strategy
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lsm_tree::{Config, compaction::Fifo};
+    ///
+    /// let one_gb = 1 * 1_024 * 1_024 * 1_024;
+    ///
+    /// let config = Config::default().compaction_strategy(Fifo::new(one_gb));
+    /// ```
     #[must_use]
     pub fn new(limit: u64) -> Arc<Self> {
         Arc::new(Self { limit })

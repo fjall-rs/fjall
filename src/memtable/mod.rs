@@ -42,7 +42,7 @@ impl MemTable {
 
             // If seqno (snapshot) value is defined, filter for it
             if let Some(seqno) = seqno {
-                if key.seqno > seqno {
+                if key.seqno >= seqno {
                     return false;
                 }
             }

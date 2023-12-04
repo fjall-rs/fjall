@@ -205,7 +205,7 @@ impl Levels {
         write_segment_history_entry("remove".into(), self); */
     }
 
-    /// Returns true if there are no segments
+    /// Returns `true` if there are no segments
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0

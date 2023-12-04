@@ -7,9 +7,12 @@ pub(crate) mod worker;
 
 use crate::levels::Levels;
 
-/// Configuration for compaction
+/// Input for compactor.
+///
+/// The compaction strategy chooses which segments to compact and how.
+/// That information is given to the compactor.
 #[derive(Debug, Eq, PartialEq)]
-pub struct Options {
+pub struct CompactionInput {
     /// Segments to compact
     pub segment_ids: Vec<String>,
 
@@ -26,20 +29,23 @@ pub struct Options {
 /// Describes what to do (compact or not)
 #[derive(Debug, Eq, PartialEq)]
 pub enum Choice {
-    /// Just do nothing
+    /// Just do nothing.
     DoNothing,
 
-    /// Compacts some segments into a new level
-    DoCompact(Options),
+    /// Compacts some segments into a new level.
+    DoCompact(CompactionInput),
 
-    /// Delete segments without doing compaction
+    /// Delete segments without doing compaction.
+    ///
+    /// This may be used by a compaction strategy that wants to delete old data
+    /// without having to compact it away, like [`fifo::Strategy`].
     DeleteSegments(Vec<String>),
 }
 
 /// Trait for a compaction strategy
 ///
 /// The strategy receives the levels of the LSM-tree as argument
-/// and emits a choice on what to do
+/// and emits a choice on what to do.
 pub trait CompactionStrategy {
     /// Decides on what to do based on the current state of the LSM-tree's levels
     fn choose(&self, _: &Levels) -> Choice;

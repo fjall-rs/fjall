@@ -16,7 +16,7 @@ use crate::{
 use std::{
     collections::HashMap,
     ops::RangeBounds,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64},
         Arc, RwLock, RwLockWriteGuard,
@@ -102,12 +102,6 @@ impl Tree {
     ///
     /// let value = tree.entry("a")?.or_insert("abc")?;
     /// assert_eq!("abc".as_bytes(), &value);
-    ///
-    /// let value = tree.entry("a")?.or_insert("def")?;
-    /// assert_eq!("abc".as_bytes(), &value);
-    ///
-    /// let value = tree.entry("a")?.and_update(|_| "def")?.or_insert("abc")?;
-    /// assert_eq!("def".as_bytes(), &value);
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -135,6 +129,30 @@ impl Tree {
     /// Opens a read-only point-in-time snapshot of the tree
     ///
     /// Dropping the snapshot will close the snapshot
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let snapshot = tree.snapshot();
+    /// assert_eq!(snapshot.len()?, tree.len()?);
+    ///
+    /// tree.insert("b", "abc")?;
+    ///
+    /// assert_eq!(2, tree.len()?);
+    /// assert_eq!(1, snapshot.len()?);
+    ///
+    /// assert!(snapshot.contains_key("a")?);
+    /// assert!(!snapshot.contains_key("b")?);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         self.open_snapshots
@@ -148,6 +166,8 @@ impl Tree {
     /// Initializes a new, atomic write batch.
     ///
     /// Call [`Batch::commit`] to commit the batch to the tree.
+    ///
+    /// Dropping the batch will not commit items to the tree.
     ///
     /// # Examples
     ///
@@ -183,11 +203,25 @@ impl Tree {
     }
 
     /// Counts the amount of segments currently in the tree.
+    #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.levels.read().expect("lock is poisoned").len()
     }
+
     /// Sums the disk space usage of the tree (segments + journals).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    /// assert_eq!(0, tree.disk_space());
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     #[must_use]
     pub fn disk_space(&self) -> u64 {
         let segment_size = self
@@ -207,29 +241,64 @@ impl Tree {
         segment_size + memtable_size
     }
 
-    /// Returns the folder path used by the tree.
+    /// Returns the tree configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// assert_eq!(Config::default().block_size, tree.config().block_size);
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
     #[must_use]
-    pub fn path(&self) -> PathBuf {
-        self.config.path.clone()
+    pub fn config(&self) -> Config {
+        self.config.clone()
+    }
+
+    /// Returns the amount of cached blocks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// assert_eq!(0, tree.block_cache_size());
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    #[must_use]
+    pub fn block_cache_size(&self) -> usize {
+        self.block_cache.len()
     }
 
     /// Scans the entire tree, returning the amount of items.
+    ///
+    /// Never, under any circumstances, use .len() == 0 to check
+    /// if the tree is empty, use [`Tree::is_empty`] instead.
     ///
     /// # Examples
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
-    /// # use lsm_tree::{Tree, Config};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let mut tree = Config::new(folder).open()?;
-    /// #
+    /// use lsm_tree::{Tree, Config};
+    ///
+    /// let folder = tempfile::tempdir()?;
+    /// let mut tree = Config::new(folder).open()?;
+    ///
     /// assert_eq!(tree.len()?, 0);
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     /// assert_eq!(tree.len()?, 3);
-    ///
+    /// #
     /// # Ok::<(), TreeError>(())
     /// ```
     ///
@@ -321,6 +390,7 @@ impl Tree {
         Ok(Self(Arc::new(inner)))
     }
 
+    // TODO: move to new module
     fn recover_segments<P: AsRef<Path>>(
         folder: &P,
         block_cache: &Arc<BlockCache>,
@@ -371,6 +441,7 @@ impl Tree {
         Ok(segments)
     }
 
+    // TODO: move to new module
     fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
         // Load previous levels manifest
         // Add all flushed segments to it, then recover properly
@@ -726,6 +797,22 @@ impl Tree {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let folder = tempfile::tempdir()?;
+    /// use lsm_tree::{Config, Tree};
+    ///
+    /// let tree = Config::new(folder).open()?;
+    ///
+    /// tree.insert("a", nanoid::nanoid!())?;
+    /// tree.insert("f", nanoid::nanoid!())?;
+    /// tree.insert("g", nanoid::nanoid!())?;
+    /// assert_eq!(3, tree.iter()?.into_iter().count());
+    /// #
+    /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -787,7 +874,9 @@ impl Tree {
     /// let tree = Config::new(folder).open()?;
     ///
     /// tree.insert("a", nanoid::nanoid!())?;
-    /// assert_eq!(1, tree.range("a"..="z")?.into_iter().count());
+    /// tree.insert("f", nanoid::nanoid!())?;
+    /// tree.insert("g", nanoid::nanoid!())?;
+    /// assert_eq!(2, tree.range("a"..="f")?.into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -865,18 +954,18 @@ impl Tree {
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
-    /// # use lsm_tree::{Tree, Config};
-    /// #
+    /// use lsm_tree::{Tree, Config};
+    ///
     /// # let folder = tempfile::tempdir()?;
-    /// # let mut tree = Config::new(folder).open()?;
-    /// #
+    /// let tree = Config::new(folder).open()?;
+    ///
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
     /// let (key, _) = tree.first_key_value()?.expect("item should exist");
     /// assert_eq!(key, "1".as_bytes());
-    ///
+    /// #
     /// # Ok::<(), TreeError>(())
     /// ```
     ///
@@ -894,18 +983,18 @@ impl Tree {
     ///
     /// ```
     /// # use lsm_tree::Error as TreeError;
-    /// # use lsm_tree::{Tree, Config};
-    /// #
+    /// use lsm_tree::{Tree, Config};
+    ///
     /// # let folder = tempfile::tempdir()?;
-    /// # let mut tree = Config::new(folder).open()?;
-    /// #
+    /// let tree = Config::new(folder).open()?;
+    ///
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
-    /// #
+    ///
     /// let (key, _) = tree.last_key_value()?.expect("item should exist");
     /// assert_eq!(key, "5".as_bytes());
-    ///
+    /// #
     /// # Ok::<(), TreeError>(())
     /// ```
     ///
@@ -1158,7 +1247,7 @@ impl Tree {
             let next = f(expected).map(Into::into);
 
             match self.compare_and_swap(key, expected, next.as_ref())? {
-                Ok(_) => return Ok(next),
+                Ok(()) => return Ok(next),
                 Err(err) => {
                     fetched = err.prev;
                 }
@@ -1230,6 +1319,7 @@ impl Tree {
         Ok(())
     }
 
+    /// Returns `true` if the tree is being dropped
     pub(crate) fn is_stopped(&self) -> bool {
         self.stop_signal.load(std::sync::atomic::Ordering::Acquire)
     }
