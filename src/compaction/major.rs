@@ -1,4 +1,4 @@
-use super::{Choice, CompactionStrategy, CompactionInput};
+use super::{Choice, CompactionInput, CompactionStrategy};
 use crate::levels::Levels;
 use std::sync::Arc;
 
