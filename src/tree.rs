@@ -209,6 +209,19 @@ impl Tree {
         self.levels.read().expect("lock is poisoned").len()
     }
 
+    /// Counts the amount of segments currently in the tree.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn bloom_filter_memory_usage(&self) -> u64 {
+        self.levels
+            .read()
+            .expect("lock is poisoned")
+            .get_all_segments()
+            .values()
+            .map(|x| x.metadata.bloom_filter_size)
+            .sum::<u64>()
+    }
+
     /// Sums the disk space usage of the tree (segments + journals).
     ///
     /// # Examples
@@ -518,6 +531,9 @@ impl Tree {
                     evict_tombstones: false,
                     block_size: config.block_size,
                     approx_item_count: memtable.len(),
+
+                    #[cfg(feature = "bloom")]
+                    bloom_fp_rate: 0.99, // NOTE: For L0, we don't really want bloom filters
                 })?;
 
                 for (key, value) in memtable.items {
@@ -527,7 +543,7 @@ impl Tree {
                 segment_writer.finish()?;
 
                 if segment_writer.item_count > 0 {
-                    let metadata = Metadata::from_writer(segment_id, segment_writer);
+                    let metadata = Metadata::from_writer(segment_id, segment_writer)?;
                     metadata.write_to_file()?;
 
                     log::info!("Written segment from orphaned journal: {:?}", metadata.id);

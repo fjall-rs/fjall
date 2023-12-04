@@ -116,9 +116,10 @@ mod tests {
                 tombstone_count: 0,
                 uncompressed_size: 0,
                 seqnos: (0, 0),
+                bloom_filter_size: 0,
             },
             block_cache,
-            bloom_filter: BloomFilter::new(1),
+            bloom_filter: BloomFilter::new(1, 0.01),
         })
     }
 

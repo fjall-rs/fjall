@@ -20,6 +20,7 @@ path = "src/lib.rs"
 [features]
 default = ["bloom"]
 bloom = ["dep:bloom-filters"]
+segment_history = []
 
 [dependencies]
 bloom-filters = { version = "0.1.2", optional = true }

@@ -37,6 +37,9 @@ impl MultiWriter {
             evict_tombstones: opts.evict_tombstones,
             block_size: opts.block_size,
             approx_item_count: opts.approx_item_count,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: opts.bloom_fp_rate,
         })?;
 
         Ok(Self {
@@ -62,13 +65,16 @@ impl MultiWriter {
             evict_tombstones: self.opts.evict_tombstones,
             block_size: self.opts.block_size,
             approx_item_count: self.opts.approx_item_count,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: self.opts.bloom_fp_rate,
         })?;
 
         let old_writer = std::mem::replace(&mut self.writer, new_writer);
         let old_segment_id = std::mem::replace(&mut self.current_segment_id, new_segment_id);
 
         if old_writer.item_count > 0 {
-            let metadata = Metadata::from_writer(old_segment_id, old_writer);
+            let metadata = Metadata::from_writer(old_segment_id, old_writer)?;
             self.created_items.push(metadata);
         }
 
@@ -95,7 +101,7 @@ impl MultiWriter {
         self.writer.finish()?;
 
         if self.writer.item_count > 0 {
-            let metadata = Metadata::from_writer(self.current_segment_id, self.writer);
+            let metadata = Metadata::from_writer(self.current_segment_id, self.writer)?;
             self.created_items.push(metadata);
         }
 
@@ -135,6 +141,9 @@ pub struct Options {
     pub evict_tombstones: bool,
     pub block_size: u32,
     pub approx_item_count: usize,
+
+    #[cfg(feature = "bloom")]
+    pub bloom_fp_rate: f64,
 }
 
 impl Writer {
@@ -153,6 +162,9 @@ impl Writer {
         };
 
         let approx_item_count = opts.approx_item_count;
+
+        #[cfg(feature = "bloom")]
+        let bloom_fp_rate = opts.bloom_fp_rate;
 
         Ok(Self {
             opts,
@@ -173,7 +185,9 @@ impl Writer {
 
             lowest_seqno: SeqNo::MAX,
             highest_seqno: 0,
-            bloom_filter: BloomFilter::new(approx_item_count),
+
+            #[cfg(feature = "bloom")]
+            bloom_filter: BloomFilter::new(approx_item_count, bloom_fp_rate),
         })
     }
 
@@ -337,6 +351,7 @@ mod tests {
             evict_tombstones: false,
             block_size: 4096,
             approx_item_count: ITEM_COUNT as usize,
+            bloom_fp_rate: 0.01,
         })?;
 
         let items =
@@ -348,7 +363,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
         metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT, metadata.item_count);
 

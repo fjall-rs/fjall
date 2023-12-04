@@ -174,6 +174,7 @@ mod tests {
             evict_tombstones: false,
             block_size: 4096,
             approx_item_count: 1,
+            bloom_fp_rate: 0.01,
         })?;
 
         let items = (0u64..ITEM_COUNT)
@@ -185,7 +186,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
@@ -365,6 +366,7 @@ mod tests {
             evict_tombstones: false,
             block_size: 4096,
             approx_item_count: 1,
+            bloom_fp_rate: 0.01,
         })?;
 
         let items = (0u64..ITEM_COUNT)
@@ -376,7 +378,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer);
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));

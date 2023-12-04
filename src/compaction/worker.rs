@@ -73,6 +73,9 @@ pub fn do_compaction(
             evict_tombstones: should_evict_tombstones,
             path: tree.config().path.join("segments"),
             approx_item_count: approx_item_count as usize,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: BloomFilter::monkey(tree.config.levels, payload.dest_level),
         },
     )?;
 

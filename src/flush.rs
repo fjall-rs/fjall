@@ -27,6 +27,7 @@ fn flush_worker(
         evict_tombstones: false,
         block_size: tree.config.block_size,
         approx_item_count: old_memtable.len(),
+        bloom_fp_rate: 0.99, // NOTE: For L0, we don't really want bloom filters
     })?;
 
     log::debug!(
@@ -44,7 +45,7 @@ fn flush_worker(
     segment_writer.finish()?;
     log::debug!("Finalized segment write");
 
-    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer);
+    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer)?;
     metadata.write_to_file()?;
 
     match MetaIndex::from_file(

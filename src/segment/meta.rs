@@ -48,12 +48,20 @@ pub struct Metadata {
 
     /// Number of tombstones
     pub tombstone_count: u64,
+
+    #[cfg(feature = "bloom")]
+    pub bloom_filter_size: u64,
 }
 
 impl Metadata {
     /// Consumes a writer and its metadata to create the segment metadata
-    pub fn from_writer(id: String, writer: Writer) -> Self {
-        Self {
+    pub fn from_writer(id: String, writer: Writer) -> crate::Result<Self> {
+        #[cfg(feature = "bloom")]
+        let bloom_filter_size = std::fs::File::open(writer.opts.path.join("bloom"))?
+            .metadata()?
+            .len();
+
+        Ok(Self {
             id,
             path: writer.opts.path,
             block_count: writer.block_count as u32,
@@ -77,7 +85,10 @@ impl Metadata {
             seqnos: (writer.lowest_seqno, writer.highest_seqno),
             tombstone_count: writer.tombstone_count as u64,
             uncompressed_size: writer.uncompressed_size,
-        }
+
+            #[cfg(feature = "bloom")]
+            bloom_filter_size,
+        })
     }
 
     pub(crate) fn key_range_contains<K: AsRef<[u8]>>(&self, key: K) -> bool {

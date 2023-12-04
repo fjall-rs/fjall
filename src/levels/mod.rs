@@ -1,5 +1,13 @@
 mod level;
 
+#[cfg(feature = "segment_history")]
+mod segment_history;
+
+#[cfg(feature = "segment_history")]
+use crate::time::unix_timestamp;
+#[cfg(feature = "segment_history")]
+use serde_json::json;
+
 use self::level::{Level, ResolvedLevel};
 use crate::segment::Segment;
 use std::{
@@ -9,17 +17,8 @@ use std::{
     sync::Arc,
 };
 
-/* #[cfg(feature = "segment_history")]
-use crate::time::unix_timestamp;
-#[cfg(feature = "segment_history")]
-use serde_json::json;
- */
 pub type HiddenSet = HashSet<String>;
 pub type ResolvedView = Vec<ResolvedLevel>;
-
-/* #[cfg(feature = "segment_history")]
-const SEGMENT_HISTORY_PATH: &str = "./segment_history.jsonl";
- */
 
 /// Represents the levels of a log-structured merge tree.
 pub struct Levels {
@@ -39,40 +38,11 @@ pub struct Levels {
     /// While consuming segments (because of compaction) they will not appear in the list of segments
     /// as to not cause conflicts between multiple compaction threads (compacting the same segments)
     hidden_set: HiddenSet,
+
+    #[cfg(feature = "segment_history")]
+    segment_history_writer: segment_history::Writer,
 }
 
-/* #[cfg(feature = "segment_history")]
-fn write_segment_history_entry(event: String, levels: &Levels) {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(SEGMENT_HISTORY_PATH)
-        .expect("Segment history write failed");
-
-    let segment_map = levels.get_all_segments();
-    let ts = unix_timestamp();
-
-    let line = serde_json::to_string(&json!({
-        "time_unix": ts.as_secs(),
-        "time_ms": ts.as_millis(),
-        "event": event,
-        "levels": levels.levels.iter().map(|level| {
-            let segments = level.iter().map(|seg_id| segment_map[seg_id]).collect::<Vec<_>>();
-            segments
-            .iter()
-            .map(|segment| json!({
-                    "path": segment.path.clone(),
-                    "metadata": segment.metadata.clone(),
-                    "hidden": levels.hidden_set.contains(&segment.metadata.id)
-                }))
-                .collect::<Vec<_>>()
-        }).collect::<Vec<_>>()
-    }))
-    .expect("Segment history write failed");
-
-    writeln!(file, "{line}").expect("Segment history write failed");
-}
- */
 impl Levels {
     pub(crate) fn contains_id(&self, id: &str) -> bool {
         self.levels.iter().any(|lvl| lvl.contains_id(id))
@@ -100,13 +70,43 @@ impl Levels {
             level_count,
             levels,
             hidden_set: HashSet::new(),
+
+            #[cfg(feature = "segment_history")]
+            segment_history_writer: segment_history::Writer::new()?,
         };
         levels.write_to_disk()?;
 
-        /*  #[cfg(feature = "segment_history")]
-        write_segment_history_entry("create_new".into(), &obj); */
+        #[cfg(feature = "segment_history")]
+        levels.write_segment_history_entry("create_new")?;
 
         Ok(levels)
+    }
+
+    #[cfg(feature = "segment_history")]
+    fn write_segment_history_entry(&mut self, event: &str) -> crate::Result<()> {
+        let segment_map = self.get_all_segments();
+        let ts = unix_timestamp();
+
+        let line = serde_json::to_string(&json!({
+            "time_unix": ts.as_secs(),
+            "time_ms": ts.as_millis(),
+            "event": event,
+            "levels": self.levels.iter().map(|level| {
+                let segments = level.iter().map(|seg_id| segment_map[seg_id].clone()).collect::<Vec<_>>();
+
+                segments
+                .iter()
+                .map(|segment| json!({
+                        "path": segment.metadata.path.clone(),
+                        "metadata": segment.metadata.clone(),
+                        "hidden": self.hidden_set.contains(&segment.metadata.id)
+                    }))
+                    .collect::<Vec<_>>()
+            }).collect::<Vec<_>>()
+        }))
+        .expect("Segment history write failed");
+
+        self.segment_history_writer.write(&line)
     }
 
     pub(crate) fn recover<P: AsRef<Path>>(
@@ -121,16 +121,21 @@ impl Levels {
         #[allow(clippy::cast_possible_truncation)]
         let level_count = levels.len() as u8;
 
-        let levels = Self {
+        // NOTE: See segment_history feature
+        #[allow(unused_mut)]
+        let mut levels = Self {
             segments,
             level_count,
             levels,
             hidden_set: HashSet::new(),
             path: path.as_ref().to_path_buf(),
+
+            #[cfg(feature = "segment_history")]
+            segment_history_writer: segment_history::Writer::new()?,
         };
 
-        /* #[cfg(feature = "segment_history")]
-        write_segment_history_entry("load_from_disk".into(), &obj); */
+        #[cfg(feature = "segment_history")]
+        levels.write_segment_history_entry("load_from_disk")?;
 
         Ok(levels)
     }
@@ -191,8 +196,8 @@ impl Levels {
 
         self.sort_levels();
 
-        /* #[cfg(feature = "segment_history")]
-        write_segment_history_entry("insert".into(), self); */
+        #[cfg(feature = "segment_history")]
+        self.write_segment_history_entry("insert").ok();
     }
 
     pub(crate) fn remove(&mut self, segment_id: &String) {
@@ -201,8 +206,8 @@ impl Levels {
         }
         self.segments.remove(segment_id);
 
-        /*  #[cfg(feature = "segment_history")]
-        write_segment_history_entry("remove".into(), self); */
+        #[cfg(feature = "segment_history")]
+        self.write_segment_history_entry("remove").ok();
     }
 
     /// Returns `true` if there are no segments
@@ -280,7 +285,7 @@ impl Levels {
         }
 
         #[cfg(feature = "segment_history")]
-        write_segment_history_entry("show".into(), self);
+        self.write_segment_history_entry("show").ok();
     }
 
     pub(crate) fn hide_segments(&mut self, keys: &Vec<String>) {
@@ -289,7 +294,7 @@ impl Levels {
         }
 
         #[cfg(feature = "segment_history")]
-        write_segment_history_entry("hide".into(), self);
+        self.write_segment_history_entry("hide").ok();
     }
 }
 
@@ -317,6 +322,8 @@ mod tests {
                 File::open("Cargo.toml").expect("should fopen"),
             )),
             block_index: Arc::new(
+                // NOTE: It's just a test
+                #[allow(clippy::expect_used)]
                 MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),
             metadata: Metadata {
@@ -332,9 +339,10 @@ mod tests {
                 tombstone_count: 0,
                 uncompressed_size: 0,
                 seqnos: (0, 0),
+                bloom_filter_size: 0,
             },
             block_cache,
-            bloom_filter: BloomFilter::new(1),
+            bloom_filter: BloomFilter::new(1, 0.01),
         })
     }
 
