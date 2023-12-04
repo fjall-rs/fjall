@@ -262,6 +262,10 @@ impl Snapshot {
 
     /// Scans the entire snapshot, returning the amount of items.
     ///
+    /// ###### Caution
+    ///
+    /// This operation scans the entire tree: O(n) complexity!
+    ///
     /// Never, under any circumstances, use .len() == 0 to check
     /// if the snapshot is empty, use [`Snapshot::is_empty`] instead.
     ///
@@ -287,9 +291,6 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[deprecated(
-        note = "len() isn't deprecated per se, however it performs a full snapshot scan and should be avoided"
-    )]
     pub fn len(&self) -> crate::Result<usize> {
         Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
     }

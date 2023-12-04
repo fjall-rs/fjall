@@ -281,6 +281,10 @@ impl Tree {
 
     /// Scans the entire tree, returning the amount of items.
     ///
+    /// ###### Caution
+    ///
+    /// This operation scans the entire tree: O(n) complexity!
+    ///
     /// Never, under any circumstances, use .len() == 0 to check
     /// if the tree is empty, use [`Tree::is_empty`] instead.
     ///
@@ -305,9 +309,6 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[deprecated(
-        note = "len() isn't deprecated per se, however it performs a full tree scan and should be avoided"
-    )]
     pub fn len(&self) -> crate::Result<usize> {
         Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
     }
@@ -362,6 +363,7 @@ impl Tree {
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
 
+        let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
 
         let inner = TreeInner {
@@ -373,7 +375,7 @@ impl Tree {
             lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
-            compaction_semaphore: Arc::new(Semaphore::new(4)), // TODO: config
+            compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)), // TODO: config
             active_journal_size_bytes: AtomicU32::default(),
             open_snapshots: AtomicU32::new(0),
             stop_signal: AtomicBool::new(false),

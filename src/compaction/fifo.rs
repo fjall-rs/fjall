@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// Limits the tree size to roughly `limit` bytes, deleting the oldest segment(s)
 /// when the threshold is reached
 ///
-/// ###### Warning
+/// ###### Caution
 ///
 /// Only use it for specific workloads where:
 ///

@@ -44,7 +44,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 
 - Block based tables with LZ4 compression
 - Range & prefix searching with forward and reverse iteration
-- Size-tiered or Levelled compaction with concurrency support
+- Size-tiered, Levelled and FIFO compaction strategies
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
 - Block caching to keep hot data in memory
 - Bloom filters to avoid expensive disk access for non-existing items
@@ -59,6 +59,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 
 ## Future
 
+- Concurrent levelled compaction
 - Range tombstones
 
 ## Benchmarks
