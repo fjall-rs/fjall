@@ -70,7 +70,7 @@ pub struct IndexBlockIndex(Arc<BlockCache>);
 
 impl IndexBlockIndex {
     pub fn insert(&self, segment_id: String, key: Vec<u8>, value: Arc<IndexBlock>) {
-        self.0.insert_index_block(segment_id, key, value)
+        self.0.insert_index_block(segment_id, key, value);
     }
 
     pub fn get(&self, segment_id: String, key: &[u8]) -> Option<Arc<IndexBlock>> {

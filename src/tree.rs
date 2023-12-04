@@ -1195,7 +1195,7 @@ impl Tree {
             let next = f(expected).map(Into::into);
 
             match self.compare_and_swap(key, expected, next.as_ref())? {
-                Ok(_) => return Ok(fetched),
+                Ok(()) => return Ok(fetched),
                 Err(err) => {
                     fetched = err.prev;
                 }

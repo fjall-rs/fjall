@@ -7,8 +7,7 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    block::ValueBlock,
-    index::{IndexEntry, MetaIndex},
+    index::{MetaIndex},
     meta::Metadata,
     prefix::PrefixedReader,
     range::Range,
