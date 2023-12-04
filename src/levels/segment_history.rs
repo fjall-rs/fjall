@@ -3,10 +3,6 @@ use std::{
     io::{BufWriter, Write},
 };
 
-use super::Levels;
-use crate::time::unix_timestamp;
-use serde_json::json;
-
 const SEGMENT_HISTORY_PATH: &str = "./segment_history.jsonl";
 
 pub struct Writer {
