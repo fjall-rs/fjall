@@ -18,3 +18,5 @@ Cargo.lock
 /target
 .lsm.data
 .data
+
+levels.json
