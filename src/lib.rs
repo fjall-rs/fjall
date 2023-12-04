@@ -63,10 +63,6 @@
 
 mod batch;
 mod block_cache;
-
-#[cfg(feature = "bloom")]
-mod bloom;
-
 pub mod compaction;
 mod config;
 mod disk_block;

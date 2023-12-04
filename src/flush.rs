@@ -1,5 +1,4 @@
 use crate::{
-    bloom::BloomFilter,
     compaction::worker::start_compaction_thread,
     id::generate_segment_id,
     journal::Journal,
@@ -26,8 +25,6 @@ fn flush_worker(
         path: segment_folder.clone(),
         evict_tombstones: false,
         block_size: tree.config.block_size,
-        approx_item_count: old_memtable.len(),
-        bloom_fp_rate: 0.99, // NOTE: For L0, we don't really want bloom filters
     })?;
 
     log::debug!(
@@ -58,17 +55,11 @@ fn flush_worker(
         Ok(meta_index) => {
             log::debug!("Read MetaIndex");
 
-            #[cfg(feature = "bloom")]
-            let bloom_filter = BloomFilter::from_file(metadata.path.join("bloom"))?;
-
             let created_segment = Segment {
                 file: Mutex::new(BufReader::new(File::open(metadata.path.join("blocks"))?)),
                 block_index: meta_index,
                 block_cache: Arc::clone(&tree.block_cache),
                 metadata,
-
-                #[cfg(feature = "bloom")]
-                bloom_filter,
             };
 
             let mut levels = tree.levels.write().expect("lock is poisoned");

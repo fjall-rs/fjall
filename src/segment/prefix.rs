@@ -114,8 +114,6 @@ mod tests {
                 path: folder.clone(),
                 evict_tombstones: false,
                 block_size: 4096,
-                approx_item_count: 1,
-                bloom_fp_rate: 0.01,
             })?;
 
             for x in 0_u64..item_count {
@@ -214,8 +212,6 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-            approx_item_count: 1,
-            bloom_fp_rate: 0.01,
         })?;
 
         let items = [

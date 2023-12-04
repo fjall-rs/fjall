@@ -90,7 +90,6 @@ mod tests {
     use super::Strategy;
     use crate::{
         block_cache::BlockCache,
-        bloom::BloomFilter,
         compaction::{Choice, CompactionInput, CompactionStrategy},
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
@@ -100,6 +99,7 @@ mod tests {
         io::BufReader,
         sync::{Arc, Mutex},
     };
+    use test_log::test;
 
     fn fixture_segment(id: String) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
@@ -120,16 +120,14 @@ mod tests {
                 created_at: 0,
                 id,
                 file_size: 0,
-                is_compressed: true,
+                compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
                 key_range: (vec![], vec![]),
                 tombstone_count: 0,
                 uncompressed_size: 0,
                 seqnos: (0, 0),
-                bloom_filter_size: 0,
             },
             block_cache,
-            bloom_filter: BloomFilter::new(1, 0.01),
         })
     }
 

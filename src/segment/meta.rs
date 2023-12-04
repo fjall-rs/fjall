@@ -7,6 +7,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CompressionType {
+    Lz4,
+}
+
+impl std::fmt::Display for CompressionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "lz4")
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
     /// Path of segment folder
@@ -29,10 +40,8 @@ pub struct Metadata {
     /// Number of written blocks
     pub block_count: u32,
 
-    /// Whether LZ4 is used
-    ///
-    /// Is always true
-    pub is_compressed: bool,
+    /// What type of compression is used
+    pub compression: CompressionType,
 
     /// compressed size in bytes (on disk)
     pub file_size: u64,
@@ -48,19 +57,11 @@ pub struct Metadata {
 
     /// Number of tombstones
     pub tombstone_count: u64,
-
-    #[cfg(feature = "bloom")]
-    pub bloom_filter_size: u64,
 }
 
 impl Metadata {
     /// Consumes a writer and its metadata to create the segment metadata
     pub fn from_writer(id: String, writer: Writer) -> crate::Result<Self> {
-        #[cfg(feature = "bloom")]
-        let bloom_filter_size = std::fs::File::open(writer.opts.path.join("bloom"))?
-            .metadata()?
-            .len();
-
         Ok(Self {
             id,
             path: writer.opts.path,
@@ -72,7 +73,7 @@ impl Metadata {
             created_at: unix_timestamp().as_micros(),
 
             file_size: writer.file_pos,
-            is_compressed: true,
+            compression: CompressionType::Lz4,
             item_count: writer.item_count as u64,
             key_range: (
                 writer
@@ -85,9 +86,6 @@ impl Metadata {
             seqnos: (writer.lowest_seqno, writer.highest_seqno),
             tombstone_count: writer.tombstone_count as u64,
             uncompressed_size: writer.uncompressed_size,
-
-            #[cfg(feature = "bloom")]
-            bloom_filter_size,
         })
     }
 

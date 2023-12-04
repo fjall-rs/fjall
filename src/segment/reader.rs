@@ -264,8 +264,6 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
-            approx_item_count: 1,
-            bloom_fp_rate: 0.01,
         })?;
 
         let items = (0u64..ITEM_COUNT)

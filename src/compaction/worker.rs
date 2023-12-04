@@ -1,5 +1,4 @@
 use crate::{
-    bloom::BloomFilter,
     compaction::Choice,
     levels::Levels,
     merge::MergeIterator,
@@ -31,7 +30,7 @@ pub fn do_compaction(
         payload.dest_level
     );
 
-    let (merge_iter, approx_item_count) = {
+    let merge_iter = {
         let to_merge: Vec<Arc<Segment>> = {
             let segments = segments_lock.get_segments();
             payload
@@ -42,8 +41,6 @@ pub fn do_compaction(
                 .collect()
         };
 
-        let approx_item_count = to_merge.iter().map(|x| x.metadata.item_count).sum::<u64>();
-
         // NOTE: When there are open snapshots
         // we don't want to GC old versions of items
         // otherwise snapshots will lose data
@@ -52,10 +49,7 @@ pub fn do_compaction(
             .load(std::sync::atomic::Ordering::Acquire);
         let no_snapshots_open = snapshot_count == 0;
 
-        (
-            MergeIterator::from_segments(&to_merge)?.evict_old_versions(no_snapshots_open),
-            approx_item_count,
-        )
+        MergeIterator::from_segments(&to_merge)?.evict_old_versions(no_snapshots_open)
     };
 
     segments_lock.hide_segments(&payload.segment_ids);
@@ -72,10 +66,6 @@ pub fn do_compaction(
             block_size: tree.config.block_size,
             evict_tombstones: should_evict_tombstones,
             path: tree.config().path.join("segments"),
-            approx_item_count: approx_item_count as usize,
-
-            #[cfg(feature = "bloom")]
-            bloom_fp_rate: BloomFilter::monkey(tree.config.levels, payload.dest_level),
         },
     )?;
 
@@ -100,18 +90,12 @@ pub fn do_compaction(
             let segment_id = metadata.id.clone();
             let path = metadata.path.clone();
 
-            #[cfg(feature = "bloom")]
-            let bloom_filter = BloomFilter::from_file(metadata.path.join("bloom"))?;
-
             Ok(Segment {
                 file: Mutex::new(BufReader::new(File::open(path.join("blocks"))?)),
                 metadata,
                 block_cache: Arc::clone(&tree.block_cache),
                 block_index: MetaIndex::from_file(segment_id, path, Arc::clone(&tree.block_cache))?
                     .into(),
-
-                #[cfg(feature = "bloom")]
-                bloom_filter,
             })
         })
         .collect::<crate::Result<Vec<_>>>()?;

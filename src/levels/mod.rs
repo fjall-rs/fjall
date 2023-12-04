@@ -228,6 +228,20 @@ impl Levels {
         self.levels.iter().fold(0, |sum, level| sum + level.len())
     }
 
+    pub fn busy_levels(&self) -> HashSet<u8> {
+        let mut output = HashSet::with_capacity(self.len());
+
+        for (idx, level) in self.levels.iter().enumerate() {
+            for segment_id in level.iter() {
+                if self.hidden_set.contains(segment_id) {
+                    output.insert(idx as u8);
+                }
+            }
+        }
+
+        output
+    }
+
     /// Returns a view into the levels
     /// hiding all segments that currently are being compacted
     #[must_use]
@@ -279,7 +293,7 @@ impl Levels {
             .collect()
     }
 
-    pub(crate) fn show_segments(&mut self, keys: &Vec<String>) {
+    pub(crate) fn show_segments(&mut self, keys: &[String]) {
         for key in keys {
             self.hidden_set.remove(key);
         }
@@ -288,7 +302,7 @@ impl Levels {
         self.write_segment_history_entry("show").ok();
     }
 
-    pub(crate) fn hide_segments(&mut self, keys: &Vec<String>) {
+    pub(crate) fn hide_segments(&mut self, keys: &[String]) {
         for key in keys {
             self.hidden_set.insert(key.to_string());
         }
@@ -303,7 +317,6 @@ mod tests {
     use super::ResolvedLevel;
     use crate::{
         block_cache::BlockCache,
-        bloom::BloomFilter,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
     use std::{
@@ -333,16 +346,14 @@ mod tests {
                 created_at: 0,
                 id,
                 file_size: 0,
-                is_compressed: true,
+                compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
                 key_range,
                 tombstone_count: 0,
                 uncompressed_size: 0,
                 seqnos: (0, 0),
-                bloom_filter_size: 0,
             },
             block_cache,
-            bloom_filter: BloomFilter::new(1, 0.01),
         })
     }
 
