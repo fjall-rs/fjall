@@ -44,7 +44,7 @@ for item in tree.prefix("prefix")?.into_iter().rev() {
 
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
 
-- Block based tables with LZ4 compression
+- Block-based tables with LZ4 compression
 - Range & prefix searching with forward and reverse iteration
 - Size-tiered, (concurrent) Levelled and FIFO compaction strategies
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
