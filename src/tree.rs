@@ -918,8 +918,7 @@ impl Tree {
 
         let lock = self.levels.read().expect("lock is poisoned");
 
-        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) =
-            (Included(prefix.clone()), Unbounded);
+        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (Included(prefix.clone()), Unbounded);
 
         let segment_info = lock
             .get_all_segments()
