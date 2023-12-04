@@ -7,11 +7,7 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    index::{MetaIndex},
-    meta::Metadata,
-    prefix::PrefixedReader,
-    range::Range,
-    reader::Reader,
+    index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
 };
 use crate::{block_cache::BlockCache, value::SeqNo, Value};
 use std::{
