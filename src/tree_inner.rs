@@ -15,6 +15,8 @@ pub struct TreeInner {
     pub(crate) config: Config,
 
     /// Last-seen sequence number (highest sequence number)
+    // TODO: rename this to "next_seqno" or something, because it's not the highest seqno
+    // in the tree, but the highest one + 1
     pub(crate) lsn: AtomicU64,
 
     // TODO: move into memtable
