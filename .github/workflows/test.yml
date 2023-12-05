@@ -21,8 +21,8 @@ jobs:
           - "1.68.2"
         os:
           - ubuntu-latest
-          # - windows-latest
-          # - macos-latest
+          - windows-latest
+          - macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -58,3 +58,31 @@ jobs:
       - name: Test triplestore example
         run: cargo test
         working-directory: examples/actix-triplestore
+  cross:
+    name: cross
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - aarch64-linux-android
+          - aarch64-unknown-linux-musl
+          - i686-linux-android
+          - x86_64-linux-android
+          - i686-pc-windows-gnu
+          - x86_64-pc-windows-gnu
+          - i686-unknown-linux-gnu
+          - powerpc64-unknown-linux-gnu
+          - mips64-unknown-linux-gnuabi64
+          - riscv64gc-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ matrix.target }}-cargo
+      - name: cross build --target ${{ matrix.target }}
+        run: |
+          cargo install cross
+          cross build --target ${{ matrix.target }}
+      
