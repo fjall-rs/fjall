@@ -55,3 +55,44 @@ fn tree_flushed_count() -> lsm_tree::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn tree_non_locking_count() -> lsm_tree::Result<()> {
+    use std::ops::Bound::{self, Excluded, Unbounded};
+
+    let folder = tempdir()?.into_path();
+
+    let tree = Config::new(folder).open()?;
+
+    for x in 0..ITEM_COUNT as u64 {
+        let key = x.to_be_bytes();
+        let value = "a";
+        tree.insert(key, value)?;
+    }
+
+    tree.wait_for_memtable_flush()?;
+
+    let mut range: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (Unbounded, Unbounded);
+    let mut count = 0;
+
+    loop {
+        let chunk = tree
+            .range(range.clone())?
+            .into_iter()
+            .take(10)
+            .collect::<lsm_tree::Result<Vec<_>>>()?;
+
+        if chunk.is_empty() {
+            break;
+        }
+
+        count += chunk.len();
+
+        let (key, _) = chunk.last().unwrap();
+        range = (Excluded(key.clone()), Unbounded);
+    }
+
+    assert_eq!(count, ITEM_COUNT);
+
+    Ok(())
+}
