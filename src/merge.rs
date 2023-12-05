@@ -2,6 +2,8 @@ use crate::{segment::Segment, value::SeqNo, Value};
 use min_max_heap::MinMaxHeap;
 use std::sync::Arc;
 
+// TODO: use (ParsedInternalKey, UserValue) instead of Value...
+
 pub type BoxedIterator<'a> = Box<dyn DoubleEndedIterator<Item = crate::Result<Value>> + 'a>;
 
 type IteratorIndex = usize;
@@ -144,7 +146,8 @@ impl<'a> Iterator for MergeIterator<'a> {
                             return Some(Err(e));
                         }
 
-                        // Filter seqnos that are too high
+                        // If the head is outside our snapshot
+                        // we should take the next version
                         if let Some(seqno) = self.seqno {
                             if head.seqno >= seqno {
                                 head = next;
@@ -176,8 +179,6 @@ impl<'a> Iterator for MergeIterator<'a> {
 
 impl<'a> DoubleEndedIterator for MergeIterator<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        // unimplemented!()
-
         if self.heap.is_empty() {
             if let Err(e) = self.push_next_back() {
                 return Some(Err(e));
@@ -190,17 +191,32 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                 return Some(Err(e));
             }
 
+            let mut reached_tombstone = false;
+
             if self.evict_old_versions {
                 while let Some(next) = self.heap.pop_max() {
                     if next.key == head.key {
+                        if reached_tombstone {
+                            continue;
+                        }
+
                         let (iter_idx_consumed, _) = next.0;
                         if let Err(e) = self.advance_iter_backwards(iter_idx_consumed) {
                             return Some(Err(e));
                         }
 
-                        // Filter seqnos that are too high
+                        if next.is_tombstone {
+                            if let Some(seqno) = self.seqno {
+                                if next.seqno < seqno {
+                                    reached_tombstone = true;
+                                }
+                            } else {
+                                reached_tombstone = true;
+                            }
+                        }
+
                         if let Some(seqno) = self.seqno {
-                            if head.seqno >= seqno {
+                            if next.seqno < seqno {
                                 head = next;
                             }
                         } else {
@@ -226,6 +242,12 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                     continue;
                 }
             }
+
+            if reached_tombstone {
+                continue;
+            }
+
+            eprintln!("REV: {head:?}, seqno: {:?}", self.seqno);
 
             return Some(Ok(head.clone()));
         }

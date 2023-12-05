@@ -88,17 +88,12 @@ impl PartialOrd for Value {
     }
 }
 
+// Order by user key, THEN by sequence number
+// This is one of the most important functions
+// Otherwise queries will not match expected behaviour
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
-        let eq = self.key.cmp(&other.key);
-
-        if eq == Ordering::Equal {
-            other.seqno.cmp(&self.seqno)
-        } else {
-            eq
-        }
+        (&self.key, Reverse(self.seqno)).cmp(&(&other.key, Reverse(other.seqno)))
     }
 }
 
