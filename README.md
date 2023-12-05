@@ -87,6 +87,10 @@ Testing system:
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
 
+## Minimum supported rust version (MSRV)
+
+1.68.2
+
 ## License
 
 All source code is MIT-licensed.
