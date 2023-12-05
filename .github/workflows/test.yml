@@ -68,19 +68,13 @@ jobs:
           - aarch64-unknown-linux-musl
           - i686-linux-android
           - x86_64-linux-android
-          - i686-pc-windows-gnu
-          - x86_64-pc-windows-gnu
           - i686-unknown-linux-gnu
           - powerpc64-unknown-linux-gnu
-          - mips64-unknown-linux-gnuabi64
+          #- mips64-unknown-linux-gnuabi64
           - riscv64gc-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: ${{ matrix.target }}-cargo
       - name: cross build --target ${{ matrix.target }}
         run: |
           cargo install cross
