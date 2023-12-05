@@ -152,6 +152,7 @@ impl Levels {
         let mut temp_file = File::create(&temp_path)?;
         serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
 
+        // TODO: this may not work on Windows
         fs::rename(&temp_path, &self.path)?;
 
         // fsync levels manifest
