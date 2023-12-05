@@ -14,7 +14,7 @@ use std::{
 
 pub fn do_compaction(
     tree: &Tree,
-    payload: &crate::compaction::CompactionInput,
+    payload: &crate::compaction::Input,
     mut segments_lock: RwLockWriteGuard<'_, Levels>,
 ) -> crate::Result<()> {
     if tree.is_stopped() {

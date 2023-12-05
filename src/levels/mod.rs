@@ -220,8 +220,14 @@ impl Levels {
 
     /// Returns the amount of levels in the tree
     #[must_use]
-    pub fn depth(&self) -> usize {
-        self.levels.len()
+    pub fn depth(&self) -> u8 {
+        self.levels.len() as u8
+    }
+
+    /// Returns the amount of levels in the tree
+    #[must_use]
+    pub fn last_level_index(&self) -> u8 {
+        self.depth() - 1
     }
 
     /// Returns the amount of segments, summed over all levels

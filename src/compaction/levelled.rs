@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{Choice, CompactionInput, CompactionStrategy};
+use super::{Choice, CompactionStrategy, Input as CompactionInput};
 use crate::{levels::Levels, segment::Segment};
 
 /// Levelled compaction strategy (LCS)
@@ -168,7 +168,7 @@ mod tests {
     use super::{Choice, Strategy};
     use crate::{
         block_cache::BlockCache,
-        compaction::{CompactionInput, CompactionStrategy},
+        compaction::{CompactionStrategy, Input as CompactionInput},
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
         time::unix_timestamp,
@@ -189,6 +189,8 @@ mod tests {
             file: Mutex::new(BufReader::new(
                 File::open("Cargo.toml").expect("should fopen"),
             )),
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
             block_index: Arc::new(
                 MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),

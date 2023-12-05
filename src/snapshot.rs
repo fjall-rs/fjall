@@ -138,6 +138,11 @@ impl Snapshot {
     /// assert_eq!(2, snapshot.prefix("a")?.into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
         self.tree.create_prefix(prefix, Some(self.seqno))
     }

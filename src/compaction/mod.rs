@@ -13,7 +13,7 @@ use crate::levels::Levels;
 /// The compaction strategy chooses which segments to compact and how.
 /// That information is given to the compactor.
 #[derive(Debug, Eq, PartialEq)]
-pub struct CompactionInput {
+pub struct Input {
     /// Segments to compact
     pub segment_ids: Vec<String>,
 
@@ -34,7 +34,7 @@ pub enum Choice {
     DoNothing,
 
     /// Compacts some segments into a new level.
-    DoCompact(CompactionInput),
+    DoCompact(Input),
 
     /// Delete segments without doing compaction.
     ///
