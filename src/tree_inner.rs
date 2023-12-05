@@ -18,10 +18,10 @@ pub struct TreeInner {
     pub(crate) lsn: AtomicU64,
 
     // TODO: move into memtable
-    /// Approximate memtable size
+    /// Approximate active memtable size
     /// If this grows to large, a flush is triggered
-    pub(crate) active_journal_size_bytes: AtomicU32,
-
+    pub(crate) approx_active_memtable_size: AtomicU32,
+    //  pub(crate) approx_active_memtable_size: AtomicU32,
     pub(crate) active_memtable: Arc<RwLock<MemTable>>,
 
     /// Journal aka Commit log aka Write-ahead log (WAL)

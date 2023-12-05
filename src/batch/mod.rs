@@ -45,13 +45,16 @@ impl Batch {
         }
 
         let items = self.data.iter().collect::<Vec<_>>();
-        let bytes_written = shard.write_batch(&items)?;
+        let bytes_written_to_disk = shard.write_batch(&items)?;
         shard.flush()?;
 
+        // NOTE: Add some pointers to better approximate memory usage of memtable
+        // Because the data is stored with less overhead than in memory
+        let size = bytes_written_to_disk + (items.len() * std::mem::size_of::<Vec<u8>>() * 2);
         let memtable_size = self
             .tree
-            .active_journal_size_bytes
-            .fetch_add(bytes_written as u32, std::sync::atomic::Ordering::AcqRel);
+            .approx_active_memtable_size
+            .fetch_add(size as u32, std::sync::atomic::Ordering::AcqRel);
 
         log::trace!("Applying {} batched items to memtable", self.data.len());
         for entry in std::mem::take(&mut self.data) {

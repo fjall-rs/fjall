@@ -216,12 +216,11 @@ impl Tree {
     /// use lsm_tree::{Config, Tree};
     ///
     /// let tree = Config::new(folder).open()?;
-    /// assert_eq!(0, tree.disk_space());
+    /// assert_eq!(0, tree.disk_space()?);
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
-    #[must_use]
-    pub fn disk_space(&self) -> u64 {
+    pub fn disk_space(&self) -> crate::Result<u64> {
         let segment_size = self
             .levels
             .read()
@@ -231,12 +230,11 @@ impl Tree {
             .map(|x| x.metadata.file_size)
             .sum::<u64>();
 
-        let memtable_size = u64::from(
-            self.active_journal_size_bytes
-                .load(std::sync::atomic::Ordering::Relaxed),
-        );
+        // TODO: replace fs extra with Journal::disk_space
+        let active_journal_size = fs_extra::dir::get_size(&self.journal.path)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
 
-        segment_size + memtable_size
+        Ok(segment_size + active_journal_size)
     }
 
     /// Returns the tree configuration.
@@ -354,10 +352,6 @@ impl Tree {
         let marker = config.path.join(".lsm");
         assert!(!marker.try_exists()?);
 
-        // fsync .lsm marker
-        let file = std::fs::File::create(marker)?;
-        file.sync_all()?;
-
         let first_journal_path = config.path.join("journals").join(generate_segment_id());
         let levels = Levels::create_new(config.levels, config.path.join("levels.json"))?;
 
@@ -376,7 +370,7 @@ impl Tree {
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)), // TODO: config
-            active_journal_size_bytes: AtomicU32::default(),
+            approx_active_memtable_size: AtomicU32::default(),
             open_snapshots: AtomicU32::new(0),
             stop_signal: AtomicBool::new(false),
         };
@@ -388,6 +382,12 @@ impl Tree {
         // fsync folder
         let folder = std::fs::File::open(inner.config.path.join("journals"))?;
         folder.sync_all()?;
+
+        // NOTE: Lastly
+        // fsync .lsm marker
+        // -> the LSM is fully initialized
+        let file = std::fs::File::create(marker)?;
+        file.sync_all()?;
 
         Ok(Self(Arc::new(inner)))
     }
@@ -483,6 +483,7 @@ impl Tree {
                     "Flushing active journal because it is too large: {}",
                     dirent.path().to_string_lossy()
                 );
+
                 // Journal is too large to be continued to be used
                 // Just flush it
             }
@@ -599,6 +600,10 @@ impl Tree {
         let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
 
+        // TODO: replace fs extra with Journal::disk_space
+        let active_journal_size = fs_extra::dir::get_size(&journal.path)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
+
         let inner = TreeInner {
             config,
             journal,
@@ -609,7 +614,7 @@ impl Tree {
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
-            active_journal_size_bytes: AtomicU32::default(),
+            approx_active_memtable_size: AtomicU32::new(active_journal_size as u32),
             open_snapshots: AtomicU32::new(0),
             stop_signal: AtomicBool::new(false),
         };
@@ -631,14 +636,17 @@ impl Tree {
         mut shard: RwLockWriteGuard<'_, JournalShard>,
         value: Value,
     ) -> crate::Result<()> {
-        let size = shard.write(&value)?;
+        let bytes_written_to_disk = shard.write(&value)?;
         drop(shard);
 
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value);
 
+        // NOTE: Add some pointers to better approximate memory usage of memtable
+        // Because the data is stored with less overhead than in memory
+        let size = bytes_written_to_disk + (std::mem::size_of::<Vec<u8>>() * 2);
         let memtable_size = self
-            .active_journal_size_bytes
+            .approx_active_memtable_size
             .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed);
 
         drop(memtable_lock);

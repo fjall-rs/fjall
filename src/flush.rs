@@ -142,7 +142,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .join(generate_segment_id());
     Journal::rotate(new_journal_path, &mut lock)?;
 
-    tree.active_journal_size_bytes
+    tree.approx_active_memtable_size
         .store(0, std::sync::atomic::Ordering::Relaxed);
 
     drop(immutable_memtables);

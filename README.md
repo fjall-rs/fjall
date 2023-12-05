@@ -58,6 +58,15 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Thread-safe (internally synchronized)
 - 100% safe Rust
 
+## Stable disk format
+
+Is the disk format stable yet? Not quite, notably missing is:
+
+- Finalize journal format
+- Merge index blocks & disk blocks into a single file
+- Bloom filters
+- Write a specification
+
 ## Future
 
 - Bloom filters to avoid expensive disk access for non-existing items
