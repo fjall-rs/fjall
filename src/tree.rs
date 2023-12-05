@@ -84,6 +84,8 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn open(config: Config) -> crate::Result<Self> {
+        log::info!("Opening LSM-tree at {}", config.path.display());
+
         if config.path.join(".lsm").exists() {
             Self::recover(config)
         } else {
@@ -342,6 +344,8 @@ impl Tree {
     /// - Will return `Err` if an IO error occurs
     /// - Will fail, if the folder already occupied
     fn create_new(config: Config) -> crate::Result<Self> {
+        log::info!("Creating LSM-tree at {}", config.path.display());
+
         // Setup folders
         std::fs::create_dir_all(&config.path)?;
         std::fs::create_dir_all(config.path.join("segments"))?;
