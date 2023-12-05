@@ -247,8 +247,6 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                 continue;
             }
 
-            eprintln!("REV: {head:?}, seqno: {:?}", self.seqno);
-
             return Some(Ok(head.clone()));
         }
 
@@ -335,8 +333,6 @@ mod tests {
         let iter2 = Box::new(iter2.map(Ok));
         let iter3 = Box::new(iter3.map(Ok));
 
-        let start = std::time::Instant::now();
-
         let merge_iter = MergeIterator::new(vec![iter0, iter1, iter2, iter3]);
 
         for (idx, item) in merge_iter.enumerate() {
@@ -344,8 +340,6 @@ mod tests {
             assert_eq!(item.key, (idx as u64).to_be_bytes());
             //assert_eq!(b"new", &*item.value);
         }
-
-        eprintln!("took {}ms", start.elapsed().as_millis());
 
         Ok(())
     }

@@ -51,7 +51,6 @@ fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     assert_eq!(tree.get(key)?, Some(value.to_vec()));
 
     tree.remove(key)?;
-    eprint!("removed key {:?}", key);
     assert_eq!(tree.len()?, 0);
     assert!(tree.get(key)?.is_none());
 

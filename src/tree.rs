@@ -571,7 +571,7 @@ impl Tree {
             .iter()
             .map(|x| {
                 let key = x.key();
-                key.seqno
+                key.seqno + 1
             })
             .max()
             .unwrap_or(0);
@@ -586,7 +586,7 @@ impl Tree {
         let lsn = lsn.max(
             segments
                 .values()
-                .map(|x| x.metadata.seqnos.1)
+                .map(|x| x.metadata.seqnos.1 + 1)
                 .max()
                 .unwrap_or(0),
         );
