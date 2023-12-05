@@ -1,6 +1,7 @@
 # LSM-tree
 
-{badges}
+[![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
+
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
