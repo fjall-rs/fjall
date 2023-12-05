@@ -153,6 +153,7 @@ impl Levels {
         serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
 
         // TODO: this may not work on Windows
+        // Use https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html#method.persist
         fs::rename(&temp_path, &self.path)?;
 
         // fsync levels manifest
