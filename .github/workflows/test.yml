@@ -13,7 +13,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test_stable:
+  test:
     strategy:
       matrix:
         rust_version:
