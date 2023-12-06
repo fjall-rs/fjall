@@ -81,14 +81,11 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         compaction::{Choice, CompactionStrategy},
+        descriptor_table::FileDescriptorTable,
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::{
-        fs::File,
-        io::BufReader,
-        sync::{Arc, Mutex},
-    };
+    use std::sync::Arc;
     use test_log::test;
 
     fn fixture_segment(id: String, created_at: u128) -> Arc<Segment> {
@@ -97,9 +94,9 @@ mod tests {
         Arc::new(Segment {
             // NOTE: It's just a test
             #[allow(clippy::expect_used)]
-            file: Mutex::new(BufReader::new(
-                File::open("Cargo.toml").expect("should fopen"),
-            )),
+            descriptor_table: Arc::new(
+                FileDescriptorTable::new("Cargo.toml").expect("should open"),
+            ),
             block_index: Arc::new(
                 MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),

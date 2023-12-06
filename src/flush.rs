@@ -1,17 +1,13 @@
 use crate::{
     compaction::worker::start_compaction_thread,
+    descriptor_table::FileDescriptorTable,
     id::generate_segment_id,
     journal::Journal,
     memtable::MemTable,
     segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
     Tree,
 };
-use std::{
-    fs::File,
-    io::BufReader,
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{fs::File, path::Path, sync::Arc};
 
 fn flush_worker(
     tree: &Tree,
@@ -56,7 +52,7 @@ fn flush_worker(
             log::debug!("Read MetaIndex");
 
             let created_segment = Segment {
-                file: Mutex::new(BufReader::new(File::open(metadata.path.join("blocks"))?)),
+                descriptor_table: Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?),
                 block_index: meta_index,
                 block_cache: Arc::clone(&tree.block_cache),
                 metadata,

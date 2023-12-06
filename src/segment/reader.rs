@@ -1,10 +1,8 @@
 use super::{block::ValueBlock, index::MetaIndex};
-use crate::{block_cache::BlockCache, Value};
+use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, Value};
 use std::{
     collections::{HashMap, VecDeque},
-    fs::File,
-    io::{BufReader, Seek, SeekFrom},
-    path::Path,
+    io::{Seek, SeekFrom},
     sync::Arc,
 };
 
@@ -12,7 +10,7 @@ use std::{
 /// Stupidly iterates through the entries of a segment
 /// This does not account for tombstones
 pub struct Reader {
-    file_reader: BufReader<File>,
+    descriptor_table: Arc<FileDescriptorTable>,
     block_index: Arc<MetaIndex>,
 
     segment_id: String,
@@ -24,18 +22,16 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new<P: AsRef<Path>>(
-        file: P,
+    pub fn new(
+        descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
         start_offset: Option<&Vec<u8>>,
         end_offset: Option<&Vec<u8>>,
     ) -> crate::Result<Self> {
-        let file_reader = BufReader::with_capacity(u16::MAX.into(), File::open(file)?);
-
         let mut iter = Self {
-            file_reader,
+            descriptor_table,
 
             segment_id,
             block_cache,
@@ -76,12 +72,22 @@ impl Reader {
                 } else {
                     // Cache miss: load from disk
 
-                    self.file_reader.seek(SeekFrom::Start(block_ref.offset))?;
+                    let mut file_reader = self.descriptor_table.access();
+                    file_reader.seek(SeekFrom::Start(block_ref.offset))?;
 
                     let block =
-                        ValueBlock::from_reader_compressed(&mut self.file_reader, block_ref.size)?;
+                        ValueBlock::from_reader_compressed(&mut *file_reader, block_ref.size)?;
 
-                    self.blocks.insert(key.to_vec(), block.items.into());
+                    drop(file_reader);
+
+                    // TODO: clone hurts
+                    self.blocks.insert(key.to_vec(), block.items.clone().into());
+
+                    self.block_cache.insert_disk_block(
+                        self.segment_id.clone(),
+                        block_ref.start_key,
+                        Arc::new(block),
+                    );
                 }
 
                 Some(())
@@ -241,6 +247,7 @@ impl DoubleEndedIterator for Reader {
 mod tests {
     use crate::{
         block_cache::BlockCache,
+        descriptor_table::FileDescriptorTable,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -288,7 +295,7 @@ mod tests {
         log::info!("Getting every item");
 
         let mut iter = Reader::new(
-            folder.join("blocks"),
+            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             metadata.id.clone(),
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),
@@ -306,7 +313,7 @@ mod tests {
         log::info!("Getting every item in reverse");
 
         let mut iter = Reader::new(
-            folder.join("blocks"),
+            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             metadata.id,
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),

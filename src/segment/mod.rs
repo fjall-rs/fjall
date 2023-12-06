@@ -9,14 +9,8 @@ pub mod writer;
 use self::{
     index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
 };
-use crate::{block_cache::BlockCache, value::SeqNo, Value};
-use std::{
-    fs::File,
-    io::BufReader,
-    ops::Bound,
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::SeqNo, Value};
+use std::{ops::Bound, path::Path, sync::Arc};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
@@ -26,7 +20,7 @@ use std::{
 ///
 /// Segments can be merged together to remove duplicates, reducing disk space and improving read performance.
 pub struct Segment {
-    pub file: Mutex<BufReader<File>>,
+    pub descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment metadata object (will be stored in a JSON file)
     pub metadata: meta::Metadata,
@@ -50,7 +44,7 @@ impl Segment {
             MetaIndex::from_file(metadata.id.clone(), folder, Arc::clone(&block_cache))?;
 
         Ok(Self {
-            file: Mutex::new(BufReader::new(File::open(folder.join("blocks"))?)),
+            descriptor_table: Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             metadata,
             block_index: Arc::new(block_index),
             block_cache,
@@ -75,13 +69,33 @@ impl Segment {
 
         let key = key.as_ref();
 
+        // NOTE: We need to use a prefix reader
+        // because nothing really prevents the version
+        // we are searching for to be in the next block
+        // after the one our key starts in
+        //
+        // Example (key:seqno), searching for a:2:
+        //
+        //
+        // [..., a:5, a:4] [a:3, a:2, b: 4, b:3]
+        // ^               ^
+        // Block A         Block B
+        //
+        // Based on get_lower_bound_block, "a" is in Block A
+        // However, we are searching for A with seqno 2, which
+        // unfortunately is in the next block
+
         let mut iter = self.prefix(key)?;
 
-        iter.find(|x| match x {
-            Ok(item) => seqno.map_or(true, |s| item.seqno < s),
-            Err(_) => true,
-        })
-        .transpose()
+        let item = iter
+            .find(|x| match x {
+                Ok(item) => seqno.map_or(true, |s| item.seqno < s),
+                Err(_) => true,
+            })
+            .transpose();
+
+        #[allow(clippy::let_and_return)]
+        item
     }
 
     /// Creates an iterator over the `Segment`.
@@ -91,7 +105,7 @@ impl Segment {
     /// Will return `Err` if an IO error occurs.
     pub fn iter(&self) -> crate::Result<Reader> {
         let reader = Reader::new(
-            self.metadata.path.join("blocks"),
+            Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
@@ -109,7 +123,7 @@ impl Segment {
     /// Will return `Err` if an IO error occurs.
     pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> crate::Result<Range> {
         let range = Range::new(
-            self.metadata.path.join("blocks"),
+            Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
@@ -126,7 +140,7 @@ impl Segment {
     /// Will return `Err` if an IO error occurs.
     pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
         let reader = PrefixedReader::new(
-            self.metadata.path.join("blocks"),
+            Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),

@@ -1,14 +1,13 @@
 use crate::{
     compaction::Choice,
+    descriptor_table::FileDescriptorTable,
     levels::Levels,
     merge::MergeIterator,
     segment::{index::MetaIndex, writer::MultiWriter, Segment},
     Tree,
 };
 use std::{
-    fs::File,
-    io::BufReader,
-    sync::{Arc, Mutex, RwLockWriteGuard},
+    sync::{Arc, RwLockWriteGuard},
     time::Instant,
 };
 
@@ -91,7 +90,7 @@ pub fn do_compaction(
             let path = metadata.path.clone();
 
             Ok(Segment {
-                file: Mutex::new(BufReader::new(File::open(path.join("blocks"))?)),
+                descriptor_table: Arc::new(FileDescriptorTable::new(path.join("blocks"))?),
                 metadata,
                 block_cache: Arc::clone(&tree.block_cache),
                 block_index: MetaIndex::from_file(segment_id, path, Arc::clone(&tree.block_cache))?

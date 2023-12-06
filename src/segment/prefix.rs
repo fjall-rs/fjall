@@ -1,8 +1,7 @@
 use super::{index::MetaIndex, range::Range};
-use crate::{block_cache::BlockCache, Value};
+use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, Value};
 use std::{
     ops::Bound::{Excluded, Included, Unbounded},
-    path::Path,
     sync::Arc,
 };
 
@@ -13,8 +12,8 @@ pub struct PrefixedReader {
 }
 
 impl PrefixedReader {
-    pub fn new<P: AsRef<Path>, K: Into<Vec<u8>>>(
-        path: P,
+    pub fn new<K: Into<Vec<u8>>>(
+        descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
@@ -26,7 +25,7 @@ impl PrefixedReader {
         let upper_bound = upper_bound.map(|x| x.start_key).map_or(Unbounded, Excluded);
 
         let iterator = Range::new(
-            path,
+            descriptor_table,
             segment_id,
             block_cache,
             block_index,
@@ -92,6 +91,7 @@ impl DoubleEndedIterator for PrefixedReader {
 mod tests {
     use crate::{
         block_cache::BlockCache,
+        descriptor_table::FileDescriptorTable,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -171,7 +171,7 @@ mod tests {
             )?);
 
             let iter = Reader::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -181,7 +181,7 @@ mod tests {
             assert_eq!(iter.count() as u64, item_count * 3);
 
             let iter = PrefixedReader::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -191,7 +191,7 @@ mod tests {
             assert_eq!(iter.count() as u64, item_count);
 
             let iter = PrefixedReader::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -260,7 +260,7 @@ mod tests {
 
         for (prefix_key, item_count) in expected {
             let iter = PrefixedReader::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),

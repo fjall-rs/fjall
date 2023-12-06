@@ -305,6 +305,7 @@ mod tests {
     use super::*;
     use crate::{
         block_cache::BlockCache,
+        descriptor_table::FileDescriptorTable,
         segment::{index::MetaIndex, meta::Metadata, reader::Reader},
         Value,
     };
@@ -343,7 +344,7 @@ mod tests {
             Arc::clone(&block_cache),
         )?);
         let iter = Reader::new(
-            folder.join("blocks"),
+            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             metadata.id,
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),

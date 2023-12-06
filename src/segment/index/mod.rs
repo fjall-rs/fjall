@@ -252,8 +252,14 @@ impl MetaIndex {
         block_ref: &DiskBlockReference,
     ) -> crate::Result<Arc<DiskBlock<IndexEntry>>> {
         match self.blocks.get(self.segment_id.clone(), block_key) {
-            Some(block) => Ok(block),
+            Some(block) => {
+                // Cache hit: Copy from block
+
+                Ok(block)
+            }
             None => {
+                // Cache miss: load from disk
+
                 let mut file = self.file.lock().expect("lock is poisoned");
 
                 let block =

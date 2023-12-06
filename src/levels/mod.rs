@@ -321,23 +321,20 @@ mod tests {
     use super::ResolvedLevel;
     use crate::{
         block_cache::BlockCache,
+        descriptor_table::FileDescriptorTable,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
-    use std::{
-        fs::File,
-        io::BufReader,
-        sync::{Arc, Mutex},
-    };
+    use std::sync::Arc;
 
     fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
-            file: Mutex::new(BufReader::new(
-                // NOTE: It's just a test
-                #[allow(clippy::expect_used)]
-                File::open("Cargo.toml").expect("should fopen"),
-            )),
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
+            descriptor_table: Arc::new(
+                FileDescriptorTable::new("Cargo.toml").expect("should open"),
+            ),
             block_index: Arc::new(
                 // NOTE: It's just a test
                 #[allow(clippy::expect_used)]

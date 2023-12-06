@@ -1,11 +1,11 @@
 use crate::block_cache::BlockCache;
+use crate::descriptor_table::FileDescriptorTable;
 use crate::Value;
 
 use super::index::MetaIndex;
 use super::reader::Reader;
 use std::ops::Bound;
 use std::ops::RangeBounds;
-use std::path::Path;
 use std::sync::Arc;
 
 pub struct Range {
@@ -14,8 +14,8 @@ pub struct Range {
 }
 
 impl Range {
-    pub fn new<P: AsRef<Path>>(
-        path: P,
+    pub fn new(
+        descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
@@ -36,7 +36,7 @@ impl Range {
         };
 
         let iterator = Reader::new(
-            path,
+            descriptor_table,
             segment_id,
             block_cache,
             block_index,
@@ -148,6 +148,7 @@ impl DoubleEndedIterator for Range {
 mod tests {
     use crate::{
         block_cache::BlockCache,
+        descriptor_table::FileDescriptorTable,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -198,7 +199,7 @@ mod tests {
             log::info!("Getting every item");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -215,7 +216,7 @@ mod tests {
             log::info!("Getting every item in reverse");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -234,7 +235,7 @@ mod tests {
             log::info!("Getting every item (unbounded start)");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -251,7 +252,7 @@ mod tests {
             log::info!("Getting every item in reverse (unbounded start)");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -270,7 +271,7 @@ mod tests {
             log::info!("Getting every item (unbounded end)");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -287,7 +288,7 @@ mod tests {
             log::info!("Getting every item in reverse (unbounded end)");
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id,
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -402,7 +403,7 @@ mod tests {
             let range = std::ops::Range { start, end };
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -421,7 +422,7 @@ mod tests {
             let range = std::ops::Range { start, end };
 
             let mut iter = Range::new(
-                folder.join("blocks"),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
