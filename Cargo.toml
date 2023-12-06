@@ -6,10 +6,10 @@ edition = "2021"
 rust-version = "1.68.2"
 license = "MIT"
 readme = "README.md"
-exclude = [".gitignore", ".cargo/config", ".github/**"]
 keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
 repository = "https://github.com/marvin-j97/lsm-tree"
+include = ["src/**/*", "LICENSE", "README.md"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
