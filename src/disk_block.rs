@@ -21,6 +21,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         let mut bytes = Cursor::new(bytes);
 
         let block = Self::deserialize(&mut bytes)?;
+
         Ok(block)
     }
 

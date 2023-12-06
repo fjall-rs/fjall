@@ -1,9 +1,13 @@
-use crate::serde::{Deserializable, Serializable};
+use crate::{
+    serde::{Deserializable, Serializable},
+    value::UserKey,
+};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     collections::BTreeMap,
     io::{Read, Write},
     ops::Bound::{Excluded, Unbounded},
+    sync::Arc,
 };
 
 /// A reference to a block on disk
@@ -61,12 +65,12 @@ impl Deserializable for DiskBlockReference {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Default, Debug)]
 pub struct DiskBlockIndex {
-    pub data: BTreeMap<Vec<u8>, DiskBlockReference>,
+    pub data: BTreeMap<UserKey, DiskBlockReference>,
 }
 
 impl DiskBlockIndex {
     /// Creates a new block index
-    pub fn new(data: BTreeMap<Vec<u8>, DiskBlockReference>) -> Self {
+    pub fn new(data: BTreeMap<UserKey, DiskBlockReference>) -> Self {
         Self { data }
     }
 
@@ -74,8 +78,10 @@ impl DiskBlockIndex {
     pub(crate) fn get_prefix_upper_bound(
         &self,
         prefix: &[u8],
-    ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
-        let mut iter = self.data.range(prefix.to_vec()..);
+    ) -> Option<(&UserKey, &DiskBlockReference)> {
+        let key: Arc<[u8]> = prefix.into();
+
+        let mut iter = self.data.range(key..);
 
         loop {
             let (key, block_ref) = iter.next()?;
@@ -89,31 +95,37 @@ impl DiskBlockIndex {
     pub(crate) fn get_lower_bound_block_info(
         &self,
         key: &[u8],
-    ) -> Option<(&Vec<u8>, &DiskBlockReference)> {
-        self.data.range(..=key.to_vec()).next_back()
+    ) -> Option<(&UserKey, &DiskBlockReference)> {
+        let key: Arc<[u8]> = key.into();
+
+        self.data.range(..=key).next_back()
     }
 
     /// Returns the key of the first block
-    pub fn get_first_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
-        // NOTE: Index never empty
+    pub fn get_first_block_key(&self) -> (&UserKey, &DiskBlockReference) {
+        // NOTE: Index is never empty
         #[allow(clippy::unwrap_used)]
         self.data.iter().next().unwrap()
     }
 
     /// Returns the key of the last block
-    pub fn get_last_block_key(&self) -> (&Vec<u8>, &DiskBlockReference) {
-        // NOTE: Index never empty
+    pub fn get_last_block_key(&self) -> (&UserKey, &DiskBlockReference) {
+        // NOTE: Index is never empty
         #[allow(clippy::unwrap_used)]
         self.data.iter().next_back().unwrap()
     }
 
     /// Returns the key of the block before the input key, if it exists, or None
-    pub fn get_previous_block_key(&self, key: &[u8]) -> Option<(&Vec<u8>, &DiskBlockReference)> {
-        self.data.range(..key.to_vec()).next_back()
+    pub fn get_previous_block_key(&self, key: &[u8]) -> Option<(&UserKey, &DiskBlockReference)> {
+        let key: Arc<[u8]> = key.into();
+
+        self.data.range(..key).next_back()
     }
 
     /// Returns the key of the block after the input key, if it exists, or None
-    pub fn get_next_block_key(&self, key: &[u8]) -> Option<(&Vec<u8>, &DiskBlockReference)> {
-        self.data.range((Excluded(key.to_vec()), Unbounded)).next()
+    pub fn get_next_block_key(&self, key: &[u8]) -> Option<(&UserKey, &DiskBlockReference)> {
+        let key: Arc<[u8]> = key.into();
+
+        self.data.range((Excluded(key), Unbounded)).next()
     }
 }

@@ -17,13 +17,13 @@ fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
         for x in 0..ITEM_COUNT as u64 {
             let key = x.to_be_bytes();
             let value = nanoid::nanoid!();
-            tree.insert(key, value)?;
+            tree.insert(key, value.as_bytes())?;
         }
 
         for x in 0..ITEM_COUNT as u64 {
             let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
             let value = nanoid::nanoid!();
-            tree.insert(key, value)?;
+            tree.insert(key, value.as_bytes())?;
         }
 
         tree.flush()?;

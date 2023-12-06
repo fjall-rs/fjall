@@ -1,5 +1,6 @@
 use crate::block_cache::BlockCache;
 use crate::descriptor_table::FileDescriptorTable;
+use crate::value::UserKey;
 use crate::Value;
 
 use super::index::MetaIndex;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 
 pub struct Range {
     iterator: Reader,
-    range: (Bound<Vec<u8>>, Bound<Vec<u8>>),
+    range: (Bound<UserKey>, Bound<UserKey>),
 }
 
 impl Range {
@@ -19,7 +20,7 @@ impl Range {
         segment_id: String,
         block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
-        range: (Bound<Vec<u8>>, Bound<Vec<u8>>),
+        range: (Bound<UserKey>, Bound<UserKey>),
     ) -> crate::Result<Self> {
         let offset_lo = match range.start_bound() {
             Bound::Unbounded => None,
@@ -155,6 +156,7 @@ mod tests {
             range::Range,
             writer::{Options, Writer},
         },
+        value::UserKey,
         Value,
     };
     use std::ops::{
@@ -176,8 +178,14 @@ mod tests {
             block_size: 4096,
         })?;
 
-        let items = (0u64..ITEM_COUNT)
-            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
+        let items = (0u64..ITEM_COUNT).map(|i| {
+            Value::new(
+                i.to_be_bytes(),
+                nanoid::nanoid!().as_bytes(),
+                false,
+                1000 + i,
+            )
+        });
 
         for item in items {
             writer.write(item)?;
@@ -234,12 +242,14 @@ mod tests {
         {
             log::info!("Getting every item (unbounded start)");
 
+            let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
+
             let mut iter = Range::new(
                 Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
-                range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
+                range_bounds_to_tuple::<UserKey>(&..end),
             )?;
 
             for key in (0..5_000).map(u64::to_be_bytes) {
@@ -251,12 +261,14 @@ mod tests {
 
             log::info!("Getting every item in reverse (unbounded start)");
 
+            let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
+
             let mut iter = Range::new(
                 Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
-                range_bounds_to_tuple(&..5_000_u64.to_be_bytes().to_vec()),
+                range_bounds_to_tuple(&..end),
             )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
@@ -270,12 +282,14 @@ mod tests {
         {
             log::info!("Getting every item (unbounded end)");
 
+            let start: Arc<[u8]> = 1_000_u64.to_be_bytes().into();
+
             let mut iter = Range::new(
                 Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
-                range_bounds_to_tuple(&(1_000_u64.to_be_bytes().to_vec()..)),
+                range_bounds_to_tuple(&(start..)),
             )?;
 
             for key in (1_000..5_000).map(u64::to_be_bytes) {
@@ -287,14 +301,15 @@ mod tests {
 
             log::info!("Getting every item in reverse (unbounded end)");
 
+            let start: Arc<[u8]> = 1_000_u64.to_be_bytes().into();
+            let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
+
             let mut iter = Range::new(
                 Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 metadata.id,
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
-                range_bounds_to_tuple(
-                    &(1_000_u64.to_be_bytes().to_vec()..5_000_u64.to_be_bytes().to_vec()),
-                ),
+                range_bounds_to_tuple(&(start..end)),
             )?;
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
@@ -324,16 +339,16 @@ mod tests {
         (start_bound, end_bound)
     }
 
-    fn bounds_u64_to_bytes(bounds: &(Bound<u64>, Bound<u64>)) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
+    fn bounds_u64_to_bytes(bounds: &(Bound<u64>, Bound<u64>)) -> (Bound<UserKey>, Bound<UserKey>) {
         let start_bytes = match bounds.0 {
-            Included(start) => Included(start.to_be_bytes().to_vec()),
-            Excluded(start) => Excluded(start.to_be_bytes().to_vec()),
+            Included(start) => Included(start.to_be_bytes().into()),
+            Excluded(start) => Excluded(start.to_be_bytes().into()),
             Unbounded => Unbounded,
         };
 
         let end_bytes = match bounds.1 {
-            Included(end) => Included(end.to_be_bytes().to_vec()),
-            Excluded(end) => Excluded(end.to_be_bytes().to_vec()),
+            Included(end) => Included(end.to_be_bytes().into()),
+            Excluded(end) => Excluded(end.to_be_bytes().into()),
             Unbounded => Unbounded,
         };
 
@@ -366,8 +381,14 @@ mod tests {
             block_size: 4096,
         })?;
 
-        let items = (0u64..ITEM_COUNT)
-            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
+        let items = (0u64..ITEM_COUNT).map(|i| {
+            Value::new(
+                i.to_be_bytes(),
+                nanoid::nanoid!().as_bytes(),
+                false,
+                1000 + i,
+            )
+        });
 
         for item in items {
             writer.write(item)?;

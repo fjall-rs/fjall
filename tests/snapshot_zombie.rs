@@ -11,7 +11,7 @@ fn snapshot_zombie_memtable() -> lsm_tree::Result<()> {
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
-        tree.insert(key, "abc")?;
+        tree.insert(key, "abc".as_bytes())?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT);
@@ -35,7 +35,7 @@ fn snapshot_zombie_memtable() -> lsm_tree::Result<()> {
         let snapshot = tree.snapshot();
         assert_eq!(0, snapshot.len()?);
         assert_eq!(0, snapshot.iter()?.into_iter().rev().count());
-        assert_eq!(0, snapshot.prefix("")?.into_iter().count());
+        assert_eq!(0, snapshot.prefix("".as_bytes())?.into_iter().count());
     }
 
     Ok(())
@@ -50,7 +50,7 @@ fn snapshot_zombie_segment() -> lsm_tree::Result<()> {
 
         for x in 0..ITEM_COUNT as u64 {
             let key = x.to_be_bytes();
-            tree.insert(key, "abc")?;
+            tree.insert(key, "abc".as_bytes())?;
         }
 
         tree.flush()?;
@@ -80,7 +80,7 @@ fn snapshot_zombie_segment() -> lsm_tree::Result<()> {
             let snapshot = tree.snapshot();
             assert_eq!(0, snapshot.len()?);
             assert_eq!(0, snapshot.iter()?.into_iter().rev().count());
-            assert_eq!(0, snapshot.prefix("")?.into_iter().count());
+            assert_eq!(0, snapshot.prefix("".as_bytes())?.into_iter().count());
         }
     }
 
@@ -94,7 +94,7 @@ fn snapshot_zombie_segment() -> lsm_tree::Result<()> {
             let snapshot = tree.snapshot();
             assert_eq!(0, snapshot.len()?);
             assert_eq!(0, snapshot.iter()?.into_iter().rev().count());
-            assert_eq!(0, snapshot.prefix("")?.into_iter().count());
+            assert_eq!(0, snapshot.prefix("".as_bytes())?.into_iter().count());
         }
     }
 

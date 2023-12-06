@@ -1,5 +1,7 @@
 use super::{index::MetaIndex, range::Range};
-use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, Value};
+use crate::{
+    block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
+};
 use std::{
     ops::Bound::{Excluded, Included, Unbounded},
     sync::Arc,
@@ -8,11 +10,11 @@ use std::{
 #[allow(clippy::module_name_repetitions)]
 pub struct PrefixedReader {
     iterator: Range,
-    prefix: Vec<u8>,
+    prefix: UserKey,
 }
 
 impl PrefixedReader {
-    pub fn new<K: Into<Vec<u8>>>(
+    pub fn new<K: Into<UserKey>>(
         descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
@@ -123,7 +125,7 @@ mod tests {
                         v.extend_from_slice(&x.to_be_bytes());
                         v
                     },
-                    nanoid::nanoid!(),
+                    nanoid::nanoid!().as_bytes(),
                     false,
                     0,
                 );
@@ -137,7 +139,7 @@ mod tests {
                         v.extend_from_slice(&x.to_be_bytes());
                         v
                     },
-                    nanoid::nanoid!(),
+                    nanoid::nanoid!().as_bytes(),
                     false,
                     0,
                 );
@@ -151,7 +153,7 @@ mod tests {
                         v.extend_from_slice(&x.to_be_bytes());
                         v
                     },
-                    nanoid::nanoid!(),
+                    nanoid::nanoid!().as_bytes(),
                     false,
                     0,
                 );
@@ -229,7 +231,7 @@ mod tests {
         ]
         .into_iter()
         .enumerate()
-        .map(|(idx, key)| Value::new(key, nanoid::nanoid!(), false, idx as SeqNo));
+        .map(|(idx, key)| Value::new(key, nanoid::nanoid!().as_bytes(), false, idx as SeqNo));
 
         for item in items {
             writer.write(item)?;

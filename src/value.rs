@@ -3,23 +3,39 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     cmp::Reverse,
     io::{Read, Write},
+    sync::Arc,
 };
 
 /// User defined data
-pub type UserData = Vec<u8>;
+pub type UserKey = Arc<[u8]>;
+
+/// User defined data
+pub type UserData = Arc<[u8]>;
 
 /// Sequence number
 pub type SeqNo = u64;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParsedInternalKey {
-    pub user_key: Vec<u8>,
+    pub user_key: UserKey,
     pub seqno: SeqNo,
     pub is_tombstone: bool,
 }
 
+impl std::fmt::Debug for ParsedInternalKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}:{}:{}",
+            self.user_key,
+            self.seqno,
+            u8::from(self.is_tombstone)
+        )
+    }
+}
+
 impl ParsedInternalKey {
-    pub fn new<K: Into<Vec<u8>>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
+    pub fn new<K: Into<UserKey>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
         Self {
             user_key: user_key.into(),
             seqno,
@@ -55,7 +71,7 @@ pub struct Value {
     /// User-defined key - an arbitrary byte array
     ///
     /// Supports up to 2^16 bytes
-    pub key: Vec<u8>,
+    pub key: UserKey,
 
     /// User-defined value - an arbitrary byte array
     ///
@@ -69,8 +85,8 @@ pub struct Value {
     pub is_tombstone: bool,
 }
 
-impl From<(ParsedInternalKey, Vec<u8>)> for Value {
-    fn from(val: (ParsedInternalKey, Vec<u8>)) -> Self {
+impl From<(ParsedInternalKey, UserData)> for Value {
+    fn from(val: (ParsedInternalKey, UserData)) -> Self {
         let key = val.0;
 
         Self {
@@ -109,14 +125,14 @@ impl Value {
     /// ```
     /// # use lsm_tree::Value;
     /// #
-    /// let value = Value::new("key-1", "my-value", false, 5);
+    /// let value = Value::new("key-1".as_bytes(), "my-value".as_bytes(), false, 5);
     /// assert_eq!(b"key-1", &*value.key);
     /// assert_eq!(b"my-value", &*value.value);
     /// assert_eq!(5, value.seqno);
     /// assert_eq!(false, value.is_tombstone);
     ///
     /// ```
-    pub fn new<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(
+    pub fn new<K: Into<UserKey>, V: Into<UserData>>(
         key: K,
         value: V,
         is_tombstone: bool,

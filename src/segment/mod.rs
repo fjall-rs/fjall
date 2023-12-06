@@ -9,7 +9,13 @@ pub mod writer;
 use self::{
     index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
 };
-use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::SeqNo, Value};
+use crate::{
+    block_cache::BlockCache,
+    descriptor_table::FileDescriptorTable,
+    segment::reader::load_and_cache_by_block_handle,
+    value::{SeqNo, UserKey},
+    Value,
+};
 use std::{ops::Bound, path::Path, sync::Arc};
 
 /// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
@@ -69,33 +75,63 @@ impl Segment {
 
         let key = key.as_ref();
 
-        // NOTE: We need to use a prefix reader
-        // because nothing really prevents the version
-        // we are searching for to be in the next block
-        // after the one our key starts in
-        //
-        // Example (key:seqno), searching for a:2:
-        //
-        //
-        // [..., a:5, a:4] [a:3, a:2, b: 4, b:3]
-        // ^               ^
-        // Block A         Block B
-        //
-        // Based on get_lower_bound_block, "a" is in Block A
-        // However, we are searching for A with seqno 2, which
-        // unfortunately is in the next block
+        match seqno {
+            None => {
+                // NOTE: Fastpath for non-seqno reads (which are most common)
+                // This avoids setting up a rather expensive prefix reader
+                // (see explanation for that below)
 
-        let mut iter = self.prefix(key)?;
+                if let Some(block_handle) = self.block_index.get_latest(key.as_ref())? {
+                    let block = load_and_cache_by_block_handle(
+                        &self.descriptor_table,
+                        &self.block_cache,
+                        &self.metadata.id,
+                        &block_handle,
+                    )?;
 
-        let item = iter
-            .find(|x| match x {
-                Ok(item) => seqno.map_or(true, |s| item.seqno < s),
-                Err(_) => true,
-            })
-            .transpose();
+                    //eprintln!("block cache now {}", self.block_cache.len());
 
-        #[allow(clippy::let_and_return)]
-        item
+                    let item = block.map_or_else(
+                        || Ok(None),
+                        |block| {
+                            let item_index =
+                                block.items.binary_search_by(|x| (*x.key).cmp(key.as_ref()));
+
+                            Ok(item_index.map_or(None, |idx| Some(block.items[idx].clone())))
+                        },
+                    );
+
+                    item
+                } else {
+                    Ok(None)
+                }
+            }
+            Some(seqno) => {
+                // TODO: maybe use a [Key..) range iterator with take_until(prefix_met)
+                //       because we never reverse-iterate
+                //       (which is something prefix-iter optimizes by setting the upper bound, which takes some time)
+                //
+                // NOTE: For finding a specific seqno,
+                // we need to use a prefix reader
+                // because nothing really prevents the version
+                // we are searching for to be in the next block
+                // after the one our key starts in
+                //
+                // Example (key:seqno), searching for a:2:
+                //
+                // [..., a:5, a:4] [a:3, a:2, b: 4, b:3]
+                // ^               ^
+                // Block A         Block B
+                //
+                // Based on get_lower_bound_block, "a" is in Block A
+                // However, we are searching for A with seqno 2, which
+                // unfortunately is in the next block
+                let mut iter = self.prefix(key)?;
+
+                iter.find(|x| x.as_ref().map_or(true, |item| item.seqno < seqno))
+                    .transpose()
+            }
+        }
     }
 
     /// Creates an iterator over the `Segment`.
@@ -121,7 +157,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range(&self, range: (Bound<Vec<u8>>, Bound<Vec<u8>>)) -> crate::Result<Range> {
+    pub fn range(&self, range: (Bound<UserKey>, Bound<UserKey>)) -> crate::Result<Range> {
         let range = Range::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
@@ -138,7 +174,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
+    pub fn prefix<K: Into<UserKey>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
         let reader = PrefixedReader::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
@@ -168,7 +204,7 @@ impl Segment {
     /// Checks if a key range is (partially or fully) contained in this segment.
     pub(crate) fn check_key_range_overlap(
         &self,
-        bounds: &(Bound<Vec<u8>>, Bound<Vec<u8>>),
+        bounds: &(Bound<UserKey>, Bound<UserKey>),
     ) -> bool {
         let (lo, hi) = bounds;
         let (segment_lo, segment_hi) = &self.metadata.key_range;

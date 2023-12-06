@@ -7,27 +7,27 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
 
     let tree = Config::new(folder).block_size(1_024).open()?;
 
-    let key = "1";
-    let value = b"oldvalue";
+    let key = "1".as_bytes();
+    let value = "oldvalue".as_bytes();
 
     assert_eq!(tree.len()?, 0);
-    tree.insert(key, *value)?;
+    tree.insert(key, value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
-    let value = b"newvalue";
+    let value = "newvalue".as_bytes();
 
-    tree.insert(key, *value)?;
+    tree.insert(key, value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
     Ok(())
 }
@@ -38,17 +38,17 @@ fn tree_shadowing_delete() -> lsm_tree::Result<()> {
 
     let tree = Config::new(folder).block_size(1_024).open().unwrap();
 
-    let key = "1";
-    let value = b"oldvalue";
+    let key = "1".as_bytes();
+    let value = "oldvalue".as_bytes();
 
     assert_eq!(tree.len()?, 0);
-    tree.insert(key, *value)?;
+    tree.insert(key, value)?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
     tree.wait_for_memtable_flush()?;
     assert_eq!(tree.len()?, 1);
-    assert_eq!(tree.get(key)?, Some(value.to_vec()));
+    assert_eq!(tree.get(key)?, Some(value.into()));
 
     tree.remove(key)?;
     assert_eq!(tree.len()?, 0);
@@ -71,7 +71,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
-        let value = "old";
+        let value = "old".as_bytes();
         tree.insert(key, value)?;
     }
 
@@ -81,11 +81,11 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "old".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "old".as_bytes().into()));
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
-        let value = "new";
+        let value = "new".as_bytes();
         tree.insert(key, value)?;
     }
 
@@ -93,7 +93,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
     tree.wait_for_memtable_flush()?;
 
@@ -101,7 +101,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
     Ok(())
 }
@@ -115,44 +115,62 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
     let tree = Config::new(folder).block_size(1_024).open()?;
 
     for x in 0..ITEM_COUNT as u64 {
-        let value = "old";
-        tree.insert(format!("pre:{x}"), value)?;
-        tree.insert(format!("prefix:{x}"), value)?;
+        let value = "old".as_bytes();
+        tree.insert(format!("pre:{x}").as_bytes(), value)?;
+        tree.insert(format!("prefix:{x}").as_bytes(), value)?;
     }
 
     tree.wait_for_memtable_flush()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("pre")?.into_iter().count(), ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("prefix")?.into_iter().count(), ITEM_COUNT);
+    assert_eq!(
+        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        ITEM_COUNT * 2
+    );
+    assert_eq!(
+        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        ITEM_COUNT
+    );
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "old".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "old".as_bytes().into()));
 
     for x in 0..ITEM_COUNT as u64 {
-        let value = "new";
-        tree.insert(format!("pre:{x}"), value)?;
-        tree.insert(format!("prefix:{x}"), value)?;
+        let value = "new".as_bytes();
+        tree.insert(format!("pre:{x}").as_bytes(), value)?;
+        tree.insert(format!("prefix:{x}").as_bytes(), value)?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("pre")?.into_iter().count(), ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("prefix")?.into_iter().count(), ITEM_COUNT);
+    assert_eq!(
+        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        ITEM_COUNT * 2
+    );
+    assert_eq!(
+        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        ITEM_COUNT
+    );
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
     tree.wait_for_memtable_flush()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("pre")?.into_iter().count(), ITEM_COUNT * 2);
-    assert_eq!(tree.prefix("prefix")?.into_iter().count(), ITEM_COUNT);
+    assert_eq!(
+        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        ITEM_COUNT * 2
+    );
+    assert_eq!(
+        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        ITEM_COUNT
+    );
     assert!(tree
         .iter()?
         .into_iter()
-        .all(|x| x.unwrap().1 == "new".as_bytes().to_vec()));
+        .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
     Ok(())
 }

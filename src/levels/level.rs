@@ -1,5 +1,5 @@
 use super::HiddenSet;
-use crate::segment::Segment;
+use crate::{segment::Segment, value::UserKey};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 
@@ -70,7 +70,7 @@ impl ResolvedLevel {
         Self(new_level)
     }
 
-    pub fn get_overlapping_segments(&self, start: Vec<u8>, end: Vec<u8>) -> Vec<&String> {
+    pub fn get_overlapping_segments(&self, start: UserKey, end: UserKey) -> Vec<&String> {
         use std::ops::Bound::Included;
 
         let bounds = (Included(start), Included(end));

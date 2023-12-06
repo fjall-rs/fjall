@@ -10,7 +10,7 @@ use crate::{
     range::{MemTableGuard, Range},
     segment::{self, meta::Metadata, Segment},
     tree_inner::TreeInner,
-    value::SeqNo,
+    value::{SeqNo, UserData, UserKey},
     Batch, Config, Snapshot, Value,
 };
 use std::{
@@ -26,10 +26,10 @@ use std_semaphore::Semaphore;
 
 pub struct CompareAndSwapError {
     /// The value currently in the tree that caused the CAS error
-    pub prev: Option<Vec<u8>>,
+    pub prev: Option<UserData>,
 
     /// The value that was proposed
-    pub next: Option<Vec<u8>>,
+    pub next: Option<UserData>,
 }
 
 pub type CompareAndSwapResult = Result<(), CompareAndSwapError>;
@@ -104,7 +104,7 @@ impl Tree {
     /// let tree = Tree::open(Config::new(folder))?;
     ///
     /// let value = tree.entry("a")?.or_insert("abc")?;
-    /// assert_eq!("abc".as_bytes(), &value);
+    /// assert_eq!("abc".as_bytes(), &*value);
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -119,12 +119,12 @@ impl Tree {
         Ok(match item {
             Some(item) => crate::entry::Entry::Occupied(OccupiedEntry {
                 tree: self.clone(),
-                key: key.to_vec(),
+                key: key.to_vec().into(),
                 value: item.value,
             }),
             None => crate::entry::Entry::Vacant(VacantEntry {
                 tree: self.clone(),
-                key: key.to_vec(),
+                key: key.to_vec().into(),
             }),
         })
     }
@@ -644,7 +644,10 @@ impl Tree {
 
         // NOTE: Add some pointers to better approximate memory usage of memtable
         // Because the data is stored with less overhead than in memory
-        let size = bytes_written_to_disk + (std::mem::size_of::<Vec<u8>>() * 2);
+        let size = bytes_written_to_disk
+            + std::mem::size_of::<UserKey>()
+            + std::mem::size_of::<UserData>();
+
         let memtable_size = self
             .approx_active_memtable_size
             .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed);
@@ -678,16 +681,12 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(
-        &self,
-        key: K,
-        value: V,
-    ) -> crate::Result<()> {
+    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
         let shard = self.journal.lock_shard();
 
         let value = Value::new(
-            key,
-            value,
+            key.as_ref(),
+            value.as_ref(),
             false,
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
         );
@@ -709,7 +708,7 @@ impl Tree {
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.get("a")?.expect("should have item");
-    /// assert_eq!("abc".as_bytes(), item);
+    /// assert_eq!("abc".as_bytes(), &*item);
     ///
     /// tree.remove("a")?;
     ///
@@ -722,11 +721,11 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: Into<Vec<u8>>>(&self, key: K) -> crate::Result<()> {
+    pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
         let shard = self.journal.lock_shard();
 
         let value = Value::new(
-            key,
+            key.as_ref(),
             vec![],
             true,
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
@@ -755,7 +754,7 @@ impl Tree {
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.remove_entry("a")?.expect("should have removed item");
-    /// assert_eq!("abc".as_bytes(), item);
+    /// assert_eq!("abc".as_bytes(), &*item);
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -763,8 +762,8 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove_entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
-        self.fetch_update(key, |_| None::<Vec<u8>>)
+    pub fn remove_entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<UserData>> {
+        self.fetch_update(key, |_| None::<UserData>)
     }
 
     /// Returns `true` if the tree contains the specified key.
@@ -792,7 +791,7 @@ impl Tree {
     }
 
     pub(crate) fn create_iter(&self, seqno: Option<SeqNo>) -> crate::Result<Range<'_>> {
-        self.create_range::<Vec<u8>, _>(.., seqno)
+        self.create_range::<UserKey, _>(.., seqno)
     }
 
     #[allow(clippy::iter_not_returning_iterator)]
@@ -830,19 +829,19 @@ impl Tree {
     ) -> crate::Result<Range<'_>> {
         use std::ops::Bound::{self, Excluded, Included, Unbounded};
 
-        let lo: Bound<Vec<u8>> = match range.start_bound() {
+        let lo: Bound<UserKey> = match range.start_bound() {
             Included(x) => Included(x.as_ref().into()),
             Excluded(x) => Excluded(x.as_ref().into()),
             Unbounded => Unbounded,
         };
 
-        let hi: Bound<Vec<u8>> = match range.end_bound() {
+        let hi: Bound<UserKey> = match range.end_bound() {
             Included(x) => Included(x.as_ref().into()),
             Excluded(x) => Excluded(x.as_ref().into()),
             Unbounded => Unbounded,
         };
 
-        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (lo, hi);
+        let bounds: (Bound<UserKey>, Bound<UserKey>) = (lo, hi);
 
         let lock = self.levels.read().expect("lock is poisoned");
 
@@ -891,7 +890,7 @@ impl Tree {
         self.create_range(range, None)
     }
 
-    pub(crate) fn create_prefix<K: Into<Vec<u8>>>(
+    pub(crate) fn create_prefix<K: Into<UserKey>>(
         &self,
         prefix: K,
         seqno: Option<SeqNo>,
@@ -902,7 +901,7 @@ impl Tree {
 
         let lock = self.levels.read().expect("lock is poisoned");
 
-        let bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (Included(prefix.clone()), Unbounded);
+        let bounds: (Bound<UserKey>, Bound<UserKey>) = (Included(prefix.clone()), Unbounded);
 
         let segment_info = lock
             .get_all_segments()
@@ -945,8 +944,8 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
-        self.create_prefix(prefix, None)
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
+        self.create_prefix(prefix.as_ref(), None)
     }
 
     /// Returns the first key-value pair in the tree.
@@ -966,7 +965,7 @@ impl Tree {
     /// tree.insert("5", "abc")?;
     ///
     /// let (key, _) = tree.first_key_value()?.expect("item should exist");
-    /// assert_eq!(key, "1".as_bytes());
+    /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -974,7 +973,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+    pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.iter()?.into_iter().next().transpose()
     }
 
@@ -995,7 +994,7 @@ impl Tree {
     /// tree.insert("5", "abc")?;
     ///
     /// let (key, _) = tree.last_key_value()?.expect("item should exist");
-    /// assert_eq!(key, "5".as_bytes());
+    /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -1003,7 +1002,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+    pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.iter()?.into_iter().next_back().transpose()
     }
 
@@ -1064,7 +1063,7 @@ impl Tree {
     /// tree.insert("a", "my_value")?;
     ///
     /// let item = tree.get("a")?;
-    /// assert_eq!(Some("my_value".as_bytes().to_vec()), item);
+    /// assert_eq!(Some("my_value".as_bytes().into()), item);
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -1072,7 +1071,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<UserData>> {
         Ok(self.get_internal_entry(key, true, None)?.map(|x| x.value))
     }
 
@@ -1088,8 +1087,8 @@ impl Tree {
     pub fn compare_and_swap<K: AsRef<[u8]>>(
         &self,
         key: K,
-        expected: Option<&Vec<u8>>,
-        next: Option<&Vec<u8>>,
+        expected: Option<&UserData>,
+        next: Option<&UserData>,
     ) -> crate::Result<CompareAndSwapResult> {
         let key = key.as_ref();
 
@@ -1144,10 +1143,7 @@ impl Tree {
                         self.insert(key, next_value.clone())?;
                         Ok(Ok(()))
                     }
-                    None => {
-                        self.remove(key)?;
-                        Ok(Ok(()))
-                    }
+                    None => Ok(Ok(())),
                 },
             },
         }
@@ -1166,14 +1162,14 @@ impl Tree {
     /// let tree = Config::new(folder).open()?;
     /// tree.insert("key", "a")?;
     ///
-    /// let prev = tree.fetch_update("key", |_| Some("b"))?.expect("item should exist");
-    /// assert_eq!("a".as_bytes(), prev);
+    /// let prev = tree.fetch_update("key".as_bytes(), |_| Some("b"))?.expect("item should exist");
+    /// assert_eq!("a".as_bytes(), &*prev);
     ///
     /// let item = tree.get("key")?.expect("item should exist");
-    /// assert_eq!("b".as_bytes(), item);
+    /// assert_eq!("b".as_bytes(), &*item);
     ///
     /// let prev = tree.fetch_update("key", |_| None::<String>)?.expect("item should exist");
-    /// assert_eq!("b".as_bytes(), prev);
+    /// assert_eq!("b".as_bytes(), &*prev);
     ///
     /// assert!(tree.is_empty()?);
     /// #
@@ -1183,18 +1179,18 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, V: Into<Vec<u8>>, F: Fn(Option<&Vec<u8>>) -> Option<V>>(
+    pub fn fetch_update<K: AsRef<[u8]>, V: AsRef<[u8]>, F: Fn(Option<&UserData>) -> Option<V>>(
         &self,
         key: K,
         f: F,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    ) -> crate::Result<Option<UserData>> {
         let key = key.as_ref();
 
         let mut fetched = self.get(key)?;
 
         loop {
             let expected = fetched.as_ref();
-            let next = f(expected).map(Into::into);
+            let next = f(expected).map(|v| v.as_ref().into());
 
             match self.compare_and_swap(key, expected, next.as_ref())? {
                 Ok(()) => return Ok(fetched),
@@ -1219,10 +1215,10 @@ impl Tree {
     /// tree.insert("key", "a")?;
     ///
     /// let prev = tree.update_fetch("key", |_| Some("b"))?.expect("item should exist");
-    /// assert_eq!("b".as_bytes(), prev);
+    /// assert_eq!("b".as_bytes(), &*prev);
     ///
     /// let item = tree.get("key")?.expect("item should exist");
-    /// assert_eq!("b".as_bytes(), item);
+    /// assert_eq!("b".as_bytes(), &*item);
     ///
     /// let prev = tree.update_fetch("key", |_| None::<String>)?;
     /// assert_eq!(None, prev);
@@ -1235,18 +1231,18 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, V: Into<Vec<u8>>, F: Fn(Option<&Vec<u8>>) -> Option<V>>(
+    pub fn update_fetch<K: AsRef<[u8]>, V: AsRef<[u8]>, F: Fn(Option<&UserData>) -> Option<V>>(
         &self,
         key: K,
         f: F,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    ) -> crate::Result<Option<UserData>> {
         let key = key.as_ref();
 
         let mut fetched = self.get(key)?;
 
         loop {
             let expected = fetched.as_ref();
-            let next = f(expected).map(Into::into);
+            let next = f(expected).map(|v| v.as_ref().into());
 
             match self.compare_and_swap(key, expected, next.as_ref())? {
                 Ok(()) => return Ok(next),

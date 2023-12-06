@@ -1,4 +1,5 @@
 use lsm_tree::Config;
+use std::sync::Arc;
 use tempfile::tempdir;
 use test_log::test;
 
@@ -13,7 +14,7 @@ fn tree_memtable_count() -> lsm_tree::Result<()> {
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
         let value = nanoid::nanoid!();
-        tree.insert(key, value)?;
+        tree.insert(key, value.as_bytes())?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT);
@@ -38,7 +39,7 @@ fn tree_flushed_count() -> lsm_tree::Result<()> {
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
         let value = nanoid::nanoid!();
-        tree.insert(key, value)?;
+        tree.insert(key, value.as_bytes())?;
     }
 
     tree.wait_for_memtable_flush()?;
@@ -67,12 +68,12 @@ fn tree_non_locking_count() -> lsm_tree::Result<()> {
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
         let value = "a";
-        tree.insert(key, value)?;
+        tree.insert(key, value.as_bytes())?;
     }
 
     tree.wait_for_memtable_flush()?;
 
-    let mut range: (Bound<Vec<u8>>, Bound<Vec<u8>>) = (Unbounded, Unbounded);
+    let mut range: (Bound<Arc<[u8]>>, Bound<Arc<[u8]>>) = (Unbounded, Unbounded);
     let mut count = 0;
 
     loop {

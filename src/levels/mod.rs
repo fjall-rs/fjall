@@ -323,10 +323,11 @@ mod tests {
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,
         segment::{index::MetaIndex, meta::Metadata, Segment},
+        value::UserKey,
     };
     use std::sync::Arc;
 
-    fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
+    fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
@@ -360,24 +361,24 @@ mod tests {
 
     #[test]
     fn level_overlaps() {
-        let seg0 = fixture_segment("1".into(), (b"c".to_vec(), b"k".to_vec()));
-        let seg1 = fixture_segment("2".into(), (b"l".to_vec(), b"z".to_vec()));
+        let seg0 = fixture_segment("1".into(), (b"c".to_vec().into(), b"k".to_vec().into()));
+        let seg1 = fixture_segment("2".into(), (b"l".to_vec().into(), b"z".to_vec().into()));
 
         let level = ResolvedLevel(vec![seg0, seg1]);
 
         assert_eq!(
             Vec::<&str>::new(),
-            level.get_overlapping_segments(b"a".to_vec(), b"b".to_vec()),
+            level.get_overlapping_segments(b"a".to_vec().into(), b"b".to_vec().into()),
         );
 
         assert_eq!(
             vec!["1"],
-            level.get_overlapping_segments(b"d".to_vec(), b"k".to_vec()),
+            level.get_overlapping_segments(b"d".to_vec().into(), b"k".to_vec().into()),
         );
 
         assert_eq!(
             vec!["1", "2"],
-            level.get_overlapping_segments(b"f".to_vec(), b"x".to_vec()),
+            level.get_overlapping_segments(b"f".to_vec().into(), b"x".to_vec().into()),
         );
     }
 }

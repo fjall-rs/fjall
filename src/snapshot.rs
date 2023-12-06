@@ -1,6 +1,11 @@
 use std::ops::RangeBounds;
 
-use crate::{prefix::Prefix, range::Range, value::SeqNo, Tree};
+use crate::{
+    prefix::Prefix,
+    range::Range,
+    value::{SeqNo, UserData, UserKey},
+    Tree,
+};
 
 #[derive(Clone)]
 /// A snapshot captures a read-only point-in-time view of the tree at the time the snapshot was created.
@@ -49,7 +54,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<Vec<u8>>> {
+    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<UserData>> {
         Ok(self
             .tree
             .get_internal_entry(key, true, Some(self.seqno))?
@@ -143,8 +148,8 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: Into<Vec<u8>>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
-        self.tree.create_prefix(prefix, Some(self.seqno))
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
+        self.tree.create_prefix(prefix.as_ref(), Some(self.seqno))
     }
 
     /// Returns the first key-value pair in the snapshot.
@@ -166,7 +171,7 @@ impl Snapshot {
     /// tree.insert("1", "abc")?;
     ///
     /// let (key, _) = snapshot.first_key_value()?.expect("item should exist");
-    /// assert_eq!(key, "3".as_bytes());
+    /// assert_eq!(&*key, "3".as_bytes());
     /// #
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -174,7 +179,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+    pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.tree
             .create_iter(Some(self.seqno))?
             .into_iter()
@@ -201,7 +206,7 @@ impl Snapshot {
     /// tree.insert("5", "abc")?;
     ///
     /// let (key, _) = snapshot.last_key_value()?.expect("item should exist");
-    /// assert_eq!(key, "3".as_bytes());
+    /// assert_eq!(&*key, "3".as_bytes());
     /// #
     /// # Ok::<(), TreeError>(())
     /// ```
@@ -209,7 +214,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<(Vec<u8>, Vec<u8>)>> {
+    pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.tree
             .create_iter(Some(self.seqno))?
             .into_iter()

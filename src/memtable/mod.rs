@@ -1,4 +1,4 @@
-use crate::value::{ParsedInternalKey, SeqNo};
+use crate::value::{ParsedInternalKey, SeqNo, UserData};
 use crate::Value;
 use crossbeam_skiplist::SkipMap;
 
@@ -9,7 +9,7 @@ use crossbeam_skiplist::SkipMap;
 /// In case of a program crash, the current `MemTable` can be rebuilt from the last active journal
 #[derive(Default)]
 pub struct MemTable {
-    pub(crate) items: SkipMap<ParsedInternalKey, Vec<u8>>,
+    pub(crate) items: SkipMap<ParsedInternalKey, UserData>,
 }
 
 impl MemTable {
@@ -35,23 +35,27 @@ impl MemTable {
         // abcdef -> 6
         // abcdef -> 5
         //
-        let range = ParsedInternalKey::new(key.as_ref().to_vec(), SeqNo::MAX, true)..;
+        let range = ParsedInternalKey::new(prefix, SeqNo::MAX, true)..;
 
-        let item = self.items.range(range).find(|entry| {
+        for entry in self.items.range(range) {
             let key = entry.key();
 
-            // If seqno (snapshot) value is defined, filter for it
-            if let Some(seqno) = seqno {
-                if key.seqno >= seqno {
-                    return false;
-                }
+            // We are past the user key, so we can immediately return None
+            if !key.user_key.starts_with(prefix) {
+                return None;
             }
 
-            key.user_key.starts_with(prefix)
-        });
+            // Check for seqno if needed
+            if let Some(seqno) = seqno {
+                if key.seqno < seqno {
+                    return Some(Value::from((entry.key().clone(), entry.value().clone())));
+                }
+            } else {
+                return Some(Value::from((entry.key().clone(), entry.value().clone())));
+            }
+        }
 
-        item.map(|entry| (entry.key().clone(), entry.value().clone()))
-            .map(Value::from)
+        None
     }
 
     /// Inserts an item into the `MemTable`
@@ -70,7 +74,7 @@ mod tests {
     fn test_memtable_get() {
         let memtable = MemTable::default();
 
-        let value = Value::new("abc", "abc", false, 0);
+        let value = Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0);
 
         memtable.insert(value.clone());
 
@@ -81,14 +85,14 @@ mod tests {
     fn test_memtable_get_highest_seqno() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new("abc", "abc", false, 0));
-        memtable.insert(Value::new("abc", "abc", false, 1));
-        memtable.insert(Value::new("abc", "abc", false, 2));
-        memtable.insert(Value::new("abc", "abc", false, 3));
-        memtable.insert(Value::new("abc", "abc", false, 4));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 1));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 2));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 3));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 4));
 
         assert_eq!(
-            Some(Value::new("abc", "abc", false, 4)),
+            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 4)),
             memtable.get("abc", None)
         );
     }
@@ -97,16 +101,16 @@ mod tests {
     fn test_memtable_get_prefix() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new("abc0", "abc", false, 0));
-        memtable.insert(Value::new("abc", "abc", false, 255));
+        memtable.insert(Value::new(b"abc0".to_vec(), b"abc".to_vec(), false, 0));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255));
 
         assert_eq!(
-            Some(Value::new("abc", "abc", false, 255)),
+            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255)),
             memtable.get("abc", None)
         );
 
         assert_eq!(
-            Some(Value::new("abc0", "abc", false, 0)),
+            Some(Value::new(b"abc0".to_vec(), b"abc".to_vec(), false, 0)),
             memtable.get("abc0", None)
         );
     }
@@ -115,17 +119,23 @@ mod tests {
     fn test_memtable_get_old_version() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new("abc", "abc", false, 0));
-        memtable.insert(Value::new("abc", "abc", false, 255));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 99));
+        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255));
 
         assert_eq!(
-            Some(Value::new("abc", "abc", false, 255)),
+            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255)),
             memtable.get("abc", None)
         );
 
         assert_eq!(
-            Some(Value::new("abc", "abc", false, 0)),
+            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 99)),
             memtable.get("abc", Some(100))
+        );
+
+        assert_eq!(
+            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0)),
+            memtable.get("abc", Some(50))
         );
     }
 }

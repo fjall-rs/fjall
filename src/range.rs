@@ -2,7 +2,7 @@ use crate::{
     memtable::MemTable,
     merge::{BoxedIterator, MergeIterator},
     segment::Segment,
-    value::{ParsedInternalKey, SeqNo},
+    value::{ParsedInternalKey, SeqNo, UserData, UserKey},
     Value,
 };
 use std::{
@@ -18,7 +18,7 @@ pub struct MemTableGuard<'a> {
 
 pub struct Range<'a> {
     guard: MemTableGuard<'a>,
-    bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
+    bounds: (Bound<UserKey>, Bound<UserKey>),
     segments: Vec<Arc<Segment>>,
     seqno: Option<SeqNo>,
 }
@@ -26,7 +26,7 @@ pub struct Range<'a> {
 impl<'a> Range<'a> {
     pub fn new(
         guard: MemTableGuard<'a>,
-        bounds: (Bound<Vec<u8>>, Bound<Vec<u8>>),
+        bounds: (Bound<UserKey>, Bound<UserKey>),
         segments: Vec<Arc<Segment>>,
         seqno: Option<SeqNo>,
     ) -> Self {
@@ -123,7 +123,7 @@ impl<'a> RangeIterator<'a> {
 }
 
 impl<'a> Iterator for RangeIterator<'a> {
-    type Item = crate::Result<(Vec<u8>, Vec<u8>)>;
+    type Item = crate::Result<(UserKey, UserData)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.iter.next()?.map(|x| (x.key, x.value)))
