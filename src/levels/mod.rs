@@ -9,10 +9,10 @@ use crate::time::unix_timestamp;
 use serde_json::json;
 
 use self::level::{Level, ResolvedLevel};
-use crate::segment::Segment;
+use crate::{file::rewrite_atomic, segment::Segment};
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File},
+    fs::{self},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -143,22 +143,18 @@ impl Levels {
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
         log::trace!("Writing level manifest");
 
-        let temp_path = self
-            .path
-            .parent()
-            .expect("level manifest should have parent folder")
-            .join("~levels.json");
+        // NOTE: Serialization can't fail here
+        #[allow(clippy::expect_used)]
+        let json = serde_json::to_string_pretty(&self.levels).expect("should serialize");
 
-        let mut temp_file = File::create(&temp_path)?;
-        serde_json::to_writer_pretty(&mut temp_file, &self.levels).expect("should serialize");
-
-        // TODO: this may not work on Windows
-        // Use https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html#method.persist
-        fs::rename(&temp_path, &self.path)?;
-
-        // fsync levels manifest
-        let file = File::open(&self.path)?;
-        file.sync_all()?;
+        // NOTE: Compaction threads don't have concurrent access to the level manifest
+        // because it is behind a mutex
+        // *However*, the file still needs to be rewritten atomically, because
+        // the system could crash at any moment, so
+        //
+        // a) truncating is not an option, because for a short moment, the file is empty
+        // b) just overwriting corrupts the file content
+        rewrite_atomic(&self.path, json.as_bytes())?;
 
         Ok(())
     }
