@@ -4,6 +4,7 @@ use crate::block_cache::BlockCache;
 use crate::disk_block::DiskBlock;
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
+use crate::value::UserKey;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -25,7 +26,7 @@ pub struct IndexEntry {
     pub size: u32,
 
     /// Key of first item in block
-    pub start_key: Vec<u8>,
+    pub start_key: UserKey,
 }
 
 impl Serializable for IndexEntry {
@@ -59,7 +60,7 @@ impl Deserializable for IndexEntry {
         Ok(Self {
             offset,
             size,
-            start_key: key,
+            start_key: Arc::from(key),
         })
     }
 }
@@ -69,7 +70,7 @@ pub type IndexBlock = DiskBlock<IndexEntry>;
 pub struct IndexBlockIndex(Arc<BlockCache>);
 
 impl IndexBlockIndex {
-    pub fn insert(&self, segment_id: String, key: Vec<u8>, value: Arc<IndexBlock>) {
+    pub fn insert(&self, segment_id: String, key: UserKey, value: Arc<IndexBlock>) {
         self.0.insert_index_block(segment_id, key, value);
     }
 
@@ -82,7 +83,7 @@ impl IndexBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct MetaIndex {
-    file: Mutex<BufReader<File>>,
+    file: Mutex<File>,
 
     /// Base folder path
     path: PathBuf,
@@ -151,7 +152,7 @@ impl MetaIndex {
                 Ok(Some(IndexEntry {
                     offset: block_ref.offset,
                     size: block_ref.size,
-                    start_key: block_key.clone(),
+                    start_key: block_key.to_vec().into(),
                 }))
             }
         }
@@ -260,14 +261,18 @@ impl MetaIndex {
             None => {
                 // Cache miss: load from disk
 
-                let mut file = self.file.lock().expect("lock is poisoned");
+                let mut file_reader = self.file.lock().expect("lock is poisoned");
 
-                let block =
-                    IndexBlock::from_file_compressed(&mut *file, block_ref.offset, block_ref.size)?;
+                let block = IndexBlock::from_file_compressed(
+                    &mut *file_reader,
+                    block_ref.offset,
+                    block_ref.size,
+                )?;
+
+                drop(file_reader);
 
                 let block = Arc::new(block);
 
-                // Cache block
                 self.blocks.insert(
                     self.segment_id.clone(),
                     block_key.into(),
@@ -286,30 +291,7 @@ impl MetaIndex {
             return Ok(None);
         };
 
-        let index_block = match self.blocks.get(self.segment_id.clone(), block_key) {
-            Some(block) => block,
-            None => {
-                let mut file = self.file.lock().expect("lock is poisoned");
-
-                let block = IndexBlock::from_file_compressed(
-                    &mut *file,
-                    index_block_ref.offset,
-                    index_block_ref.size,
-                )?;
-
-                drop(file);
-
-                let block = Arc::new(block);
-
-                self.blocks.insert(
-                    self.segment_id.clone(),
-                    block_key.clone(),
-                    Arc::clone(&block),
-                );
-
-                block
-            }
-        };
+        let index_block = self.load_index_block(block_key, index_block_ref)?;
 
         Ok(index_block.get_lower_bound_block_info(key).cloned())
     }
@@ -334,9 +316,7 @@ impl MetaIndex {
         }
 
         Ok(Self {
-            file: Mutex::new(BufReader::new(File::open(
-                path.as_ref().join("index_blocks"),
-            )?)),
+            file: Mutex::new(File::open(path.as_ref().join("index_blocks"))?),
             path: path.as_ref().into(),
             segment_id,
             index: DiskBlockIndex::new(tree),
@@ -351,7 +331,7 @@ impl MetaIndex {
         let index_block_index = IndexBlockIndex(Arc::clone(&block_cache));
 
         Ok(Self {
-            file: Mutex::new(BufReader::new(File::open("Cargo.toml")?)),
+            file: Mutex::new(File::open("Cargo.toml")?),
             path: ".".into(),
             block_cache,
             segment_id,

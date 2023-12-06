@@ -109,7 +109,7 @@ mod tests {
                 file_size: 1,
                 compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
-                key_range: (vec![], vec![]),
+                key_range: (vec![].into(), vec![].into()),
                 tombstone_count: 0,
                 uncompressed_size: 0,
                 seqnos: (0, 0),

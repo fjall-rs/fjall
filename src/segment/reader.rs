@@ -1,8 +1,12 @@
-use super::{block::ValueBlock, index::MetaIndex};
-use crate::{block_cache::BlockCache, descriptor_table::FileDescriptorTable, Value};
+use super::{
+    block::ValueBlock,
+    index::{IndexEntry, MetaIndex},
+};
+use crate::{
+    block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
+};
 use std::{
     collections::{HashMap, VecDeque},
-    io::{Seek, SeekFrom},
     sync::Arc,
 };
 
@@ -16,9 +20,69 @@ pub struct Reader {
     segment_id: String,
     block_cache: Arc<BlockCache>,
 
-    blocks: HashMap<Vec<u8>, VecDeque<Value>>,
-    current_lo: Option<Vec<u8>>,
-    current_hi: Option<Vec<u8>>,
+    blocks: HashMap<UserKey, VecDeque<Value>>,
+    current_lo: Option<UserKey>,
+    current_hi: Option<UserKey>,
+}
+
+pub fn load_and_cache_by_block_handle(
+    descriptor_table: &FileDescriptorTable,
+    block_cache: &BlockCache,
+    segment_id: &str,
+    block_handle: &IndexEntry,
+) -> crate::Result<Option<Arc<ValueBlock>>> {
+    Ok(
+        if let Some(block) =
+            block_cache.get_disk_block(segment_id.to_string(), &block_handle.start_key)
+        {
+            // Cache hit: Copy from block
+
+            Some(block)
+        } else {
+            // Cache miss: load from disk
+
+            let mut file_reader = descriptor_table.access();
+
+            let block = ValueBlock::from_file_compressed(
+                &mut *file_reader,
+                block_handle.offset,
+                block_handle.size,
+            )?;
+
+            drop(file_reader);
+
+            let block = Arc::new(block);
+
+            block_cache.insert_disk_block(
+                segment_id.to_string(),
+                block_handle.start_key.clone(),
+                Arc::clone(&block),
+            );
+
+            Some(block)
+        },
+    )
+}
+
+pub fn load_and_cache_block<K: AsRef<[u8]>>(
+    descriptor_table: &FileDescriptorTable,
+    block_index: &MetaIndex,
+    block_cache: &BlockCache,
+    segment_id: &str,
+    item_key: K,
+) -> crate::Result<Option<Arc<ValueBlock>>> {
+    Ok(
+        if let Some(block_handle) = block_index.get_lower_bound_block_info(item_key.as_ref())? {
+            load_and_cache_by_block_handle(
+                descriptor_table,
+                block_cache,
+                segment_id,
+                &block_handle,
+            )?
+        } else {
+            None
+        },
+    )
 }
 
 impl Reader {
@@ -27,8 +91,8 @@ impl Reader {
         segment_id: String,
         block_cache: Arc<BlockCache>,
         block_index: Arc<MetaIndex>,
-        start_offset: Option<&Vec<u8>>,
-        end_offset: Option<&Vec<u8>>,
+        start_offset: Option<&UserKey>,
+        end_offset: Option<&UserKey>,
     ) -> crate::Result<Self> {
         let mut iter = Self {
             descriptor_table,
@@ -61,35 +125,15 @@ impl Reader {
 
     fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
         Ok(
-            if let Some(block_ref) = self.block_index.get_lower_bound_block_info(key)? {
-                if let Some(block) = self
-                    .block_cache
-                    .get_disk_block(self.segment_id.clone(), &block_ref.start_key)
-                {
-                    // Cache hit: Copy from block
-
-                    self.blocks.insert(key.to_vec(), block.items.clone().into());
-                } else {
-                    // Cache miss: load from disk
-
-                    let mut file_reader = self.descriptor_table.access();
-                    file_reader.seek(SeekFrom::Start(block_ref.offset))?;
-
-                    let block =
-                        ValueBlock::from_reader_compressed(&mut *file_reader, block_ref.size)?;
-
-                    drop(file_reader);
-
-                    // TODO: clone hurts
-                    self.blocks.insert(key.to_vec(), block.items.clone().into());
-
-                    self.block_cache.insert_disk_block(
-                        self.segment_id.clone(),
-                        block_ref.start_key,
-                        Arc::new(block),
-                    );
-                }
-
+            if let Some(block) = load_and_cache_block(
+                &self.descriptor_table,
+                &self.block_index,
+                &self.block_cache,
+                &self.segment_id,
+                key,
+            )? {
+                let items = block.items.clone().into();
+                self.blocks.insert(key.to_vec().into(), items);
                 Some(())
             } else {
                 None
@@ -273,8 +317,14 @@ mod tests {
             block_size: 4096,
         })?;
 
-        let items = (0u64..ITEM_COUNT)
-            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 1000 + i));
+        let items = (0u64..ITEM_COUNT).map(|i| {
+            Value::new(
+                i.to_be_bytes(),
+                nanoid::nanoid!().as_bytes(),
+                false,
+                1000 + i,
+            )
+        });
 
         for item in items {
             writer.write(item)?;

@@ -2,14 +2,14 @@ use crate::{
     merge::{BoxedIterator, MergeIterator},
     range::MemTableGuard,
     segment::Segment,
-    value::{ParsedInternalKey, SeqNo},
+    value::{ParsedInternalKey, SeqNo, UserData, UserKey},
     Value,
 };
 use std::sync::Arc;
 
 pub struct Prefix<'a> {
     guard: MemTableGuard<'a>,
-    prefix: Vec<u8>,
+    prefix: UserKey,
     segments: Vec<Arc<Segment>>,
     seqno: Option<SeqNo>,
 }
@@ -17,7 +17,7 @@ pub struct Prefix<'a> {
 impl<'a> Prefix<'a> {
     pub fn new(
         guard: MemTableGuard<'a>,
-        prefix: Vec<u8>,
+        prefix: UserKey,
         segments: Vec<Arc<Segment>>,
         seqno: Option<SeqNo>,
     ) -> Self {
@@ -87,7 +87,7 @@ impl<'a> PrefixIterator<'a> {
 }
 
 impl<'a> Iterator for PrefixIterator<'a> {
-    type Item = crate::Result<(Vec<u8>, Vec<u8>)>;
+    type Item = crate::Result<(UserKey, UserData)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.iter.next()?.map(|x| (x.key, x.value)))

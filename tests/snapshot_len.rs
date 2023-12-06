@@ -11,14 +11,14 @@ fn snapshot_basic() -> lsm_tree::Result<()> {
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
-        tree.insert(key, "abc")?;
+        tree.insert(key, "abc".as_bytes())?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT);
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
-        tree.insert(key, "abc")?;
+        tree.insert(key, "abc".as_bytes())?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT);
@@ -30,7 +30,7 @@ fn snapshot_basic() -> lsm_tree::Result<()> {
 
     for x in (ITEM_COUNT as u64)..((ITEM_COUNT * 2) as u64) {
         let key = x.to_be_bytes();
-        tree.insert(key, "abc")?;
+        tree.insert(key, "abc".as_bytes())?;
     }
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);

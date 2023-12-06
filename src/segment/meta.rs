@@ -1,5 +1,8 @@
 use super::writer::Writer;
-use crate::{time::unix_timestamp, value::SeqNo};
+use crate::{
+    time::unix_timestamp,
+    value::{SeqNo, UserKey},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::OpenOptions,
@@ -50,7 +53,7 @@ pub struct Metadata {
     pub uncompressed_size: u64,
 
     /// Key range
-    pub key_range: (Vec<u8>, Vec<u8>),
+    pub key_range: (UserKey, UserKey),
 
     /// Sequence number range
     pub seqnos: (SeqNo, SeqNo),

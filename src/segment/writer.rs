@@ -1,7 +1,10 @@
 use super::{block::ValueBlock, meta::Metadata};
 use crate::{
-    id::generate_segment_id, segment::index::writer::Writer as IndexWriter, serde::Serializable,
-    value::SeqNo, Value,
+    id::generate_segment_id,
+    segment::index::writer::Writer as IndexWriter,
+    serde::Serializable,
+    value::{SeqNo, UserKey},
+    Value,
 };
 use lz4_flex::compress_prepend_size;
 use std::{
@@ -116,8 +119,8 @@ pub struct Writer {
     pub file_pos: u64,
     pub uncompressed_size: u64,
 
-    pub first_key: Option<Vec<u8>>,
-    pub last_key: Option<Vec<u8>>,
+    pub first_key: Option<UserKey>,
+    pub last_key: Option<UserKey>,
     pub tombstone_count: usize,
     pub chunk_size: usize,
 
@@ -324,8 +327,8 @@ mod tests {
             block_size: 4096,
         })?;
 
-        let items =
-            (0u64..ITEM_COUNT).map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!(), false, 0));
+        let items = (0u64..ITEM_COUNT)
+            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!().as_bytes(), false, 0));
 
         for item in items {
             writer.write(item)?;

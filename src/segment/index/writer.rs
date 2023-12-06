@@ -1,5 +1,5 @@
 use super::IndexEntry;
-use crate::{disk_block::DiskBlock, serde::Serializable};
+use crate::{disk_block::DiskBlock, serde::Serializable, value::UserKey};
 use lz4_flex::compress_prepend_size;
 use std::{
     fs::File,
@@ -91,7 +91,7 @@ impl Writer {
 
     pub fn register_block(
         &mut self,
-        start_key: Vec<u8>,
+        start_key: UserKey,
         offset: u64,
         size: u32,
     ) -> crate::Result<()> {

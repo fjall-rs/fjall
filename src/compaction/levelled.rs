@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::{levels::Levels, segment::Segment};
+use crate::{levels::Levels, segment::Segment, value::UserKey};
 
 /// Levelled compaction strategy (LCS)
 ///
@@ -44,7 +44,7 @@ impl Default for Strategy {
     }
 }
 
-fn get_key_range(segments: &[Arc<Segment>]) -> (Vec<u8>, Vec<u8>) {
+fn get_key_range(segments: &[Arc<Segment>]) -> (UserKey, UserKey) {
     let (mut min, mut max) = segments[0].metadata.key_range.clone();
 
     for other in segments.iter().skip(1) {
@@ -173,11 +173,12 @@ mod tests {
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
         time::unix_timestamp,
+        value::UserKey,
     };
     use std::sync::Arc;
     use test_log::test;
 
-    fn fixture_segment(id: String, key_range: (Vec<u8>, Vec<u8>)) -> Arc<Segment> {
+    fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::new(0));
 
         Arc::new(Segment {
@@ -228,16 +229,28 @@ mod tests {
 
         let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
 
-        levels.add(fixture_segment("1".into(), (b"a".to_vec(), b"z".to_vec())));
+        levels.add(fixture_segment(
+            "1".into(),
+            ("a".as_bytes().into(), "z".as_bytes().into()),
+        ));
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
-        levels.add(fixture_segment("2".into(), (b"a".to_vec(), b"z".to_vec())));
+        levels.add(fixture_segment(
+            "2".into(),
+            ("a".as_bytes().into(), "z".as_bytes().into()),
+        ));
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
-        levels.add(fixture_segment("3".into(), (b"a".to_vec(), b"z".to_vec())));
+        levels.add(fixture_segment(
+            "3".into(),
+            ("a".as_bytes().into(), "z".as_bytes().into()),
+        ));
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
-        levels.add(fixture_segment("4".into(), (b"a".to_vec(), b"z".to_vec())));
+        levels.add(fixture_segment(
+            "4".into(),
+            ("a".as_bytes().into(), "z".as_bytes().into()),
+        ));
 
         assert_eq!(
             compactor.choose(&levels),
@@ -260,26 +273,38 @@ mod tests {
         let compactor = Strategy::default();
 
         let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
-        levels.add(fixture_segment("1".into(), (b"h".to_vec(), b"t".to_vec())));
-        levels.add(fixture_segment("2".into(), (b"h".to_vec(), b"t".to_vec())));
-        levels.add(fixture_segment("3".into(), (b"h".to_vec(), b"t".to_vec())));
-        levels.add(fixture_segment("4".into(), (b"h".to_vec(), b"t".to_vec())));
+        levels.add(fixture_segment(
+            "1".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "2".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "3".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "4".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
 
         levels.insert_into_level(
             1,
-            fixture_segment("5".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("5".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("6".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("6".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("7".into(), (b"y".to_vec(), b"z".to_vec())),
+            fixture_segment("7".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("8".into(), (b"y".to_vec(), b"z".to_vec())),
+            fixture_segment("8".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
         );
 
         assert_eq!(
@@ -300,26 +325,38 @@ mod tests {
         let compactor = Strategy::default();
 
         let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
-        levels.add(fixture_segment("1".into(), (b"a".to_vec(), b"g".to_vec())));
-        levels.add(fixture_segment("2".into(), (b"h".to_vec(), b"t".to_vec())));
-        levels.add(fixture_segment("3".into(), (b"h".to_vec(), b"t".to_vec())));
-        levels.add(fixture_segment("4".into(), (b"h".to_vec(), b"t".to_vec())));
+        levels.add(fixture_segment(
+            "1".into(),
+            ("a".as_bytes().into(), "g".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "2".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "3".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
+        levels.add(fixture_segment(
+            "4".into(),
+            ("h".as_bytes().into(), "t".as_bytes().into()),
+        ));
 
         levels.insert_into_level(
             1,
-            fixture_segment("5".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("5".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("6".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("6".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("7".into(), (b"y".to_vec(), b"z".to_vec())),
+            fixture_segment("7".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("8".into(), (b"y".to_vec(), b"z".to_vec())),
+            fixture_segment("8".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
         );
 
         assert_eq!(
@@ -356,24 +393,24 @@ mod tests {
 
         levels.insert_into_level(
             2,
-            fixture_segment("4".into(), (b"f".to_vec(), b"l".to_vec())),
+            fixture_segment("4".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
-            fixture_segment("1".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
-            fixture_segment("2".into(), (b"h".to_vec(), b"t".to_vec())),
+            fixture_segment("2".into(), ("h".as_bytes().into(), "t".as_bytes().into())),
         );
 
         levels.insert_into_level(
             1,
-            fixture_segment("3".into(), (b"h".to_vec(), b"t".to_vec())),
+            fixture_segment("3".into(), ("h".as_bytes().into(), "t".as_bytes().into())),
         );
 
         assert_eq!(
@@ -400,36 +437,36 @@ mod tests {
 
         levels.insert_into_level(
             3,
-            fixture_segment("5".into(), (b"f".to_vec(), b"l".to_vec())),
+            fixture_segment("5".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("1".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("2".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("2".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("3".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("3".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("4".into(), (b"a".to_vec(), b"g".to_vec())),
+            fixture_segment("4".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
 
         levels.insert_into_level(
             2,
-            fixture_segment("6".into(), (b"y".to_vec(), b"z".to_vec())),
+            fixture_segment("6".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
         );
 
         assert_eq!(

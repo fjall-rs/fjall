@@ -20,7 +20,7 @@ let tree = Config::new(folder).open()?;
 tree.insert("my_key", "my_value")?;
 
 let item = tree.get("my_key")?;
-assert_eq!(Some("my_value".as_bytes().to_vec()), item);
+assert_eq!(Some("my_value".as_bytes().into()), item);
 
 // Flush to definitely make sure data is persisted
 tree.flush()?;
