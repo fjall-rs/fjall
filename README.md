@@ -86,7 +86,7 @@ Testing system:
 
 ## Minimum supported rust version (MSRV)
 
-1.73.0, see https://github.com/marvin-j97/lsm-tree/issues/8.
+1.68.2
 
 ## License
 
