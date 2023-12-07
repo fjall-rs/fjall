@@ -130,6 +130,7 @@ impl Writer {
 
     fn write_meta_index(&mut self, block_file_size: u64) -> crate::Result<()> {
         concat_files(self.path.join("index_blocks"), self.path.join("blocks"))?;
+        // TODO: probably doesn't work on Windows...
         std::fs::remove_file(self.path.join("index_blocks"))?;
         log::debug!("Concatted index blocks onto blocks file");
 
