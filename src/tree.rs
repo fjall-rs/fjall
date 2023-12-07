@@ -1,6 +1,7 @@
 use crate::{
     block_cache::BlockCache,
     compaction::{worker::start_compaction_thread, CompactionStrategy},
+    descriptor_table::FileDescriptorTable,
     entry::{OccupiedEntry, VacantEntry},
     id::generate_segment_id,
     journal::{shard::JournalShard, Journal},
@@ -421,7 +422,11 @@ impl Tree {
             log::debug!("Recovering segment from {}", path.display());
 
             if segment_ids_to_recover.contains(&segment_id) {
-                let segment = Segment::recover(&path, Arc::clone(block_cache))?;
+                let segment = Segment::recover(
+                    &path,
+                    Arc::clone(block_cache),
+                    Arc::new(FileDescriptorTable::new(path.join("blocks"))?),
+                )?;
                 segments.insert(segment.metadata.id.clone(), Arc::new(segment));
                 log::debug!("Recovered segment from {}", path.display());
             } else {

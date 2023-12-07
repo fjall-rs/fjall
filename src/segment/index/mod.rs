@@ -1,6 +1,7 @@
 pub mod writer;
 
 use crate::block_cache::BlockCache;
+use crate::descriptor_table::FileDescriptorTable;
 use crate::disk_block::DiskBlock;
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::serde::{Deserializable, Serializable};
@@ -9,8 +10,8 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::Path;
+use std::sync::Arc;
 
 /// Points to a block on file
 ///
@@ -83,10 +84,7 @@ impl IndexBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct MetaIndex {
-    file: Mutex<File>,
-
-    /// Base folder path
-    path: PathBuf,
+    descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment ID
     segment_id: String,
@@ -103,8 +101,6 @@ pub struct MetaIndex {
     /// To find a reference to a segment block, first the level-0 index needs to be checked,
     /// then the corresponding index block needs to be loaded, which contains the wanted disk block reference.
     blocks: IndexBlockIndex,
-
-    block_cache: Arc<BlockCache>,
 }
 
 impl IndexBlock {
@@ -261,7 +257,7 @@ impl MetaIndex {
             None => {
                 // Cache miss: load from disk
 
-                let mut file_reader = self.file.lock().expect("lock is poisoned");
+                let mut file_reader = self.descriptor_table.access();
 
                 let block = IndexBlock::from_file_compressed(
                     &mut *file_reader,
@@ -297,9 +293,9 @@ impl MetaIndex {
     }
 
     // TODO: use this instead of from_file after writing Segment somehow...
-    pub fn from_items<P: AsRef<Path>>(
+    pub fn from_items(
         segment_id: String,
-        path: P,
+        descriptor_table: Arc<FileDescriptorTable>,
         items: Vec<IndexEntry>,
         block_cache: Arc<BlockCache>,
     ) -> crate::Result<Self> {
@@ -316,12 +312,10 @@ impl MetaIndex {
         }
 
         Ok(Self {
-            file: Mutex::new(File::open(path.as_ref().join("index_blocks"))?),
-            path: path.as_ref().into(),
+            descriptor_table,
             segment_id,
             index: DiskBlockIndex::new(tree),
             blocks: IndexBlockIndex(Arc::clone(&block_cache)),
-            block_cache,
         })
     }
 
@@ -331,9 +325,11 @@ impl MetaIndex {
         let index_block_index = IndexBlockIndex(Arc::clone(&block_cache));
 
         Ok(Self {
-            file: Mutex::new(File::open("Cargo.toml")?),
-            path: ".".into(),
-            block_cache,
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
+            descriptor_table: Arc::new(
+                FileDescriptorTable::new("Cargo.toml").expect("should open"),
+            ),
             segment_id,
             blocks: index_block_index,
             index: DiskBlockIndex::new(BTreeMap::default()),
@@ -342,6 +338,7 @@ impl MetaIndex {
 
     pub fn from_file<P: AsRef<Path>>(
         segment_id: String,
+        descriptor_table: Arc<FileDescriptorTable>,
         path: P,
         block_cache: Arc<BlockCache>,
     ) -> crate::Result<Self> {
@@ -355,11 +352,6 @@ impl MetaIndex {
         );
         assert!(
             path.as_ref().join("index").exists(),
-            "{} missing",
-            path.as_ref().display()
-        );
-        assert!(
-            path.as_ref().join("index_blocks").exists(),
             "{} missing",
             path.as_ref().display()
         );
@@ -382,6 +374,6 @@ impl MetaIndex {
 
         debug_assert!(!index.items.is_empty());
 
-        Self::from_items(segment_id, path, index.items, block_cache)
+        Self::from_items(segment_id, descriptor_table, index.items, block_cache)
     }
 }

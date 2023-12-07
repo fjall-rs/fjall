@@ -41,8 +41,11 @@ fn flush_worker(
     let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer)?;
     metadata.write_to_file()?;
 
+    let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?);
+
     match MetaIndex::from_file(
         segment_id.into(),
+        Arc::clone(&descriptor_table),
         &segment_folder,
         Arc::clone(&tree.block_cache),
     )
@@ -52,7 +55,7 @@ fn flush_worker(
             log::debug!("Read MetaIndex");
 
             let created_segment = Segment {
-                descriptor_table: Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?),
+                descriptor_table,
                 block_index: meta_index,
                 block_cache: Arc::clone(&tree.block_cache),
                 metadata,

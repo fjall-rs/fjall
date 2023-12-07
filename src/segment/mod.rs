@@ -42,12 +42,20 @@ pub struct Segment {
 
 impl Segment {
     /// Tries to recover a segment from a folder.
-    pub fn recover<P: AsRef<Path>>(folder: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
+    pub fn recover<P: AsRef<Path>>(
+        folder: P,
+        block_cache: Arc<BlockCache>,
+        descriptor_table: Arc<FileDescriptorTable>,
+    ) -> crate::Result<Self> {
         let folder = folder.as_ref();
 
         let metadata = Metadata::from_disk(folder.join("meta.json"))?;
-        let block_index =
-            MetaIndex::from_file(metadata.id.clone(), folder, Arc::clone(&block_cache))?;
+        let block_index = MetaIndex::from_file(
+            metadata.id.clone(),
+            descriptor_table,
+            folder,
+            Arc::clone(&block_cache),
+        )?;
 
         Ok(Self {
             descriptor_table: Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),

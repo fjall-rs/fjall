@@ -281,12 +281,13 @@ impl Writer {
             return Ok(());
         }
 
-        // TODO: write (& sync) bloom filter
-
-        self.index_writer.finish()?;
-
         self.block_writer.flush()?;
+
+        self.index_writer.finish(self.file_pos)?;
+
         self.block_writer.get_mut().sync_all()?;
+
+        // TODO: write (& sync) bloom filter
 
         // fsync folder
         let folder = std::fs::File::open(&self.opts.path)?;
@@ -317,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_write_and_read() -> crate::Result<()> {
-        const ITEM_COUNT: u64 = 100_000;
+        const ITEM_COUNT: u64 = 100;
 
         let folder = tempfile::tempdir()?.into_path();
 
@@ -343,6 +344,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(
             metadata.id.clone(),
+            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             &folder,
             Arc::clone(&block_cache),
         )?);

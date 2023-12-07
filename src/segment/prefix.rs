@@ -168,6 +168,7 @@ mod tests {
             let block_cache = Arc::new(BlockCache::new(usize::MAX));
             let meta_index = Arc::new(MetaIndex::from_file(
                 metadata.id.clone(),
+                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
                 &folder,
                 Arc::clone(&block_cache),
             )?);
@@ -245,6 +246,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(
             metadata.id.clone(),
+            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
             &folder,
             Arc::clone(&block_cache),
         )?);

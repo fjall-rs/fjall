@@ -64,7 +64,6 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 Is the disk format stable yet? Not quite, notably missing is:
 
 - Finalize journal format
-- Merge index blocks & disk blocks of segments into a single file
 - Bloom filters
 - Write a specification
 

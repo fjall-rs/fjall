@@ -89,12 +89,20 @@ pub fn do_compaction(
             let segment_id = metadata.id.clone();
             let path = metadata.path.clone();
 
+            let descriptor_table =
+                Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?);
+
             Ok(Segment {
-                descriptor_table: Arc::new(FileDescriptorTable::new(path.join("blocks"))?),
+                descriptor_table: Arc::clone(&descriptor_table),
                 metadata,
                 block_cache: Arc::clone(&tree.block_cache),
-                block_index: MetaIndex::from_file(segment_id, path, Arc::clone(&tree.block_cache))?
-                    .into(),
+                block_index: MetaIndex::from_file(
+                    segment_id,
+                    descriptor_table,
+                    path,
+                    Arc::clone(&tree.block_cache),
+                )?
+                .into(),
             })
         })
         .collect::<crate::Result<Vec<_>>>()?;

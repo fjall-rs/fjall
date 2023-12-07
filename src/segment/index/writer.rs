@@ -2,10 +2,27 @@ use super::IndexEntry;
 use crate::{disk_block::DiskBlock, serde::Serializable, value::UserKey};
 use lz4_flex::compress_prepend_size;
 use std::{
-    fs::File,
-    io::{BufWriter, Write},
+    fs::{File, OpenOptions},
+    io::{BufReader, BufWriter, Write},
     path::{Path, PathBuf},
 };
+
+fn concat_files<P: AsRef<Path>>(src_path: P, dest_path: P) -> crate::Result<()> {
+    let reader = File::open(src_path)?;
+    let mut reader = BufReader::new(reader);
+
+    let writer = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open(dest_path)?;
+    let mut writer = BufWriter::new(writer);
+
+    std::io::copy(&mut reader, &mut writer)?;
+    writer.flush()?;
+
+    Ok(())
+}
 
 pub struct Writer {
     path: PathBuf,
@@ -111,7 +128,15 @@ impl Writer {
         Ok(())
     }
 
-    fn write_meta_index(&mut self) -> crate::Result<()> {
+    fn write_meta_index(&mut self, block_file_size: u64) -> crate::Result<()> {
+        concat_files(self.path.join("index_blocks"), self.path.join("blocks"))?;
+        std::fs::remove_file(self.path.join("index_blocks"))?;
+        log::debug!("Concatted index blocks onto blocks file");
+
+        for item in &mut self.index_chunk.items {
+            item.offset += block_file_size;
+        }
+
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
         self.index_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.index_chunk.items)?;
@@ -124,6 +149,7 @@ impl Writer {
 
         // Write to file
         self.index_writer.write_all(&bytes)?;
+        self.index_writer.flush()?;
 
         log::debug!(
             "Written meta index to {}, with {} pointers ({} bytes)",
@@ -135,29 +161,16 @@ impl Writer {
         Ok(())
     }
 
-    fn flush_writers(&mut self) -> crate::Result<()> {
-        // fsync data blocks
-        self.block_writer.flush()?;
-        self.block_writer.get_mut().sync_all()?;
-
-        // fsync index blocks
-        self.index_writer.flush()?;
-        self.index_writer.get_mut().sync_all()?;
-
-        Ok(())
-    }
-
-    pub fn finish(&mut self) -> crate::Result<()> {
+    pub fn finish(&mut self, block_file_size: u64) -> crate::Result<()> {
         if self.block_counter > 0 {
             self.write_block()?;
         }
 
-        self.write_meta_index()?;
-        self.flush_writers()?;
+        self.block_writer.flush()?;
+        self.write_meta_index(block_file_size)?;
 
-        // fsync folder
-        let file = std::fs::File::open(&self.path)?;
-        file.sync_all()?;
+        self.block_writer.get_mut().sync_all()?;
+        self.index_writer.get_mut().sync_all()?;
 
         Ok(())
     }
