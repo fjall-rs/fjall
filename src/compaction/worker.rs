@@ -108,7 +108,7 @@ pub fn do_compaction(
         })
         .collect::<crate::Result<Vec<_>>>()?;
 
-    log::trace!("Acquiring segment lock");
+    log::debug!("compaction: acquiring levels manifest write lock");
     let mut segments_lock = tree.levels.write().expect("lock is poisoned");
 
     log::debug!(
@@ -118,7 +118,7 @@ pub fn do_compaction(
     );
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::trace!("Acquiring memtable lock");
+    log::debug!("compaction: acquiring immu memtables write lock");
     let memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
 
     for segment in created_segments {
@@ -152,7 +152,7 @@ pub fn do_compaction(
 
 pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
     loop {
-        log::trace!("Acquiring segment lock");
+        log::debug!("compaction: acquiring levels manifest write lock");
         let mut segments_lock = tree.levels.write().expect("lock is poisoned");
 
         if tree.is_stopped() {
@@ -166,7 +166,7 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
             }
             Choice::DeleteSegments(payload) => {
                 // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
-                log::trace!("Acquiring memtable lock");
+                log::debug!("compaction: acquiring immu memtables write lock");
                 let _memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
 
                 for key in &payload {
@@ -204,7 +204,6 @@ pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Re
         // TODO: when there are already N compaction threads running, just don't spawn a thread
         tree.compaction_semaphore.acquire();
 
-        log::debug!("Compaction thread received event: New segment flushed");
         compaction_worker(&tree)?;
 
         log::trace!("Post compaction semaphore");

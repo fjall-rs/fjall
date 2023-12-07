@@ -88,11 +88,33 @@ impl Tree {
     pub fn open(config: Config) -> crate::Result<Self> {
         log::info!("Opening LSM-tree at {}", config.path.display());
 
-        if config.path.join(LSM_MARKER).exists() {
+        let flush_ms = config.fsync_ms;
+
+        let tree = if config.path.join(LSM_MARKER).exists() {
             Self::recover(config)
         } else {
             Self::create_new(config)
+        };
+
+        if let Some(ms) = flush_ms {
+            if let Ok(tree) = &tree {
+                tree.start_fsync_thread(ms);
+            };
         }
+
+        tree
+    }
+
+    fn start_fsync_thread(&self, ms: usize) {
+        let tree = self.clone();
+
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+
+            if let Err(e) = tree.flush() {
+                log::error!("Fsync failed: {e:?}");
+            }
+        });
     }
 
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.

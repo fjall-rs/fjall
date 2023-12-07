@@ -3,6 +3,7 @@ use crate::{
     file::SEGMENT_METADATA_FILE,
     time::unix_timestamp,
     value::{SeqNo, UserKey},
+    version::Version,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,6 +25,8 @@ impl std::fmt::Display for CompressionType {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
+    pub version: Version,
+
     /// Path of segment folder
     pub path: PathBuf,
 
@@ -68,6 +71,7 @@ impl Metadata {
     pub fn from_writer(id: String, writer: Writer) -> crate::Result<Self> {
         Ok(Self {
             id,
+            version: Version::V0,
             path: writer.opts.path,
             block_count: writer.block_count as u32,
             block_size: writer.opts.block_size,

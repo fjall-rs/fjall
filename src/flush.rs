@@ -62,12 +62,13 @@ fn flush_worker(
                 metadata,
             };
 
+            log::debug!("flush: acquiring levels manifest");
             let mut levels = tree.levels.write().expect("lock is poisoned");
             levels.add(Arc::new(created_segment));
             levels.write_to_disk()?;
             drop(levels);
 
-            log::debug!("Destroying old memtable");
+            log::debug!("flush: acquiring immu memtables write lock");
             let mut memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
             memtable_lock.remove(segment_id);
             drop(memtable_lock);
@@ -93,7 +94,10 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     tree.flush_semaphore.acquire();
     log::trace!("Got flush semaphore");
 
+    log::debug!("flush: acquiring journal full lock");
     let mut lock = tree.journal.shards.full_lock();
+
+    log::debug!("flush: acquiring memtable write lock");
     let mut memtable_lock = tree.active_memtable.write().expect("lock is poisoned");
 
     if memtable_lock.items.is_empty() {
@@ -119,6 +123,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     let old_memtable = std::mem::take(&mut *memtable_lock);
     let old_memtable = Arc::new(old_memtable);
 
+    log::debug!("flush: acquiring immu memtable write lock");
     let mut immutable_memtables = tree.immutable_memtables.write().expect("lock is poisoned");
     immutable_memtables.insert(segment_id.clone(), Arc::clone(&old_memtable));
 
@@ -140,6 +145,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .path
         .join(JOURNALS_FOLDER)
         .join(generate_segment_id());
+
     Journal::rotate(new_journal_path, &mut lock)?;
 
     tree.approx_active_memtable_size

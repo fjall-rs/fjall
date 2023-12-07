@@ -82,6 +82,7 @@ impl<'a> RangeIterator<'a> {
         let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
+            // TODO: see below
             let reader = segment
                 .range(lock.bounds.clone())
                 .expect("failed to init range iter");
@@ -141,6 +142,7 @@ impl<'a> IntoIterator for &'a Range<'a> {
     type Item = <Self::IntoIter as Iterator>::Item;
 
     fn into_iter(self) -> Self::IntoIter {
+        // TODO: this is a problem...
         RangeIterator::new(self, self.seqno)
     }
 }

@@ -7,13 +7,13 @@ use crate::{
     Tree,
 };
 
-#[derive(Clone)]
 /// A snapshot captures a read-only point-in-time view of the tree at the time the snapshot was created.
 ///
 /// As long as the snapshot is open, old versions of objects will not be evicted as to
 /// keep the snapshot consistent. Thus, snapshots should only be kept around for as little as possible.
 ///
 /// Snapshots do not persist across restarts.
+#[derive(Clone)]
 pub struct Snapshot {
     tree: Tree,
     seqno: SeqNo,

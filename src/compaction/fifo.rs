@@ -103,6 +103,7 @@ mod tests {
             ),
             metadata: Metadata {
                 path: ".".into(),
+                version: crate::version::Version::V0,
                 block_count: 0,
                 block_size: 0,
                 created_at,
