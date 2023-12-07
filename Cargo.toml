@@ -4,7 +4,7 @@ description = "A K.I.S.S. implementation of log-structured merge trees (LSM-tree
 version = "0.0.1"
 edition = "2021"
 # // TODO: #8 find MSRV that builds on all systems
-rust-version = "1.74.0"
+rust-version = "1.73.0"
 license = "MIT"
 readme = "README.md"
 keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
