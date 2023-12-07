@@ -3,6 +3,7 @@ name = "lsm_tree"
 description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
 version = "0.0.1"
 edition = "2021"
+# // TODO: #8 find MSRV that builds on all systems
 rust-version = "1.74.0"
 license = "MIT"
 readme = "README.md"
