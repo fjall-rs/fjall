@@ -7,6 +7,8 @@ const ITEM_COUNT: usize = 100_000;
 fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?;
 
+    // NOTE: clippy bug
+    #[allow(unused_assignments)]
     let mut bytes_before = 0;
 
     {

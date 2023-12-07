@@ -73,6 +73,8 @@ fn tree_non_locking_count() -> lsm_tree::Result<()> {
 
     tree.wait_for_memtable_flush()?;
 
+    // NOTE: don't care
+    #[allow(clippy::type_complexity)]
     let mut range: (Bound<Arc<[u8]>>, Bound<Arc<[u8]>>) = (Unbounded, Unbounded);
     let mut count = 0;
 
