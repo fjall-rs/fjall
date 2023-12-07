@@ -114,7 +114,7 @@ async fn get_item(path: web::Path<String>, data: web::Data<AppState>) -> MyResul
         Some(item) => Ok(HttpResponse::Ok()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("application/json; utf-8")
-            .body(item)),
+            .body(item.to_vec())),
         None => {
             let body = json!(null);
 

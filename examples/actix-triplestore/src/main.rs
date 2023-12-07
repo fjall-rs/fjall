@@ -92,7 +92,7 @@ async fn get_subject(path: web::Path<String>, data: web::Data<AppState>) -> MyRe
         Some(item) => Ok(HttpResponse::Ok()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("application/json; utf-8")
-            .body(item)),
+            .body(item.to_vec())),
         None => Ok(HttpResponse::NotFound()
             .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
             .content_type("text:html; utf-8")

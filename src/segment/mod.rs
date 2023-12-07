@@ -88,6 +88,8 @@ impl Segment {
                 // NOTE: Fastpath for non-seqno reads (which are most common)
                 // This avoids setting up a rather expensive prefix reader
                 // (see explanation for that below)
+                // This only really works because sequence numbers are sorted
+                // in descending order
 
                 if let Some(block_handle) = self.block_index.get_latest(key.as_ref())? {
                     let block = load_and_cache_by_block_handle(
