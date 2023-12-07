@@ -1,5 +1,3 @@
-# LSM-tree
-
 [![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
 
 
