@@ -1,5 +1,5 @@
 [package]
-name = "lsm_tree"
+name = "lsm-tree"
 description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
 version = "0.0.1"
 edition = "2021"

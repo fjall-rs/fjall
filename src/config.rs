@@ -49,10 +49,12 @@ pub struct Config {
     pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
+const DEFAULT_FILE_FOLDER: &str = ".lsm.data";
+
 impl Default for Config {
     fn default() -> Self {
         Self {
-            path: ".lsm.data".into(),
+            path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
             block_cache_capacity: 1_024,
             max_memtable_size: 64 * 1_024 * 1_024,

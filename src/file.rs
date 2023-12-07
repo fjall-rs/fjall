@@ -4,6 +4,16 @@ use std::{
     path::Path,
 };
 
+pub const LSM_MARKER: &str = ".lsm";
+pub const LEVELS_MANIFEST_FILE: &str = "levels.json";
+pub const JOURNALS_FOLDER: &str = "journals";
+
+pub const SEGMENTS_FOLDER: &str = "segments";
+pub const BLOCKS_FILE: &str = "blocks";
+pub const INDEX_BLOCKS_FILE: &str = "index_blocks";
+pub const TOP_LEVEL_INDEX_FILE: &str = "index";
+pub const SEGMENT_METADATA_FILE: &str = "meta.json";
+
 /// Atomically rewrites a file
 pub fn rewrite_atomic<P: AsRef<Path>>(path: P, content: &[u8]) -> std::io::Result<()> {
     let path = path.as_ref();

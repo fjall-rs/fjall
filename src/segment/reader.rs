@@ -292,6 +292,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,
+        file::BLOCKS_FILE,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -338,7 +339,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
             Arc::clone(&block_cache),
         )?);
@@ -346,7 +347,7 @@ mod tests {
         log::info!("Getting every item");
 
         let mut iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata.id.clone(),
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),
@@ -364,7 +365,7 @@ mod tests {
         log::info!("Getting every item in reverse");
 
         let mut iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata.id,
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),

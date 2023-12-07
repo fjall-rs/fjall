@@ -1,5 +1,10 @@
 use super::IndexEntry;
-use crate::{disk_block::DiskBlock, serde::Serializable, value::UserKey};
+use crate::{
+    disk_block::DiskBlock,
+    file::{BLOCKS_FILE, INDEX_BLOCKS_FILE, TOP_LEVEL_INDEX_FILE},
+    serde::Serializable,
+    value::UserKey,
+};
 use lz4_flex::compress_prepend_size;
 use std::{
     fs::{File, OpenOptions},
@@ -37,10 +42,10 @@ pub struct Writer {
 
 impl Writer {
     pub fn new<P: AsRef<Path>>(path: P, block_size: u32) -> crate::Result<Self> {
-        let block_writer = File::create(path.as_ref().join("index_blocks"))?;
+        let block_writer = File::create(path.as_ref().join(INDEX_BLOCKS_FILE))?;
         let block_writer = BufWriter::with_capacity(u16::MAX.into(), block_writer);
 
-        let index_writer = File::create(path.as_ref().join("index"))?;
+        let index_writer = File::create(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?;
         let index_writer = BufWriter::new(index_writer);
 
         let block_chunk = DiskBlock {
@@ -129,9 +134,12 @@ impl Writer {
     }
 
     fn write_meta_index(&mut self, block_file_size: u64) -> crate::Result<()> {
-        concat_files(self.path.join("index_blocks"), self.path.join("blocks"))?;
+        concat_files(
+            self.path.join(INDEX_BLOCKS_FILE),
+            self.path.join(BLOCKS_FILE),
+        )?;
         // TODO: probably doesn't work on Windows...
-        std::fs::remove_file(self.path.join("index_blocks"))?;
+        std::fs::remove_file(self.path.join(INDEX_BLOCKS_FILE))?;
         log::debug!("Concatted index blocks onto blocks file");
 
         for item in &mut self.index_chunk.items {
@@ -154,7 +162,7 @@ impl Writer {
 
         log::debug!(
             "Written meta index to {}, with {} pointers ({} bytes)",
-            self.path.join("index").display(),
+            self.path.join(TOP_LEVEL_INDEX_FILE).display(),
             self.index_chunk.items.len(),
             bytes.len(),
         );

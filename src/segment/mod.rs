@@ -12,6 +12,7 @@ use self::{
 use crate::{
     block_cache::BlockCache,
     descriptor_table::FileDescriptorTable,
+    file::{BLOCKS_FILE, SEGMENT_METADATA_FILE},
     segment::reader::load_and_cache_by_block_handle,
     value::{SeqNo, UserKey},
     Value,
@@ -49,7 +50,7 @@ impl Segment {
     ) -> crate::Result<Self> {
         let folder = folder.as_ref();
 
-        let metadata = Metadata::from_disk(folder.join("meta.json"))?;
+        let metadata = Metadata::from_disk(folder.join(SEGMENT_METADATA_FILE))?;
         let block_index = MetaIndex::from_file(
             metadata.id.clone(),
             descriptor_table,
@@ -58,7 +59,7 @@ impl Segment {
         )?;
 
         Ok(Self {
-            descriptor_table: Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            descriptor_table: Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata,
             block_index: Arc::new(block_index),
             block_cache,

@@ -82,6 +82,7 @@ mod tests {
         block_cache::BlockCache,
         compaction::{Choice, CompactionStrategy},
         descriptor_table::FileDescriptorTable,
+        file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
     };
@@ -123,7 +124,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(1);
 
-        let levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
@@ -135,7 +136,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(4);
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment("1".into(), 1));
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
@@ -157,7 +158,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::new(2);
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment("1".into(), 1));
         levels.add(fixture_segment("2".into(), 2));
         levels.add(fixture_segment("3".into(), 3));

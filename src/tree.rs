@@ -3,6 +3,7 @@ use crate::{
     compaction::{worker::start_compaction_thread, CompactionStrategy},
     descriptor_table::FileDescriptorTable,
     entry::{OccupiedEntry, VacantEntry},
+    file::{BLOCKS_FILE, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
     id::generate_segment_id,
     journal::{shard::JournalShard, Journal},
     levels::Levels,
@@ -87,7 +88,7 @@ impl Tree {
     pub fn open(config: Config) -> crate::Result<Self> {
         log::info!("Opening LSM-tree at {}", config.path.display());
 
-        if config.path.join(".lsm").exists() {
+        if config.path.join(LSM_MARKER).exists() {
             Self::recover(config)
         } else {
             Self::create_new(config)
@@ -347,14 +348,17 @@ impl Tree {
 
         // Setup folders
         std::fs::create_dir_all(&config.path)?;
-        std::fs::create_dir_all(config.path.join("segments"))?;
-        std::fs::create_dir_all(config.path.join("journals"))?;
+        std::fs::create_dir_all(config.path.join(SEGMENTS_FOLDER))?;
+        std::fs::create_dir_all(config.path.join(JOURNALS_FOLDER))?;
 
-        let marker = config.path.join(".lsm");
+        let marker = config.path.join(LSM_MARKER);
         assert!(!marker.try_exists()?);
 
-        let first_journal_path = config.path.join("journals").join(generate_segment_id());
-        let levels = Levels::create_new(config.levels, config.path.join("levels.json"))?;
+        let first_journal_path = config
+            .path
+            .join(JOURNALS_FOLDER)
+            .join(generate_segment_id());
+        let levels = Levels::create_new(config.levels, config.path.join(LEVELS_MANIFEST_FILE))?;
 
         let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
 
@@ -381,7 +385,7 @@ impl Tree {
         folder.sync_all()?;
 
         // fsync folder
-        let folder = std::fs::File::open(inner.config.path.join("journals"))?;
+        let folder = std::fs::File::open(inner.config.path.join(JOURNALS_FOLDER))?;
         folder.sync_all()?;
 
         // NOTE: Lastly
@@ -403,12 +407,12 @@ impl Tree {
         // NOTE: First we load the level manifest without any
         // segments just to get the IDs
         // Then we recover the segments and build the actual level manifest
-        let levels = Levels::recover(&folder.join("levels.json"), HashMap::new())?;
+        let levels = Levels::recover(&folder.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
         let segment_ids_to_recover = levels.list_ids();
 
         let mut segments = HashMap::new();
 
-        for dirent in std::fs::read_dir(folder.join("segments"))? {
+        for dirent in std::fs::read_dir(folder.join(SEGMENTS_FOLDER))? {
             let dirent = dirent?;
             let path = dirent.path();
 
@@ -425,7 +429,7 @@ impl Tree {
                 let segment = Segment::recover(
                     &path,
                     Arc::clone(block_cache),
-                    Arc::new(FileDescriptorTable::new(path.join("blocks"))?),
+                    Arc::new(FileDescriptorTable::new(path.join(BLOCKS_FILE))?),
                 )?;
                 segments.insert(segment.metadata.id.clone(), Arc::new(segment));
                 log::debug!("Recovered segment from {}", path.display());
@@ -452,11 +456,11 @@ impl Tree {
     fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
         // Load previous levels manifest
         // Add all flushed segments to it, then recover properly
-        let mut levels = Levels::recover(&config.path.join("levels.json"), HashMap::new())?;
+        let mut levels = Levels::recover(&config.path.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
 
         let mut active_journal = None;
 
-        for dirent in std::fs::read_dir(config.path.join("journals"))? {
+        for dirent in std::fs::read_dir(config.path.join(JOURNALS_FOLDER))? {
             let dirent = dirent?;
             let journal_path = dirent.path();
 
@@ -509,7 +513,7 @@ impl Tree {
                 .to_str()
                 .expect("invalid journal folder name")
                 .to_string();
-            let segment_folder = config.path.join("segments").join(&segment_id);
+            let segment_folder = config.path.join(SEGMENTS_FOLDER).join(&segment_id);
 
             if !levels.contains_id(&segment_id) {
                 // The level manifest does not contain the segment
@@ -566,7 +570,10 @@ impl Tree {
         let (journal, memtable) = if let Some(active_journal) = active_journal {
             active_journal
         } else {
-            let next_journal_path = config.path.join("journals").join(generate_segment_id());
+            let next_journal_path = config
+                .path
+                .join(JOURNALS_FOLDER)
+                .join(generate_segment_id());
             (Journal::create_new(next_journal_path)?, MemTable::default())
         };
 
@@ -599,7 +606,7 @@ impl Tree {
         // Finalize Tree
         log::debug!("Loading level manifest");
 
-        let mut levels = Levels::recover(&config.path.join("levels.json"), segments)?;
+        let mut levels = Levels::recover(&config.path.join(LEVELS_MANIFEST_FILE), segments)?;
         levels.sort_levels();
 
         let compaction_threads = 4; // TODO: config

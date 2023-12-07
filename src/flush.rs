@@ -1,6 +1,7 @@
 use crate::{
     compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
+    file::{BLOCKS_FILE, JOURNALS_FOLDER, SEGMENTS_FOLDER},
     id::generate_segment_id,
     journal::Journal,
     memtable::MemTable,
@@ -15,7 +16,7 @@ fn flush_worker(
     segment_id: &str,
     old_journal_folder: &Path,
 ) -> crate::Result<()> {
-    let segment_folder = tree.config.path.join("segments").join(segment_id);
+    let segment_folder = tree.config.path.join(SEGMENTS_FOLDER).join(segment_id);
 
     let mut segment_writer = Writer::new(crate::segment::writer::Options {
         path: segment_folder.clone(),
@@ -41,7 +42,7 @@ fn flush_worker(
     let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer)?;
     metadata.write_to_file()?;
 
-    let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?);
+    let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
 
     match MetaIndex::from_file(
         segment_id.into(),
@@ -137,7 +138,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     let new_journal_path = tree
         .config
         .path
-        .join("journals")
+        .join(JOURNALS_FOLDER)
         .join(generate_segment_id());
     Journal::rotate(new_journal_path, &mut lock)?;
 

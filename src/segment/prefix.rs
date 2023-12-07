@@ -94,6 +94,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,
+        file::BLOCKS_FILE,
         segment::{
             index::MetaIndex,
             meta::Metadata,
@@ -168,13 +169,13 @@ mod tests {
             let block_cache = Arc::new(BlockCache::new(usize::MAX));
             let meta_index = Arc::new(MetaIndex::from_file(
                 metadata.id.clone(),
-                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 &folder,
                 Arc::clone(&block_cache),
             )?);
 
             let iter = Reader::new(
-                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -184,7 +185,7 @@ mod tests {
             assert_eq!(iter.count() as u64, item_count * 3);
 
             let iter = PrefixedReader::new(
-                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -194,7 +195,7 @@ mod tests {
             assert_eq!(iter.count() as u64, item_count);
 
             let iter = PrefixedReader::new(
-                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),
@@ -246,7 +247,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
             Arc::clone(&block_cache),
         )?);
@@ -264,7 +265,7 @@ mod tests {
 
         for (prefix_key, item_count) in expected {
             let iter = PrefixedReader::new(
-                Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&meta_index),

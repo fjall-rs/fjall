@@ -170,6 +170,7 @@ mod tests {
         block_cache::BlockCache,
         compaction::{CompactionStrategy, Input as CompactionInput},
         descriptor_table::FileDescriptorTable,
+        file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::MetaIndex, meta::Metadata, Segment},
         time::unix_timestamp,
@@ -215,7 +216,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         assert_eq!(compactor.choose(&levels), Choice::DoNothing);
 
@@ -227,7 +228,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment(
             "1".into(),
@@ -272,7 +273,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment(
             "1".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
@@ -324,7 +325,7 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment(
             "1".into(),
             ("a".as_bytes().into(), "g".as_bytes().into()),
@@ -389,7 +390,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.insert_into_level(
             2,
@@ -433,7 +434,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut levels = Levels::create_new(4, tempdir.path().join("levels.json"))?;
+        let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.insert_into_level(
             3,

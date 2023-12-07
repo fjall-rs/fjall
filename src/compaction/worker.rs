@@ -1,6 +1,7 @@
 use crate::{
     compaction::Choice,
     descriptor_table::FileDescriptorTable,
+    file::{BLOCKS_FILE, SEGMENTS_FOLDER},
     levels::Levels,
     merge::MergeIterator,
     segment::{index::MetaIndex, writer::MultiWriter, Segment},
@@ -64,7 +65,7 @@ pub fn do_compaction(
         crate::segment::writer::Options {
             block_size: tree.config.block_size,
             evict_tombstones: should_evict_tombstones,
-            path: tree.config().path.join("segments"),
+            path: tree.config().path.join(SEGMENTS_FOLDER),
         },
     )?;
 
@@ -90,7 +91,7 @@ pub fn do_compaction(
             let path = metadata.path.clone();
 
             let descriptor_table =
-                Arc::new(FileDescriptorTable::new(metadata.path.join("blocks"))?);
+                Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
 
             Ok(Segment {
                 descriptor_table: Arc::clone(&descriptor_table),
@@ -137,7 +138,7 @@ pub fn do_compaction(
 
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
-        std::fs::remove_dir_all(tree.config().path.join("segments").join(key))?;
+        std::fs::remove_dir_all(tree.config().path.join(SEGMENTS_FOLDER).join(key))?;
     }
 
     segments_lock.show_segments(&payload.segment_ids);
@@ -180,7 +181,7 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
-                    std::fs::remove_dir_all(tree.config().path.join("segments").join(key))?;
+                    std::fs::remove_dir_all(tree.config().path.join(SEGMENTS_FOLDER).join(key))?;
                 }
 
                 log::trace!("Deleted {} segments", payload.len());

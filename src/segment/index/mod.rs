@@ -4,6 +4,7 @@ use crate::block_cache::BlockCache;
 use crate::descriptor_table::FileDescriptorTable;
 use crate::disk_block::DiskBlock;
 use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
+use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::serde::{Deserializable, Serializable};
 use crate::value::UserKey;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -351,19 +352,19 @@ impl MetaIndex {
             path.as_ref().display()
         );
         assert!(
-            path.as_ref().join("index").exists(),
+            path.as_ref().join(TOP_LEVEL_INDEX_FILE).exists(),
             "{} missing",
             path.as_ref().display()
         );
         assert!(
-            path.as_ref().join("blocks").exists(),
+            path.as_ref().join(BLOCKS_FILE).exists(),
             "{} missing",
             path.as_ref().display()
         );
 
-        let size = std::fs::metadata(path.as_ref().join("index"))?.len();
+        let size = std::fs::metadata(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?.len();
         let index = IndexBlock::from_file_compressed(
-            &mut BufReader::new(File::open(path.as_ref().join("index"))?), // TODO:
+            &mut BufReader::new(File::open(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?), // TODO:
             0,
             size as u32,
         )?;

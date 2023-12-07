@@ -1,5 +1,6 @@
 use super::writer::Writer;
 use crate::{
+    file::SEGMENT_METADATA_FILE,
     time::unix_timestamp,
     value::{SeqNo, UserKey},
 };
@@ -105,7 +106,7 @@ impl Metadata {
             .truncate(true)
             .create(true)
             .write(true)
-            .open(self.path.join("meta.json"))?;
+            .open(self.path.join(SEGMENT_METADATA_FILE))?;
 
         writer.write_all(
             serde_json::to_string_pretty(self)

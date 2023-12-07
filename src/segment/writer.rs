@@ -1,5 +1,6 @@
 use super::{block::ValueBlock, meta::Metadata};
 use crate::{
+    file::BLOCKS_FILE,
     id::generate_segment_id,
     segment::index::writer::Writer as IndexWriter,
     serde::Serializable,
@@ -139,7 +140,7 @@ impl Writer {
     pub fn new(opts: Options) -> crate::Result<Self> {
         std::fs::create_dir_all(&opts.path)?;
 
-        let block_writer = File::create(opts.path.join("blocks"))?;
+        let block_writer = File::create(opts.path.join(BLOCKS_FILE))?;
         let block_writer = BufWriter::with_capacity(512_000, block_writer);
 
         let index_writer = IndexWriter::new(&opts.path, opts.block_size)?;
@@ -344,12 +345,12 @@ mod tests {
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
         let meta_index = Arc::new(MetaIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
             Arc::clone(&block_cache),
         )?);
         let iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join("blocks"))?),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata.id,
             Arc::clone(&block_cache),
             Arc::clone(&meta_index),
