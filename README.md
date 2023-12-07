@@ -88,7 +88,7 @@ Testing system:
 
 ## Minimum supported rust version (MSRV)
 
-1.68.2
+1.74.0
 
 ## License
 

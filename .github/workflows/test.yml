@@ -17,8 +17,8 @@ jobs:
     strategy:
       matrix:
         rust_version:
-          - stable
-          - "1.68.2"
+          #- stable TODO: add when 1.75.0 release
+          - "1.74.0" # // TODO: find MSRV that builds on all systems
         os:
           - ubuntu-latest
           #- windows-latest
