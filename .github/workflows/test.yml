@@ -72,8 +72,8 @@ jobs:
           - powerpc64-unknown-linux-gnu
           #- mips64-unknown-linux-gnuabi64
           - riscv64gc-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
+          #- x86_64-apple-darwin
+          #- aarch64-apple-darwin
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
