@@ -89,6 +89,7 @@ mod segment;
 mod serde;
 mod sharded;
 mod snapshot;
+mod stop_signal;
 mod time;
 mod tree;
 mod tree_inner;

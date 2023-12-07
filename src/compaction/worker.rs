@@ -1,23 +1,33 @@
 use crate::{
+    block_cache::BlockCache,
     compaction::Choice,
     descriptor_table::FileDescriptorTable,
     file::{BLOCKS_FILE, SEGMENTS_FOLDER},
     levels::Levels,
+    memtable::MemTable,
     merge::MergeIterator,
     segment::{index::MetaIndex, writer::MultiWriter, Segment},
-    Tree,
+    stop_signal::StopSignal,
+    Config, Tree,
 };
 use std::{
-    sync::{Arc, RwLockWriteGuard},
+    collections::BTreeMap,
+    sync::{atomic::AtomicU32, Arc, RwLock},
     time::Instant,
 };
 
+use super::CompactionStrategy;
+
 pub fn do_compaction(
-    tree: &Tree,
+    config: Config,
+    levels: Arc<RwLock<Levels>>,
+    stop_signal: StopSignal,
+    immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    open_snapshots: Arc<AtomicU32>,
+    block_cache: Arc<BlockCache>,
     payload: &crate::compaction::Input,
-    mut segments_lock: RwLockWriteGuard<'_, Levels>,
 ) -> crate::Result<()> {
-    if tree.is_stopped() {
+    if stop_signal.is_stopped() {
         log::debug!("Got stop signal: compaction thread is stopping");
         return Ok(());
     }
@@ -29,6 +39,8 @@ pub fn do_compaction(
         payload.segment_ids.len(),
         payload.dest_level
     );
+
+    let mut segments_lock = levels.write().expect("lock is poisoned");
 
     let merge_iter = {
         let to_merge: Vec<Arc<Segment>> = {
@@ -44,9 +56,7 @@ pub fn do_compaction(
         // NOTE: When there are open snapshots
         // we don't want to GC old versions of items
         // otherwise snapshots will lose data
-        let snapshot_count = tree
-            .open_snapshots
-            .load(std::sync::atomic::Ordering::Acquire);
+        let snapshot_count = open_snapshots.load(std::sync::atomic::Ordering::Acquire);
         let no_snapshots_open = snapshot_count == 0;
 
         MergeIterator::from_segments(&to_merge)?.evict_old_versions(no_snapshots_open)
@@ -58,22 +68,22 @@ pub fn do_compaction(
 
     // NOTE: Only evict tombstones when reaching the last level,
     // That way we don't resurrect data beneath the tombstone
-    let should_evict_tombstones = payload.dest_level == (tree.config.levels - 1);
+    let should_evict_tombstones = payload.dest_level == (config.levels - 1);
 
     let mut segment_writer = MultiWriter::new(
         payload.target_size,
         crate::segment::writer::Options {
-            block_size: tree.config.block_size,
+            block_size: config.block_size,
             evict_tombstones: should_evict_tombstones,
-            path: tree.config().path.join(SEGMENTS_FOLDER),
+            path: config.path.join(SEGMENTS_FOLDER),
         },
     )?;
 
     for (idx, item) in merge_iter.enumerate() {
         segment_writer.write(item?)?;
 
-        if idx % 100_000 == 0 && tree.is_stopped() {
-            log::debug!("Got stop signal: compaction thread is stopping");
+        if idx % 100_000 == 0 && stop_signal.is_stopped() {
+            log::debug!("compaction thread: stopping amidst compaction because of stop signal");
             return Ok(());
         }
     }
@@ -96,12 +106,12 @@ pub fn do_compaction(
             Ok(Segment {
                 descriptor_table: Arc::clone(&descriptor_table),
                 metadata,
-                block_cache: Arc::clone(&tree.block_cache),
+                block_cache: Arc::clone(&block_cache),
                 block_index: MetaIndex::from_file(
                     segment_id,
                     descriptor_table,
                     path,
-                    Arc::clone(&tree.block_cache),
+                    Arc::clone(&block_cache),
                 )?
                 .into(),
             })
@@ -109,7 +119,7 @@ pub fn do_compaction(
         .collect::<crate::Result<Vec<_>>>()?;
 
     log::debug!("compaction: acquiring levels manifest write lock");
-    let mut segments_lock = tree.levels.write().expect("lock is poisoned");
+    let mut segments_lock = levels.write().expect("lock is poisoned");
 
     log::debug!(
         "Compacted in {}ms ({} segments created)",
@@ -119,7 +129,7 @@ pub fn do_compaction(
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
     log::debug!("compaction: acquiring immu memtables write lock");
-    let memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
+    let memtable_lock = immutable_memtables.write().expect("lock is poisoned");
 
     for segment in created_segments {
         log::trace!("Persisting segment {}", segment.metadata.id);
@@ -138,7 +148,7 @@ pub fn do_compaction(
 
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
-        std::fs::remove_dir_all(tree.config().path.join(SEGMENTS_FOLDER).join(key))?;
+        std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(key))?;
     }
 
     segments_lock.show_segments(&payload.segment_ids);
@@ -150,24 +160,40 @@ pub fn do_compaction(
     Ok(())
 }
 
-pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
+pub fn compaction_worker(
+    config: Config,
+    levels: Arc<RwLock<Levels>>,
+    stop_signal: StopSignal,
+    compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
+    immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    open_snapshots: Arc<AtomicU32>,
+    block_cache: Arc<BlockCache>,
+) -> crate::Result<()> {
     loop {
         log::debug!("compaction: acquiring levels manifest write lock");
-        let mut segments_lock = tree.levels.write().expect("lock is poisoned");
+        let mut segments_lock = levels.write().expect("lock is poisoned");
 
-        if tree.is_stopped() {
-            log::debug!("Got stop signal: compaction thread is stopping");
+        if stop_signal.is_stopped() {
+            log::debug!("compaction thread: exiting because of stop signal");
             return Ok(());
         }
 
-        match tree.config.compaction_strategy.choose(&segments_lock) {
+        match compaction_strategy.choose(&segments_lock) {
             Choice::DoCompact(payload) => {
-                do_compaction(tree, &payload, segments_lock)?;
+                do_compaction(
+                    config.clone(),
+                    Arc::clone(&levels),
+                    stop_signal.clone(),
+                    Arc::clone(&immutable_memtables),
+                    Arc::clone(&open_snapshots),
+                    Arc::clone(&block_cache),
+                    &payload,
+                )?;
             }
             Choice::DeleteSegments(payload) => {
                 // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
                 log::debug!("compaction: acquiring immu memtables write lock");
-                let _memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
+                let _memtable_lock = immutable_memtables.write().expect("lock is poisoned");
 
                 for key in &payload {
                     log::trace!("Removing segment {}", key);
@@ -181,7 +207,7 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
-                    std::fs::remove_dir_all(tree.config().path.join(SEGMENTS_FOLDER).join(key))?;
+                    std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(key))?;
                 }
 
                 log::trace!("Deleted {} segments", payload.len());
@@ -197,17 +223,33 @@ pub fn compaction_worker(tree: &Tree) -> crate::Result<()> {
 }
 
 pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Result<()>> {
-    let tree = tree.clone();
+    let config = tree.config();
+    let levels = Arc::clone(&tree.levels);
+    let stop_signal = tree.stop_signal.clone();
+    let compaction_strategy = Arc::clone(&config.compaction_strategy);
+    let immutable_memtables = Arc::clone(&tree.immutable_memtables);
+    let open_snapshots = Arc::clone(&tree.open_snapshots);
+    let block_cache = Arc::clone(&tree.block_cache);
+
+    let compaction_semaphore = Arc::clone(&tree.compaction_semaphore);
 
     std::thread::spawn(move || {
         // TODO: maybe change compaction semaphore to atomic u8
         // TODO: when there are already N compaction threads running, just don't spawn a thread
-        tree.compaction_semaphore.acquire();
+        compaction_semaphore.acquire();
 
-        compaction_worker(&tree)?;
+        compaction_worker(
+            config,
+            levels,
+            stop_signal,
+            compaction_strategy,
+            immutable_memtables,
+            open_snapshots,
+            block_cache,
+        )?;
 
         log::trace!("Post compaction semaphore");
-        tree.compaction_semaphore.release();
+        compaction_semaphore.release();
 
         Ok(())
     })

@@ -7,6 +7,7 @@ use crate::disk_block_index::{DiskBlockIndex, DiskBlockReference};
 use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::serde::{Deserializable, Serializable};
 use crate::value::UserKey;
+use crate::version::Version;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -362,11 +363,13 @@ impl MetaIndex {
             path.as_ref().display()
         );
 
-        let size = std::fs::metadata(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?.len();
+        let version_size = Version::len().into();
+        let file_size = std::fs::metadata(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?.len();
+
         let index = IndexBlock::from_file_compressed(
             &mut BufReader::new(File::open(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?), // TODO:
-            0,
-            size as u32,
+            version_size,
+            (file_size - version_size) as u32,
         )?;
 
         if !index.check_crc(index.crc)? {

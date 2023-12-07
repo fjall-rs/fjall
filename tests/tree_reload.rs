@@ -33,7 +33,7 @@ fn tree_reload_empty() -> lsm_tree::Result<()> {
 }
 
 #[test]
-fn tree_segment_reload() -> lsm_tree::Result<()> {
+fn tree_reload() -> lsm_tree::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
@@ -66,7 +66,7 @@ fn tree_segment_reload() -> lsm_tree::Result<()> {
     }
 
     {
-        let tree = Config::new(&folder).open()?;
+        let tree = Config::new(&folder).fsync_ms(None).open()?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(
@@ -78,6 +78,8 @@ fn tree_segment_reload() -> lsm_tree::Result<()> {
             ITEM_COUNT * 2
         );
     }
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     Ok(())
 }

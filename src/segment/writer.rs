@@ -5,6 +5,7 @@ use crate::{
     segment::index::writer::Writer as IndexWriter,
     serde::Serializable,
     value::{SeqNo, UserKey},
+    version::Version,
     Value,
 };
 use lz4_flex::compress_prepend_size;
@@ -118,6 +119,8 @@ pub struct Writer {
     pub block_count: usize,
     pub item_count: usize,
     pub file_pos: u64,
+
+    /// Only takes user data into account
     pub uncompressed_size: u64,
 
     pub first_key: Option<UserKey>,
@@ -141,7 +144,9 @@ impl Writer {
         std::fs::create_dir_all(&opts.path)?;
 
         let block_writer = File::create(opts.path.join(BLOCKS_FILE))?;
-        let block_writer = BufWriter::with_capacity(512_000, block_writer);
+        let mut block_writer = BufWriter::with_capacity(512_000, block_writer);
+
+        let start_offset = Version::V0.write_file_header(&mut block_writer)?;
 
         let index_writer = IndexWriter::new(&opts.path, opts.block_size)?;
 
@@ -159,7 +164,7 @@ impl Writer {
 
             block_count: 0,
             item_count: 0,
-            file_pos: 0,
+            file_pos: start_offset as u64,
             uncompressed_size: 0,
 
             first_key: None,

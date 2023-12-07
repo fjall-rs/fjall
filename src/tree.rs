@@ -11,6 +11,7 @@ use crate::{
     prefix::Prefix,
     range::{MemTableGuard, Range},
     segment::{self, meta::Metadata, Segment},
+    stop_signal::StopSignal,
     tree_inner::TreeInner,
     value::{SeqNo, UserData, UserKey},
     Batch, Config, Snapshot, Value,
@@ -20,7 +21,7 @@ use std::{
     ops::RangeBounds,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        atomic::{AtomicU32, AtomicU64},
         Arc, RwLock, RwLockWriteGuard,
     },
 };
@@ -106,12 +107,22 @@ impl Tree {
     }
 
     fn start_fsync_thread(&self, ms: usize) {
-        let tree = self.clone();
+        log::debug!("starting fsync thread");
 
-        std::thread::spawn(move || {
+        let journal = Arc::clone(&self.journal);
+        let stop_signal = self.stop_signal.clone();
+
+        std::thread::spawn(move || loop {
+            log::trace!("fsync thread: sleeping {ms}ms");
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
-            if let Err(e) = tree.flush() {
+            if stop_signal.is_stopped() {
+                log::debug!("fsync thread: exiting because tree is dropping");
+                return;
+            }
+
+            log::trace!("fsync thread: fsycing journal");
+            if let Err(e) = journal.flush() {
                 log::error!("Fsync failed: {e:?}");
             }
         });
@@ -389,7 +400,7 @@ impl Tree {
 
         let inner = TreeInner {
             config,
-            journal: Journal::create_new(first_journal_path)?,
+            journal: Arc::new(Journal::create_new(first_journal_path)?),
             active_memtable: Arc::new(RwLock::new(MemTable::default())),
             immutable_memtables: Arc::default(),
             block_cache,
@@ -398,8 +409,8 @@ impl Tree {
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)), // TODO: config
             approx_active_memtable_size: AtomicU32::default(),
-            open_snapshots: AtomicU32::new(0),
-            stop_signal: AtomicBool::new(false),
+            open_snapshots: Arc::new(AtomicU32::new(0)),
+            stop_signal: StopSignal::default(),
         };
 
         // fsync folder
@@ -640,7 +651,7 @@ impl Tree {
 
         let inner = TreeInner {
             config,
-            journal,
+            journal: Arc::new(journal),
             active_memtable: Arc::new(RwLock::new(memtable)),
             immutable_memtables: Arc::default(),
             block_cache,
@@ -649,8 +660,8 @@ impl Tree {
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
             approx_active_memtable_size: AtomicU32::new(active_journal_size as u32),
-            open_snapshots: AtomicU32::new(0),
-            stop_signal: AtomicBool::new(false),
+            open_snapshots: Arc::new(AtomicU32::new(0)),
+            stop_signal: StopSignal::default(),
         };
 
         let tree = Self(Arc::new(inner));
@@ -1307,16 +1318,30 @@ impl Tree {
     #[must_use]
     pub fn do_major_compaction(&self) -> std::thread::JoinHandle<crate::Result<()>> {
         log::info!("Starting major compaction thread");
-        let tree = self.clone();
+
+        let config = self.config();
+        let levels = Arc::clone(&self.levels);
+        let stop_signal = self.stop_signal.clone();
+        let immutable_memtables = Arc::clone(&self.immutable_memtables);
+        let open_snapshots = Arc::clone(&self.open_snapshots);
+        let block_cache = Arc::clone(&self.block_cache);
 
         std::thread::spawn(move || {
-            let levels = tree.levels.write().expect("lock is poisoned");
+            let level_lock = levels.write().expect("lock is poisoned");
             let compactor = crate::compaction::major::Strategy::default();
-
-            let choice = compactor.choose(&levels);
+            let choice = compactor.choose(&level_lock);
+            drop(level_lock);
 
             if let crate::compaction::Choice::DoCompact(payload) = choice {
-                crate::compaction::worker::do_compaction(&tree, &payload, levels)?;
+                crate::compaction::worker::do_compaction(
+                    config,
+                    levels,
+                    stop_signal,
+                    immutable_memtables,
+                    open_snapshots,
+                    block_cache,
+                    &payload,
+                )?;
             }
             Ok(())
         })
@@ -1349,10 +1374,5 @@ impl Tree {
     pub fn flush(&self) -> crate::Result<()> {
         self.journal.flush()?;
         Ok(())
-    }
-
-    /// Returns `true` if the tree is being dropped
-    pub(crate) fn is_stopped(&self) -> bool {
-        self.stop_signal.load(std::sync::atomic::Ordering::Acquire)
     }
 }

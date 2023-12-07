@@ -4,6 +4,7 @@ use crate::{
     file::{BLOCKS_FILE, INDEX_BLOCKS_FILE, TOP_LEVEL_INDEX_FILE},
     serde::Serializable,
     value::UserKey,
+    version::Version,
 };
 use lz4_flex::compress_prepend_size;
 use std::{
@@ -43,10 +44,13 @@ pub struct Writer {
 impl Writer {
     pub fn new<P: AsRef<Path>>(path: P, block_size: u32) -> crate::Result<Self> {
         let block_writer = File::create(path.as_ref().join(INDEX_BLOCKS_FILE))?;
-        let block_writer = BufWriter::with_capacity(u16::MAX.into(), block_writer);
+        let mut block_writer = BufWriter::with_capacity(u16::MAX.into(), block_writer);
 
         let index_writer = File::create(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?;
-        let index_writer = BufWriter::new(index_writer);
+        let mut index_writer = BufWriter::new(index_writer);
+
+        let blocks_start_offset = Version::V0.write_file_header(&mut block_writer)?;
+        let _index_start_offset = Version::V0.write_file_header(&mut index_writer)?;
 
         let block_chunk = DiskBlock {
             items: vec![],
@@ -60,7 +64,7 @@ impl Writer {
 
         Ok(Self {
             path: path.as_ref().into(),
-            file_pos: 0,
+            file_pos: blocks_start_offset as u64,
             block_writer,
             index_writer,
             block_counter: 0,

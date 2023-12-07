@@ -21,9 +21,30 @@ impl From<Version> for u16 {
 }
 
 impl Version {
+    pub fn len() -> u8 {
+        5
+    }
+
     pub fn write_file_header<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<usize> {
         writer.write_all(&[b'L', b'S', b'M'])?;
         writer.write_u16::<BigEndian>(u16::from(*self))?;
         Ok(5)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    pub fn test_version_len() {
+        let mut buf = vec![];
+
+        // NOTE: just a test
+        #[allow(clippy::expect_used)]
+        let size = Version::V0.write_file_header(&mut buf).expect("can't fail");
+
+        assert_eq!(Version::len() as usize, size);
     }
 }
