@@ -41,7 +41,7 @@ criterion = { version = "0.5.0", features = ["html_reports"] }
 env_logger = "0.10.0"
 nanoid = "0.4.0"
 tempfile = "3.6.0"
-test-log = "0.2.12"
+test-log = "0.2.14"
 
 [[bench]]
 name = "lsmt"
