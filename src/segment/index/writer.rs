@@ -169,7 +169,6 @@ impl Writer {
         self.block_writer.flush()?;
         self.write_meta_index(block_file_size)?;
 
-        self.block_writer.get_mut().sync_all()?;
         self.index_writer.get_mut().sync_all()?;
 
         Ok(())
