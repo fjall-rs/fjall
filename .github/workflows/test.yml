@@ -18,7 +18,7 @@ jobs:
       matrix:
         rust_version:
           - stable
-          - "1.70.0"
+          - "1.72.0"
         os:
           - ubuntu-latest
           #- windows-latest
