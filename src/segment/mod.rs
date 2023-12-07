@@ -76,6 +76,12 @@ impl Segment {
         key: K,
         seqno: Option<SeqNo>,
     ) -> crate::Result<Option<Value>> {
+        if let Some(seqno) = seqno {
+            if self.metadata.seqnos.0 >= seqno {
+                return Ok(None);
+            }
+        }
+
         if !self.key_range_contains(&key) {
             return Ok(None);
         }
@@ -100,15 +106,15 @@ impl Segment {
                         &block_handle,
                     )?;
 
-                    //eprintln!("block cache now {}", self.block_cache.len());
-
                     let item = block.map_or_else(
                         || Ok(None),
                         |block| {
-                            let item_index =
-                                block.items.binary_search_by(|x| (*x.key).cmp(key.as_ref()));
-
-                            Ok(item_index.map_or(None, |idx| Some(block.items[idx].clone())))
+                            // TODO: maybe binary search can be used, but it needs to find the max seqno
+                            Ok(block
+                                .items
+                                .iter()
+                                .find(|item| item.key == key.as_ref().into())
+                                .cloned())
                         },
                     );
 
@@ -118,6 +124,7 @@ impl Segment {
                 }
             }
             Some(seqno) => {
+                //
                 // TODO: maybe use a [Key..) range iterator with take_until(prefix_met)
                 //       because we never reverse-iterate
                 //       (which is something prefix-iter optimizes by setting the upper bound, which takes some time)
@@ -137,10 +144,17 @@ impl Segment {
                 // Based on get_lower_bound_block, "a" is in Block A
                 // However, we are searching for A with seqno 2, which
                 // unfortunately is in the next block
-                let mut iter = self.prefix(key)?;
+                let iter = self.prefix(key)?;
 
-                iter.find(|x| x.as_ref().map_or(true, |item| item.seqno < seqno))
-                    .transpose()
+                for item in iter {
+                    let item = item?;
+
+                    if item.seqno < seqno {
+                        return Ok(Some(item));
+                    }
+                }
+
+                Ok(None)
             }
         }
     }

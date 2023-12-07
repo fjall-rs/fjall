@@ -66,7 +66,7 @@ impl Ord for ParsedInternalKey {
 /// # Disk representation
 ///
 /// \[seqno; 1 byte] - \[tombstone; 1 byte] - \[key length; 2 bytes] - \[key; N bytes] - \[value length; 4 bytes] - \[value: N bytes]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Value {
     /// User-defined key - an arbitrary byte array
     ///
@@ -83,6 +83,19 @@ pub struct Value {
 
     /// Tombstone marker - if this is true, the value has been deleted
     pub is_tombstone: bool,
+}
+
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}:{}:{} => {:?}",
+            self.key,
+            self.seqno,
+            u8::from(self.is_tombstone),
+            self.value
+        )
+    }
 }
 
 impl From<(ParsedInternalKey, UserData)> for Value {

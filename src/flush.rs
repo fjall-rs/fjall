@@ -29,7 +29,6 @@ fn flush_worker(
         segment_writer.opts.path.display()
     );
 
-    // TODO: this clone hurts
     for entry in &old_memtable.items {
         let key = entry.key();
         let value = entry.value();

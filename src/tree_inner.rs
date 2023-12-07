@@ -5,7 +5,7 @@ use crate::{
 use std::{
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        atomic::{AtomicU32, AtomicU64},
         Arc, RwLock,
     },
 };
