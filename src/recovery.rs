@@ -241,7 +241,7 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
         active_memtable: Arc::new(RwLock::new(memtable)),
         immutable_memtables: Arc::default(),
         block_cache,
-        lsn: AtomicU64::new(lsn),
+        next_lsn: AtomicU64::new(lsn),
         levels: Arc::new(RwLock::new(levels)),
         flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
         compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),

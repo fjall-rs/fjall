@@ -399,7 +399,7 @@ impl Tree {
             active_memtable: Arc::new(RwLock::new(MemTable::default())),
             immutable_memtables: Arc::default(),
             block_cache,
-            lsn: AtomicU64::new(0),
+            next_lsn: AtomicU64::new(0),
             levels: Arc::new(RwLock::new(levels)),
             flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)), // TODO: config
@@ -490,7 +490,8 @@ impl Tree {
         let value = Value::new(
             key.as_ref(),
             value.as_ref(),
-            self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            self.next_lsn
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel),
             ValueType::Value,
         );
 
@@ -530,7 +531,8 @@ impl Tree {
         let value = Value::new(
             key.as_ref(),
             vec![],
-            self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            self.next_lsn
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel),
             ValueType::Tombstone,
         );
 
@@ -879,7 +881,8 @@ impl Tree {
     }
 
     pub(crate) fn increment_lsn(&self) -> SeqNo {
-        self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+        self.next_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
     }
 
     /// Compare-and-swap an entry

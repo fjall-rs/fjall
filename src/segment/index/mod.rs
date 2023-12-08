@@ -42,7 +42,7 @@ impl BlockHandleBlockIndex {
         self.0.insert_block_handle_block(segment_id, key, value);
     }
 
-    pub fn get(&self, segment_id: String, key: &[u8]) -> Option<Arc<BlockHandleBlock>> {
+    pub fn get(&self, segment_id: String, key: &UserKey) -> Option<Arc<BlockHandleBlock>> {
         self.0.get_block_handle_block(segment_id, key)
     }
 }
@@ -204,7 +204,7 @@ impl BlockIndex {
     /// Load an index block from disk
     fn load_index_block(
         &self,
-        block_key: &[u8],
+        block_key: &UserKey,
         block_handle: &BlockHandleBlockHandle,
     ) -> crate::Result<Arc<DiskBlock<BlockHandle>>> {
         if let Some(block) = self.blocks.get(self.segment_id.clone(), block_key) {
@@ -228,7 +228,7 @@ impl BlockIndex {
 
             self.blocks.insert(
                 self.segment_id.clone(),
-                block_key.into(),
+                block_key.clone(),
                 Arc::clone(&block),
             );
 

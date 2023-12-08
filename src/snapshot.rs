@@ -24,7 +24,7 @@ impl Snapshot {
         tree.open_snapshots
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
-        let seqno = tree.lsn.load(std::sync::atomic::Ordering::Acquire);
+        let seqno = tree.next_lsn.load(std::sync::atomic::Ordering::Acquire);
 
         log::debug!("Opening snapshot with seqno: {seqno}");
 

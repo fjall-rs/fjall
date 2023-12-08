@@ -38,6 +38,9 @@ pub struct BlockCache {
     capacity: usize,
 }
 
+const DATA_BLOCK_TAG: u8 = 0;
+const INDEX_BLOCK_TAG: u8 = 0;
+
 impl BlockCache {
     /// Creates a new block cache with roughly `n` blocks of capacity
     ///
@@ -72,7 +75,8 @@ impl BlockCache {
         value: Arc<ValueBlock>,
     ) {
         if self.capacity > 0 {
-            self.data.insert((0, segment_id, key), Left(value));
+            self.data
+                .insert((DATA_BLOCK_TAG, segment_id, key), Left(value));
         }
     }
 
@@ -83,12 +87,17 @@ impl BlockCache {
         value: Arc<BlockHandleBlock>,
     ) {
         if self.capacity > 0 {
-            self.data.insert((1, segment_id, key), Right(value));
+            self.data
+                .insert((INDEX_BLOCK_TAG, segment_id, key), Right(value));
         }
     }
 
-    pub(crate) fn get_disk_block(&self, segment_id: String, key: &[u8]) -> Option<Arc<ValueBlock>> {
-        let key = (0, segment_id, key.to_vec().into());
+    pub(crate) fn get_disk_block(
+        &self,
+        segment_id: String,
+        key: &UserKey,
+    ) -> Option<Arc<ValueBlock>> {
+        let key = (DATA_BLOCK_TAG, segment_id, key.clone());
         let item = self.data.get(&key)?;
         Some(item.left().clone())
     }
@@ -96,9 +105,9 @@ impl BlockCache {
     pub(crate) fn get_block_handle_block(
         &self,
         segment_id: String,
-        key: &[u8],
+        key: &UserKey,
     ) -> Option<Arc<BlockHandleBlock>> {
-        let key = (1, segment_id, key.to_vec().into());
+        let key = (INDEX_BLOCK_TAG, segment_id, key.clone());
         let item = self.data.get(&key)?;
         Some(item.right().clone())
     }
