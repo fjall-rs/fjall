@@ -178,17 +178,14 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
+    #[allow(clippy::expect_used)]
     fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {
-            // NOTE: It's just a test
-            #[allow(clippy::expect_used)]
             descriptor_table: Arc::new(
                 FileDescriptorTable::new("Cargo.toml").expect("should open"),
             ),
-            // NOTE: It's just a test
-            #[allow(clippy::expect_used)]
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),

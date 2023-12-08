@@ -248,13 +248,11 @@ impl BlockIndex {
     }
 
     /// Only used for tests
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::expect_used)]
     pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> Self {
         let index_block_index = BlockHandleBlockIndex(block_cache);
 
         Self {
-            // NOTE: It's just a test
-            #[allow(clippy::expect_used)]
             descriptor_table: Arc::new(
                 FileDescriptorTable::new("Cargo.toml").expect("should open"),
             ),

@@ -308,6 +308,7 @@ mod tests {
     // TODO: rev test with seqnos...
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn test_get_all() -> crate::Result<()> {
         const ITEM_COUNT: u64 = 100_000;
 
@@ -357,8 +358,6 @@ mod tests {
         )?;
 
         for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
-            // NOTE: It's just a test
-            #[allow(clippy::expect_used)]
             let item = iter.next().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }
@@ -375,8 +374,6 @@ mod tests {
         )?;
 
         for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
-            // NOTE: It's just a test
-            #[allow(clippy::expect_used)]
             let item = iter.next_back().expect("item should exist")?;
             assert_eq!(key, &*item.key);
         }

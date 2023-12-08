@@ -38,11 +38,10 @@ mod tests {
     use test_log::test;
 
     #[test]
+    #[allow(clippy::expect_used)]
     pub fn test_version_len() {
         let mut buf = vec![];
 
-        // NOTE: just a test
-        #[allow(clippy::expect_used)]
         let size = Version::V0.write_file_header(&mut buf).expect("can't fail");
 
         assert_eq!(Version::len() as usize, size);
