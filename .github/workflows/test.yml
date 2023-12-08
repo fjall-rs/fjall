@@ -30,6 +30,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust_version }}
+      - name: Add rustfmt
+        run: rustup component add rustfmt
       - name: Set up cargo cache
         uses: Swatinem/rust-cache@v2
         with:
