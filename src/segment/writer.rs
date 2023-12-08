@@ -236,7 +236,7 @@ impl Writer {
 
     /// Writes an item
     pub fn write(&mut self, item: Value) -> crate::Result<()> {
-        if item.value_type == ValueType::Tombstone {
+        if item.is_tombstone() {
             if self.opts.evict_tombstones {
                 return Ok(());
             }

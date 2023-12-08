@@ -140,7 +140,7 @@ impl<'a> Iterator for MergeIterator<'a> {
                 return Some(Err(e));
             }
 
-            if head.value_type == ValueType::Tombstone || self.evict_old_versions {
+            if head.is_tombstone() || self.evict_old_versions {
                 // Tombstone marker OR we want to GC old versions
                 // As long as items beneath tombstone are the same key, ignore them
                 while let Some(next) = self.heap.pop_min() {
@@ -209,7 +209,7 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                             return Some(Err(e));
                         }
 
-                        if next.value_type == ValueType::Tombstone {
+                        if next.is_tombstone() {
                             if let Some(seqno) = self.seqno {
                                 if next.seqno < seqno {
                                     reached_tombstone = true;

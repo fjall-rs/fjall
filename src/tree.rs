@@ -56,7 +56,7 @@ impl std::ops::Deref for Tree {
 }
 
 fn ignore_tombstone_value(item: Value) -> Option<Value> {
-    if item.value_type == ValueType::Tombstone {
+    if item.is_tombstone() {
         None
     } else {
         Some(item)

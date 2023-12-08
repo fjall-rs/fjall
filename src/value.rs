@@ -72,6 +72,10 @@ impl ParsedInternalKey {
             value_type,
         }
     }
+
+    pub fn is_tombstone(&self) -> bool {
+        self.value_type == ValueType::Tombstone
+    }
 }
 
 impl PartialOrd for ParsedInternalKey {
@@ -196,12 +200,18 @@ impl Value {
         }
     }
 
-    #[must_use]
     #[doc(hidden)]
+    #[must_use]
     pub fn size(&self) -> usize {
         let key_size = self.key.len();
         let value_size = self.value.len();
         std::mem::size_of::<Self>() + key_size + value_size
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn is_tombstone(&self) -> bool {
+        self.value_type == ValueType::Tombstone
     }
 }
 
