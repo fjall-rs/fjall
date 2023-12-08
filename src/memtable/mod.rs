@@ -68,7 +68,7 @@ impl MemTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ValueType;
+    use crate::value::ValueType;
     use test_log::test;
 
     #[test]
