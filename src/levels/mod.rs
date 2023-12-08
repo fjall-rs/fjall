@@ -110,10 +110,10 @@ impl Levels {
     }
 
     pub(crate) fn recover<P: AsRef<Path>>(
-        path: &P,
+        path: P,
         segments: HashMap<String, Arc<Segment>>,
     ) -> crate::Result<Self> {
-        let level_manifest = fs::read_to_string(path)?;
+        let level_manifest = fs::read_to_string(&path)?;
         let levels: Vec<_> = serde_json::from_str(&level_manifest).expect("deserialize error");
 
         // NOTE: There are never that many levels

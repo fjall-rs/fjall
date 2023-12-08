@@ -432,7 +432,7 @@ impl Tree {
 
     // TODO: move to new module
     fn recover_segments<P: AsRef<Path>>(
-        folder: &P,
+        folder: P,
         block_cache: &Arc<BlockCache>,
     ) -> crate::Result<HashMap<String, Arc<Segment>>> {
         let folder = folder.as_ref();
@@ -440,7 +440,7 @@ impl Tree {
         // NOTE: First we load the level manifest without any
         // segments just to get the IDs
         // Then we recover the segments and build the actual level manifest
-        let levels = Levels::recover(&folder.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
+        let levels = Levels::recover(folder.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
         let segment_ids_to_recover = levels.list_ids();
 
         let mut segments = HashMap::new();
@@ -489,7 +489,7 @@ impl Tree {
     fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
         // Load previous levels manifest
         // Add all flushed segments to it, then recover properly
-        let mut levels = Levels::recover(&config.path.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
+        let mut levels = Levels::recover(config.path.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
 
         let mut active_journal = None;
 
@@ -639,7 +639,7 @@ impl Tree {
         // Finalize Tree
         log::debug!("Loading level manifest");
 
-        let mut levels = Levels::recover(&config.path.join(LEVELS_MANIFEST_FILE), segments)?;
+        let mut levels = Levels::recover(config.path.join(LEVELS_MANIFEST_FILE), segments)?;
         levels.sort_levels();
 
         let compaction_threads = 4; // TODO: config

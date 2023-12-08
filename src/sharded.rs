@@ -1,4 +1,4 @@
-use std::sync::{RwLock, RwLockWriteGuard};
+use std::sync::{PoisonError, RwLock, RwLockWriteGuard};
 
 type Shard<T> = RwLock<T>;
 
@@ -37,10 +37,9 @@ impl<T> Sharded<T> {
     }
 
     /// Gives exclusive control over the entire structure
-    pub fn full_lock(&self) -> Vec<RwLockWriteGuard<'_, T>> {
-        self.shards
-            .iter()
-            .map(|shard| shard.write().expect("lock is poisoned"))
-            .collect()
+    pub fn full_lock(
+        &self,
+    ) -> Result<Vec<RwLockWriteGuard<'_, T>>, PoisonError<RwLockWriteGuard<'_, T>>> {
+        self.shards.iter().map(|shard| shard.write()).collect()
     }
 }

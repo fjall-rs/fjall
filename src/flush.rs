@@ -94,7 +94,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     log::trace!("Got flush semaphore");
 
     log::debug!("flush: acquiring journal full lock");
-    let mut lock = tree.journal.shards.full_lock();
+    let mut lock = tree.journal.shards.full_lock().expect("lock is poisoned");
 
     log::debug!("flush: acquiring memtable write lock");
     let mut memtable_lock = tree.active_memtable.write().expect("lock is poisoned");

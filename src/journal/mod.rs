@@ -193,7 +193,7 @@ impl Journal {
     }
 
     pub fn flush(&self) -> crate::Result<()> {
-        for mut shard in self.shards.full_lock() {
+        for mut shard in self.shards.full_lock().expect("lock is poisoned") {
             shard.flush()?;
         }
         Ok(())
