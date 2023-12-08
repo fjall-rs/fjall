@@ -1,3 +1,7 @@
+mod marker;
+mod recovery;
+pub mod shard;
+
 use self::shard::JournalShard;
 use crate::{
     journal::{marker::Marker, recovery::LogRecovery},
@@ -9,14 +13,6 @@ use std::{
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };
-mod marker;
-mod recovery;
-pub mod shard;
-
-pub struct Journal {
-    pub path: PathBuf,
-    pub shards: Sharded<JournalShard>,
-}
 
 const SHARD_COUNT: u8 = 4;
 
@@ -36,6 +32,11 @@ pub enum RecoveryError {
 
     /// The CRC value does not match the expected value
     CrcCheck,
+}
+
+pub struct Journal {
+    pub path: PathBuf,
+    pub shards: Sharded<JournalShard>,
 }
 
 impl Journal {

@@ -72,7 +72,6 @@ pub mod compaction;
 mod config;
 mod descriptor_table;
 mod disk_block;
-mod disk_block_index;
 mod either;
 mod entry;
 mod error;

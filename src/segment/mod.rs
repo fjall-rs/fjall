@@ -7,7 +7,7 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    index::MetaIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
+    index::BlockIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
 };
 use crate::{
     block_cache::BlockCache,
@@ -33,7 +33,7 @@ pub struct Segment {
     pub metadata: meta::Metadata,
 
     /// Translates key (first item of a block) to block offset (address inside file) and (compressed) size
-    pub block_index: Arc<MetaIndex>,
+    pub block_index: Arc<BlockIndex>,
 
     /// Block cache
     ///
@@ -51,7 +51,7 @@ impl Segment {
         let folder = folder.as_ref();
 
         let metadata = Metadata::from_disk(folder.join(SEGMENT_METADATA_FILE))?;
-        let block_index = MetaIndex::from_file(
+        let block_index = BlockIndex::from_file(
             metadata.id.clone(),
             descriptor_table,
             folder,

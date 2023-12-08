@@ -5,7 +5,7 @@ use crate::{
     id::generate_segment_id,
     journal::Journal,
     memtable::MemTable,
-    segment::{index::MetaIndex, meta::Metadata, writer::Writer, Segment},
+    segment::{index::BlockIndex, meta::Metadata, writer::Writer, Segment},
     Tree,
 };
 use std::{fs::File, path::Path, sync::Arc};
@@ -43,7 +43,7 @@ fn flush_worker(
 
     let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
 
-    match MetaIndex::from_file(
+    match BlockIndex::from_file(
         segment_id.into(),
         Arc::clone(&descriptor_table),
         &segment_folder,
@@ -52,7 +52,7 @@ fn flush_worker(
     .map(Arc::new)
     {
         Ok(meta_index) => {
-            log::debug!("Read MetaIndex");
+            log::debug!("Read BlockIndex");
 
             let created_segment = Segment {
                 descriptor_table,

@@ -1,4 +1,4 @@
-use super::IndexEntry;
+use super::BlockHandle;
 use crate::{
     disk_block::DiskBlock,
     file::{BLOCKS_FILE, INDEX_BLOCKS_FILE, TOP_LEVEL_INDEX_FILE},
@@ -37,8 +37,8 @@ pub struct Writer {
     index_writer: BufWriter<File>,
     block_size: u32,
     block_counter: u32,
-    block_chunk: DiskBlock<IndexEntry>,
-    index_chunk: DiskBlock<IndexEntry>,
+    block_chunk: DiskBlock<BlockHandle>,
+    index_chunk: DiskBlock<BlockHandle>,
 }
 
 impl Writer {
@@ -77,7 +77,7 @@ impl Writer {
     fn write_block(&mut self) -> crate::Result<()> {
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
-        self.block_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.block_chunk.items)?;
+        self.block_chunk.crc = DiskBlock::<BlockHandle>::create_crc(&self.block_chunk.items)?;
         self.block_chunk
             .serialize(&mut bytes)
             .expect("should serialize block");
@@ -97,7 +97,7 @@ impl Writer {
 
         let bytes_written = bytes.len();
 
-        self.index_chunk.items.push(IndexEntry {
+        self.index_chunk.items.push(BlockHandle {
             start_key: first.start_key.clone(),
             offset: self.file_pos,
             size: bytes_written as u32,
@@ -121,14 +121,14 @@ impl Writer {
         offset: u64,
         size: u32,
     ) -> crate::Result<()> {
-        let reference = IndexEntry {
+        let reference = BlockHandle {
             offset,
             size,
             start_key,
         };
         self.block_chunk.items.push(reference);
 
-        self.block_counter += std::mem::size_of::<IndexEntry>() as u32;
+        self.block_counter += std::mem::size_of::<BlockHandle>() as u32;
 
         if self.block_counter >= self.block_size {
             self.write_block()?;
@@ -152,7 +152,7 @@ impl Writer {
 
         // Serialize block
         let mut bytes = Vec::with_capacity(u16::MAX.into());
-        self.index_chunk.crc = DiskBlock::<IndexEntry>::create_crc(&self.index_chunk.items)?;
+        self.index_chunk.crc = DiskBlock::<BlockHandle>::create_crc(&self.index_chunk.items)?;
         self.index_chunk
             .serialize(&mut bytes)
             .expect("should serialize index block");

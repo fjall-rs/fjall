@@ -316,7 +316,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,
-        segment::{index::MetaIndex, meta::Metadata, reader::Reader},
+        segment::{index::BlockIndex, meta::Metadata, reader::Reader},
         Value,
     };
     use std::sync::Arc;
@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(
+        let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,

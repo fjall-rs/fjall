@@ -1,3 +1,4 @@
+use super::CompactionStrategy;
 use crate::{
     block_cache::BlockCache,
     compaction::Choice,
@@ -6,7 +7,7 @@ use crate::{
     levels::Levels,
     memtable::MemTable,
     merge::MergeIterator,
-    segment::{index::MetaIndex, writer::MultiWriter, Segment},
+    segment::{index::BlockIndex, writer::MultiWriter, Segment},
     stop_signal::StopSignal,
     Config, Tree,
 };
@@ -15,8 +16,6 @@ use std::{
     sync::{atomic::AtomicU32, Arc, RwLock},
     time::Instant,
 };
-
-use super::CompactionStrategy;
 
 pub fn do_compaction(
     config: Config,
@@ -107,7 +106,7 @@ pub fn do_compaction(
                 descriptor_table: Arc::clone(&descriptor_table),
                 metadata,
                 block_cache: Arc::clone(&block_cache),
-                block_index: MetaIndex::from_file(
+                block_index: BlockIndex::from_file(
                     segment_id,
                     descriptor_table,
                     path,

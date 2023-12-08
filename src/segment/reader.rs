@@ -1,6 +1,6 @@
 use super::{
     block::ValueBlock,
-    index::{IndexEntry, MetaIndex},
+    index::{block_handle::BlockHandle, BlockIndex},
 };
 use crate::{
     block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
@@ -15,7 +15,7 @@ use std::{
 /// This does not account for tombstones
 pub struct Reader {
     descriptor_table: Arc<FileDescriptorTable>,
-    block_index: Arc<MetaIndex>,
+    block_index: Arc<BlockIndex>,
 
     segment_id: String,
     block_cache: Arc<BlockCache>,
@@ -29,7 +29,7 @@ pub fn load_and_cache_by_block_handle(
     descriptor_table: &FileDescriptorTable,
     block_cache: &BlockCache,
     segment_id: &str,
-    block_handle: &IndexEntry,
+    block_handle: &BlockHandle,
 ) -> crate::Result<Option<Arc<ValueBlock>>> {
     Ok(
         if let Some(block) =
@@ -66,7 +66,7 @@ pub fn load_and_cache_by_block_handle(
 
 pub fn load_and_cache_block<K: AsRef<[u8]>>(
     descriptor_table: &FileDescriptorTable,
-    block_index: &MetaIndex,
+    block_index: &BlockIndex,
     block_cache: &BlockCache,
     segment_id: &str,
     item_key: K,
@@ -90,7 +90,7 @@ impl Reader {
         descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
-        block_index: Arc<MetaIndex>,
+        block_index: Arc<BlockIndex>,
         start_offset: Option<&UserKey>,
         end_offset: Option<&UserKey>,
     ) -> crate::Result<Self> {
@@ -294,7 +294,7 @@ mod tests {
         descriptor_table::FileDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
-            index::MetaIndex,
+            index::BlockIndex,
             meta::Metadata,
             reader::Reader,
             writer::{Options, Writer},
@@ -337,7 +337,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(
+        let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,

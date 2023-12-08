@@ -1,10 +1,9 @@
+use super::index::BlockIndex;
+use super::reader::Reader;
 use crate::block_cache::BlockCache;
 use crate::descriptor_table::FileDescriptorTable;
 use crate::value::UserKey;
 use crate::Value;
-
-use super::index::MetaIndex;
-use super::reader::Reader;
 use std::ops::Bound;
 use std::ops::RangeBounds;
 use std::sync::Arc;
@@ -19,7 +18,7 @@ impl Range {
         descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
-        block_index: Arc<MetaIndex>,
+        block_index: Arc<BlockIndex>,
         range: (Bound<UserKey>, Bound<UserKey>),
     ) -> crate::Result<Self> {
         let offset_lo = match range.start_bound() {
@@ -152,7 +151,7 @@ mod tests {
         descriptor_table::FileDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
-            index::MetaIndex,
+            index::BlockIndex,
             meta::Metadata,
             range::Range,
             writer::{Options, Writer},
@@ -198,7 +197,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(
+        let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
@@ -402,7 +401,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(
+        let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,

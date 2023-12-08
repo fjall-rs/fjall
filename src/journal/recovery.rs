@@ -1,11 +1,10 @@
+use super::marker::Marker;
 use crate::serde::Deserializable;
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
     path::Path,
 };
-
-use super::marker::Marker;
 
 pub struct LogRecovery {
     reader: BufReader<File>,

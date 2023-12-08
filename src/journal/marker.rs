@@ -15,11 +15,11 @@ use std::io::{Read, Write};
 ///
 /// # Disk representation
 ///
-/// start: \[tag (0x0); 1 byte] \[item count; 4 byte] \[seqno; 8 bytes]
+/// start: \[tag (0x0); 1 byte] \[item count; 4 bytes] \[seqno; 8 bytes]
 ///
 /// item: \[tag (0x1); 1 byte] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
 ///
-/// end: \[tag (0x2): 1 byte] \[crc value; 4 byte]
+/// end: \[tag (0x2): 1 byte] \[crc value; 4 bytes]
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
     Start {

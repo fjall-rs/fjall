@@ -1,4 +1,4 @@
-use crate::segment::{block::ValueBlock, index::IndexBlock};
+use crate::segment::{block::ValueBlock, index::BlockHandleBlock};
 use crate::{
     either::{
         Either,
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 // Type (disk or index), Segment ID, Block key
 type Key = (u8, String, UserKey);
-type Item = Either<Arc<ValueBlock>, Arc<IndexBlock>>;
+type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
 
 pub struct BlockCache {
     data: Cache<Key, Item>,
@@ -36,7 +36,12 @@ impl BlockCache {
         }
     }
 
-    pub fn insert_index_block(&self, segment_id: String, key: UserKey, value: Arc<IndexBlock>) {
+    pub fn insert_block_handle_block(
+        &self,
+        segment_id: String,
+        key: UserKey,
+        value: Arc<BlockHandleBlock>,
+    ) {
         if self.capacity > 0 {
             self.data.insert((1, segment_id, key), Right(value));
         }
@@ -48,7 +53,11 @@ impl BlockCache {
         Some(item.left().clone())
     }
 
-    pub fn get_index_block(&self, segment_id: String, key: &[u8]) -> Option<Arc<IndexBlock>> {
+    pub fn get_block_handle_block(
+        &self,
+        segment_id: String,
+        key: &[u8],
+    ) -> Option<Arc<BlockHandleBlock>> {
         let key = (1, segment_id, key.to_vec().into());
         let item = self.data.get(&key)?;
         Some(item.right().clone())

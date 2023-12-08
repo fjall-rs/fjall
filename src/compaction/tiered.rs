@@ -94,7 +94,7 @@ mod tests {
         descriptor_table::FileDescriptorTable,
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
-        segment::{index::MetaIndex, meta::Metadata, Segment},
+        segment::{index::BlockIndex, meta::Metadata, Segment},
     };
     use std::sync::Arc;
     use test_log::test;
@@ -111,7 +111,7 @@ mod tests {
             // NOTE: It's just a test
             #[allow(clippy::expect_used)]
             block_index: Arc::new(
-                MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
+                BlockIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),
             metadata: Metadata {
                 path: ".".into(),

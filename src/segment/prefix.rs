@@ -1,4 +1,4 @@
-use super::{index::MetaIndex, range::Range};
+use super::{index::BlockIndex, range::Range};
 use crate::{
     block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
 };
@@ -18,7 +18,7 @@ impl PrefixedReader {
         descriptor_table: Arc<FileDescriptorTable>,
         segment_id: String,
         block_cache: Arc<BlockCache>,
-        block_index: Arc<MetaIndex>,
+        block_index: Arc<BlockIndex>,
         prefix: K,
     ) -> crate::Result<Self> {
         let prefix = prefix.into();
@@ -96,7 +96,7 @@ mod tests {
         descriptor_table::FileDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
-            index::MetaIndex,
+            index::BlockIndex,
             meta::Metadata,
             prefix::PrefixedReader,
             reader::Reader,
@@ -167,7 +167,7 @@ mod tests {
             metadata.write_to_file()?;
 
             let block_cache = Arc::new(BlockCache::new(usize::MAX));
-            let meta_index = Arc::new(MetaIndex::from_file(
+            let meta_index = Arc::new(BlockIndex::from_file(
                 metadata.id.clone(),
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 &folder,
@@ -245,7 +245,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::new(usize::MAX));
-        let meta_index = Arc::new(MetaIndex::from_file(
+        let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,

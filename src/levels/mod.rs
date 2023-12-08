@@ -322,7 +322,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,
-        segment::{index::MetaIndex, meta::Metadata, Segment},
+        segment::{index::BlockIndex, meta::Metadata, Segment},
         value::UserKey,
     };
     use std::sync::Arc;
@@ -339,7 +339,7 @@ mod tests {
             block_index: Arc::new(
                 // NOTE: It's just a test
                 #[allow(clippy::expect_used)]
-                MetaIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
+                BlockIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),
             metadata: Metadata {
                 path: ".".into(),

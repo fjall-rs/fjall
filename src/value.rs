@@ -9,7 +9,7 @@ use std::{
 /// User defined data
 pub type UserKey = Arc<[u8]>;
 
-/// User defined data
+/// User defined data (blob of bytes)
 pub type UserData = Arc<[u8]>;
 
 /// Sequence number

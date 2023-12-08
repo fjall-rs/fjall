@@ -1,11 +1,10 @@
-use std::ops::RangeBounds;
-
 use crate::{
     prefix::Prefix,
     range::Range,
     value::{SeqNo, UserData, UserKey},
     Tree,
 };
+use std::ops::RangeBounds;
 
 /// A snapshot captures a read-only point-in-time view of the tree at the time the snapshot was created.
 ///
