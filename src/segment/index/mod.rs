@@ -27,6 +27,7 @@ impl BlockHandleBlock {
         self.items.iter().find(|x| &*x.start_key > key)
     }
 
+    // TODO: rename get_block_containing_item
     /// Finds the block that contains a key
     pub(crate) fn get_lower_bound_block_info(&self, key: &[u8]) -> Option<&BlockHandle> {
         self.items.iter().rev().find(|x| &*x.start_key <= key)
@@ -83,7 +84,7 @@ impl BlockIndex {
     }
 
     pub fn get_upper_bound_block_info(&self, key: &[u8]) -> crate::Result<Option<BlockHandle>> {
-        let Some((block_key, block_handle)) = self.top_level_index.get_lower_bound_block_info(key)
+        let Some((block_key, block_handle)) = self.top_level_index.get_block_containing_item(key)
         else {
             return Ok(None);
         };
@@ -96,7 +97,7 @@ impl BlockIndex {
             Ok(Some(block).cloned())
         } else {
             // The upper bound block is not in the same index block as the key, so load next index block
-            let Some((block_key, block_handle)) = self.top_level_index.get_next_block_key(key)
+            let Some((block_key, block_handle)) = self.top_level_index.get_next_block_handle(key)
             else {
                 return Ok(None);
             };
@@ -109,9 +110,10 @@ impl BlockIndex {
         }
     }
 
+    // TODO: rename get_block_containing_item
     /// Gets the reference to a disk block that should contain the given item
     pub fn get_lower_bound_block_info(&self, key: &[u8]) -> crate::Result<Option<BlockHandle>> {
-        let Some((block_key, block_handle)) = self.top_level_index.get_lower_bound_block_info(key)
+        let Some((block_key, block_handle)) = self.top_level_index.get_block_containing_item(key)
         else {
             return Ok(None);
         };
@@ -123,7 +125,7 @@ impl BlockIndex {
     /// Returns the previous index block's key, if it exists, or None
     pub fn get_previous_block_key(&self, key: &[u8]) -> crate::Result<Option<BlockHandle>> {
         let Some((first_block_key, first_block_handle)) =
-            self.top_level_index.get_lower_bound_block_info(key)
+            self.top_level_index.get_block_containing_item(key)
         else {
             return Ok(None);
         };
@@ -135,8 +137,9 @@ impl BlockIndex {
         if let Some(item) = maybe_prev {
             Ok(Some(item).cloned())
         } else {
-            let Some((prev_block_key, prev_block_handle)) =
-                self.top_level_index.get_previous_block_key(first_block_key)
+            let Some((prev_block_key, prev_block_handle)) = self
+                .top_level_index
+                .get_previous_block_handle(first_block_key)
             else {
                 return Ok(None);
             };
@@ -150,7 +153,7 @@ impl BlockIndex {
     /// Returns the next index block's key, if it exists, or None
     pub fn get_next_block_key(&self, key: &[u8]) -> crate::Result<Option<BlockHandle>> {
         let Some((first_block_key, first_block_handle)) =
-            self.top_level_index.get_lower_bound_block_info(key)
+            self.top_level_index.get_block_containing_item(key)
         else {
             return Ok(None);
         };
@@ -163,7 +166,7 @@ impl BlockIndex {
             Ok(Some(item).cloned())
         } else {
             let Some((next_block_key, next_block_handle)) =
-                self.top_level_index.get_next_block_key(first_block_key)
+                self.top_level_index.get_next_block_handle(first_block_key)
             else {
                 return Ok(None);
             };
@@ -176,7 +179,7 @@ impl BlockIndex {
 
     /// Returns the first block's key
     pub fn get_first_block_key(&self) -> crate::Result<BlockHandle> {
-        let (block_key, block_handle) = self.top_level_index.get_first_block_key();
+        let (block_key, block_handle) = self.top_level_index.get_first_block_handle();
         let index_block = self.load_index_block(block_key, block_handle)?;
 
         Ok(index_block
@@ -188,7 +191,7 @@ impl BlockIndex {
 
     /// Returns the last block's key
     pub fn get_last_block_key(&self) -> crate::Result<BlockHandle> {
-        let (block_key, block_handle) = self.top_level_index.get_last_block_key();
+        let (block_key, block_handle) = self.top_level_index.get_last_block_handle();
         let index_block = self.load_index_block(block_key, block_handle)?;
 
         Ok(index_block
@@ -237,7 +240,7 @@ impl BlockIndex {
         let key = key.as_ref();
 
         let Some((block_key, index_block_handle)) =
-            self.top_level_index.get_lower_bound_block_info(key)
+            self.top_level_index.get_block_containing_item(key)
         else {
             return Ok(None);
         };
