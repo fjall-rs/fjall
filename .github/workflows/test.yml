@@ -32,6 +32,8 @@ jobs:
           toolchain: ${{ matrix.rust_version }}
       - name: Add rustfmt
         run: rustup component add rustfmt
+      - name: Add clippy
+        run: rustup component add clippy
       - name: Set up cargo cache
         uses: Swatinem/rust-cache@v2
         with:
