@@ -177,7 +177,9 @@ pub fn compaction_worker(
             return Ok(());
         }
 
-        match compaction_strategy.choose(&segments_lock) {
+        let choice = compaction_strategy.choose(&segments_lock);
+
+        match choice {
             Choice::DoCompact(payload) => {
                 drop(segments_lock);
 
@@ -215,8 +217,6 @@ pub fn compaction_worker(
             }
             Choice::DoNothing => {
                 log::trace!("Compactor chose to do nothing");
-                drop(segments_lock);
-                log::trace!("Compaction: Freed segment lock");
                 return Ok(());
             }
         }

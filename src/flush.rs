@@ -94,7 +94,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     log::trace!("Got flush semaphore");
 
     log::debug!("flush: acquiring journal full lock");
-    let mut lock = tree.journal.shards.full_lock().expect("lock is poisoned");
+    let mut journal_lock = tree.journal.shards.full_lock().expect("lock is poisoned");
 
     log::debug!("flush: acquiring memtable write lock");
     let mut memtable_lock = tree.active_memtable.write().expect("lock is poisoned");
@@ -106,7 +106,9 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         return Ok(std::thread::spawn(|| Ok(())));
     }
 
-    let old_journal_folder = lock[0]
+    let old_journal_folder = journal_lock
+        .first()
+        .expect("journal should have shard")
         .path
         .parent()
         .expect("journal shard should have parent folder")
@@ -145,13 +147,13 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .join(JOURNALS_FOLDER)
         .join(generate_segment_id());
 
-    Journal::rotate(new_journal_path, &mut lock)?;
+    Journal::rotate(new_journal_path, &mut journal_lock)?;
 
     tree.approx_active_memtable_size
         .store(0, std::sync::atomic::Ordering::Relaxed);
 
     drop(immutable_memtables);
-    drop(lock);
+    drop(journal_lock);
 
     let tree = tree.clone();
 
