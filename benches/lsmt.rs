@@ -419,15 +419,39 @@ fn scan_vs_prefix(c: &mut Criterion) {
     }
 }
 
+fn recover_tree(c: &mut Criterion) {
+    let mut group = c.benchmark_group("recover tree");
+
+    for item_count in [100, 1_000, 10_000, 100_000, 1_000_000, 2_000_000] {
+        let tree = Config::new(tempdir().unwrap()).open().unwrap();
+
+        for _ in 0..item_count {
+            let key = nanoid::nanoid!();
+            let value = nanoid::nanoid!();
+            tree.insert(key, value).expect("Insert error");
+        }
+
+        tree.wait_for_memtable_flush().expect("should flush");
+        drop(tree);
+
+        group.bench_function(format!("recover {} items", item_count), |b| {
+            b.iter(|| {
+                let _tree = Config::new(tempdir().unwrap()).open().unwrap();
+            })
+        });
+    }
+}
+
 criterion_group!(
     benches,
-    insert,
-    memtable_point_reads,
-    disk_point_reads,
+    /* insert,
+    memtable_point_reads, */
+    recover_tree,
+    /*  disk_point_reads,
     cached_retrieve_disk_random,
     full_scan,
     scan_vs_query,
-    scan_vs_prefix
+    scan_vs_prefix, */
 );
 
 criterion_main!(benches);
