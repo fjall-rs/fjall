@@ -173,10 +173,7 @@ mod tests {
             .init();
 
         let data_folder = tempfile::tempdir()?;
-        let db = Config::new(data_folder)
-            .block_cache_capacity(25_600) // 100 MB
-            .open()
-            .expect("failed to open db");
+        let db = Config::new(data_folder).open().expect("failed to open db");
 
         let app = App::new()
             .app_data(web::Data::new(AppState { db }))
