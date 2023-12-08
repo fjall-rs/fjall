@@ -76,7 +76,7 @@ impl Journal {
                             batch_counter = item_count;
                             batch_seqno = seqno;
                         }
-                        Marker::End(checksum) => {
+                        Marker::End(_checksum) => {
                             if batch_counter > 0 {
                                 return Err(crate::Error::JournalRecovery(
                                     RecoveryError::InsufficientLength,

@@ -1,6 +1,6 @@
 use crate::{
     segment::Segment,
-    value::{SeqNo, ValueType},
+    value::{SeqNo},
     Value,
 };
 use min_max_heap::MinMaxHeap;

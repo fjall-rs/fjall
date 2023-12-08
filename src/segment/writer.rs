@@ -4,7 +4,7 @@ use crate::{
     id::generate_segment_id,
     segment::index::writer::Writer as IndexWriter,
     serde::Serializable,
-    value::{SeqNo, UserKey, ValueType},
+    value::{SeqNo, UserKey},
     version::Version,
     Value,
 };

@@ -121,11 +121,7 @@ impl Writer {
         offset: u64,
         size: u32,
     ) -> crate::Result<()> {
-        let reference = BlockHandle {
-            offset,
-            size,
-            start_key,
-        };
+        let reference = BlockHandle { start_key, offset, size };
         self.block_chunk.items.push(reference);
 
         self.block_counter += std::mem::size_of::<BlockHandle>() as u32;
