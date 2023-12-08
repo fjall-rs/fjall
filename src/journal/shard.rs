@@ -51,7 +51,7 @@ impl JournalShard {
         })
     }
 
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
 
         if !path.exists() {
