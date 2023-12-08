@@ -6,8 +6,6 @@ use std::{
     sync::Arc,
 };
 
-// TODO: Value::is_tombstone() and ParsedInternalKey::is_tombstone()
-
 /// User defined data
 pub type UserKey = Arc<[u8]>;
 
