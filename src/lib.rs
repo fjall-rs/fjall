@@ -84,6 +84,7 @@ mod memtable;
 mod merge;
 mod prefix;
 mod range;
+mod recovery;
 mod segment;
 mod serde;
 mod sharded;
