@@ -137,10 +137,7 @@ async fn main() -> std::io::Result<()> {
 
     let data_folder = std::env::var("DATA_FOLDER").unwrap_or(".data".into());
     log::info!("Opening database at {data_folder}");
-    let db = Config::new(&data_folder)
-        .block_cache_capacity(25_600) // 100 MB
-        .open()
-        .expect("failed to open db");
+    let db = Config::new(&data_folder).open().expect("failed to open db");
 
     log::info!("Starting on port {port}");
 
