@@ -22,6 +22,7 @@ fn to_base36(mut x: u32) -> String {
 /// Generate a ID for a segment
 ///
 /// Like <https://cassandra.apache.org/_/blog/Apache-Cassandra-4.1-New-SSTable-Identifiers.html>
+#[allow(clippy::module_name_repetitions)]
 pub fn generate_segment_id() -> String {
     let now = chrono::Utc::now();
 

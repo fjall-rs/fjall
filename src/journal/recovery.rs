@@ -6,12 +6,13 @@ use std::{
     path::Path,
 };
 
-pub struct LogRecovery {
+#[allow(clippy::module_name_repetitions)]
+pub struct JournalRecovery {
     reader: BufReader<File>,
     last_valid_pos: u64,
 }
 
-impl LogRecovery {
+impl JournalRecovery {
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
@@ -29,7 +30,7 @@ impl LogRecovery {
     }
 }
 
-impl Iterator for LogRecovery {
+impl Iterator for JournalRecovery {
     type Item = crate::Result<Marker>;
 
     fn next(&mut self) -> Option<Self::Item> {

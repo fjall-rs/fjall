@@ -43,6 +43,7 @@ impl Ord for IteratorValue {
 /// and merging using a simple k-way merge algorithm
 ///
 /// If multiple iterators yield the same key value, the freshest one (by seqno) will be picked
+#[allow(clippy::module_name_repetitions)]
 pub struct MergeIterator<'a> {
     iterators: Vec<BoxedIterator<'a>>,
     heap: MinMaxHeap<IteratorValue>,

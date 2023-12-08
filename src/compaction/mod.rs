@@ -47,6 +47,7 @@ pub enum Choice {
 ///
 /// The strategy receives the levels of the LSM-tree as argument
 /// and emits a choice on what to do.
+#[allow(clippy::module_name_repetitions)]
 pub trait CompactionStrategy {
     /// Decides on what to do based on the current state of the LSM-tree's levels
     fn choose(&self, _: &Levels) -> Choice;

@@ -33,6 +33,7 @@ impl BlockHandleBlock {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct BlockHandleBlockIndex(Arc<BlockCache>);
 
 impl BlockHandleBlockIndex {

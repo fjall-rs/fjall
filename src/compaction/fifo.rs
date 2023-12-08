@@ -98,6 +98,8 @@ mod tests {
             descriptor_table: Arc::new(
                 FileDescriptorTable::new("Cargo.toml").expect("should open"),
             ),
+            // NOTE: It's just a test
+            #[allow(clippy::expect_used)]
             block_index: Arc::new(
                 BlockIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
             ),

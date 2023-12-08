@@ -25,9 +25,9 @@ impl Version {
         5
     }
 
-    pub fn write_file_header<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<usize> {
+    pub fn write_file_header<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<usize> {
         writer.write_all(&[b'L', b'S', b'M'])?;
-        writer.write_u16::<BigEndian>(u16::from(*self))?;
+        writer.write_u16::<BigEndian>(u16::from(self))?;
         Ok(5)
     }
 }

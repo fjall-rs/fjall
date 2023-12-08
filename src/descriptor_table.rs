@@ -5,6 +5,7 @@ use std::{
     sync::{RwLock, RwLockWriteGuard},
 };
 
+#[allow(clippy::module_name_repetitions)]
 pub struct FileDescriptorTable {
     // TODO: bufreader or file...?
     files: Sharded<File>,

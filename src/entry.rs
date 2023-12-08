@@ -6,11 +6,13 @@ use crate::{
 };
 
 /// Represents a missing entry in the tree
+#[allow(clippy::module_name_repetitions)]
 pub struct VacantEntry {
     pub(crate) tree: Tree,
     pub(crate) key: UserKey,
 }
 
+#[allow(clippy::module_name_repetitions)]
 /// Represents an existing entry in the tree
 pub struct OccupiedEntry {
     pub(crate) tree: Tree,

@@ -4,7 +4,7 @@ pub mod shard;
 
 use self::shard::JournalShard;
 use crate::{
-    journal::{marker::Marker, recovery::LogRecovery},
+    journal::{marker::Marker, recovery::JournalRecovery},
     memtable::MemTable,
     sharded::Sharded,
     value::SeqNo,
@@ -51,7 +51,7 @@ impl Journal {
             let shard_path = get_shard_path(path, idx);
 
             if shard_path.exists() {
-                let recoverer = LogRecovery::new(shard_path)?;
+                let recoverer = JournalRecovery::new(shard_path)?;
 
                 let mut hasher = crc32fast::Hasher::new();
                 let mut is_in_batch = false;

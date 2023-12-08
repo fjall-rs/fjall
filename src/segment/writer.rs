@@ -18,6 +18,7 @@ use std::{
 /// Like `Writer` but will rotate to a new segment, once a segment grows larger than `target_size`
 ///
 /// This results in a sorted "run" of segments
+#[allow(clippy::module_name_repetitions)]
 pub struct MultiWriter {
     /// Target size of segments in bytes
     ///

@@ -32,6 +32,7 @@ impl Default for Level {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct ResolvedLevel(pub(crate) Vec<Arc<Segment>>);
 
 impl std::ops::Deref for ResolvedLevel {

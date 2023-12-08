@@ -17,6 +17,7 @@ pub type SeqNo = u64;
 
 /// Value type (regular value or tombstone)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::module_name_repetitions)]
 pub enum ValueType {
     /// Existing value
     Value,
