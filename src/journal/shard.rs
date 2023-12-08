@@ -1,7 +1,5 @@
-use byteorder::WriteBytesExt;
-
-use super::marker::{Marker, Tag};
-use crate::{serde::Serializable, SerializeError, Value};
+use super::marker::Marker;
+use crate::{serde::Serializable, value::SeqNo, SerializeError, Value};
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -14,9 +12,13 @@ pub struct JournalShard {
 }
 
 /// Writes a batch start marker to the journal
-fn write_start(writer: &mut BufWriter<File>, len: u32) -> Result<usize, SerializeError> {
+fn write_start(
+    writer: &mut BufWriter<File>,
+    item_count: u32,
+    seqno: SeqNo,
+) -> Result<usize, SerializeError> {
     let mut bytes = Vec::new();
-    Marker::Start(len).serialize(&mut bytes)?;
+    Marker::Start { item_count, seqno }.serialize(&mut bytes)?;
 
     writer.write_all(&bytes)?;
     Ok(bytes.len())
@@ -90,12 +92,15 @@ impl JournalShard {
         let mut hasher = crc32fast::Hasher::new();
         let mut byte_count = 0;
 
-        byte_count += write_start(&mut self.file, item_count)?;
+        byte_count += write_start(&mut self.file, item_count, items[0].seqno)?;
 
         for item in items {
-            // NOTE: Not using Marker::Item(item).serialize to avoid an item clone
+            let item = Marker::Item {
+                is_tombstone: item.is_tombstone,
+                key: item.key.clone(),
+                value: item.value.clone(),
+            };
             let mut bytes = Vec::new();
-            bytes.write_u8(Tag::Item.into())?;
             item.serialize(&mut bytes)?;
 
             self.file.write_all(&bytes)?;

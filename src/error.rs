@@ -1,6 +1,7 @@
+use crate::{
+    journal::RecoveryError as JournalRecoveryError, serde::DeserializeError, SerializeError,
+};
 use lz4_flex::block::DecompressError;
-
-use crate::{serde::DeserializeError, SerializeError};
 
 /// Represents errors that can occur in the LSM-tree
 #[derive(Debug)]
@@ -17,8 +18,10 @@ pub enum Error {
     /// Decompression failed
     Decompress(DecompressError),
 
-    /// The CRC value does not match the expected value
-    CrcCheck,
+    /*  /// The CRC value does not match the expected value
+    CrcCheck, */
+    /// Error during journal recovery
+    JournalRecovery(JournalRecoveryError),
 }
 
 impl std::fmt::Display for Error {

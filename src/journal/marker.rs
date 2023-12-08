@@ -1,6 +1,6 @@
 use crate::{
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
-    Value,
+    value::{SeqNo, UserData, UserKey},
 };
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
@@ -15,15 +15,22 @@ use std::io::{Read, Write};
 ///
 /// # Disk representation
 ///
-/// start: \[tag (0x0); 1 byte] \[item count; 4 byte]
+/// start: \[tag (0x0); 1 byte] \[item count; 4 byte] \[seqno; 8 bytes]
 ///
-/// item: \[tag (0x1); 1 byte] \[item; (see [`Value`])]
+/// item: \[tag (0x1); 1 byte] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
 ///
 /// end: \[tag (0x2): 1 byte] \[crc value; 4 byte]
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
-    Start(u32),
-    Item(Value),
+    Start {
+        item_count: u32,
+        seqno: SeqNo,
+    },
+    Item {
+        key: UserKey,
+        value: UserData,
+        is_tombstone: bool,
+    },
     End(u32),
 }
 
@@ -59,13 +66,29 @@ impl Serializable for Marker {
         use Marker::{End, Item, Start};
 
         match self {
-            Start(val) => {
+            Start { item_count, seqno } => {
                 writer.write_u8(Tag::Start.into())?;
-                writer.write_u32::<BigEndian>(*val)?;
+                writer.write_u32::<BigEndian>(*item_count)?;
+                writer.write_u64::<BigEndian>(*seqno)?;
             }
-            Item(value) => {
+            Item {
+                key,
+                value,
+                is_tombstone,
+            } => {
                 writer.write_u8(Tag::Item.into())?;
-                value.serialize(writer)?;
+
+                writer.write_u8(u8::from(*is_tombstone))?;
+
+                // NOTE: Truncation is okay and actually needed
+                #[allow(clippy::cast_possible_truncation)]
+                writer.write_u16::<BigEndian>(key.len() as u16)?;
+                writer.write_all(key)?;
+
+                // NOTE: Truncation is okay and actually needed
+                #[allow(clippy::cast_possible_truncation)]
+                writer.write_u16::<BigEndian>(value.len() as u16)?;
+                writer.write_all(value)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
@@ -81,11 +104,25 @@ impl Deserializable for Marker {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<BigEndian>()?;
-                Ok(Self::Start(item_count))
+                let seqno = reader.read_u64::<BigEndian>()?;
+                Ok(Self::Start { item_count, seqno })
             }
             Tag::Item => {
-                let value = Value::deserialize(reader)?;
-                Ok(Self::Item(value))
+                let is_tombstone = reader.read_u8()? > 0;
+
+                let key_len = reader.read_u16::<BigEndian>()?;
+                let mut key = vec![0; key_len.into()];
+                reader.read_exact(&mut key)?;
+
+                let value_len = reader.read_u16::<BigEndian>()?;
+                let mut value = vec![0; value_len as usize];
+                reader.read_exact(&mut value)?;
+
+                Ok(Self::Item {
+                    is_tombstone,
+                    key: key.into(),
+                    value: value.into(),
+                })
             }
             Tag::End => {
                 let crc = reader.read_u32::<BigEndian>()?;
@@ -102,7 +139,11 @@ mod tests {
 
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
-        let item = Marker::Item(Value::new(vec![1, 2, 3], vec![], false, 42));
+        let item = Marker::Item {
+            key: vec![1, 2, 3].into(),
+            value: vec![].into(),
+            is_tombstone: false,
+        };
 
         // Serialize
         let mut serialized_data = Vec::new();

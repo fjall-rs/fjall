@@ -105,6 +105,7 @@ pub use {
     config::Config,
     entry::Entry,
     error::{Error, Result},
+    journal::RecoveryError,
     snapshot::Snapshot,
     tree::Tree,
 };

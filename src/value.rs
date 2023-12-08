@@ -65,7 +65,7 @@ impl Ord for ParsedInternalKey {
 ///
 /// # Disk representation
 ///
-/// \[seqno; 1 byte] - \[tombstone; 1 byte] - \[key length; 2 bytes] - \[key; N bytes] - \[value length; 4 bytes] - \[value: N bytes]
+/// \[seqno; 8 bytes] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
 #[derive(Clone, PartialEq, Eq)]
 pub struct Value {
     /// User-defined key - an arbitrary byte array

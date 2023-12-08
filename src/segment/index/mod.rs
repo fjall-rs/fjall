@@ -372,9 +372,9 @@ impl MetaIndex {
             (file_size - version_size) as u32,
         )?;
 
-        if !index.check_crc(index.crc)? {
+        /* if !index.check_crc(index.crc)? {
             return Err(crate::Error::CrcCheck);
-        }
+        } */
 
         debug_assert!(!index.items.is_empty());
 

@@ -1137,6 +1137,9 @@ impl Tree {
     ) -> crate::Result<CompareAndSwapResult> {
         let key = key.as_ref();
 
+        let shard = self.journal.lock_shard();
+        let seqno = self.increment_lsn();
+
         match self.get(key)? {
             Some(current_value) => {
                 match expected {
@@ -1151,16 +1154,29 @@ impl Tree {
                         }
 
                         // Set or delete the object now
-                        match next {
-                            Some(next_value) => {
-                                self.insert(key, next_value.clone())?;
-                                Ok(Ok(()))
-                            }
-                            None => {
-                                self.remove(key)?;
-                                Ok(Ok(()))
-                            }
+                        if let Some(next_value) = next {
+                            self.append_entry(
+                                shard,
+                                Value {
+                                    key: key.into(),
+                                    value: next_value.clone(),
+                                    seqno,
+                                    is_tombstone: false,
+                                },
+                            )?;
+                        } else {
+                            self.append_entry(
+                                shard,
+                                Value {
+                                    key: key.into(),
+                                    value: [].into(),
+                                    seqno,
+                                    is_tombstone: true,
+                                },
+                            )?;
                         }
+
+                        Ok(Ok(()))
                     }
                     None => {
                         // We expected Some but got None
@@ -1183,11 +1199,21 @@ impl Tree {
                 }
                 None => match next {
                     // We expected None and got None
-                    // Set or delete the object now
+
+                    // Set the object now
                     Some(next_value) => {
-                        self.insert(key, next_value.clone())?;
+                        self.append_entry(
+                            shard,
+                            Value {
+                                key: key.into(),
+                                value: next_value.clone(),
+                                seqno,
+                                is_tombstone: false,
+                            },
+                        )?;
                         Ok(Ok(()))
                     }
+                    // Item is already deleted, do nothing
                     None => Ok(Ok(())),
                 },
             },
