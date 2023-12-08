@@ -10,8 +10,6 @@ use std::{
     sync::Arc,
 };
 
-// NOTE: Yes the name is absolutely ridiculous
-
 /// A reference to a block handle block on disk
 ///
 /// Stores the block's position and size in bytes
@@ -20,6 +18,10 @@ use std::{
 /// # Disk representation
 ///
 /// \[offset; 8 bytes] - \[size; 4 bytes]
+//
+// NOTE: Yes the name is absolutely ridiculous, but it's not the
+// same as a regular BlockHandle (to a data block), because the
+// start key is not required (it's already in the index, see below)
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockHandleBlockHandle {
     pub offset: u64,

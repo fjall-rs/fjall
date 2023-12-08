@@ -92,21 +92,20 @@ impl BlockIndex {
 
         let next_block = index_block.get_next_block_info(key);
 
-        match next_block {
-            Some(block) => Ok(Some(block).cloned()),
-            None => {
-                // The upper bound block is not in the same index block as the key, so load next index block
-                let Some((block_key, block_handle)) = self.top_level_index.get_next_block_key(key)
-                else {
-                    return Ok(None);
-                };
+        if let Some(block) = next_block {
+            Ok(Some(block).cloned())
+        } else {
+            // The upper bound block is not in the same index block as the key, so load next index block
+            let Some((block_key, block_handle)) = self.top_level_index.get_next_block_key(key)
+            else {
+                return Ok(None);
+            };
 
-                Ok(Some(BlockHandle {
-                    offset: block_handle.offset,
-                    size: block_handle.size,
-                    start_key: block_key.to_vec().into(),
-                }))
-            }
+            Ok(Some(BlockHandle {
+                offset: block_handle.offset,
+                size: block_handle.size,
+                start_key: block_key.to_vec().into(),
+            }))
         }
     }
 
@@ -133,19 +132,18 @@ impl BlockIndex {
 
         let maybe_prev = index_block.get_previous_block_info(key);
 
-        match maybe_prev {
-            Some(item) => Ok(Some(item).cloned()),
-            None => {
-                let Some((prev_block_key, prev_block_handle)) =
-                    self.top_level_index.get_previous_block_key(first_block_key)
-                else {
-                    return Ok(None);
-                };
+        if let Some(item) = maybe_prev {
+            Ok(Some(item).cloned())
+        } else {
+            let Some((prev_block_key, prev_block_handle)) =
+                self.top_level_index.get_previous_block_key(first_block_key)
+            else {
+                return Ok(None);
+            };
 
-                let index_block = self.load_index_block(prev_block_key, prev_block_handle)?;
+            let index_block = self.load_index_block(prev_block_key, prev_block_handle)?;
 
-                Ok(index_block.items.last().cloned())
-            }
+            Ok(index_block.items.last().cloned())
         }
     }
 
@@ -161,19 +159,18 @@ impl BlockIndex {
 
         let maybe_next = index_block.get_next_block_info(key);
 
-        match maybe_next {
-            Some(item) => Ok(Some(item).cloned()),
-            None => {
-                let Some((next_block_key, next_block_handle)) =
-                    self.top_level_index.get_next_block_key(first_block_key)
-                else {
-                    return Ok(None);
-                };
+        if let Some(item) = maybe_next {
+            Ok(Some(item).cloned())
+        } else {
+            let Some((next_block_key, next_block_handle)) =
+                self.top_level_index.get_next_block_key(first_block_key)
+            else {
+                return Ok(None);
+            };
 
-                let index_block = self.load_index_block(next_block_key, next_block_handle)?;
+            let index_block = self.load_index_block(next_block_key, next_block_handle)?;
 
-                Ok(index_block.items.first().cloned())
-            }
+            Ok(index_block.items.first().cloned())
         }
     }
 
@@ -207,35 +204,32 @@ impl BlockIndex {
         block_key: &[u8],
         block_handle: &BlockHandleBlockHandle,
     ) -> crate::Result<Arc<DiskBlock<BlockHandle>>> {
-        match self.blocks.get(self.segment_id.clone(), block_key) {
-            Some(block) => {
-                // Cache hit: Copy from block
+        if let Some(block) = self.blocks.get(self.segment_id.clone(), block_key) {
+            // Cache hit: Copy from block
 
-                Ok(block)
-            }
-            None => {
-                // Cache miss: load from disk
+            Ok(block)
+        } else {
+            // Cache miss: load from disk
 
-                let mut file_reader = self.descriptor_table.access();
+            let mut file_reader = self.descriptor_table.access();
 
-                let block = BlockHandleBlock::from_file_compressed(
-                    &mut *file_reader,
-                    block_handle.offset,
-                    block_handle.size,
-                )?;
+            let block = BlockHandleBlock::from_file_compressed(
+                &mut *file_reader,
+                block_handle.offset,
+                block_handle.size,
+            )?;
 
-                drop(file_reader);
+            drop(file_reader);
 
-                let block = Arc::new(block);
+            let block = Arc::new(block);
 
-                self.blocks.insert(
-                    self.segment_id.clone(),
-                    block_key.into(),
-                    Arc::clone(&block),
-                );
+            self.blocks.insert(
+                self.segment_id.clone(),
+                block_key.into(),
+                Arc::clone(&block),
+            );
 
-                Ok(block)
-            }
+            Ok(block)
         }
     }
 
@@ -253,39 +247,12 @@ impl BlockIndex {
         Ok(index_block.get_lower_bound_block_info(key).cloned())
     }
 
-    // TODO: use this instead of from_file after writing Segment somehow...
-    pub fn from_items(
-        segment_id: String,
-        descriptor_table: Arc<FileDescriptorTable>,
-        items: Vec<BlockHandle>,
-        block_cache: Arc<BlockCache>,
-    ) -> crate::Result<Self> {
-        let mut tree = BTreeMap::new();
-
-        for item in items {
-            tree.insert(
-                item.start_key,
-                BlockHandleBlockHandle {
-                    offset: item.offset,
-                    size: item.size,
-                },
-            );
-        }
-
-        Ok(Self {
-            descriptor_table,
-            segment_id,
-            top_level_index: TopLevelIndex::new(tree),
-            blocks: BlockHandleBlockIndex(Arc::clone(&block_cache)),
-        })
-    }
-
     /// Only used for tests
     #[allow(dead_code)]
-    pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
-        let index_block_index = BlockHandleBlockIndex(Arc::clone(&block_cache));
+    pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> Self {
+        let index_block_index = BlockHandleBlockIndex(block_cache);
 
-        Ok(Self {
+        Self {
             // NOTE: It's just a test
             #[allow(clippy::expect_used)]
             descriptor_table: Arc::new(
@@ -294,7 +261,7 @@ impl BlockIndex {
             segment_id,
             blocks: index_block_index,
             top_level_index: TopLevelIndex::new(BTreeMap::default()),
-        })
+        }
     }
 
     pub fn from_file<P: AsRef<Path>>(
@@ -305,18 +272,17 @@ impl BlockIndex {
     ) -> crate::Result<Self> {
         log::debug!("Reading block index from {}", path.as_ref().display());
 
-        // TODO: change to debug asserts
-        assert!(
+        debug_assert!(
             path.as_ref().exists(),
             "{} missing",
             path.as_ref().display()
         );
-        assert!(
+        debug_assert!(
             path.as_ref().join(TOP_LEVEL_INDEX_FILE).exists(),
             "{} missing",
             path.as_ref().display()
         );
-        assert!(
+        debug_assert!(
             path.as_ref().join(BLOCKS_FILE).exists(),
             "{} missing",
             path.as_ref().display()
@@ -337,6 +303,38 @@ impl BlockIndex {
 
         debug_assert!(!index.items.is_empty());
 
-        Self::from_items(segment_id, descriptor_table, index.items, block_cache)
+        Ok(Self::from_items(
+            segment_id,
+            descriptor_table,
+            index.items,
+            block_cache,
+        ))
+    }
+
+    // TODO: use this instead of from_file after writing Segment somehow...
+    pub fn from_items(
+        segment_id: String,
+        descriptor_table: Arc<FileDescriptorTable>,
+        items: Vec<BlockHandle>,
+        block_cache: Arc<BlockCache>,
+    ) -> Self {
+        let mut tree = BTreeMap::new();
+
+        for item in items {
+            tree.insert(
+                item.start_key,
+                BlockHandleBlockHandle {
+                    offset: item.offset,
+                    size: item.size,
+                },
+            );
+        }
+
+        Self {
+            descriptor_table,
+            segment_id,
+            top_level_index: TopLevelIndex::new(tree),
+            blocks: BlockHandleBlockIndex(Arc::clone(&block_cache)),
+        }
     }
 }

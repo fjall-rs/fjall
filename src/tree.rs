@@ -393,7 +393,7 @@ impl Tree {
             .join(generate_segment_id());
         let levels = Levels::create_new(config.levels, config.path.join(LEVELS_MANIFEST_FILE))?;
 
-        let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
+        let block_cache = Arc::clone(&config.block_cache);
 
         let compaction_threads = 4; // TODO: config
         let flush_threads = config.flush_threads.into();
@@ -624,7 +624,8 @@ impl Tree {
         // Load segments
         log::info!("Restoring segments");
 
-        let block_cache = Arc::new(BlockCache::new(config.block_cache_capacity as usize));
+        let block_cache = Arc::clone(&config.block_cache);
+
         let segments = Self::recover_segments(&config.path, &block_cache)?;
 
         // Check if a segment has a higher seqno and then take it

@@ -337,7 +337,7 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
         metadata.write_to_file()?;
 
-        let block_cache = Arc::new(BlockCache::new(usize::MAX));
+        let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
         let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),

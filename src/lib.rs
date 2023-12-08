@@ -101,6 +101,7 @@ pub use value::Value;
 pub use {
     crate::serde::{DeserializeError, SerializeError},
     batch::Batch,
+    block_cache::BlockCache,
     config::Config,
     entry::Entry,
     error::{Error, Result},

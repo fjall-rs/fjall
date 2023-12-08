@@ -90,7 +90,7 @@ mod tests {
     use test_log::test;
 
     fn fixture_segment(id: String, created_at: u128) -> Arc<Segment> {
-        let block_cache = Arc::new(BlockCache::new(0));
+        let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {
             // NOTE: It's just a test
@@ -100,9 +100,7 @@ mod tests {
             ),
             // NOTE: It's just a test
             #[allow(clippy::expect_used)]
-            block_index: Arc::new(
-                BlockIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
-            ),
+            block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),
                 version: crate::version::Version::V0,

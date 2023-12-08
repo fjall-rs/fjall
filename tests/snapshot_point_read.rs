@@ -1,6 +1,38 @@
 use lsm_tree::Config;
 use test_log::test;
 
+#[test]
+fn snapshot_lots_of_versions() -> lsm_tree::Result<()> {
+    let version_count = 100_000;
+
+    let folder = tempfile::tempdir()?;
+
+    let tree = Config::new(&folder).block_size(1_024).open()?;
+
+    let key = "abc";
+
+    for _ in 0u64..version_count {
+        tree.insert(key, format!("abc{version_count}").as_bytes())?;
+    }
+
+    tree.flush()?;
+    tree.wait_for_memtable_flush()?;
+
+    assert_eq!(tree.len()?, 1);
+
+    for seqno in 1..version_count {
+        let item = tree
+            .get_internal_entry(key, true, Some(seqno))?
+            .expect("should exist");
+        assert_eq!(format!("abc{}", version_count).as_bytes(), &*item.value);
+
+        let item = tree.get(key)?.expect("should exist");
+        assert_eq!(format!("abc{}", version_count).as_bytes(), &*item);
+    }
+
+    Ok(())
+}
+
 const ITEM_COUNT: usize = 1;
 const BATCHES: usize = 10;
 

@@ -355,7 +355,7 @@ mod tests {
         metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT, metadata.item_count);
 
-        let block_cache = Arc::new(BlockCache::new(usize::MAX));
+        let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
         let meta_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),

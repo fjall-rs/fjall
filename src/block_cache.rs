@@ -13,30 +13,70 @@ use std::sync::Arc;
 type Key = (u8, String, UserKey);
 type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
 
+/// Block cache
+///
+/// # Examples
+///
+/// Sharing block cache between multiple trees
+///
+/// ```
+/// use lsm_tree::{Tree, Config, BlockCache};
+/// use std::sync::Arc;
+///
+/// // Provide 10'000 blocks (10'000 * 4 KiB = 40 MB) of cache capacity
+/// let block_cache = Arc::new(BlockCache::with_capacity_blocks(10_000));
+///
+/// # let folder = tempfile::tempdir()?;
+/// let tree1 = Config::new(folder).block_cache(block_cache.clone()).open()?;
+/// # let folder = tempfile::tempdir()?;
+/// let tree2 = Config::new(folder).block_cache(block_cache.clone()).open()?;
+/// #
+/// # Ok::<(), lsm_tree::Error>(())
+/// ```
 pub struct BlockCache {
     data: Cache<Key, Item>,
     capacity: usize,
 }
 
 impl BlockCache {
-    pub fn new(capacity: usize) -> Self {
+    /// Creates a new block cache with roughly `n` blocks of capacity
+    ///
+    /// Multiply n by the block size to get the approximate byte count
+    #[must_use]
+    pub fn with_capacity_blocks(n: usize) -> Self {
         Self {
-            data: Cache::new(capacity),
-            capacity,
+            data: Cache::new(n),
+            capacity: n,
         }
     }
 
+    /// Returns the number of cached blocks
+    ///
+    /// Multiply n by the block size to get the approximate byte count
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    pub fn insert_disk_block(&self, segment_id: String, key: UserKey, value: Arc<ValueBlock>) {
+    /// Returns `true` if there are no cached blocks
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    ///
+    pub(crate) fn insert_disk_block(
+        &self,
+        segment_id: String,
+        key: UserKey,
+        value: Arc<ValueBlock>,
+    ) {
         if self.capacity > 0 {
             self.data.insert((0, segment_id, key), Left(value));
         }
     }
 
-    pub fn insert_block_handle_block(
+    pub(crate) fn insert_block_handle_block(
         &self,
         segment_id: String,
         key: UserKey,
@@ -47,13 +87,13 @@ impl BlockCache {
         }
     }
 
-    pub fn get_disk_block(&self, segment_id: String, key: &[u8]) -> Option<Arc<ValueBlock>> {
+    pub(crate) fn get_disk_block(&self, segment_id: String, key: &[u8]) -> Option<Arc<ValueBlock>> {
         let key = (0, segment_id, key.to_vec().into());
         let item = self.data.get(&key)?;
         Some(item.left().clone())
     }
 
-    pub fn get_block_handle_block(
+    pub(crate) fn get_block_handle_block(
         &self,
         segment_id: String,
         key: &[u8],

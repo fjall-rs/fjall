@@ -328,7 +328,7 @@ mod tests {
     use std::sync::Arc;
 
     fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
-        let block_cache = Arc::new(BlockCache::new(0));
+        let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {
             // NOTE: It's just a test
@@ -339,7 +339,7 @@ mod tests {
             block_index: Arc::new(
                 // NOTE: It's just a test
                 #[allow(clippy::expect_used)]
-                BlockIndex::new(id.clone(), block_cache.clone()).expect("should create index"),
+                BlockIndex::new(id.clone(), block_cache.clone()),
             ),
             metadata: Metadata {
                 path: ".".into(),

@@ -1,15 +1,16 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lsm_tree::Config;
+use lsm_tree::{BlockCache, Config};
 use rand::Rng;
 use tempfile::tempdir;
 
-/* fn insert(c: &mut Criterion) {
-    let mut group = c.benchmark_group("inserts");
-    group.sample_size(10);
-
+fn insert(c: &mut Criterion) {
     let item_count = 100_000;
 
-    for thread_count in [1_u32, 2, 4, 8] {
+    let mut group = c.benchmark_group("inserts");
+    group.sample_size(10);
+    group.throughput(criterion::Throughput::Elements(item_count as u64));
+
+    for thread_count in [1_u32, 2, 4 /* , 8*/] {
         group.bench_function(
             format!("{} inserts ({} threads)", item_count, thread_count),
             |b| {
@@ -22,7 +23,7 @@ use tempfile::tempdir;
                         let tree = tree.clone();
 
                         threads.push(std::thread::spawn(move || {
-                            for _ in 0..item_count {
+                            for _ in 0..(item_count / thread_count) {
                                 let key = nanoid::nanoid!();
                                 let value = nanoid::nanoid!();
                                 tree.insert(key, value).unwrap();
@@ -37,10 +38,11 @@ use tempfile::tempdir;
             },
         );
     }
-} */
+}
 
 fn memtable_point_reads(c: &mut Criterion) {
     let mut group = c.benchmark_group("memtable point reads");
+    group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
         .max_memtable_size(128_000_000)
@@ -48,7 +50,9 @@ fn memtable_point_reads(c: &mut Criterion) {
         .unwrap();
 
     let max = 1_000_000;
-    let lookup_count = 100_000;
+    let lookup_count = 1_000_000;
+
+    group.throughput(criterion::Throughput::Elements(lookup_count as u64));
 
     for x in 0_u32..max {
         let key = x.to_be_bytes();
@@ -59,7 +63,7 @@ fn memtable_point_reads(c: &mut Criterion) {
     assert_eq!(tree.len().unwrap() as u32, max);
     assert_eq!(0, tree.segment_count());
 
-    for thread_count in [1_u32, 2, 4, 8] {
+    for thread_count in [1_u32, 2, 4 /* , 8*/] {
         group.bench_function(
             format!("{} point reads ({} threads)", lookup_count, thread_count),
             |b| {
@@ -93,12 +97,14 @@ fn disk_point_reads(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache_capacity(0)
+        .block_cache(BlockCache::with_capacity_blocks(0).into())
         .open()
         .unwrap();
 
     let max = 1_000_000;
     let lookup_count = 100_000;
+
+    group.throughput(criterion::Throughput::Elements(lookup_count as u64));
 
     for x in 0_u32..max {
         let key = x.to_be_bytes();
@@ -109,7 +115,7 @@ fn disk_point_reads(c: &mut Criterion) {
     tree.wait_for_memtable_flush().expect("Flush thread failed");
     assert_eq!(tree.len().unwrap() as u32, max);
 
-    for thread_count in [1_u32, 2, 4, 8] {
+    for thread_count in [1_u32, 2, 4 /* , 8*/] {
         group.bench_function(
             format!("{} point reads ({} threads)", lookup_count, thread_count),
             |b| {
@@ -135,6 +141,35 @@ fn disk_point_reads(c: &mut Criterion) {
                 })
             },
         );
+
+        group.bench_function(
+            format!(
+                "{} snapshot point reads ({} threads)",
+                lookup_count, thread_count
+            ),
+            |b| {
+                b.iter(|| {
+                    let mut threads = vec![];
+
+                    for _ in 0..thread_count {
+                        let snapshot = tree.snapshot();
+
+                        threads.push(std::thread::spawn(move || {
+                            let mut rng = rand::thread_rng();
+
+                            for _ in 0_u32..(lookup_count / thread_count) {
+                                let key = rng.gen_range(0..max);
+                                assert!(snapshot.get(key.to_be_bytes()).unwrap().is_some());
+                            }
+                        }));
+                    }
+
+                    for thread in threads {
+                        thread.join().unwrap();
+                    }
+                })
+            },
+        );
     }
 }
 
@@ -143,12 +178,14 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache_capacity(62 * 1_000) // 256 MB
+        .block_cache(BlockCache::with_capacity_blocks(/* 256 MB */ 62 * 1_000).into())
         .open()
         .unwrap();
 
     let max = 1_000_000;
     let lookup_count = 100_000;
+
+    group.throughput(criterion::Throughput::Elements(lookup_count as u64));
 
     for x in 0_u32..max {
         let key = x.to_be_bytes();
@@ -159,7 +196,7 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
     tree.wait_for_memtable_flush().expect("Flush thread failed");
     assert_eq!(tree.len().unwrap() as u32, max);
 
-    for thread_count in [1_u32, 2, 4, 8] {
+    for thread_count in [1_u32, 2, 4 /* , 8*/] {
         group.bench_function(
             format!("{} point reads ({} threads)", lookup_count, thread_count),
             |b| {
@@ -175,6 +212,35 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
                             for _ in 0_u32..(lookup_count / thread_count) {
                                 let key = rng.gen_range(0..max);
                                 assert!(tree.get(key.to_be_bytes()).unwrap().is_some());
+                            }
+                        }));
+                    }
+
+                    for thread in threads {
+                        thread.join().unwrap();
+                    }
+                })
+            },
+        );
+
+        group.bench_function(
+            format!(
+                "{} snapshot point reads ({} threads)",
+                lookup_count, thread_count
+            ),
+            |b| {
+                b.iter(|| {
+                    let mut threads = vec![];
+
+                    for _ in 0..thread_count {
+                        let snapshot = tree.snapshot();
+
+                        threads.push(std::thread::spawn(move || {
+                            let mut rng = rand::thread_rng();
+
+                            for _ in 0_u32..(lookup_count / thread_count) {
+                                let key = rng.gen_range(0..max);
+                                assert!(snapshot.get(key.to_be_bytes()).unwrap().is_some());
                             }
                         }));
                     }
@@ -196,7 +262,7 @@ fn full_scan(c: &mut Criterion) {
 
     group.bench_function("full scan uncached", |b| {
         let tree = Config::new(tempdir().unwrap())
-            .block_cache_capacity(0)
+            .block_cache(BlockCache::with_capacity_blocks(0).into())
             .open()
             .unwrap();
 
@@ -244,7 +310,7 @@ fn scan_vs_query(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("scan vs query");
 
-    for size in [100_000, 1_000_000, 2_000_000, 5_000_000] {
+    for size in [100_000, 1_000_000, 2_000_000] {
         let tree = Config::new(tempdir().unwrap()).open().unwrap();
 
         for x in 0..size as u64 {
@@ -287,7 +353,7 @@ fn scan_vs_query(c: &mut Criterion) {
                 assert_eq!(iter.count(), 1000);
             })
         });
-        /* group.bench_function(format!("query rev {}", size), |b| {
+        group.bench_function(format!("query rev {}", size), |b| {
             b.iter(|| {
                 let iter = tree
                     .range((
@@ -298,14 +364,14 @@ fn scan_vs_query(c: &mut Criterion) {
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             })
-        }); */
+        });
     }
 }
 
 fn scan_vs_prefix(c: &mut Criterion) {
     let mut group = c.benchmark_group("scan vs prefix");
 
-    for size in [100_000_u64, 1_000_000, 2_000_000, 5_000_000] {
+    for size in [100_000_u64, 1_000_000, 2_000_000] {
         let tree = Config::new(tempdir().unwrap()).open().unwrap();
 
         for _ in 0..size {
@@ -343,19 +409,19 @@ fn scan_vs_prefix(c: &mut Criterion) {
                 assert_eq!(iter.count(), 1000);
             });
         });
-        /* group.bench_function(format!("prefix rev {}", size), |b| {
+        group.bench_function(format!("prefix rev {}", size), |b| {
             b.iter(|| {
                 let iter = tree.prefix(prefix).unwrap();
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             });
-        }); */
+        });
     }
 }
 
 criterion_group!(
     benches,
-    // insert,
+    insert,
     memtable_point_reads,
     disk_point_reads,
     cached_retrieve_disk_random,

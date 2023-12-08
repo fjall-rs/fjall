@@ -39,7 +39,7 @@ impl From<ValueType> for u8 {
     fn from(value: ValueType) -> Self {
         match value {
             ValueType::Value => 0,
-            _ => 1,
+            ValueType::Tombstone => 1,
         }
     }
 }

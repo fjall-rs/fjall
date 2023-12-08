@@ -1,6 +1,6 @@
 use crate::{
     compaction::{tiered, CompactionStrategy},
-    Tree,
+    BlockCache, Tree,
 };
 use std::{
     path::{Path, PathBuf},
@@ -17,8 +17,8 @@ pub struct Config {
     /// Block size of data and index blocks
     pub block_size: u32,
 
-    /// Block cache size in # blocks
-    pub block_cache_capacity: u32,
+    /// Block cache
+    pub block_cache: Arc<BlockCache>,
 
     /// Maximum size in bytes of the write buffer
     pub max_memtable_size: u32,
@@ -43,7 +43,7 @@ impl Default for Config {
         Self {
             path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
-            block_cache_capacity: 1_024,
+            block_cache: Arc::new(BlockCache::with_capacity_blocks(16_384)),
             max_memtable_size: 64 * 1_024 * 1_024,
             levels: 7,
             compaction_strategy: Arc::new(tiered::Strategy::default()),
@@ -140,12 +140,12 @@ impl Config {
         self
     }
 
-    /// Sets the block cache size in # blocks.
+    /// Sets the block cache.
     ///
-    /// Defaults to 1,024
+    /// Defaults to a block cache with 64 MiB of capacity
     #[must_use]
-    pub fn block_cache_capacity(mut self, block_cache_capacity: u32) -> Self {
-        self.block_cache_capacity = block_cache_capacity;
+    pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
+        self.block_cache = block_cache;
         self
     }
 
