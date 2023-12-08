@@ -96,7 +96,7 @@ impl JournalShard {
 
         for item in items {
             let item = Marker::Item {
-                is_tombstone: item.is_tombstone,
+                value_type: item.value_type,
                 key: item.key.clone(),
                 value: item.value.clone(),
             };

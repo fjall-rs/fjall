@@ -1,4 +1,4 @@
-use crate::{Tree, Value};
+use crate::{value::ValueType, Tree, Value};
 
 /// An atomic write batch
 pub struct Batch {
@@ -19,12 +19,13 @@ impl Batch {
     /// Inserts a key-value pair into the batch
     pub fn insert<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(&mut self, key: K, value: V) {
         self.data
-            .push(Value::new(key.into(), value.into(), false, 0));
+            .push(Value::new(key.into(), value.into(), 0, ValueType::Value));
     }
 
     /// Adds a tombstone marker for a key
     pub fn remove<K: Into<Vec<u8>>>(&mut self, key: K) {
-        self.data.push(Value::new(key.into(), vec![], true, 0));
+        self.data
+            .push(Value::new(key.into(), vec![], 0, ValueType::Tombstone));
     }
 
     /// Commits the batch to the LSM-tree atomically.

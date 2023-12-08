@@ -4,7 +4,7 @@ use crate::{
     id::generate_segment_id,
     segment::index::writer::Writer as IndexWriter,
     serde::Serializable,
-    value::{SeqNo, UserKey},
+    value::{SeqNo, UserKey, ValueType},
     version::Version,
     Value,
 };
@@ -236,7 +236,7 @@ impl Writer {
 
     /// Writes an item
     pub fn write(&mut self, item: Value) -> crate::Result<()> {
-        if item.is_tombstone {
+        if item.value_type == ValueType::Tombstone {
             if self.opts.evict_tombstones {
                 return Ok(());
             }
@@ -334,8 +334,14 @@ mod tests {
             block_size: 4096,
         })?;
 
-        let items = (0u64..ITEM_COUNT)
-            .map(|i| Value::new(i.to_be_bytes(), nanoid::nanoid!().as_bytes(), false, 0));
+        let items = (0u64..ITEM_COUNT).map(|i| {
+            Value::new(
+                i.to_be_bytes(),
+                nanoid::nanoid!().as_bytes(),
+                0,
+                ValueType::Value,
+            )
+        });
 
         for item in items {
             writer.write(item)?;

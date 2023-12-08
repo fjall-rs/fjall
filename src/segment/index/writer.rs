@@ -142,6 +142,7 @@ impl Writer {
             self.path.join(INDEX_BLOCKS_FILE),
             self.path.join(BLOCKS_FILE),
         )?;
+
         // TODO: probably doesn't work on Windows...
         std::fs::remove_file(self.path.join(INDEX_BLOCKS_FILE))?;
         log::debug!("Concatted index blocks onto blocks file");

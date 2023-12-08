@@ -103,7 +103,7 @@ impl Journal {
                         Marker::Item {
                             key,
                             value,
-                            is_tombstone,
+                            value_type,
                         } => {
                             // TODO: CRC
                             // byte_count += bytes.len() as u64;
@@ -117,7 +117,7 @@ impl Journal {
                                 key,
                                 value,
                                 seqno: batch_seqno,
-                                is_tombstone,
+                                value_type,
                             });
                         }
                     }

@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+// TODO: Value::is_tombstone() and ParsedInternalKey::is_tombstone()
+
 /// User defined data
 pub type UserKey = Arc<[u8]>;
 
@@ -15,11 +17,39 @@ pub type UserData = Arc<[u8]>;
 /// Sequence number
 pub type SeqNo = u64;
 
+/// Value type (regular value or tombstone)
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ValueType {
+    /// Existing value
+    Value,
+
+    /// Deleted value
+    Tombstone,
+}
+
+impl From<u8> for ValueType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Value,
+            _ => Self::Tombstone,
+        }
+    }
+}
+
+impl From<ValueType> for u8 {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::Value => 0,
+            _ => 1,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParsedInternalKey {
     pub user_key: UserKey,
     pub seqno: SeqNo,
-    pub is_tombstone: bool,
+    pub value_type: ValueType,
 }
 
 impl std::fmt::Debug for ParsedInternalKey {
@@ -29,17 +59,17 @@ impl std::fmt::Debug for ParsedInternalKey {
             "{:?}:{}:{}",
             self.user_key,
             self.seqno,
-            u8::from(self.is_tombstone)
+            u8::from(self.value_type)
         )
     }
 }
 
 impl ParsedInternalKey {
-    pub fn new<K: Into<UserKey>>(user_key: K, seqno: SeqNo, is_tombstone: bool) -> Self {
+    pub fn new<K: Into<UserKey>>(user_key: K, seqno: SeqNo, value_type: ValueType) -> Self {
         Self {
             user_key: user_key.into(),
             seqno,
-            is_tombstone,
+            value_type,
         }
     }
 }
@@ -82,7 +112,7 @@ pub struct Value {
     pub seqno: SeqNo,
 
     /// Tombstone marker - if this is true, the value has been deleted
-    pub is_tombstone: bool,
+    pub value_type: ValueType,
 }
 
 impl std::fmt::Debug for Value {
@@ -92,7 +122,7 @@ impl std::fmt::Debug for Value {
             "{:?}:{}:{} => {:?}",
             self.key,
             self.seqno,
-            u8::from(self.is_tombstone),
+            u8::from(self.value_type),
             self.value
         )
     }
@@ -105,7 +135,7 @@ impl From<(ParsedInternalKey, UserData)> for Value {
         Self {
             key: key.user_key,
             seqno: key.seqno,
-            is_tombstone: key.is_tombstone,
+            value_type: key.value_type,
             value: val.1,
         }
     }
@@ -136,20 +166,20 @@ impl Value {
     /// # Examples
     ///
     /// ```
-    /// # use lsm_tree::Value;
+    /// # use lsm_tree::{Value, ValueType};
     /// #
-    /// let value = Value::new("key-1".as_bytes(), "my-value".as_bytes(), false, 5);
+    /// let value = Value::new("key-1".as_bytes(), "my-value".as_bytes(), 5, ValueType::Value);
     /// assert_eq!(b"key-1", &*value.key);
     /// assert_eq!(b"my-value", &*value.value);
+    /// assert_eq!(ValueType::Value, value.value_type);
     /// assert_eq!(5, value.seqno);
-    /// assert_eq!(false, value.is_tombstone);
     ///
     /// ```
     pub fn new<K: Into<UserKey>, V: Into<UserData>>(
         key: K,
         value: V,
-        is_tombstone: bool,
         seqno: u64,
+        value_type: ValueType,
     ) -> Self {
         let k = key.into();
         let v = value.into();
@@ -161,7 +191,7 @@ impl Value {
         Self {
             key: k,
             value: v,
-            is_tombstone,
+            value_type,
             seqno,
         }
     }
@@ -180,7 +210,7 @@ impl From<Value> for ParsedInternalKey {
         Self {
             user_key: val.key,
             seqno: val.seqno,
-            is_tombstone: val.is_tombstone,
+            value_type: val.value_type,
         }
     }
 }
@@ -188,7 +218,7 @@ impl From<Value> for ParsedInternalKey {
 impl Serializable for Value {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
         writer.write_u64::<BigEndian>(self.seqno)?;
-        writer.write_u8(u8::from(self.is_tombstone))?;
+        writer.write_u8(u8::from(self.value_type))?;
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
@@ -207,7 +237,7 @@ impl Serializable for Value {
 impl Deserializable for Value {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
         let seqno = reader.read_u64::<BigEndian>()?;
-        let is_tombstone = reader.read_u8()? > 0;
+        let value_type = reader.read_u8()?.into();
 
         let key_len = reader.read_u16::<BigEndian>()?;
         let mut key = vec![0; key_len.into()];
@@ -217,7 +247,7 @@ impl Deserializable for Value {
         let mut value = vec![0; value_len as usize];
         reader.read_exact(&mut value)?;
 
-        Ok(Self::new(key, value, is_tombstone, seqno))
+        Ok(Self::new(key, value, seqno, value_type))
     }
 }
 
@@ -229,7 +259,7 @@ mod tests {
     #[test]
     fn test_empty_value() -> crate::Result<()> {
         // Create an empty Value instance
-        let value = Value::new(vec![1, 2, 3], vec![], false, 42);
+        let value = Value::new(vec![1, 2, 3], vec![], 42, ValueType::Value);
 
         // Serialize the empty Value
         let mut serialized = Vec::new();

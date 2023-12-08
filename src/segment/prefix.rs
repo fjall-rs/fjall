@@ -102,7 +102,7 @@ mod tests {
             reader::Reader,
             writer::{Options, Writer},
         },
-        value::SeqNo,
+        value::{SeqNo, ValueType},
         Value,
     };
     use std::sync::Arc;
@@ -127,8 +127,8 @@ mod tests {
                         v
                     },
                     nanoid::nanoid!().as_bytes(),
-                    false,
                     0,
+                    ValueType::Value,
                 );
                 writer.write(item)?;
             }
@@ -141,8 +141,8 @@ mod tests {
                         v
                     },
                     nanoid::nanoid!().as_bytes(),
-                    false,
                     0,
+                    ValueType::Value,
                 );
                 writer.write(item)?;
             }
@@ -155,8 +155,8 @@ mod tests {
                         v
                     },
                     nanoid::nanoid!().as_bytes(),
-                    false,
                     0,
+                    ValueType::Value,
                 );
                 writer.write(item)?;
             }
@@ -233,7 +233,14 @@ mod tests {
         ]
         .into_iter()
         .enumerate()
-        .map(|(idx, key)| Value::new(key, nanoid::nanoid!().as_bytes(), false, idx as SeqNo));
+        .map(|(idx, key)| {
+            Value::new(
+                key,
+                nanoid::nanoid!().as_bytes(),
+                idx as SeqNo,
+                ValueType::Value,
+            )
+        });
 
         for item in items {
             writer.write(item)?;

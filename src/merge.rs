@@ -1,4 +1,8 @@
-use crate::{segment::Segment, value::SeqNo, Value};
+use crate::{
+    segment::Segment,
+    value::{SeqNo, ValueType},
+    Value,
+};
 use min_max_heap::MinMaxHeap;
 use std::sync::Arc;
 
@@ -136,7 +140,7 @@ impl<'a> Iterator for MergeIterator<'a> {
                 return Some(Err(e));
             }
 
-            if head.is_tombstone || self.evict_old_versions {
+            if head.value_type == ValueType::Tombstone || self.evict_old_versions {
                 // Tombstone marker OR we want to GC old versions
                 // As long as items beneath tombstone are the same key, ignore them
                 while let Some(next) = self.heap.pop_min() {
@@ -205,7 +209,7 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
                             return Some(Err(e));
                         }
 
-                        if next.is_tombstone {
+                        if next.value_type == ValueType::Tombstone {
                             if let Some(seqno) = self.seqno {
                                 if next.seqno < seqno {
                                     reached_tombstone = true;
@@ -263,15 +267,15 @@ mod tests {
     #[test]
     fn test_snapshot_iter() -> crate::Result<()> {
         let vec0 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+            crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value),
         ];
 
         let vec1 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(2u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+            crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value),
         ];
 
         {
@@ -289,9 +293,9 @@ mod tests {
             assert_eq!(
                 items,
                 vec![
-                    crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-                    crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-                    crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+                    crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
+                    crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
+                    crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
                 ]
             );
         }
@@ -311,9 +315,9 @@ mod tests {
             assert_eq!(
                 items,
                 vec![
-                    crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
-                    crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-                    crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
+                    crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
+                    crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
+                    crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value,),
                 ]
             );
         }
@@ -323,10 +327,14 @@ mod tests {
 
     #[test]
     fn test_non_overlapping() -> crate::Result<()> {
-        let iter0 = (0u64..5).map(|x| crate::Value::new(x.to_be_bytes(), *b"old", false, 0));
-        let iter1 = (5u64..10).map(|x| crate::Value::new(x.to_be_bytes(), *b"new", false, 3));
-        let iter2 = (10u64..15).map(|x| crate::Value::new(x.to_be_bytes(), *b"asd", true, 1));
-        let iter3 = (15u64..20).map(|x| crate::Value::new(x.to_be_bytes(), *b"qwe", true, 2));
+        let iter0 =
+            (0u64..5).map(|x| crate::Value::new(x.to_be_bytes(), *b"old", 0, ValueType::Value));
+        let iter1 =
+            (5u64..10).map(|x| crate::Value::new(x.to_be_bytes(), *b"new", 3, ValueType::Value));
+        let iter2 = (10u64..15)
+            .map(|x| crate::Value::new(x.to_be_bytes(), *b"asd", 1, ValueType::Tombstone));
+        let iter3 = (15u64..20)
+            .map(|x| crate::Value::new(x.to_be_bytes(), *b"qwe", 2, ValueType::Tombstone));
 
         let iter0 = Box::new(iter0.map(Ok));
         let iter1 = Box::new(iter1.map(Ok));
@@ -347,15 +355,15 @@ mod tests {
     #[test]
     fn test_mixed() -> crate::Result<()> {
         let vec0 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(2u64.to_be_bytes(), *b"new", false, 2),
-            crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+            crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"new", 2, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value),
         ];
 
         let vec1 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+            crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value),
         ];
 
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
@@ -367,9 +375,9 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-                crate::Value::new(2u64.to_be_bytes(), *b"new", false, 2),
-                crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+                crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
+                crate::Value::new(2u64.to_be_bytes(), *b"new", 2, ValueType::Value,),
+                crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
             ]
         );
 
@@ -379,15 +387,15 @@ mod tests {
     #[test]
     fn test_forward_merge() -> crate::Result<()> {
         let vec0 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+            crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value),
         ];
 
         let vec1 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(2u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+            crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value),
         ];
 
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
@@ -399,9 +407,9 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-                crate::Value::new(2u64.to_be_bytes(), *b"new", false, 1),
-                crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+                crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
+                crate::Value::new(2u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
+                crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
             ]
         );
 
@@ -411,15 +419,15 @@ mod tests {
     #[test]
     fn test_forward_tombstone_shadowing() -> crate::Result<()> {
         let vec0 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+            crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value),
         ];
 
         let vec1 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"", true, 1),
-            crate::Value::new(2u64.to_be_bytes(), *b"", true, 1),
-            crate::Value::new(3u64.to_be_bytes(), *b"", true, 1),
+            crate::Value::new(1u64.to_be_bytes(), *b"", 1, ValueType::Tombstone),
+            crate::Value::new(2u64.to_be_bytes(), *b"", 1, ValueType::Tombstone),
+            crate::Value::new(3u64.to_be_bytes(), *b"", 1, ValueType::Tombstone),
         ];
 
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
@@ -431,9 +439,9 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                crate::Value::new(1u64.to_be_bytes(), *b"", true, 1),
-                crate::Value::new(2u64.to_be_bytes(), *b"", true, 1),
-                crate::Value::new(3u64.to_be_bytes(), *b"", true, 1),
+                crate::Value::new(1u64.to_be_bytes(), *b"", 1, ValueType::Tombstone,),
+                crate::Value::new(2u64.to_be_bytes(), *b"", 1, ValueType::Tombstone,),
+                crate::Value::new(3u64.to_be_bytes(), *b"", 1, ValueType::Tombstone,),
             ]
         );
 
@@ -443,15 +451,15 @@ mod tests {
     #[test]
     fn test_rev_merge() -> crate::Result<()> {
         let vec0 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(2u64.to_be_bytes(), *b"old", false, 0),
-            crate::Value::new(3u64.to_be_bytes(), *b"old", false, 0),
+            crate::Value::new(1u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"old", 0, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"old", 0, ValueType::Value),
         ];
 
         let vec1 = vec![
-            crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(2u64.to_be_bytes(), *b"new", false, 1),
-            crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
+            crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(2u64.to_be_bytes(), *b"new", 1, ValueType::Value),
+            crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value),
         ];
 
         let iter0 = Box::new(vec0.iter().cloned().map(Ok));
@@ -463,9 +471,9 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                crate::Value::new(3u64.to_be_bytes(), *b"new", false, 1),
-                crate::Value::new(2u64.to_be_bytes(), *b"new", false, 1),
-                crate::Value::new(1u64.to_be_bytes(), *b"new", false, 1),
+                crate::Value::new(3u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
+                crate::Value::new(2u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
+                crate::Value::new(1u64.to_be_bytes(), *b"new", 1, ValueType::Value,),
             ]
         );
 

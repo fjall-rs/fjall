@@ -2,7 +2,7 @@ use crate::{
     merge::{BoxedIterator, MergeIterator},
     range::MemTableGuard,
     segment::Segment,
-    value::{ParsedInternalKey, SeqNo, UserData, UserKey},
+    value::{ParsedInternalKey, SeqNo, UserData, UserKey, ValueType},
     Value,
 };
 use std::sync::Arc;
@@ -55,7 +55,13 @@ impl<'a> PrefixIterator<'a> {
                 memtable
                     .items
                     // NOTE: See memtable.rs for range explanation
-                    .range(ParsedInternalKey::new(lock.prefix.clone(), SeqNo::MAX, true)..)
+                    .range(
+                        ParsedInternalKey::new(
+                            lock.prefix.clone(),
+                            SeqNo::MAX,
+                            ValueType::Tombstone,
+                        )..,
+                    )
                     .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
                     .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone())))),
             ));
@@ -65,7 +71,9 @@ impl<'a> PrefixIterator<'a> {
             lock.guard
                 .active
                 .items
-                .range(ParsedInternalKey::new(lock.prefix.clone(), SeqNo::MAX, true)..)
+                .range(
+                    ParsedInternalKey::new(lock.prefix.clone(), SeqNo::MAX, ValueType::Tombstone)..,
+                )
                 .filter(|entry| entry.key().user_key.starts_with(&lock.prefix))
                 .map(|entry| Ok(Value::from((entry.key().clone(), entry.value().clone()))))
         };
@@ -79,7 +87,7 @@ impl<'a> PrefixIterator<'a> {
         }
 
         let iter = Box::new(iter.filter(|x| match x {
-            Ok(value) => !value.is_tombstone,
+            Ok(value) => value.value_type != ValueType::Tombstone,
             Err(_) => true,
         }));
 

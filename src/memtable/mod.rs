@@ -1,4 +1,4 @@
-use crate::value::{ParsedInternalKey, SeqNo, UserData};
+use crate::value::{ParsedInternalKey, SeqNo, UserData, ValueType};
 use crate::Value;
 use crossbeam_skiplist::SkipMap;
 
@@ -35,7 +35,7 @@ impl MemTable {
         // abcdef -> 6
         // abcdef -> 5
         //
-        let range = ParsedInternalKey::new(prefix, SeqNo::MAX, true)..;
+        let range = ParsedInternalKey::new(prefix, SeqNo::MAX, ValueType::Tombstone)..;
 
         for entry in self.items.range(range) {
             let key = entry.key();
@@ -60,7 +60,7 @@ impl MemTable {
 
     /// Inserts an item into the `MemTable`
     pub fn insert(&self, entry: Value) {
-        let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.is_tombstone);
+        let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.value_type);
         self.items.insert(key, entry.value);
     }
 }
@@ -68,13 +68,14 @@ impl MemTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ValueType;
     use test_log::test;
 
     #[test]
     fn test_memtable_get() {
         let memtable = MemTable::default();
 
-        let value = Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0);
+        let value = Value::new(b"abc".to_vec(), b"abc".to_vec(), 0, ValueType::Value);
 
         memtable.insert(value.clone());
 
@@ -85,14 +86,44 @@ mod tests {
     fn test_memtable_get_highest_seqno() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 1));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 2));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 3));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 4));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            0,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            1,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            2,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            3,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            4,
+            ValueType::Value,
+        ));
 
         assert_eq!(
-            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 4)),
+            Some(Value::new(
+                b"abc".to_vec(),
+                b"abc".to_vec(),
+                4,
+                ValueType::Value,
+            )),
             memtable.get("abc", None)
         );
     }
@@ -101,16 +132,36 @@ mod tests {
     fn test_memtable_get_prefix() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new(b"abc0".to_vec(), b"abc".to_vec(), false, 0));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255));
+        memtable.insert(Value::new(
+            b"abc0".to_vec(),
+            b"abc".to_vec(),
+            0,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            255,
+            ValueType::Value,
+        ));
 
         assert_eq!(
-            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255)),
+            Some(Value::new(
+                b"abc".to_vec(),
+                b"abc".to_vec(),
+                255,
+                ValueType::Value,
+            )),
             memtable.get("abc", None)
         );
 
         assert_eq!(
-            Some(Value::new(b"abc0".to_vec(), b"abc".to_vec(), false, 0)),
+            Some(Value::new(
+                b"abc0".to_vec(),
+                b"abc".to_vec(),
+                0,
+                ValueType::Value,
+            )),
             memtable.get("abc0", None)
         );
     }
@@ -119,22 +170,52 @@ mod tests {
     fn test_memtable_get_old_version() {
         let memtable = MemTable::default();
 
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 99));
-        memtable.insert(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            0,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            99,
+            ValueType::Value,
+        ));
+        memtable.insert(Value::new(
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            255,
+            ValueType::Value,
+        ));
 
         assert_eq!(
-            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 255)),
+            Some(Value::new(
+                b"abc".to_vec(),
+                b"abc".to_vec(),
+                255,
+                ValueType::Value,
+            )),
             memtable.get("abc", None)
         );
 
         assert_eq!(
-            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 99)),
+            Some(Value::new(
+                b"abc".to_vec(),
+                b"abc".to_vec(),
+                99,
+                ValueType::Value,
+            )),
             memtable.get("abc", Some(100))
         );
 
         assert_eq!(
-            Some(Value::new(b"abc".to_vec(), b"abc".to_vec(), false, 0)),
+            Some(Value::new(
+                b"abc".to_vec(),
+                b"abc".to_vec(),
+                0,
+                ValueType::Value,
+            )),
             memtable.get("abc", Some(50))
         );
     }

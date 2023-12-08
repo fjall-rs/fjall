@@ -156,7 +156,7 @@ mod tests {
             range::Range,
             writer::{Options, Writer},
         },
-        value::UserKey,
+        value::{UserKey, ValueType},
         Value,
     };
     use std::ops::{
@@ -182,8 +182,8 @@ mod tests {
             Value::new(
                 i.to_be_bytes(),
                 nanoid::nanoid!().as_bytes(),
-                false,
                 1000 + i,
+                ValueType::Value,
             )
         });
 
@@ -386,8 +386,8 @@ mod tests {
             Value::new(
                 i.to_be_bytes(),
                 nanoid::nanoid!().as_bytes(),
-                false,
                 1000 + i,
+                ValueType::Value,
             )
         });
 

@@ -96,7 +96,7 @@ mod value;
 mod version;
 
 #[doc(hidden)]
-pub use value::Value;
+pub use value::{Value, ValueType};
 
 pub use {
     crate::serde::{DeserializeError, SerializeError},

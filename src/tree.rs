@@ -13,7 +13,7 @@ use crate::{
     segment::{self, meta::Metadata, Segment},
     stop_signal::StopSignal,
     tree_inner::TreeInner,
-    value::{SeqNo, UserData, UserKey},
+    value::{SeqNo, UserData, UserKey, ValueType},
     Batch, Config, Snapshot, Value,
 };
 use std::{
@@ -56,7 +56,7 @@ impl std::ops::Deref for Tree {
 }
 
 fn ignore_tombstone_value(item: Value) -> Option<Value> {
-    if item.is_tombstone {
+    if item.value_type == ValueType::Tombstone {
         None
     } else {
         Some(item)
@@ -732,8 +732,8 @@ impl Tree {
         let value = Value::new(
             key.as_ref(),
             value.as_ref(),
-            false,
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            ValueType::Value,
         );
 
         self.append_entry(shard, value)?;
@@ -772,8 +772,8 @@ impl Tree {
         let value = Value::new(
             key.as_ref(),
             vec![],
-            true,
             self.lsn.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            ValueType::Tombstone,
         );
 
         self.append_entry(shard, value)?;
@@ -1161,7 +1161,7 @@ impl Tree {
                                     key: key.into(),
                                     value: next_value.clone(),
                                     seqno,
-                                    is_tombstone: false,
+                                    value_type: ValueType::Value,
                                 },
                             )?;
                         } else {
@@ -1171,7 +1171,7 @@ impl Tree {
                                     key: key.into(),
                                     value: [].into(),
                                     seqno,
-                                    is_tombstone: true,
+                                    value_type: ValueType::Tombstone,
                                 },
                             )?;
                         }
@@ -1208,7 +1208,7 @@ impl Tree {
                                 key: key.into(),
                                 value: next_value.clone(),
                                 seqno,
-                                is_tombstone: false,
+                                value_type: ValueType::Value,
                             },
                         )?;
                         Ok(Ok(()))

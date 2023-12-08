@@ -299,6 +299,7 @@ mod tests {
             reader::Reader,
             writer::{Options, Writer},
         },
+        value::ValueType,
         Value,
     };
     use std::sync::Arc;
@@ -322,8 +323,8 @@ mod tests {
             Value::new(
                 i.to_be_bytes(),
                 nanoid::nanoid!().as_bytes(),
-                false,
                 1000 + i,
+                ValueType::Value,
             )
         });
 

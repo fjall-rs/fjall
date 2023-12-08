@@ -102,13 +102,13 @@ impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Value;
+    use crate::{value::ValueType, Value};
     use test_log::test;
 
     #[test]
     fn test_blocky_deserialization_success() -> crate::Result<()> {
-        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
-        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
+        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], 42, ValueType::Value);
+        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], 43, ValueType::Value);
 
         let items = vec![item1.clone(), item2.clone()];
         let crc = DiskBlock::create_crc(&items)?;
@@ -137,8 +137,8 @@ mod tests {
 
     #[test]
     fn test_blocky_deserialization_failure_crc() -> crate::Result<()> {
-        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], false, 42);
-        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], false, 43);
+        let item1 = Value::new(vec![1, 2, 3], vec![4, 5, 6], 42, ValueType::Value);
+        let item2 = Value::new(vec![7, 8, 9], vec![10, 11, 12], 43, ValueType::Value);
 
         let block = DiskBlock {
             items: vec![item1, item2],

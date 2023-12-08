@@ -1,6 +1,6 @@
 use crate::{
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
-    value::{SeqNo, UserData, UserKey},
+    value::{SeqNo, UserData, UserKey, ValueType},
 };
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
@@ -29,7 +29,7 @@ pub enum Marker {
     Item {
         key: UserKey,
         value: UserData,
-        is_tombstone: bool,
+        value_type: ValueType,
     },
     End(u32),
 }
@@ -74,11 +74,11 @@ impl Serializable for Marker {
             Item {
                 key,
                 value,
-                is_tombstone,
+                value_type,
             } => {
                 writer.write_u8(Tag::Item.into())?;
 
-                writer.write_u8(u8::from(*is_tombstone))?;
+                writer.write_u8(u8::from(*value_type))?;
 
                 // NOTE: Truncation is okay and actually needed
                 #[allow(clippy::cast_possible_truncation)]
@@ -108,7 +108,7 @@ impl Deserializable for Marker {
                 Ok(Self::Start { item_count, seqno })
             }
             Tag::Item => {
-                let is_tombstone = reader.read_u8()? > 0;
+                let value_type = reader.read_u8()?.into();
 
                 let key_len = reader.read_u16::<BigEndian>()?;
                 let mut key = vec![0; key_len.into()];
@@ -119,7 +119,7 @@ impl Deserializable for Marker {
                 reader.read_exact(&mut value)?;
 
                 Ok(Self::Item {
-                    is_tombstone,
+                    value_type,
                     key: key.into(),
                     value: value.into(),
                 })
@@ -142,7 +142,7 @@ mod tests {
         let item = Marker::Item {
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
-            is_tombstone: false,
+            value_type: ValueType::Value,
         };
 
         // Serialize

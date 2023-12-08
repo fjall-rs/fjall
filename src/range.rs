@@ -2,7 +2,7 @@ use crate::{
     memtable::MemTable,
     merge::{BoxedIterator, MergeIterator},
     segment::Segment,
-    value::{ParsedInternalKey, SeqNo, UserData, UserKey},
+    value::{ParsedInternalKey, SeqNo, UserData, UserKey, ValueType},
     Value,
 };
 use std::{
@@ -48,12 +48,16 @@ impl<'a> RangeIterator<'a> {
     fn new(lock: &'a Range<'a>, seqno: Option<SeqNo>) -> Self {
         let lo = match &lock.bounds.0 {
             // NOTE: See memtable.rs for range explanation
-            Bound::Included(key) => {
-                Bound::Included(ParsedInternalKey::new(key.clone(), SeqNo::MAX, true))
-            }
-            Bound::Excluded(key) => {
-                Bound::Excluded(ParsedInternalKey::new(key.clone(), SeqNo::MAX, true))
-            }
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(
+                key.clone(),
+                SeqNo::MAX,
+                crate::value::ValueType::Tombstone,
+            )),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(
+                key.clone(),
+                SeqNo::MAX,
+                crate::value::ValueType::Tombstone,
+            )),
             Bound::Unbounded => Bound::Unbounded,
         };
 
@@ -72,8 +76,16 @@ impl<'a> RangeIterator<'a> {
             // abcdef -> 6
             // abcdef -> 5
             //
-            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(key.clone(), 0, false)),
-            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(key.clone(), 0, false)),
+            Bound::Included(key) => Bound::Included(ParsedInternalKey::new(
+                key.clone(),
+                0,
+                crate::value::ValueType::Value,
+            )),
+            Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(
+                key.clone(),
+                0,
+                crate::value::ValueType::Value,
+            )),
             Bound::Unbounded => Bound::Unbounded,
         };
 
@@ -115,7 +127,7 @@ impl<'a> RangeIterator<'a> {
         }
 
         let iter = Box::new(iter.filter(|x| match x {
-            Ok(value) => !value.is_tombstone,
+            Ok(value) => value.value_type != ValueType::Tombstone,
             Err(_) => true,
         }));
 

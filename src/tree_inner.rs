@@ -24,7 +24,7 @@ pub struct TreeInner {
     /// Approximate active memtable size
     /// If this grows to large, a flush is triggered
     pub(crate) approx_active_memtable_size: AtomicU32,
-    //  pub(crate) approx_active_memtable_size: AtomicU32,
+
     pub(crate) active_memtable: Arc<RwLock<MemTable>>,
 
     /// Journal aka Commit log aka Write-ahead log (WAL)
