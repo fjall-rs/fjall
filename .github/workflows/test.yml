@@ -81,4 +81,3 @@ jobs:
         run: |
           cargo install cross
           cross build --target ${{ matrix.target }}
-      
