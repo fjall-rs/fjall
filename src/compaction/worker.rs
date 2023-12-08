@@ -179,6 +179,8 @@ pub fn compaction_worker(
 
         match compaction_strategy.choose(&segments_lock) {
             Choice::DoCompact(payload) => {
+                drop(segments_lock);
+
                 do_compaction(
                     config.clone(),
                     Arc::clone(&levels),

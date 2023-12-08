@@ -89,7 +89,7 @@ fn flush_worker(
 }
 
 pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result<()>>> {
-    log::trace!("Preparing memtable flush thread");
+    log::debug!("Acquiring flush semaphore");
     tree.flush_semaphore.acquire();
     log::trace!("Got flush semaphore");
 
