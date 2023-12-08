@@ -313,6 +313,7 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::ValueType;
     use crate::{
         block_cache::BlockCache,
         descriptor_table::FileDescriptorTable,

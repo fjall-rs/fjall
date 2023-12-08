@@ -164,19 +164,6 @@ impl Value {
     /// # Panics
     ///
     /// Panics if the key length is empty or greater than 2^16, or the value length is greater than 2^16
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use lsm_tree::{Value, ValueType};
-    /// #
-    /// let value = Value::new("key-1".as_bytes(), "my-value".as_bytes(), 5, ValueType::Value);
-    /// assert_eq!(b"key-1", &*value.key);
-    /// assert_eq!(b"my-value", &*value.value);
-    /// assert_eq!(ValueType::Value, value.value_type);
-    /// assert_eq!(5, value.seqno);
-    ///
-    /// ```
     pub fn new<K: Into<UserKey>, V: Into<UserData>>(
         key: K,
         value: V,

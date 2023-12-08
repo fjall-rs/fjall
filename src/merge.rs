@@ -1,8 +1,4 @@
-use crate::{
-    segment::Segment,
-    value::{SeqNo},
-    Value,
-};
+use crate::{segment::Segment, value::SeqNo, Value};
 use min_max_heap::MinMaxHeap;
 use std::sync::Arc;
 
@@ -260,8 +256,8 @@ impl<'a> DoubleEndedIterator for MergeIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use crate::value::ValueType;
     use test_log::test;
 
     #[test]
