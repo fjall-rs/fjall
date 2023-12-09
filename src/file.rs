@@ -1,8 +1,4 @@
-use std::{
-    fs::{rename, File},
-    io::Write,
-    path::Path,
-};
+use std::{fs::File, io::Write, path::Path};
 
 pub const LSM_MARKER: &str = ".lsm";
 pub const LEVELS_MANIFEST_FILE: &str = "levels.json";
@@ -17,27 +13,15 @@ pub const SEGMENT_METADATA_FILE: &str = "meta.json";
 /// Atomically rewrites a file
 pub fn rewrite_atomic<P: AsRef<Path>>(path: P, content: &[u8]) -> std::io::Result<()> {
     let path = path.as_ref();
+    let folder = path.parent().expect("should have parent folder");
 
-    let tmp: String = format!(
-        "~{}",
-        path.file_name()
-            .and_then(std::ffi::OsStr::to_str)
-            .expect("should be valid filename")
-    );
+    {
+        let mut temp_file = tempfile::NamedTempFile::new_in(folder)?;
+        temp_file.write_all(content)?;
+        temp_file.persist(path)?;
+    }
 
-    let temp_path = path
-        .parent()
-        .expect("level manifest should have parent folder")
-        .join(tmp);
-
-    let mut temp_file = File::create(&temp_path)?;
-    temp_file.write_all(content)?;
-
-    // TODO: this may not work on Windows
-    // Use https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html#method.persist
-    rename(&temp_path, path)?;
-
-    // fsync file
+    // TODO: Not sure if the fsync is really required, but just for the sake of it...
     let file = File::open(path)?;
     file.sync_all()?;
 

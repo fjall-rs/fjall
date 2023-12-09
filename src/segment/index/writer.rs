@@ -33,7 +33,7 @@ fn concat_files<P: AsRef<Path>>(src_path: P, dest_path: P) -> crate::Result<()> 
 pub struct Writer {
     path: PathBuf,
     file_pos: u64,
-    block_writer: BufWriter<File>,
+    block_writer: Option<BufWriter<File>>,
     index_writer: BufWriter<File>,
     block_size: u32,
     block_counter: u32,
@@ -65,7 +65,7 @@ impl Writer {
         Ok(Self {
             path: path.as_ref().into(),
             file_pos: blocks_start_offset as u64,
-            block_writer,
+            block_writer: Some(block_writer),
             index_writer,
             block_counter: 0,
             block_size,
@@ -86,7 +86,10 @@ impl Writer {
         let bytes = compress_prepend_size(&bytes);
 
         // Write to file
-        self.block_writer.write_all(&bytes)?;
+        self.block_writer
+            .as_mut()
+            .expect("should exist")
+            .write_all(&bytes)?;
 
         // Expect is fine, because the chunk is not empty
         let first = self
@@ -139,14 +142,12 @@ impl Writer {
         Ok(())
     }
 
-    fn write_meta_index(&mut self, block_file_size: u64) -> crate::Result<()> {
+    fn write_top_level_index(&mut self, block_file_size: u64) -> crate::Result<()> {
         concat_files(
             self.path.join(INDEX_BLOCKS_FILE),
             self.path.join(BLOCKS_FILE),
         )?;
 
-        // TODO: probably doesn't work on Windows...
-        std::fs::remove_file(self.path.join(INDEX_BLOCKS_FILE))?;
         log::debug!("Concatted index blocks onto blocks file");
 
         for item in &mut self.index_chunk.items {
@@ -168,7 +169,7 @@ impl Writer {
         self.index_writer.flush()?;
 
         log::debug!(
-            "Written meta index to {}, with {} pointers ({} bytes)",
+            "Written top level index to {}, with {} pointers ({} bytes)",
             self.path.join(TOP_LEVEL_INDEX_FILE).display(),
             self.index_chunk.items.len(),
             bytes.len(),
@@ -182,10 +183,18 @@ impl Writer {
             self.write_block()?;
         }
 
-        self.block_writer.flush()?;
-        self.write_meta_index(block_file_size)?;
+        self.block_writer.as_mut().expect("should exist").flush()?;
+        self.write_top_level_index(block_file_size)?;
 
         self.index_writer.get_mut().sync_all()?;
+
+        // TODO: add test to make sure writer is deleting index_blocks
+        //
+        // TODO: I hate this, but we need to drop the writer
+        // so the file is closed
+        // so it can be deleted on Windows
+        self.block_writer = None;
+        std::fs::remove_file(self.path.join(INDEX_BLOCKS_FILE))?;
 
         Ok(())
     }
