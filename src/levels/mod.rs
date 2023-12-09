@@ -32,7 +32,6 @@ pub struct Levels {
     segments: HashMap<String, Arc<Segment>>,
     levels: Vec<Level>,
 
-    //writer: BufWriter<File>,
     /// Set of segment IDs that are masked
     ///
     /// While consuming segments (because of compaction) they will not appear in the list of segments

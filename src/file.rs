@@ -15,15 +15,16 @@ pub fn rewrite_atomic<P: AsRef<Path>>(path: P, content: &[u8]) -> std::io::Resul
     let path = path.as_ref();
     let folder = path.parent().expect("should have parent folder");
 
-    {
-        let mut temp_file = tempfile::NamedTempFile::new_in(folder)?;
-        temp_file.write_all(content)?;
-        temp_file.persist(path)?;
-    }
+    let mut temp_file = tempfile::NamedTempFile::new_in(folder)?;
+    temp_file.write_all(content)?;
+    temp_file.persist(path)?;
 
-    // TODO: Not sure if the fsync is really required, but just for the sake of it...
-    let file = File::open(path)?;
-    file.sync_all()?;
+    #[cfg(not(target_os = "windows"))]
+    {
+        // TODO: Not sure if the fsync is really required, but just for the sake of it...
+        let file = File::open(path)?;
+        file.sync_all()?;
+    }
 
     Ok(())
 }
