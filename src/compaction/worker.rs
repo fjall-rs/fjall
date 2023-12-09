@@ -67,7 +67,7 @@ pub fn do_compaction(
 
     // NOTE: Only evict tombstones when reaching the last level,
     // That way we don't resurrect data beneath the tombstone
-    let should_evict_tombstones = payload.dest_level == (config.levels - 1);
+    let should_evict_tombstones = payload.dest_level == (config.level_count - 1);
 
     let mut segment_writer = MultiWriter::new(
         payload.target_size,
@@ -177,7 +177,7 @@ pub fn compaction_worker(
             return Ok(());
         }
 
-        let choice = compaction_strategy.choose(&segments_lock);
+        let choice = compaction_strategy.choose(&segments_lock, &config);
 
         match choice {
             Choice::DoCompact(payload) => {

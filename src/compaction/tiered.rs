@@ -1,7 +1,8 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::levels::Levels;
-use std::sync::Arc;
+use crate::{levels::Levels, Config};
+// use std::sync::Arc;
 
+#[derive(Default)]
 /// Size-tiered compaction strategy (STCS)
 ///
 /// If a level reaches a threshold, it is merged into a larger segment to the next level
@@ -10,12 +11,12 @@ use std::sync::Arc;
 ///
 /// More info here: <https://opensource.docs.scylladb.com/stable/cql/compaction.html#size-tiered-compaction-strategy-stcs>
 pub struct Strategy {
-    min_threshold: usize,
-    max_threshold: usize,
+    /*  min_threshold: usize,
+    max_threshold: usize, */
 }
 
 impl Strategy {
-    /// Configures a new `SizeTiered` compaction strategy
+    /*  /// Configures a new `SizeTiered` compaction strategy
     ///
     /// # Examples
     ///
@@ -41,20 +42,20 @@ impl Strategy {
             min_threshold,
             max_threshold,
         })
-    }
+    } */
 }
 
-impl Default for Strategy {
+/* impl Default for Strategy {
     fn default() -> Self {
-        Self {
-            min_threshold: 4,
-            max_threshold: 8,
-        }
+        Self {} /* {
+                    min_threshold: 4,
+                    max_threshold: 8,
+                } */
     }
-}
+} */
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels) -> Choice {
+    fn choose(&self, levels: &Levels, config: &Config) -> Choice {
         let resolved_view = levels.resolved_view();
 
         for (level_index, level) in resolved_view
@@ -62,7 +63,7 @@ impl CompactionStrategy for Strategy {
             .enumerate()
             .take(resolved_view.len() - 1)
         {
-            if level.len() >= self.min_threshold {
+            if level.len() >= config.level_ratio.into() {
                 // NOTE: There are never that many levels
                 // so it's fine to just truncate it
                 #[allow(clippy::cast_possible_truncation)]
@@ -71,7 +72,7 @@ impl CompactionStrategy for Strategy {
                 return Choice::DoCompact(CompactionInput {
                     segment_ids: level
                         .iter()
-                        .take(self.max_threshold)
+                        .take(config.level_ratio.into())
                         .map(|x| &x.metadata.id)
                         .cloned()
                         .collect(),
@@ -95,6 +96,7 @@ mod tests {
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::BlockIndex, meta::Metadata, Segment},
+        Config,
     };
     use std::sync::Arc;
     use test_log::test;
@@ -134,7 +136,10 @@ mod tests {
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -147,17 +152,26 @@ mod tests {
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment("1".into()));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("2".into()));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("3".into()));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("4".into()));
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &Config::default()),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
@@ -171,7 +185,8 @@ mod tests {
     #[test]
     fn more_than_min() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(2, 8);
+        let compactor = Strategy::default(/* 2, 8 */);
+        let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment("1".into()));
@@ -185,7 +200,7 @@ mod tests {
         levels.insert_into_level(1, fixture_segment("8".into()));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
@@ -199,7 +214,8 @@ mod tests {
     #[test]
     fn many_segments() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(2, 2);
+        let compactor = Strategy::default(/* 2, 2 */);
+        let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment("1".into()));
@@ -208,7 +224,7 @@ mod tests {
         levels.add(fixture_segment("4".into()));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into()],
@@ -222,7 +238,8 @@ mod tests {
     #[test]
     fn deeper_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(2, 4);
+        let compactor = Strategy::default(/* 2, 4 */);
+        let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment("1".into()));
@@ -231,7 +248,7 @@ mod tests {
         levels.insert_into_level(1, fixture_segment("3".into()));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["2".into(), "3".into()],
@@ -246,7 +263,7 @@ mod tests {
         levels.insert_into_level(2, fixture_segment("3".into()));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["2".into(), "3".into()],
@@ -260,13 +277,14 @@ mod tests {
     #[test]
     fn last_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(2, 4);
+        let compactor = Strategy::default(/* 2, 4 */);
+        let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.insert_into_level(3, fixture_segment("2".into()));
         levels.insert_into_level(3, fixture_segment("3".into()));
 
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         Ok(())
     }

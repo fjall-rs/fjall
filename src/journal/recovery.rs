@@ -6,13 +6,18 @@ use std::{
     path::Path,
 };
 
+/// Reads and emits through the entries in a journal shard file, but doesn't
+/// check the validity of batches
+///
+/// Will truncate the file to the last valid position to prevent corrupt
+/// bytes at the end of the file, which would jeopardize future writes into the file
 #[allow(clippy::module_name_repetitions)]
-pub struct JournalRecovery {
+pub struct JournalShardReader {
     reader: BufReader<File>,
     last_valid_pos: u64,
 }
 
-impl JournalRecovery {
+impl JournalShardReader {
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
@@ -34,7 +39,7 @@ impl JournalRecovery {
     }
 }
 
-impl Iterator for JournalRecovery {
+impl Iterator for JournalShardReader {
     type Item = crate::Result<(u64, Marker)>;
 
     fn next(&mut self) -> Option<Self::Item> {

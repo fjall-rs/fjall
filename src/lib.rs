@@ -106,7 +106,7 @@ pub use {
     config::Config,
     entry::Entry,
     error::{Error, Result},
-    journal::RecoveryError,
+    journal::shard::RecoveryError as JournalRecoveryError,
     snapshot::Snapshot,
     tree::Tree,
 };

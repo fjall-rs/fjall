@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::levels::Levels;
+use crate::{levels::Levels, Config};
 use std::sync::Arc;
 
 /// Major compaction
@@ -33,7 +33,7 @@ impl Default for Strategy {
 }
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels) -> Choice {
+    fn choose(&self, levels: &Levels, _: &Config) -> Choice {
         let segments = levels.get_segments();
         let segment_ids = segments.values().map(|s| s.metadata.id.clone()).collect();
 

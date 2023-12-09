@@ -1,12 +1,11 @@
 use crate::{
-    compaction::{tiered, CompactionStrategy},
+    compaction::{self, CompactionStrategy},
     BlockCache, Tree,
 };
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-pub use tiered::Strategy as SizeTiered;
 
 #[derive(Clone)]
 /// Tree configuration
@@ -24,7 +23,15 @@ pub struct Config {
     pub max_memtable_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree)
-    pub levels: u8,
+    pub level_count: u8,
+
+    /// Size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
+    ///
+    /// This is the exponential growth of the from one
+    /// level to the next
+    ///
+    /// A level target size is: max_memtable_size * level_ratio.pow(#level + 1)
+    pub level_ratio: u8,
 
     /// Maximum amount of concurrent flush threads
     pub flush_threads: u8,
@@ -45,8 +52,9 @@ impl Default for Config {
             block_size: 4_096,
             block_cache: Arc::new(BlockCache::with_capacity_blocks(16_384)),
             max_memtable_size: 64 * 1_024 * 1_024,
-            levels: 7,
-            compaction_strategy: Arc::new(tiered::Strategy::default()),
+            level_count: 7,
+            level_ratio: 8,
+            compaction_strategy: Arc::new(compaction::Levelled::default()),
             flush_threads: 4,
             fsync_ms: Some(1_000),
         }
@@ -107,12 +115,27 @@ impl Config {
     ///
     /// # Panics
     ///
-    /// Panics if count is 0.
+    /// Panics if `n` is 0.
     #[must_use]
-    pub fn level_count(mut self, count: u8) -> Self {
-        assert!(count > 0);
+    pub fn level_count(mut self, n: u8) -> Self {
+        assert!(n > 0);
 
-        self.levels = count;
+        self.level_count = n;
+        self
+    }
+
+    /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
+    ///
+    /// Defaults to 10.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is less than 2.
+    #[must_use]
+    pub fn level_ratio(mut self, n: u8) -> Self {
+        assert!(n > 1);
+
+        self.level_ratio = n;
         self
     }
 
@@ -142,7 +165,7 @@ impl Config {
 
     /// Sets the block cache.
     ///
-    /// Defaults to a block cache with 64 MiB of capacity
+    /// Defaults to a block cache with 64 MiB of capacity.
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
@@ -151,7 +174,7 @@ impl Config {
 
     /// Sets the compaction strategy to use.
     ///
-    /// Defaults to [`SizeTiered`]
+    /// Defaults to [`compaction::Levelled`]
     #[must_use]
     pub fn compaction_strategy(
         mut self,

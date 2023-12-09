@@ -386,7 +386,8 @@ impl Tree {
             .path
             .join(JOURNALS_FOLDER)
             .join(generate_segment_id());
-        let levels = Levels::create_new(config.levels, config.path.join(LEVELS_MANIFEST_FILE))?;
+        let levels =
+            Levels::create_new(config.level_count, config.path.join(LEVELS_MANIFEST_FILE))?;
 
         let block_cache = Arc::clone(&config.block_cache);
 
@@ -487,7 +488,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let shard = self.journal.lock_shard();
+        let mut shard = self.journal.lock_shard();
 
         let value = Value::new(
             key.as_ref(),
@@ -528,7 +529,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let shard = self.journal.lock_shard();
+        let mut shard = self.journal.lock_shard();
 
         let value = Value::new(
             key.as_ref(),
@@ -892,6 +893,10 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics on lock poisoning
     pub fn compare_and_swap<K: AsRef<[u8]>>(
         &self,
         key: K,
@@ -900,7 +905,9 @@ impl Tree {
     ) -> crate::Result<CompareAndSwapResult> {
         let key = key.as_ref();
 
-        let shard = self.journal.lock_shard();
+        let mut journal_lock = self.journal.shards.full_lock().expect("lock is poisoned");
+        let shard = journal_lock.pop().expect("journal should have shards");
+
         let seqno = self.increment_lsn();
 
         match self.get(key)? {
@@ -1118,7 +1125,7 @@ impl Tree {
         std::thread::spawn(move || {
             let level_lock = levels.write().expect("lock is poisoned");
             let compactor = crate::compaction::major::Strategy::default();
-            let choice = compactor.choose(&level_lock);
+            let choice = compactor.choose(&level_lock, &config);
             drop(level_lock);
 
             if let crate::compaction::Choice::DoCompact(payload) = choice {

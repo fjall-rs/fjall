@@ -3,14 +3,8 @@ mod recovery;
 pub mod shard;
 
 use self::shard::JournalShard;
-use crate::{
-    journal::{marker::Marker, recovery::JournalRecovery},
-    memtable::MemTable,
-    sharded::Sharded,
-    value::SeqNo,
-};
+use crate::{memtable::MemTable, sharded::Sharded};
 use std::{
-    fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };
@@ -19,20 +13,6 @@ const SHARD_COUNT: u8 = 4;
 
 fn get_shard_path<P: AsRef<Path>>(base: P, idx: u8) -> PathBuf {
     base.as_ref().join(idx.to_string())
-}
-
-// TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error
-/// Errors that can occur during journal recovery
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RecoveryError {
-    /// Batch had less items than expected, so it's incomplete
-    InsufficientLength,
-
-    /// Batch was not terminated, so it's possibly incomplete
-    MissingTerminator,
-
-    /// The CRC value does not match the expected value
-    CrcCheck,
 }
 
 pub struct Journal {
@@ -49,130 +29,13 @@ impl Journal {
         let memtable = MemTable::default();
 
         for idx in 0..SHARD_COUNT {
-            //  TODO: move this loop body into JournalShard::recover
-
             let shard_path = get_shard_path(path, idx);
 
             if shard_path.exists() {
-                let recoverer = JournalRecovery::new(shard_path.clone())?;
-
-                let mut hasher = crc32fast::Hasher::new();
-                let mut is_in_batch = false;
-                let mut batch_counter = 0;
-                let mut batch_seqno = SeqNo::default();
-                let mut last_valid_pos = 0;
-
-                let mut items = vec![];
-
-                'a: for item in recoverer {
-                    let (journal_file_pos, item) = item?;
-
-                    match item {
-                        Marker::Start { item_count, seqno } => {
-                            if is_in_batch {
-                                log::warn!("Invalid batch: found batch start inside batch");
-                                /* return Err(crate::Error::JournalRecovery(
-                                    RecoveryError::MissingTerminator,
-                                )); */
-                                log::warn!("Truncating shard to {last_valid_pos}");
-                                let file = OpenOptions::new().write(true).open(&shard_path)?;
-                                file.set_len(last_valid_pos)?;
-                                file.sync_all()?;
-
-                                break 'a;
-                            }
-
-                            is_in_batch = true;
-                            batch_counter = item_count;
-                            batch_seqno = seqno;
-                        }
-                        Marker::End(_checksum) => {
-                            if batch_counter > 0 {
-                                log::error!("Invalid batch: insufficient length");
-                                return Err(crate::Error::JournalRecovery(
-                                    RecoveryError::InsufficientLength,
-                                ));
-                                // break 'a;
-                            }
-
-                            // TODO:
-                            /*  if hasher.finalize() != checksum {
-                                log::error!("Invalid batch: checksum check failed");
-                                todo!("return Err or discard");
-                            } */
-
-                            if !is_in_batch {
-                                log::error!("Invalid batch: found end marker without start marker");
-
-                                log::warn!("Truncating shard to {last_valid_pos}");
-                                let file = OpenOptions::new().write(true).open(&shard_path)?;
-                                file.set_len(last_valid_pos)?;
-                                file.sync_all()?;
-
-                                break 'a;
-                            }
-
-                            hasher = crc32fast::Hasher::new();
-                            is_in_batch = false;
-                            batch_counter = 0;
-
-                            // NOTE: Clippy says into_iter() is better
-                            // but in this case probably not
-                            #[allow(clippy::iter_with_drain)]
-                            for item in items.drain(..) {
-                                memtable.insert(item);
-                            }
-
-                            last_valid_pos = journal_file_pos;
-                        }
-                        Marker::Item {
-                            key,
-                            value,
-                            value_type,
-                        } => {
-                            // TODO: CRC
-                            // byte_count += bytes.len() as u64;
-                            // hasher.update(bytes);
-
-                            // TODO: check batch counter == 0
-
-                            if !is_in_batch {
-                                log::error!("Invalid batch: found end marker without start marker");
-
-                                log::warn!("Truncating shard to {last_valid_pos}");
-                                let file = OpenOptions::new().write(true).open(&shard_path)?;
-                                file.set_len(last_valid_pos)?;
-                                file.sync_all()?;
-
-                                break 'a;
-                            }
-
-                            batch_counter -= 1;
-
-                            items.push(crate::Value {
-                                key,
-                                value,
-                                seqno: batch_seqno,
-                                value_type,
-                            });
-                        }
-                    }
-                }
-
-                if is_in_batch {
-                    /*  return Err(crate::Error::JournalRecovery(
-                        RecoveryError::MissingTerminator,
-                    )); */
-                    log::warn!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
-                    // Discard item
-
-                    log::warn!("Truncating shard to {last_valid_pos}");
-                    let file = OpenOptions::new().write(true).open(&shard_path)?;
-                    file.set_len(last_valid_pos)?;
-                    file.sync_all()?;
-                }
-
-                log::trace!("Recovered journal shard {idx}");
+                JournalShard::recover_and_repair(shard_path, &memtable)?;
+                log::trace!("Recovered journal shard");
+            } else {
+                log::trace!("Journal shard file does not exist (yet)");
             }
         }
 
@@ -245,6 +108,7 @@ impl Journal {
 
 #[cfg(test)]
 mod tests {
+    use super::marker::Marker;
     use super::*;
     use crate::{serde::Serializable, value::ValueType, Value};
     use std::io::Write;

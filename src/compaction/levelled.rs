@@ -1,10 +1,12 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::{levels::Levels, segment::Segment, value::UserKey};
+use crate::{levels::Levels, segment::Segment, value::UserKey, Config};
 use std::sync::Arc;
 
 /// Levelled compaction strategy (LCS)
 ///
 /// If a level reaches a threshold, parts of it are merged into overlapping segments in the next level
+///
+/// Each level Ln for n >= 1 can have up to ratio^n segments
 ///
 /// LCS suffers from high write amplification, but decent read & space amplification
 ///
@@ -17,29 +19,11 @@ pub struct Strategy {
     ///
     /// Same as `level0_file_num_compaction_trigger` in RocksDB
     pub l0_threshold: u8,
-
-    /// Target segment size (compressed)
-    ///
-    /// Default = 64 MiB
-    pub target_size: u64,
-
-    /// Level size factor
-    ///
-    /// Each level Ln for n >= 1 can have up to ratio^n segments
-    ///
-    /// Default = 10
-    ///
-    /// Same as `fanout_size` in Cassandra
-    pub ratio: u8,
 }
 
 impl Default for Strategy {
     fn default() -> Self {
-        Self {
-            l0_threshold: 4,
-            target_size: 64 * 1024 * 1024,
-            ratio: 10,
-        }
+        Self { l0_threshold: 4 }
     }
 }
 
@@ -63,7 +47,7 @@ fn level_desired_size(level_idx: u8, ratio: u8) -> usize {
 }
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels) -> Choice {
+    fn choose(&self, levels: &Levels, config: &Config) -> Choice {
         let resolved_view = levels.resolved_view();
 
         // If there are any levels that already have a compactor working on it
@@ -95,8 +79,8 @@ impl CompactionStrategy for Strategy {
 
             // The amount of segments that should be compacted down
             // because they cause the level to be larger than the desired size
-            let level_size_overshoot =
-                (level.len() as isize) - (level_desired_size(level_index, self.ratio) as isize);
+            let level_size_overshoot = (level.len() as isize)
+                - (level_desired_size(level_index, config.level_ratio) as isize);
 
             if level_size_overshoot > 0 {
                 let current_level_segments: Vec<_> = level
@@ -122,7 +106,7 @@ impl CompactionStrategy for Strategy {
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
                     dest_level: next_level_index,
-                    target_size: self.target_size,
+                    target_size: u64::from(config.max_memtable_size),
                 });
             }
         }
@@ -154,7 +138,7 @@ impl CompactionStrategy for Strategy {
             Choice::DoCompact(CompactionInput {
                 segment_ids,
                 dest_level: 1,
-                target_size: self.target_size,
+                target_size: u64::from(config.max_memtable_size),
             })
         } else {
             Choice::DoNothing
@@ -174,6 +158,7 @@ mod tests {
         segment::{index::BlockIndex, meta::Metadata, Segment},
         time::unix_timestamp,
         value::UserKey,
+        Config,
     };
     use std::sync::Arc;
     use test_log::test;
@@ -213,7 +198,10 @@ mod tests {
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -229,19 +217,28 @@ mod tests {
             "1".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
         ));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment(
             "2".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
         ));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment(
             "3".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
         ));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment(
             "4".into(),
@@ -249,7 +246,7 @@ mod tests {
         ));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &Config::default()),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
@@ -258,7 +255,10 @@ mod tests {
         );
 
         levels.hide_segments(&["4".into()]);
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -304,7 +304,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &Config::default()),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
@@ -356,7 +356,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &Config::default()),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec![
@@ -372,7 +372,10 @@ mod tests {
         );
 
         levels.hide_segments(&["5".into()]);
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -381,9 +384,9 @@ mod tests {
     fn deeper_level_with_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy {
-            ratio: 2,
             ..Default::default()
         };
+        let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -391,13 +394,13 @@ mod tests {
             2,
             fixture_segment("4".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
             fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
@@ -410,7 +413,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["1".into(), "4".into()],
@@ -425,9 +428,9 @@ mod tests {
     fn last_level_with_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy {
-            ratio: 2,
             ..Default::default()
         };
+        let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -435,25 +438,25 @@ mod tests {
             3,
             fixture_segment("5".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
             fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
             fixture_segment("2".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
             fixture_segment("3".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
         );
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
@@ -466,7 +469,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["1".into(), "5".into()],

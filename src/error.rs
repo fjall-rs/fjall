@@ -1,5 +1,5 @@
 use crate::{
-    journal::RecoveryError as JournalRecoveryError, serde::DeserializeError, SerializeError,
+    journal::shard::RecoveryError as JournalRecoveryError, serde::DeserializeError, SerializeError,
 };
 use lz4_flex::block::DecompressError;
 
@@ -18,8 +18,6 @@ pub enum Error {
     /// Decompression failed
     Decompress(DecompressError),
 
-    /*  /// The CRC value does not match the expected value
-    CrcCheck, */
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
 }

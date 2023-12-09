@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy};
-use crate::levels::Levels;
+use crate::{levels::Levels, Config};
 use std::sync::Arc;
 
 /// FIFO-style compaction
@@ -39,7 +39,7 @@ impl Strategy {
 }
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels) -> Choice {
+    fn choose(&self, levels: &Levels, _: &Config) -> Choice {
         let resolved_view = levels.resolved_view();
 
         let mut first_level = resolved_view[0].clone();
@@ -85,6 +85,7 @@ mod tests {
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::BlockIndex, meta::Metadata, Segment},
+        Config,
     };
     use std::sync::Arc;
     use test_log::test;
@@ -124,7 +125,10 @@ mod tests {
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -137,16 +141,28 @@ mod tests {
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment("1".into(), 1));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("2".into(), 2));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("3".into(), 3));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         levels.add(fixture_segment("4".into(), 4));
-        assert_eq!(compactor.choose(&levels), Choice::DoNothing);
+        assert_eq!(
+            compactor.choose(&levels, &Config::default()),
+            Choice::DoNothing
+        );
 
         Ok(())
     }
@@ -163,7 +179,7 @@ mod tests {
         levels.add(fixture_segment("4".into(), 4));
 
         assert_eq!(
-            compactor.choose(&levels),
+            compactor.choose(&levels, &Config::default()),
             Choice::DeleteSegments(vec!["1".into(), "2".into()])
         );
 
