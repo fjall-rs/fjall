@@ -1,6 +1,5 @@
-use std::fs::create_dir_all;
-
 use lsm_tree::Config;
+use std::fs::create_dir_all;
 use test_log::test;
 
 const ITEM_COUNT: usize = 100_000;

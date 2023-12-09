@@ -1,5 +1,3 @@
-use std_semaphore::Semaphore;
-
 use crate::{
     compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
@@ -21,6 +19,7 @@ use std::{
         Arc, RwLock,
     },
 };
+use std_semaphore::Semaphore;
 
 pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
     // Load previous levels manifest
