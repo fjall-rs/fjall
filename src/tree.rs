@@ -902,6 +902,24 @@ impl Tree {
     ) -> crate::Result<CompareAndSwapResult> {
         let key = key.as_ref();
 
+        // NOTE: Not sure if this is the implementation
+        // but going with correctness over performance here
+        // The rationale behind locking everything is:
+        //
+        // Imagine there was no locking:
+        // (1) We start a CAS, and read a key to compare it
+        // (2) Our thread pauses
+        // (3) Another thread updates the item, it is now different
+        // (4) Our thread proceeds: it now compares to an older value (the other item is never considered)
+        // (5) The CAS is inconsistent
+        //
+        // With locking:
+        // (1) We start a CAS, and read a key to compare it
+        // (2) Our thread pauses
+        // (3) Another thread wants to update the item, but cannot find an open shard
+        // (4) Our thread proceeds: it now does the CAS, and unlocks all shards
+        // (5) The other thread now takes a shard, and gets the most up-to-date value
+        //     (the one we just CAS'ed)
         let mut journal_lock = self.journal.shards.full_lock().expect("lock is poisoned");
         let shard = journal_lock.pop().expect("journal should have shards");
 
