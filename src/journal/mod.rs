@@ -65,7 +65,6 @@ impl Journal {
                 let mut items = vec![];
 
                 'a: for item in recoverer {
-                    log::error!("{item:?}");
                     let (journal_file_pos, item) = item?;
 
                     match item {
