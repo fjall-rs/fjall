@@ -140,7 +140,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Fsync folder on Windows
+        // Fsync folder on Unix
         let folder = File::open(&old_journal_folder)?;
         folder.sync_all()?;
     }

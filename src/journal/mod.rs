@@ -88,6 +88,13 @@ impl Journal {
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Fsync folder on Unix
+            let folder = std::fs::File::open(path)?;
+            folder.sync_all()?;
+        }
+
         Ok(Self {
             shards: Sharded::new(shards),
             path: path.to_path_buf(),

@@ -414,9 +414,6 @@ impl Tree {
             // fsync folders on Unix
             let folder = std::fs::File::open(&inner.config.path)?;
             folder.sync_all()?;
-
-            let folder = std::fs::File::open(inner.config.path.join(JOURNALS_FOLDER))?;
-            folder.sync_all()?;
         }
 
         // NOTE: Lastly
