@@ -39,6 +39,10 @@ for item in tree.prefix("prefix")?.into_iter().rev() {
 }
 ```
 
+```
+cargo add lsm-tree
+```
+
 ## About
 
 This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
