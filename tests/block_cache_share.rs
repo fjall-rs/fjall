@@ -4,7 +4,7 @@ use tempfile::tempdir;
 use test_log::test;
 
 #[test]
-fn tree_flushed_count() -> lsm_tree::Result<()> {
+fn test_share_block_cache() -> lsm_tree::Result<()> {
     let block_cache = Arc::new(BlockCache::with_capacity_blocks(10_000));
 
     let folder = tempdir()?.into_path();

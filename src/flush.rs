@@ -138,8 +138,12 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
     let marker = File::create(old_journal_folder.join(".flush"))?;
     marker.sync_all()?;
 
-    let folder = File::open(&old_journal_folder)?;
-    folder.sync_all()?;
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Fsync folder on Windows
+        let folder = File::open(&old_journal_folder)?;
+        folder.sync_all()?;
+    }
 
     let new_journal_path = tree
         .config
