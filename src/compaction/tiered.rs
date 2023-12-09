@@ -1,6 +1,5 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
 use crate::{levels::Levels, Config};
-// use std::sync::Arc;
 
 #[derive(Default)]
 /// Size-tiered compaction strategy (STCS)

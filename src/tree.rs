@@ -1130,12 +1130,12 @@ impl Tree {
 
             if let crate::compaction::Choice::DoCompact(payload) = choice {
                 crate::compaction::worker::do_compaction(
-                    config,
-                    levels,
-                    stop_signal,
-                    immutable_memtables,
-                    open_snapshots,
-                    block_cache,
+                    &config,
+                    &levels,
+                    &stop_signal,
+                    &immutable_memtables,
+                    &open_snapshots,
+                    &block_cache,
                     &payload,
                 )?;
             }

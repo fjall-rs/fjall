@@ -18,12 +18,12 @@ use std::{
 };
 
 pub fn do_compaction(
-    config: Config,
-    levels: Arc<RwLock<Levels>>,
-    stop_signal: StopSignal,
-    immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
-    open_snapshots: Arc<AtomicU32>,
-    block_cache: Arc<BlockCache>,
+    config: &Config,
+    levels: &Arc<RwLock<Levels>>,
+    stop_signal: &StopSignal,
+    immutable_memtables: &Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    open_snapshots: &Arc<AtomicU32>,
+    block_cache: &Arc<BlockCache>,
     payload: &crate::compaction::Input,
 ) -> crate::Result<()> {
     if stop_signal.is_stopped() {
@@ -105,12 +105,12 @@ pub fn do_compaction(
             Ok(Segment {
                 descriptor_table: Arc::clone(&descriptor_table),
                 metadata,
-                block_cache: Arc::clone(&block_cache),
+                block_cache: Arc::clone(block_cache),
                 block_index: BlockIndex::from_file(
                     segment_id,
                     descriptor_table,
                     path,
-                    Arc::clone(&block_cache),
+                    Arc::clone(block_cache),
                 )?
                 .into(),
             })
@@ -160,13 +160,13 @@ pub fn do_compaction(
 }
 
 pub fn compaction_worker(
-    config: Config,
-    levels: Arc<RwLock<Levels>>,
-    stop_signal: StopSignal,
-    compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
-    immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
-    open_snapshots: Arc<AtomicU32>,
-    block_cache: Arc<BlockCache>,
+    config: &Config,
+    levels: &Arc<RwLock<Levels>>,
+    stop_signal: &StopSignal,
+    compaction_strategy: &Arc<dyn CompactionStrategy + Send + Sync>,
+    immutable_memtables: &Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    open_snapshots: &Arc<AtomicU32>,
+    block_cache: &Arc<BlockCache>,
 ) -> crate::Result<()> {
     loop {
         log::debug!("compaction: acquiring levels manifest write lock");
@@ -177,19 +177,19 @@ pub fn compaction_worker(
             return Ok(());
         }
 
-        let choice = compaction_strategy.choose(&segments_lock, &config);
+        let choice = compaction_strategy.choose(&segments_lock, config);
 
         match choice {
             Choice::DoCompact(payload) => {
                 drop(segments_lock);
 
                 do_compaction(
-                    config.clone(),
-                    Arc::clone(&levels),
-                    stop_signal.clone(),
-                    Arc::clone(&immutable_memtables),
-                    Arc::clone(&open_snapshots),
-                    Arc::clone(&block_cache),
+                    config,
+                    levels,
+                    stop_signal,
+                    immutable_memtables,
+                    open_snapshots,
+                    block_cache,
                     &payload,
                 )?;
             }
@@ -240,13 +240,13 @@ pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Re
         compaction_semaphore.acquire();
 
         compaction_worker(
-            config,
-            levels,
-            stop_signal,
-            compaction_strategy,
-            immutable_memtables,
-            open_snapshots,
-            block_cache,
+            &config,
+            &levels,
+            &stop_signal,
+            &compaction_strategy,
+            &immutable_memtables,
+            &open_snapshots,
+            &block_cache,
         )?;
 
         log::trace!("Post compaction semaphore");
