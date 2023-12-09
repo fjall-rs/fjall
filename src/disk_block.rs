@@ -55,6 +55,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         Ok(hasher.finalize())
     }
 
+    #[allow(unused)]
     pub(crate) fn check_crc(&self, expected_crc: u32) -> crate::Result<bool> {
         let crc = Self::create_crc(&self.items)?;
         Ok(crc == expected_crc)
@@ -63,6 +64,9 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
 
 impl<T: Clone + Serializable + Deserializable> Serializable for DiskBlock<T> {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
+        // Write CRC
+        writer.write_all(&self.crc.to_be_bytes())?;
+
         // Write number of items
 
         // NOTE: Truncation is okay and actually needed
@@ -73,9 +77,6 @@ impl<T: Clone + Serializable + Deserializable> Serializable for DiskBlock<T> {
         for value in &self.items {
             value.serialize(writer)?;
         }
-
-        // Write CRC
-        writer.write_all(&self.crc.to_be_bytes())?;
 
         Ok(())
     }
