@@ -39,7 +39,7 @@ pub struct BlockCache {
 }
 
 const DATA_BLOCK_TAG: u8 = 0;
-const INDEX_BLOCK_TAG: u8 = 0;
+const INDEX_BLOCK_TAG: u8 = 1;
 
 impl BlockCache {
     /// Creates a new block cache with roughly `n` blocks of capacity
