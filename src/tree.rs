@@ -905,8 +905,6 @@ impl Tree {
         let mut journal_lock = self.journal.shards.full_lock().expect("lock is poisoned");
         let shard = journal_lock.pop().expect("journal should have shards");
 
-        let seqno = self.increment_lsn();
-
         match self.get(key)? {
             Some(current_value) => {
                 match expected {
@@ -927,7 +925,7 @@ impl Tree {
                                 Value {
                                     key: key.into(),
                                     value: next_value.clone(),
-                                    seqno,
+                                    seqno: self.increment_lsn(),
                                     value_type: ValueType::Value,
                                 },
                             )?;
@@ -937,7 +935,7 @@ impl Tree {
                                 Value {
                                     key: key.into(),
                                     value: [].into(),
-                                    seqno,
+                                    seqno: self.increment_lsn(),
                                     value_type: ValueType::Tombstone,
                                 },
                             )?;
@@ -974,7 +972,7 @@ impl Tree {
                             Value {
                                 key: key.into(),
                                 value: next_value.clone(),
-                                seqno,
+                                seqno: self.increment_lsn(),
                                 value_type: ValueType::Value,
                             },
                         )?;
