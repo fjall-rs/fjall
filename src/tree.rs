@@ -488,7 +488,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let mut shard = self.journal.lock_shard();
+        let shard = self.journal.lock_shard();
 
         let value = Value::new(
             key.as_ref(),
@@ -529,7 +529,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let mut shard = self.journal.lock_shard();
+        let shard = self.journal.lock_shard();
 
         let value = Value::new(
             key.as_ref(),
