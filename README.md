@@ -1,6 +1,5 @@
 [![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
 
-
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
 ```rs
@@ -74,16 +73,6 @@ Is the disk format stable yet? Not quite, notably missing is:
 - Bloom filters to avoid expensive disk access for non-existing items
 - Range tombstones
 
-## Benchmarks
-
-Testing system:
-- i7 7700k
-- 24 GB RAM
-- Linux (Ubuntu)
-- M.2 SSD
-
-{Add graphs here}
-
 ## Examples
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
@@ -94,7 +83,7 @@ Testing system:
 
 ## License
 
-All source code is MIT-licensed.
+All source code is licensed under MIT OR Apache-2.0.
 
 ## Footnotes
 
