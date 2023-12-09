@@ -120,9 +120,12 @@ impl Metadata {
         writer.flush()?;
         writer.sync_all()?;
 
-        // fsync folder
-        let folder = std::fs::File::open(&self.path)?;
-        folder.sync_all()?;
+        #[cfg(not(target_os = "windows"))]
+        {
+            // fsync folder on Unix
+            let folder = std::fs::File::open(&self.path)?;
+            folder.sync_all()?;
+        }
 
         Ok(())
     }

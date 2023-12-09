@@ -278,7 +278,7 @@ impl Writer {
             self.write_block()?;
         }
 
-        // No items written! Just deleted segment folder and return nothing
+        // No items written! Just delete segment folder and return nothing
         if self.item_count == 0 {
             log::debug!(
                 "Deleting empty segment folder ({}) because no items were written",
@@ -296,9 +296,12 @@ impl Writer {
 
         // TODO: write (& sync) bloom filter
 
-        // fsync folder
-        let folder = std::fs::File::open(&self.opts.path)?;
-        folder.sync_all()?;
+        #[cfg(not(target_os = "windows"))]
+        {
+            // fsync folder on Unix
+            let folder = std::fs::File::open(&self.opts.path)?;
+            folder.sync_all()?;
+        }
 
         log::debug!(
             "Written {} items in {} blocks into new segment file, written {} MB",

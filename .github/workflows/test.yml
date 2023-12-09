@@ -50,6 +50,8 @@ jobs:
         run: cargo clippy
       - name: Run tests
         run: cargo test -v -- --nocapture
+        env:
+          RUST_LOG: debug
       - name: Build & test examples
         run: node compile_examples.mjs
   cross:

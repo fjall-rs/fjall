@@ -408,13 +408,15 @@ impl Tree {
             stop_signal: StopSignal::default(),
         };
 
-        // fsync folder
-        let folder = std::fs::File::open(&inner.config.path)?;
-        folder.sync_all()?;
+        #[cfg(not(target_os = "windows"))]
+        {
+            // fsync folders on Unix
+            let folder = std::fs::File::open(&inner.config.path)?;
+            folder.sync_all()?;
 
-        // fsync folder
-        let folder = std::fs::File::open(inner.config.path.join(JOURNALS_FOLDER))?;
-        folder.sync_all()?;
+            let folder = std::fs::File::open(inner.config.path.join(JOURNALS_FOLDER))?;
+            folder.sync_all()?;
+        }
 
         // NOTE: Lastly
         // fsync .lsm marker
