@@ -198,7 +198,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
-        let meta_index = Arc::new(BlockIndex::from_file(
+        let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
@@ -212,7 +212,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple(&..),
             )?;
 
@@ -227,7 +227,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple(&..),
             )?;
 
@@ -246,7 +246,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple::<UserKey>(&..end),
             )?;
 
@@ -263,7 +263,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple(&..end),
             )?;
 
@@ -282,7 +282,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple(&(start..)),
             )?;
 
@@ -300,7 +300,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id,
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 range_bounds_to_tuple(&(start..end)),
             )?;
 
@@ -390,7 +390,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
-        let meta_index = Arc::new(BlockIndex::from_file(
+        let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
@@ -418,7 +418,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 bounds_u64_to_bytes(&bounds),
             )?;
 
@@ -437,7 +437,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 bounds_u64_to_bytes(&bounds),
             )?;
 

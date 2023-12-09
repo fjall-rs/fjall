@@ -167,7 +167,7 @@ mod tests {
             metadata.write_to_file()?;
 
             let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
-            let meta_index = Arc::new(BlockIndex::from_file(
+            let block_index = Arc::new(BlockIndex::from_file(
                 metadata.id.clone(),
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 &folder,
@@ -178,7 +178,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 None,
                 None,
             )?;
@@ -188,7 +188,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 b"a/b/".to_vec(),
             )?;
 
@@ -198,7 +198,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 b"a/b/".to_vec(),
             )?;
 
@@ -252,7 +252,7 @@ mod tests {
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
-        let meta_index = Arc::new(BlockIndex::from_file(
+        let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             &folder,
@@ -275,7 +275,7 @@ mod tests {
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
-                Arc::clone(&meta_index),
+                Arc::clone(&block_index),
                 prefix_key,
             )?;
 

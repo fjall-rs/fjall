@@ -51,12 +51,12 @@ fn flush_worker(
     )
     .map(Arc::new)
     {
-        Ok(meta_index) => {
+        Ok(block_index) => {
             log::debug!("Read BlockIndex");
 
             let created_segment = Segment {
                 descriptor_table,
-                block_index: meta_index,
+                block_index,
                 block_cache: Arc::clone(&tree.block_cache),
                 metadata,
             };
