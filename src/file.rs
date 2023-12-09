@@ -1,6 +1,7 @@
 use std::{fs::File, io::Write, path::Path};
 
 pub const LSM_MARKER: &str = ".lsm";
+pub const FLUSH_MARKER: &str = ".flush";
 pub const LEVELS_MANIFEST_FILE: &str = "levels.json";
 pub const JOURNALS_FOLDER: &str = "journals";
 

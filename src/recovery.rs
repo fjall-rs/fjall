@@ -3,7 +3,7 @@ use std_semaphore::Semaphore;
 use crate::{
     compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, SEGMENTS_FOLDER},
+    file::{BLOCKS_FILE, FLUSH_MARKER, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, SEGMENTS_FOLDER},
     id::generate_segment_id,
     journal::Journal,
     levels::Levels,
@@ -44,7 +44,7 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
             continue;
         }
 
-        if !journal_path.join(".flush").exists() {
+        if !journal_path.join(FLUSH_MARKER).exists() {
             // TODO: handle this
             assert!(active_journal.is_none(), "Second active journal found :(");
 
@@ -157,7 +157,10 @@ pub fn recover_segments<P: AsRef<Path>>(
             segments.insert(segment.metadata.id.clone(), Arc::new(segment));
             log::debug!("Recovered segment from {}", path.display());
         } else {
-            log::info!("Deleting unfinished segment: {}", path.to_string_lossy());
+            log::debug!(
+                "Deleting unfinished segment (not part of level manifest): {}",
+                path.to_string_lossy()
+            );
             std::fs::remove_dir_all(path)?;
         }
     }
@@ -169,6 +172,7 @@ pub fn recover_segments<P: AsRef<Path>>(
             segments.keys().collect::<Vec<_>>()
         );
 
+        // TODO: no panic here
         panic!("Some segments were not recovered")
     }
 
@@ -260,4 +264,52 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
     log::info!("Tree loaded in {}s", start.elapsed().as_secs_f32());
 
     Ok(tree)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file::FLUSH_MARKER;
+    use test_log::test;
+
+    #[test]
+    fn tree_flush_on_recover() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let path = folder.path();
+
+        {
+            let _ = crate::Config::new(path).open()?;
+        }
+
+        let subfolder = path.join("journals").join("abc");
+        std::fs::create_dir_all(&subfolder)?;
+        assert!(subfolder.exists());
+
+        // Write item
+        {
+            let (journal, _) = Journal::recover(&subfolder)?;
+
+            let mut shard = journal.lock_shard();
+            shard.write(&crate::Value {
+                key: "abc".as_bytes().into(),
+                value: "def".as_bytes().into(),
+                seqno: 0,
+                value_type: crate::value::ValueType::Value,
+            })?;
+            shard.flush()?;
+        }
+
+        let marker = std::fs::File::create(subfolder.join(FLUSH_MARKER))?;
+        marker.sync_all()?;
+        assert!(subfolder.join(FLUSH_MARKER).exists());
+
+        {
+            let tree = crate::Config::new(path).open()?;
+            assert!(tree.contains_key("abc")?);
+        }
+
+        assert!(!subfolder.exists());
+
+        Ok(())
+    }
 }

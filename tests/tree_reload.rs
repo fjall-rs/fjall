@@ -1,3 +1,5 @@
+use std::fs::create_dir_all;
+
 use lsm_tree::Config;
 use test_log::test;
 
@@ -80,6 +82,44 @@ fn tree_reload() -> lsm_tree::Result<()> {
     }
 
     std::thread::sleep(std::time::Duration::from_secs(2));
+
+    Ok(())
+}
+
+#[test]
+fn tree_remove_unfinished_segments() -> lsm_tree::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let path = folder.path();
+
+    let subfolder = path.join("segments").join("abc");
+    create_dir_all(&subfolder)?;
+    assert!(subfolder.exists());
+
+    // Setup tree
+    {
+        let tree = Config::new(&folder).block_size(1_024).open()?;
+
+        assert_eq!(tree.len()?, 0);
+        assert_eq!(tree.iter()?.into_iter().filter(Result::is_ok).count(), 0);
+        assert_eq!(
+            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            0
+        );
+    }
+
+    // Recover tree
+    {
+        let tree = Config::new(&folder).block_size(1_024).open()?;
+
+        assert_eq!(tree.len()?, 0);
+        assert_eq!(tree.iter()?.into_iter().filter(Result::is_ok).count(), 0);
+        assert_eq!(
+            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            0
+        );
+    }
+
+    assert!(!subfolder.exists());
 
     Ok(())
 }

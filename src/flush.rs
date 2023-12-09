@@ -1,7 +1,7 @@
 use crate::{
     compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, JOURNALS_FOLDER, SEGMENTS_FOLDER},
+    file::{BLOCKS_FILE, FLUSH_MARKER, JOURNALS_FOLDER, SEGMENTS_FOLDER},
     id::generate_segment_id,
     journal::Journal,
     memtable::MemTable,
@@ -135,7 +135,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         old_journal_folder.display()
     );
 
-    let marker = File::create(old_journal_folder.join(".flush"))?;
+    let marker = File::create(old_journal_folder.join(FLUSH_MARKER))?;
     marker.sync_all()?;
 
     #[cfg(not(target_os = "windows"))]

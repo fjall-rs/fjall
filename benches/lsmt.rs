@@ -444,14 +444,14 @@ fn recover_tree(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    /* insert,
-    memtable_point_reads, */
+    insert,
+    memtable_point_reads,
     recover_tree,
-    /*  disk_point_reads,
+    disk_point_reads,
     cached_retrieve_disk_random,
     full_scan,
     scan_vs_query,
-    scan_vs_prefix, */
+    scan_vs_prefix,
 );
 
 criterion_main!(benches);
