@@ -40,8 +40,10 @@ mod tests {
         let dir = tempfile::tempdir()?;
 
         let path = dir.path().join("test.txt");
-        let mut file = File::create(&path)?;
-        write!(file, "asdasdasdasdasd")?;
+        {
+            let mut file = File::create(&path)?;
+            write!(file, "asdasdasdasdasd")?;
+        }
 
         rewrite_atomic(&path, b"newcontent")?;
 
