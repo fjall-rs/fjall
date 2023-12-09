@@ -13,7 +13,10 @@ use std::sync::Arc;
 type Key = (u8, String, UserKey);
 type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
 
-/// Block cache
+/// Block cache, in which blocks are cached in-memory
+/// after being retrieved from disk. This speeds up
+/// consecutive queries to nearby data, improving read
+/// performance for hot data.
 ///
 /// # Examples
 ///
