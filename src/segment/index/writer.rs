@@ -143,6 +143,11 @@ impl Writer {
     }
 
     fn write_top_level_index(&mut self, block_file_size: u64) -> crate::Result<()> {
+        // TODO: I hate this, but we need to drop the writer
+        // so the file is closed
+        // so it can be replaced when using Windows
+        self.block_writer = None;
+
         concat_files(
             self.path.join(INDEX_BLOCKS_FILE),
             self.path.join(BLOCKS_FILE),
@@ -189,11 +194,6 @@ impl Writer {
         self.index_writer.get_mut().sync_all()?;
 
         // TODO: add test to make sure writer is deleting index_blocks
-        //
-        // TODO: I hate this, but we need to drop the writer
-        // so the file is closed
-        // so it can be deleted on Windows
-        self.block_writer = None;
         std::fs::remove_file(self.path.join(INDEX_BLOCKS_FILE))?;
 
         Ok(())
