@@ -148,30 +148,22 @@ mod tests {
     fn default_l0() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy::default();
+        let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment("1".into()));
-        assert_eq!(
-            compactor.choose(&levels, &Config::default()),
-            Choice::DoNothing
-        );
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.add(fixture_segment("2".into()));
-        assert_eq!(
-            compactor.choose(&levels, &Config::default()),
-            Choice::DoNothing
-        );
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.add(fixture_segment("3".into()));
-        assert_eq!(
-            compactor.choose(&levels, &Config::default()),
-            Choice::DoNothing
-        );
+        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.add(fixture_segment("4".into()));
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &config),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
