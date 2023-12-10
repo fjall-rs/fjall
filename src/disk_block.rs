@@ -84,6 +84,9 @@ impl<T: Clone + Serializable + Deserializable> Serializable for DiskBlock<T> {
 
 impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
+        // Read CRC
+        let crc = reader.read_u32::<BigEndian>()?;
+
         // Read number of items
         let item_count = reader.read_u32::<BigEndian>()? as usize;
 
@@ -92,9 +95,6 @@ impl<T: Clone + Serializable + Deserializable> Deserializable for DiskBlock<T> {
         for _ in 0..item_count {
             items.push(T::deserialize(reader)?);
         }
-
-        // Read CRC
-        let crc = reader.read_u32::<BigEndian>()?;
 
         Ok(Self { items, crc })
     }
