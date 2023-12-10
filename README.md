@@ -4,6 +4,10 @@
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
+```bash
+cargo add lsm-tree
+```
+
 ```rs
 use lsm_tree::{Config, Tree};
 
@@ -38,10 +42,6 @@ for item in &tree.range("a"..="z")? {
 for item in tree.prefix("prefix")?.into_iter().rev() {
   // ...
 }
-```
-
-```bash
-cargo add lsm-tree
 ```
 
 ## About
