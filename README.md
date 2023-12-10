@@ -1,4 +1,6 @@
 [![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
+[![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
+[![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
@@ -38,13 +40,13 @@ for item in tree.prefix("prefix")?.into_iter().rev() {
 }
 ```
 
-```
+```bash
 cargo add lsm-tree
 ```
 
 ## About
 
-This is the fastest and most feature-rich LSM-tree implementation in Rust! It features, among other things:
+This is the most feature-rich LSM-tree implementation in Rust! It features, among other things:
 
 - Block-based tables with LZ4 compression
 - Range & prefix searching with forward and reverse iteration
@@ -58,7 +60,7 @@ This is the fastest and most feature-rich LSM-tree implementation in Rust! It fe
 - Automatic background compaction
   - Does not spawn background threads unless actually needed
 - Thread-safe (internally synchronized)
-- 100% safe Rust
+- 100% safe & stable Rust
 
 ## Stable disk format
 
@@ -71,7 +73,7 @@ Is the disk format stable yet? Not quite, notably missing is:
 ## Future
 
 - Bloom filters to avoid expensive disk access for non-existing items
-- Range tombstones
+- Range tombstones / remove_range [2]
 
 ## Examples
 
@@ -88,3 +90,4 @@ All source code is licensed under MIT OR Apache-2.0.
 ## Footnotes
 
 [1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
+[2] https://rocksdb.org/blog/2018/11/21/delete-range.html
