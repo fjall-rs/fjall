@@ -78,6 +78,7 @@ Is the disk format stable yet? Not quite, notably missing is:
 
 - Bloom filters to avoid expensive disk access for non-existing items
 - Range tombstones / remove_range [2] / remove_prefix
+- WiscKey-like ValueLog for blob storage [3] [4]
 
 ## Examples
 
@@ -109,3 +110,7 @@ All source code is licensed under MIT OR Apache-2.0.
 [1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
 
 [2] https://rocksdb.org/blog/2018/11/21/delete-range.html
+
+[3] https://www.usenix.org/system/files/conference/fast16/fast16-papers-lu.pdf
+
+[4] https://github.com/facebook/rocksdb/wiki/BlobDB
