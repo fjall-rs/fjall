@@ -46,10 +46,12 @@ for item in tree.prefix("prefix")?.into_iter().rev() {
 
 ## About
 
-This is the most feature-rich LSM-tree implementation in Rust! It features, among other things:
+This is the most feature-rich LSM-tree implementation in Rust! It features:
 
-- Block-based tables with LZ4 compression
+- Thread-safe BTreeMap-like API
+- 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
+- Block-based tables with LZ4 compression
 - Size-tiered, (concurrent) Levelled and FIFO compaction strategies
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
 - Block caching to keep hot data in memory
@@ -59,8 +61,6 @@ This is the most feature-rich LSM-tree implementation in Rust! It features, amon
 - Snapshots (MVCC)
 - Automatic background compaction
   - Does not spawn background threads unless actually needed
-- Thread-safe (internally synchronized)
-- 100% safe & stable Rust
 
 ## Stable disk format
 
@@ -73,15 +73,28 @@ Is the disk format stable yet? Not quite, notably missing is:
 ## Future
 
 - Bloom filters to avoid expensive disk access for non-existing items
-- Range tombstones / remove_range [2]
+- Range tombstones / remove_range [2] / remove_prefix
 
 ## Examples
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
 
+And checkout [Smoltable](https://github.com/marvin-j97/smoltable), a Rust-based Bigtable-inspired mini wide-column database using lsm-tree.
+
 ## Minimum supported rust version (MSRV)
 
 1.74.0
+
+## Contributing
+
+How can you help?
+
+- [Ask a question](https://github.com/marvin-j97/lsm-tree/discussions/new?category=q-a)
+- [Post benchmarks and things you created](https://github.com/marvin-j97/lsm-tree/discussions/new?category=show-and-tell)
+- [Open an issue](https://github.com/marvin-j97/lsm-tree/issues) (bug report, weirdness)
+- [Open a PR](https://github.com/marvin-j97/lsm-tree/compare)
+
+All contributions are to be licensed as MIT OR Apache-2.0.
 
 ## License
 

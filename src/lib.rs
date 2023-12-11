@@ -57,14 +57,14 @@
 //! # Ok::<(), lsm_tree::Error>(())
 //! ```
 
-// #![doc(html_logo_url = "TODO:")]
-// #![doc(html_favicon_url = "TODO:")]
-#![deny(clippy::all, missing_docs, clippy::cargo)]
-#![warn(clippy::pedantic, clippy::nursery)]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/marvin-j97/lsm-tree/main/logo.png")]
+#![doc(html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/lsm-tree/main/logo.png")]
 #![forbid(unsafe_code)]
-#![allow(clippy::missing_const_for_fn)]
-#![warn(clippy::expect_used)]
+#![deny(clippy::all, missing_docs, clippy::cargo)]
 #![deny(clippy::unwrap_used)]
+#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::expect_used)]
+#![allow(clippy::missing_const_for_fn)]
 
 mod batch;
 mod block_cache;
