@@ -107,4 +107,5 @@ All source code is licensed under MIT OR Apache-2.0.
 ## Footnotes
 
 [1] https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html
+
 [2] https://rocksdb.org/blog/2018/11/21/delete-range.html
