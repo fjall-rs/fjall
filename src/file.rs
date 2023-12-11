@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, path::Path};
+use std::{io::Write, path::Path};
 
 pub const LSM_MARKER: &str = ".lsm";
 pub const FLUSH_MARKER: &str = ".flush";
