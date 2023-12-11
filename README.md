@@ -2,6 +2,10 @@
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
 
+<p align="center">
+  <img src="/logo.png" height="128">
+</p>
+
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
 
 ```bash
@@ -79,7 +83,7 @@ Is the disk format stable yet? Not quite, notably missing is:
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
 
-And checkout [Smoltable](https://github.com/marvin-j97/smoltable), a Rust-based Bigtable-inspired mini wide-column database using lsm-tree.
+And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a Rust-based Bigtable-inspired mini wide-column database using `lsm-tree` as its storage engine.
 
 ## Minimum supported rust version (MSRV)
 
