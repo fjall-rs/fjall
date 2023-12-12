@@ -158,7 +158,7 @@ async fn list_by_verb(
 
     let all = data
         .db
-        .prefix(format!("v:s:{subject_key}:v:{verb_key}:"))?
+        .prefix(format!("v:s:{subject_key}:v:{verb_key}:"))
         .into_iter()
         .take(query.limit.unwrap_or(10_000) as usize)
         .collect::<Vec<_>>();
