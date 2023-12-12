@@ -38,8 +38,13 @@ pub struct Metadata {
 
     /// Number of items in the segment
     ///
-    /// This may include tombstones
+    /// This may include tombstones and multiple versions of the same key
     pub item_count: u64,
+
+    /// Number of unique keys in the segment
+    ///
+    /// This may include tombstones
+    pub key_count: u64,
 
     /// Block size (uncompressed)
     pub block_size: u32,
@@ -83,6 +88,8 @@ impl Metadata {
             file_size: writer.file_pos,
             compression: CompressionType::Lz4,
             item_count: writer.item_count as u64,
+            key_count: writer.key_count as u64,
+
             key_range: (
                 writer
                     .first_key

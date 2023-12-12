@@ -207,6 +207,7 @@ mod tests {
                 file_size: size,
                 compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
+                key_count: 0,
                 key_range,
                 tombstone_count: 0,
                 uncompressed_size: 0,

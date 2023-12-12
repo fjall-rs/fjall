@@ -131,6 +131,9 @@ pub struct Writer {
 
     pub lowest_seqno: SeqNo,
     pub highest_seqno: SeqNo,
+
+    pub key_count: usize,
+    current_key: Option<UserKey>,
 }
 
 pub struct Options {
@@ -175,6 +178,9 @@ impl Writer {
 
             lowest_seqno: SeqNo::MAX,
             highest_seqno: 0,
+
+            current_key: None,
+            key_count: 0,
         })
     }
 
@@ -243,6 +249,11 @@ impl Writer {
             }
 
             self.tombstone_count += 1;
+        }
+
+        if Some(&item.key) != self.current_key.as_ref() {
+            self.key_count += 1;
+            self.current_key = Some(item.key.clone());
         }
 
         let item_key = item.key.clone();
@@ -357,6 +368,7 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
         metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT, metadata.item_count);
+        assert_eq!(ITEM_COUNT, metadata.key_count);
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
@@ -375,6 +387,61 @@ mod tests {
         );
 
         assert_eq!(ITEM_COUNT, iter.count() as u64);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_and_read_mvcc() -> crate::Result<()> {
+        const ITEM_COUNT: u64 = 1_000;
+        const VERSION_COUNT: u64 = 5;
+
+        let folder = tempfile::tempdir()?.into_path();
+
+        let mut writer = Writer::new(Options {
+            path: folder.clone(),
+            evict_tombstones: false,
+            block_size: 4096,
+        })?;
+
+        for key in 0u64..ITEM_COUNT {
+            for seqno in (0..VERSION_COUNT).rev() {
+                let value = Value::new(
+                    key.to_be_bytes(),
+                    nanoid::nanoid!().as_bytes(),
+                    seqno,
+                    ValueType::Value,
+                );
+
+                writer.write(value)?;
+            }
+        }
+
+        writer.finish()?;
+
+        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+        metadata.write_to_file()?;
+        assert_eq!(ITEM_COUNT * VERSION_COUNT, metadata.item_count);
+        assert_eq!(ITEM_COUNT, metadata.key_count);
+
+        let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
+        let block_index = Arc::new(BlockIndex::from_file(
+            metadata.id.clone(),
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            &folder,
+            Arc::clone(&block_cache),
+        )?);
+
+        let iter = Reader::new(
+            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            metadata.id,
+            Arc::clone(&block_cache),
+            Arc::clone(&block_index),
+            None,
+            None,
+        );
+
+        assert_eq!(ITEM_COUNT * VERSION_COUNT, iter.count() as u64);
 
         Ok(())
     }
