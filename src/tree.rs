@@ -11,6 +11,7 @@ use crate::{
     stop_signal::StopSignal,
     tree_inner::TreeInner,
     value::{SeqNo, UserData, UserKey, ValueType},
+    version::Version,
     Batch, Config, Snapshot, Value,
 };
 use std::{
@@ -425,10 +426,10 @@ impl Tree {
             folder.sync_all()?;
         }
 
-        // NOTE: Lastly
-        // fsync .lsm marker
+        // NOTE: Lastly, fsync .lsm marker, which contains the version
         // -> the LSM is fully initialized
-        let file = std::fs::File::create(marker)?;
+        let mut file = std::fs::File::create(marker)?;
+        Version::V0.write_file_header(&mut file)?;
         file.sync_all()?;
 
         Ok(Self(Arc::new(inner)))

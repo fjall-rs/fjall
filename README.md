@@ -70,9 +70,7 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 
 Is the disk format stable yet? Not quite, but it will be when:
 
-- Journal format is finalized
 - Disk format is pinned by unit tests to prevent breaking changes
-- Version 1.0.0 is released
 
 ## Future
 

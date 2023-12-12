@@ -8,7 +8,6 @@ use crate::descriptor_table::FileDescriptorTable;
 use crate::disk_block::DiskBlock;
 use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::value::UserKey;
-use crate::version::Version;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -289,13 +288,12 @@ impl BlockIndex {
             path.as_ref().display()
         );
 
-        let version_size = Version::len().into();
         let file_size = std::fs::metadata(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?.len();
 
         let index = BlockHandleBlock::from_file_compressed(
             &mut BufReader::new(File::open(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?), // TODO:
-            version_size,
-            (file_size - version_size) as u32,
+            0,
+            file_size as u32,
         )?;
 
         /* if !index.check_crc(index.crc)? {

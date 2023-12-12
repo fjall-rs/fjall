@@ -1,7 +1,10 @@
 use crate::{
     compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, FLUSH_MARKER, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, SEGMENTS_FOLDER},
+    file::{
+        BLOCKS_FILE, FLUSH_MARKER, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, LSM_MARKER,
+        SEGMENTS_FOLDER,
+    },
     id::generate_segment_id,
     journal::Journal,
     levels::Levels,
@@ -9,6 +12,7 @@ use crate::{
     segment::{self, Segment},
     stop_signal::StopSignal,
     tree_inner::TreeInner,
+    version::Version,
     BlockCache, Config, Tree,
 };
 use std::{
@@ -182,6 +186,11 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
     log::info!("Recovering tree from {}", config.path.display());
 
     let start = std::time::Instant::now();
+
+    log::info!("Checking tree version");
+    let version_bytes = std::fs::read(config.path.join(LSM_MARKER))?;
+    let version = Version::parse_file_header(&version_bytes);
+    assert!(version.is_some(), "Invalid LSM-tree version");
 
     log::info!("Restoring journal");
     let active_journal = crate::recovery::recover_active_journal(&config)?;
