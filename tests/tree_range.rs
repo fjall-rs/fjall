@@ -11,7 +11,7 @@ fn tree_range_count() -> lsm_tree::Result<()> {
     tree.insert("a".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.insert("f".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.insert("g".as_bytes(), nanoid::nanoid!().as_bytes())?;
-    assert_eq!(2, tree.range("a"..="f")?.into_iter().count());
+    assert_eq!(2, tree.range("a"..="f").into_iter().count());
 
     tree.flush()?;
     tree.wait_for_memtable_flush()?;
@@ -19,7 +19,7 @@ fn tree_range_count() -> lsm_tree::Result<()> {
     tree.insert("a".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.insert("f".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.insert("g".as_bytes(), nanoid::nanoid!().as_bytes())?;
-    assert_eq!(2, tree.range("a"..="f")?.into_iter().count());
+    assert_eq!(2, tree.range("a"..="f").into_iter().count());
 
     Ok(())
 }

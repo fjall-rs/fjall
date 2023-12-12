@@ -79,7 +79,7 @@ impl Snapshot {
     ///
     /// tree.insert("g", nanoid::nanoid!())?;
     ///
-    /// assert_eq!(2, snapshot.iter()?.into_iter().count());
+    /// assert_eq!(2, snapshot.iter().into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -87,7 +87,8 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn iter(&self) -> crate::Result<Range<'_>> {
+    #[must_use]
+    pub fn iter(&self) -> Range<'_> {
         self.tree.create_iter(Some(self.seqno))
     }
 
@@ -109,7 +110,7 @@ impl Snapshot {
     /// tree.insert("f", nanoid::nanoid!())?;
     /// tree.insert("g", nanoid::nanoid!())?;
     ///
-    /// assert_eq!(1, snapshot.range("a"..="f")?.into_iter().count());
+    /// assert_eq!(1, snapshot.range("a"..="f").into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -117,7 +118,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Range<'_> {
         self.tree.create_range(range, Some(self.seqno))
     }
 
@@ -139,7 +140,7 @@ impl Snapshot {
     ///
     /// tree.insert("abc", nanoid::nanoid!())?;
     ///
-    /// assert_eq!(2, snapshot.prefix("a")?.into_iter().count());
+    /// assert_eq!(2, snapshot.prefix("a").into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -147,7 +148,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Prefix<'_> {
         self.tree.create_prefix(prefix.as_ref(), Some(self.seqno))
     }
 
@@ -180,7 +181,7 @@ impl Snapshot {
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.tree
-            .create_iter(Some(self.seqno))?
+            .create_iter(Some(self.seqno))
             .into_iter()
             .next()
             .transpose()
@@ -215,7 +216,7 @@ impl Snapshot {
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
         self.tree
-            .create_iter(Some(self.seqno))?
+            .create_iter(Some(self.seqno))
             .into_iter()
             .next_back()
             .transpose()
@@ -307,7 +308,7 @@ impl Snapshot {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn len(&self) -> crate::Result<usize> {
-        Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
+        Ok(self.iter().into_iter().filter(Result::is_ok).count())
     }
 }
 

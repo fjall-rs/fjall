@@ -19,7 +19,7 @@ fn snapshot_basic() -> lsm_tree::Result<()> {
     let snapshot = tree.snapshot();
 
     assert_eq!(tree.len()?, snapshot.len()?);
-    assert_eq!(tree.len()?, snapshot.iter()?.into_iter().rev().count());
+    assert_eq!(tree.len()?, snapshot.iter().into_iter().rev().count());
 
     for x in 0..ITEM_COUNT as u64 {
         let key = x.to_be_bytes();
@@ -32,7 +32,7 @@ fn snapshot_basic() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert_eq!(ITEM_COUNT, snapshot.len()?);
-    assert_eq!(ITEM_COUNT, snapshot.iter()?.into_iter().rev().count());
+    assert_eq!(ITEM_COUNT, snapshot.iter().into_iter().rev().count());
 
     Ok(())
 }

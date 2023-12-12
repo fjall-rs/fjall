@@ -7,13 +7,13 @@ pub mod reader;
 pub mod writer;
 
 use self::{
-    index::BlockIndex, meta::Metadata, prefix::PrefixedReader, range::Range, reader::Reader,
+    block::load_and_cache_by_block_handle, index::BlockIndex, meta::Metadata,
+    prefix::PrefixedReader, range::Range, reader::Reader,
 };
 use crate::{
     block_cache::BlockCache,
     descriptor_table::FileDescriptorTable,
     file::{BLOCKS_FILE, SEGMENT_METADATA_FILE},
-    segment::reader::load_and_cache_by_block_handle,
     value::{SeqNo, UserKey},
     Value,
 };
@@ -176,7 +176,7 @@ impl Segment {
                         Arc::clone(&self.block_index),
                         Some(&next_block_handle.start_key),
                         None,
-                    )?;
+                    );
 
                     for item in iter {
                         let item = item?;
@@ -204,17 +204,15 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn iter(&self) -> crate::Result<Reader> {
-        let reader = Reader::new(
+    pub fn iter(&self) -> Reader {
+        Reader::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
             None,
             None,
-        )?;
-
-        Ok(reader)
+        )
     }
 
     /// Creates a ranged iterator over the `Segment`.
@@ -222,16 +220,14 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range(&self, range: (Bound<UserKey>, Bound<UserKey>)) -> crate::Result<Range> {
-        let range = Range::new(
+    pub fn range(&self, range: (Bound<UserKey>, Bound<UserKey>)) -> Range {
+        Range::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
             range,
-        )?;
-
-        Ok(range)
+        )
     }
 
     /// Creates a prefixed iterator over the `Segment`.
@@ -239,16 +235,14 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: Into<UserKey>>(&self, prefix: K) -> crate::Result<PrefixedReader> {
-        let reader = PrefixedReader::new(
+    pub fn prefix<K: Into<UserKey>>(&self, prefix: K) -> PrefixedReader {
+        PrefixedReader::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
             Arc::clone(&self.block_cache),
             Arc::clone(&self.block_index),
             prefix,
-        )?;
-
-        Ok(reader)
+        )
     }
 
     /// Returns the highest sequence number in the segment.

@@ -336,7 +336,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn len(&self) -> crate::Result<usize> {
-        Ok(self.iter()?.into_iter().filter(Result::is_ok).count())
+        Ok(self.iter().into_iter().filter(Result::is_ok).count())
     }
 
     /// Returns `true` if the tree is empty.
@@ -595,7 +595,7 @@ impl Tree {
         self.get(key).map(|x| x.is_some())
     }
 
-    pub(crate) fn create_iter(&self, seqno: Option<SeqNo>) -> crate::Result<Range<'_>> {
+    pub(crate) fn create_iter(&self, seqno: Option<SeqNo>) -> Range<'_> {
         self.create_range::<UserKey, _>(.., seqno)
     }
 
@@ -615,7 +615,7 @@ impl Tree {
     /// tree.insert("a", nanoid::nanoid!())?;
     /// tree.insert("f", nanoid::nanoid!())?;
     /// tree.insert("g", nanoid::nanoid!())?;
-    /// assert_eq!(3, tree.iter()?.into_iter().count());
+    /// assert_eq!(3, tree.iter().into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -623,7 +623,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn iter(&self) -> crate::Result<Range<'_>> {
+    pub fn iter(&self) -> Range<'_> {
         self.create_iter(None)
     }
 
@@ -631,7 +631,7 @@ impl Tree {
         &self,
         range: R,
         seqno: Option<SeqNo>,
-    ) -> crate::Result<Range<'_>> {
+    ) -> Range<'_> {
         use std::ops::Bound::{self, Excluded, Included, Unbounded};
 
         let lo: Bound<UserKey> = match range.start_bound() {
@@ -657,7 +657,7 @@ impl Tree {
             .cloned()
             .collect::<Vec<_>>();
 
-        Ok(Range::new(
+        Range::new(
             crate::range::MemTableGuard {
                 active: self.active_memtable.read().expect("lock is poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock is poisoned"),
@@ -665,7 +665,7 @@ impl Tree {
             bounds,
             segment_info,
             seqno,
-        ))
+        )
     }
 
     /// Returns an iterator over a range of items.
@@ -683,7 +683,7 @@ impl Tree {
     /// tree.insert("a", nanoid::nanoid!())?;
     /// tree.insert("f", nanoid::nanoid!())?;
     /// tree.insert("g", nanoid::nanoid!())?;
-    /// assert_eq!(2, tree.range("a"..="f")?.into_iter().count());
+    /// assert_eq!(2, tree.range("a"..="f").into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -691,7 +691,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<Range<'_>> {
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Range<'_> {
         self.create_range(range, None)
     }
 
@@ -699,7 +699,7 @@ impl Tree {
         &self,
         prefix: K,
         seqno: Option<SeqNo>,
-    ) -> crate::Result<Prefix<'_>> {
+    ) -> Prefix<'_> {
         use std::ops::Bound::{self, Included, Unbounded};
 
         let prefix = prefix.into();
@@ -715,7 +715,7 @@ impl Tree {
             .cloned()
             .collect();
 
-        Ok(Prefix::new(
+        Prefix::new(
             MemTableGuard {
                 active: self.active_memtable.read().expect("lock is poisoned"),
                 immutable: self.immutable_memtables.read().expect("lock is poisoned"),
@@ -723,7 +723,7 @@ impl Tree {
             prefix,
             segment_info,
             seqno,
-        ))
+        )
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -741,7 +741,7 @@ impl Tree {
     /// tree.insert("a", nanoid::nanoid!())?;
     /// tree.insert("ab", nanoid::nanoid!())?;
     /// tree.insert("abc", nanoid::nanoid!())?;
-    /// assert_eq!(2, tree.prefix("ab")?.into_iter().count());
+    /// assert_eq!(2, tree.prefix("ab").into_iter().count());
     /// #
     /// # Ok::<(), lsm_tree::Error>(())
     /// ```
@@ -749,7 +749,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> crate::Result<Prefix<'_>> {
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Prefix<'_> {
         self.create_prefix(prefix.as_ref(), None)
     }
 
@@ -779,7 +779,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
-        self.iter()?.into_iter().next().transpose()
+        self.iter().into_iter().next().transpose()
     }
 
     /// Returns the last key-value pair in the tree.
@@ -808,7 +808,7 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserData)>> {
-        self.iter()?.into_iter().next_back().transpose()
+        self.iter().into_iter().next_back().transpose()
     }
 
     #[doc(hidden)]

@@ -77,7 +77,7 @@ impl<'a> MergeIterator<'a> {
             Vec::new();
 
         for segment in segments {
-            let iter = Box::new(segment.iter()?);
+            let iter = Box::new(segment.iter());
             iter_vec.push(iter);
         }
 

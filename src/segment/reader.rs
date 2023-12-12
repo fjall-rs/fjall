@@ -1,7 +1,4 @@
-use super::{
-    block::ValueBlock,
-    index::{block_handle::BlockHandle, BlockIndex},
-};
+use super::{block::load_and_cache_block_by_item_key, index::BlockIndex};
 use crate::{
     block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
 };
@@ -23,66 +20,10 @@ pub struct Reader {
     blocks: HashMap<UserKey, VecDeque<Value>>,
     current_lo: Option<UserKey>,
     current_hi: Option<UserKey>,
-}
 
-pub fn load_and_cache_by_block_handle(
-    descriptor_table: &FileDescriptorTable,
-    block_cache: &BlockCache,
-    segment_id: &str,
-    block_handle: &BlockHandle,
-) -> crate::Result<Option<Arc<ValueBlock>>> {
-    Ok(
-        if let Some(block) =
-            block_cache.get_disk_block(segment_id.to_string(), &block_handle.start_key)
-        {
-            // Cache hit: Copy from block
-
-            Some(block)
-        } else {
-            // Cache miss: load from disk
-
-            let mut file_reader = descriptor_table.access();
-
-            let block = ValueBlock::from_file_compressed(
-                &mut *file_reader,
-                block_handle.offset,
-                block_handle.size,
-            )?;
-
-            drop(file_reader);
-
-            let block = Arc::new(block);
-
-            block_cache.insert_disk_block(
-                segment_id.to_string(),
-                block_handle.start_key.clone(),
-                Arc::clone(&block),
-            );
-
-            Some(block)
-        },
-    )
-}
-
-pub fn load_and_cache_block<K: AsRef<[u8]>>(
-    descriptor_table: &FileDescriptorTable,
-    block_index: &BlockIndex,
-    block_cache: &BlockCache,
-    segment_id: &str,
-    item_key: K,
-) -> crate::Result<Option<Arc<ValueBlock>>> {
-    Ok(
-        if let Some(block_handle) = block_index.get_lower_bound_block_info(item_key.as_ref())? {
-            load_and_cache_by_block_handle(
-                descriptor_table,
-                block_cache,
-                segment_id,
-                &block_handle,
-            )?
-        } else {
-            None
-        },
-    )
+    start_offset: Option<UserKey>,
+    end_offset: Option<UserKey>,
+    is_initialized: bool,
 }
 
 impl Reader {
@@ -93,8 +34,8 @@ impl Reader {
         block_index: Arc<BlockIndex>,
         start_offset: Option<&UserKey>,
         end_offset: Option<&UserKey>,
-    ) -> crate::Result<Self> {
-        let mut iter = Self {
+    ) -> Self {
+        Self {
             descriptor_table,
 
             segment_id,
@@ -105,27 +46,35 @@ impl Reader {
             blocks: HashMap::with_capacity(2),
             current_lo: None,
             current_hi: None,
-        };
 
-        if let Some(offset) = start_offset {
-            iter.current_lo = Some(offset.clone());
-            iter.load_block(offset)?;
+            start_offset: start_offset.cloned(),
+            end_offset: end_offset.cloned(),
+            is_initialized: false,
+        }
+    }
+
+    fn initialize(&mut self) -> crate::Result<()> {
+        if let Some(offset) = &self.start_offset {
+            self.current_lo = Some(offset.clone());
+            self.load_block(&offset.clone())?;
         }
 
-        if let Some(offset) = end_offset {
-            iter.current_hi = Some(offset.clone());
+        if let Some(offset) = &self.end_offset {
+            self.current_hi = Some(offset.clone());
 
-            if iter.current_lo != end_offset.cloned() {
-                iter.load_block(offset)?;
+            if self.current_lo != self.end_offset {
+                self.load_block(&offset.clone())?;
             }
         }
 
-        Ok(iter)
+        self.is_initialized = true;
+
+        Ok(())
     }
 
     fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
         Ok(
-            if let Some(block) = load_and_cache_block(
+            if let Some(block) = load_and_cache_block_by_item_key(
                 &self.descriptor_table,
                 &self.block_index,
                 &self.block_cache,
@@ -146,6 +95,12 @@ impl Iterator for Reader {
     type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.is_initialized {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         if self.current_lo.is_none() {
             // Initialize first block
             let new_block_offset = match self.block_index.get_first_block_key() {
@@ -218,6 +173,12 @@ impl Iterator for Reader {
 
 impl DoubleEndedIterator for Reader {
     fn next_back(&mut self) -> Option<Self::Item> {
+        if !self.is_initialized {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         if self.current_hi.is_none() {
             // Initialize next block
             let new_block_offset = match self.block_index.get_last_block_key() {
@@ -355,7 +316,7 @@ mod tests {
             Arc::clone(&block_index),
             None,
             None,
-        )?;
+        );
 
         for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
             let item = iter.next().expect("item should exist")?;
@@ -371,7 +332,7 @@ mod tests {
             Arc::clone(&block_index),
             None,
             None,
-        )?;
+        );
 
         for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
             let item = iter.next_back().expect("item should exist")?;

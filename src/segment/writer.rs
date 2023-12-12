@@ -372,7 +372,7 @@ mod tests {
             Arc::clone(&block_index),
             None,
             None,
-        )?;
+        );
 
         assert_eq!(ITEM_COUNT, iter.count() as u64);
 

@@ -33,17 +33,17 @@ assert_eq!(Some("my_value".as_bytes().into()), item);
 tree.flush()?;
 
 // Search by prefix
-for item in &tree.prefix("prefix")? {
+for item in &tree.prefix("prefix") {
   // ...
 }
 
 // Search by range
-for item in &tree.range("a"..="z")? {
+for item in &tree.range("a"..="z") {
   // ...
 }
 
 // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for item in tree.prefix("prefix")?.into_iter().rev() {
+for item in tree.prefix("prefix").into_iter().rev() {
   // ...
 }
 ```

@@ -9,8 +9,14 @@ use std::ops::RangeBounds;
 use std::sync::Arc;
 
 pub struct Range {
-    iterator: Reader,
+    descriptor_table: Arc<FileDescriptorTable>,
+    block_index: Arc<BlockIndex>,
+    block_cache: Arc<BlockCache>,
+    segment_id: String,
+
     range: (Bound<UserKey>, Bound<UserKey>),
+
+    iterator: Option<Reader>,
 }
 
 impl Range {
@@ -20,31 +26,46 @@ impl Range {
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
         range: (Bound<UserKey>, Bound<UserKey>),
-    ) -> crate::Result<Self> {
-        let offset_lo = match range.start_bound() {
+    ) -> Self {
+        Self {
+            descriptor_table,
+            block_cache,
+            block_index,
+            segment_id,
+
+            iterator: None,
+            range,
+        }
+    }
+
+    fn initialize(&mut self) -> crate::Result<()> {
+        let offset_lo = match self.range.start_bound() {
             Bound::Unbounded => None,
-            Bound::Included(start) | Bound::Excluded(start) => block_index
+            Bound::Included(start) | Bound::Excluded(start) => self
+                .block_index
                 .get_lower_bound_block_info(start)?
                 .map(|x| x.start_key),
         };
 
-        let offset_hi = match range.end_bound() {
+        let offset_hi = match self.range.end_bound() {
             Bound::Unbounded => None,
-            Bound::Included(end) | Bound::Excluded(end) => block_index
+            Bound::Included(end) | Bound::Excluded(end) => self
+                .block_index
                 .get_upper_bound_block_info(end)?
                 .map(|x| x.start_key),
         };
 
-        let iterator = Reader::new(
-            descriptor_table,
-            segment_id,
-            block_cache,
-            block_index,
+        let reader = Reader::new(
+            self.descriptor_table.clone(),
+            self.segment_id.clone(),
+            self.block_cache.clone(),
+            self.block_index.clone(),
             offset_lo.as_ref(),
             offset_hi.as_ref(),
-        )?;
+        );
+        self.iterator = Some(reader);
 
-        Ok(Self { iterator, range })
+        Ok(())
     }
 }
 
@@ -52,8 +73,18 @@ impl Iterator for Range {
     type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.iterator.is_none() {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         loop {
-            let entry_result = self.iterator.next()?;
+            let entry_result = self
+                .iterator
+                .as_mut()
+                .expect("should be initialized")
+                .next()?;
 
             match entry_result {
                 Ok(entry) => {
@@ -99,8 +130,18 @@ impl Iterator for Range {
 
 impl DoubleEndedIterator for Range {
     fn next_back(&mut self) -> Option<Self::Item> {
+        if self.iterator.is_none() {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         loop {
-            let entry_result = self.iterator.next_back()?;
+            let entry_result = self
+                .iterator
+                .as_mut()
+                .expect("should be initialized")
+                .next_back()?;
 
             match entry_result {
                 Ok(entry) => {
@@ -214,7 +255,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple(&..),
-            )?;
+            );
 
             for key in (0u64..ITEM_COUNT).map(u64::to_be_bytes) {
                 let item = iter.next().expect("item should exist")?;
@@ -229,7 +270,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple(&..),
-            )?;
+            );
 
             for key in (0u64..ITEM_COUNT).rev().map(u64::to_be_bytes) {
                 let item = iter.next_back().expect("item should exist")?;
@@ -248,7 +289,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple::<UserKey>(&..end),
-            )?;
+            );
 
             for key in (0..5_000).map(u64::to_be_bytes) {
                 let item = iter.next().expect("item should exist")?;
@@ -265,7 +306,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple(&..end),
-            )?;
+            );
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
                 let item = iter.next_back().expect("item should exist")?;
@@ -284,7 +325,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple(&(start..)),
-            )?;
+            );
 
             for key in (1_000..5_000).map(u64::to_be_bytes) {
                 let item = iter.next().expect("item should exist")?;
@@ -302,7 +343,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 range_bounds_to_tuple(&(start..end)),
-            )?;
+            );
 
             for key in (1_000..5_000).rev().map(u64::to_be_bytes) {
                 let item = iter.next_back().expect("item should exist")?;
@@ -420,7 +461,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 bounds_u64_to_bytes(&bounds),
-            )?;
+            );
 
             for key in range.map(u64::to_be_bytes) {
                 let item = iter.next().unwrap_or_else(|| {
@@ -439,7 +480,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 bounds_u64_to_bytes(&bounds),
-            )?;
+            );
 
             for key in range.rev().map(u64::to_be_bytes) {
                 let item = iter.next_back().unwrap_or_else(|| {

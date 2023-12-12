@@ -325,7 +325,7 @@ fn scan_vs_query(c: &mut Criterion) {
         group.sample_size(10);
         group.bench_function(format!("scan {}", size), |b| {
             b.iter(|| {
-                let iter = tree.iter().unwrap();
+                let iter = tree.iter();
                 let iter = iter.into_iter();
                 let count = iter
                     .filter(|x| match x {
@@ -343,24 +343,20 @@ fn scan_vs_query(c: &mut Criterion) {
         });
         group.bench_function(format!("query {}", size), |b| {
             b.iter(|| {
-                let iter = tree
-                    .range((
-                        Included(60000_u64.to_be_bytes().to_vec()),
-                        Excluded(61000_u64.to_be_bytes().to_vec()),
-                    ))
-                    .unwrap();
+                let iter = tree.range((
+                    Included(60000_u64.to_be_bytes().to_vec()),
+                    Excluded(61000_u64.to_be_bytes().to_vec()),
+                ));
                 let iter = iter.into_iter();
                 assert_eq!(iter.count(), 1000);
             })
         });
         group.bench_function(format!("query rev {}", size), |b| {
             b.iter(|| {
-                let iter = tree
-                    .range((
-                        Included(60000_u64.to_be_bytes().to_vec()),
-                        Excluded(61000_u64.to_be_bytes().to_vec()),
-                    ))
-                    .unwrap();
+                let iter = tree.range((
+                    Included(60000_u64.to_be_bytes().to_vec()),
+                    Excluded(61000_u64.to_be_bytes().to_vec()),
+                ));
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             })
@@ -394,7 +390,7 @@ fn scan_vs_prefix(c: &mut Criterion) {
         group.sample_size(10);
         group.bench_function(format!("scan {}", size), |b| {
             b.iter(|| {
-                let iter = tree.iter().unwrap();
+                let iter = tree.iter();
                 let iter = iter.into_iter().filter(|x| match x {
                     Ok((key, _)) => key.starts_with(prefix.as_bytes()),
                     Err(_) => false,
@@ -404,14 +400,14 @@ fn scan_vs_prefix(c: &mut Criterion) {
         });
         group.bench_function(format!("prefix {}", size), |b| {
             b.iter(|| {
-                let iter = tree.prefix(prefix).unwrap();
+                let iter = tree.prefix(prefix);
                 let iter = iter.into_iter();
                 assert_eq!(iter.count(), 1000);
             });
         });
         group.bench_function(format!("prefix rev {}", size), |b| {
             b.iter(|| {
-                let iter = tree.prefix(prefix).unwrap();
+                let iter = tree.prefix(prefix);
                 let iter = iter.into_iter();
                 assert_eq!(iter.rev().count(), 1000);
             });

@@ -35,11 +35,11 @@ fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
         assert!(bytes_before > 0);
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(
-            tree.iter()?.into_iter().filter(Result::is_ok).count(),
+            tree.iter().into_iter().filter(Result::is_ok).count(),
             ITEM_COUNT * 2
         );
         assert_eq!(
-            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            tree.iter().into_iter().rev().filter(Result::is_ok).count(),
             ITEM_COUNT * 2
         );
     }
@@ -50,11 +50,11 @@ fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
         assert_eq!(bytes_before, tree.disk_space()?);
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(
-            tree.iter()?.into_iter().filter(Result::is_ok).count(),
+            tree.iter().into_iter().filter(Result::is_ok).count(),
             ITEM_COUNT * 2
         );
         assert_eq!(
-            tree.iter()?.into_iter().rev().filter(Result::is_ok).count(),
+            tree.iter().into_iter().rev().filter(Result::is_ok).count(),
             ITEM_COUNT * 2
         );
     }

@@ -9,8 +9,14 @@ use std::{
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PrefixedReader {
-    iterator: Range,
+    descriptor_table: Arc<FileDescriptorTable>,
+    block_index: Arc<BlockIndex>,
+    block_cache: Arc<BlockCache>,
+    segment_id: String,
+
     prefix: UserKey,
+
+    iterator: Option<Range>,
 }
 
 impl PrefixedReader {
@@ -20,21 +26,33 @@ impl PrefixedReader {
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
         prefix: K,
-    ) -> crate::Result<Self> {
-        let prefix = prefix.into();
+    ) -> Self {
+        Self {
+            block_cache,
+            block_index,
+            descriptor_table,
+            segment_id,
 
-        let upper_bound = block_index.get_prefix_upper_bound(&prefix)?;
+            iterator: None,
+
+            prefix: prefix.into(),
+        }
+    }
+
+    fn initialize(&mut self) -> crate::Result<()> {
+        let upper_bound = self.block_index.get_prefix_upper_bound(&self.prefix)?;
         let upper_bound = upper_bound.map(|x| x.start_key).map_or(Unbounded, Excluded);
 
         let iterator = Range::new(
-            descriptor_table,
-            segment_id,
-            block_cache,
-            block_index,
-            (Included(prefix.clone()), upper_bound),
-        )?;
+            self.descriptor_table.clone(),
+            self.segment_id.clone(),
+            self.block_cache.clone(),
+            self.block_index.clone(),
+            (Included(self.prefix.clone()), upper_bound),
+        );
+        self.iterator = Some(iterator);
 
-        Ok(Self { iterator, prefix })
+        Ok(())
     }
 }
 
@@ -42,8 +60,18 @@ impl Iterator for PrefixedReader {
     type Item = crate::Result<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.iterator.is_none() {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         loop {
-            let entry_result = self.iterator.next()?;
+            let entry_result = self
+                .iterator
+                .as_mut()
+                .expect("should be initialized")
+                .next()?;
 
             match entry_result {
                 Ok(entry) => {
@@ -67,8 +95,18 @@ impl Iterator for PrefixedReader {
 
 impl DoubleEndedIterator for PrefixedReader {
     fn next_back(&mut self) -> Option<Self::Item> {
+        if self.iterator.is_none() {
+            if let Err(e) = self.initialize() {
+                return Some(Err(e));
+            };
+        }
+
         loop {
-            let entry_result = self.iterator.next_back()?;
+            let entry_result = self
+                .iterator
+                .as_mut()
+                .expect("should be initialized")
+                .next_back()?;
 
             match entry_result {
                 Ok(entry) => {
@@ -181,7 +219,7 @@ mod tests {
                 Arc::clone(&block_index),
                 None,
                 None,
-            )?;
+            );
             assert_eq!(iter.count() as u64, item_count * 3);
 
             let iter = PrefixedReader::new(
@@ -190,7 +228,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 b"a/b/".to_vec(),
-            )?;
+            );
 
             assert_eq!(iter.count() as u64, item_count);
 
@@ -200,7 +238,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 b"a/b/".to_vec(),
-            )?;
+            );
 
             assert_eq!(iter.rev().count() as u64, item_count);
         }
@@ -277,7 +315,7 @@ mod tests {
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
                 prefix_key,
-            )?;
+            );
 
             assert_eq!(iter.count(), item_count);
         }

@@ -79,7 +79,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "old".as_bytes().into()));
 
@@ -91,7 +91,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
@@ -99,7 +99,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
@@ -124,15 +124,15 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
     assert_eq!(
-        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        tree.prefix("pre".as_bytes()).into_iter().count(),
         ITEM_COUNT * 2
     );
     assert_eq!(
-        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        tree.prefix("prefix".as_bytes()).into_iter().count(),
         ITEM_COUNT
     );
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "old".as_bytes().into()));
 
@@ -144,15 +144,15 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
     assert_eq!(
-        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        tree.prefix("pre".as_bytes()).into_iter().count(),
         ITEM_COUNT * 2
     );
     assert_eq!(
-        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        tree.prefix("prefix".as_bytes()).into_iter().count(),
         ITEM_COUNT
     );
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
@@ -160,15 +160,15 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
     assert_eq!(
-        tree.prefix("pre".as_bytes())?.into_iter().count(),
+        tree.prefix("pre".as_bytes()).into_iter().count(),
         ITEM_COUNT * 2
     );
     assert_eq!(
-        tree.prefix("prefix".as_bytes())?.into_iter().count(),
+        tree.prefix("prefix".as_bytes()).into_iter().count(),
         ITEM_COUNT
     );
     assert!(tree
-        .iter()?
+        .iter()
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
