@@ -72,7 +72,7 @@ impl<'a> MergeIterator<'a> {
         self
     }
 
-    pub fn from_segments(segments: &[Arc<Segment>]) -> crate::Result<Box<MergeIterator<'a>>> {
+    pub fn from_segments(segments: &[Arc<Segment>]) -> Box<MergeIterator<'a>> {
         let mut iter_vec: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>>>> =
             Vec::new();
 
@@ -81,7 +81,7 @@ impl<'a> MergeIterator<'a> {
             iter_vec.push(iter);
         }
 
-        Ok(Box::new(MergeIterator::new(iter_vec)))
+        Box::new(MergeIterator::new(iter_vec))
     }
 
     fn advance_iter(&mut self, idx: usize) -> crate::Result<()> {

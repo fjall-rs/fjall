@@ -58,7 +58,7 @@ pub fn do_compaction(
         let snapshot_count = open_snapshots.load(std::sync::atomic::Ordering::Acquire);
         let no_snapshots_open = snapshot_count == 0;
 
-        MergeIterator::from_segments(&to_merge)?.evict_old_versions(no_snapshots_open)
+        MergeIterator::from_segments(&to_merge).evict_old_versions(no_snapshots_open)
     };
 
     segments_lock.hide_segments(&payload.segment_ids);
