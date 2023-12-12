@@ -219,6 +219,10 @@ impl Levels {
         self.levels.len() as u8
     }
 
+    pub fn first_level_segment_count(&self) -> usize {
+        self.levels[0].len()
+    }
+
     /// Returns the amount of levels in the tree
     #[must_use]
     pub fn last_level_index(&self) -> u8 {

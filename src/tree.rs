@@ -231,6 +231,15 @@ impl Tree {
     }
 
     /// Counts the amount of segments currently in the tree.
+    #[must_use]
+    pub(crate) fn first_level_segment_count(&self) -> usize {
+        self.levels
+            .read()
+            .expect("lock is poisoned")
+            .first_level_segment_count()
+    }
+
+    /// Counts the amount of segments currently in the tree.
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
@@ -460,6 +469,16 @@ impl Tree {
         if memtable_size > self.config.max_memtable_size {
             log::debug!("Memtable reached threshold size");
             crate::flush::start(self)?;
+
+            // NOTE: We need to calculate minus the amount of flush threads (N)
+            // because otherwise there may be N more segments in the L0
+            while self.first_level_segment_count() > (32 - self.config.flush_threads).into() {
+                // NOTE: Spin lock to stall writes
+                // It's not beautiful, but better than
+                // running out of file descriptors and crashing
+                //
+                // TODO: maybe make this configurable
+            }
         }
 
         Ok(())
