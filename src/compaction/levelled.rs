@@ -19,11 +19,21 @@ pub struct Strategy {
     ///
     /// Same as `level0_file_num_compaction_trigger` in RocksDB
     pub l0_threshold: u8,
+
+    /// Target segment size (compressed)
+    ///
+    /// Default = 128 MiB
+    ///
+    /// Same as `sstable_size_in_mb` in Cassandra
+    pub target_size: u32,
 }
 
 impl Default for Strategy {
     fn default() -> Self {
-        Self { l0_threshold: 4 }
+        Self {
+            l0_threshold: 4,
+            target_size: 128 * 1_024 * 1_024,
+        }
     }
 }
 
@@ -42,8 +52,8 @@ fn get_key_range(segments: &[Arc<Segment>]) -> (UserKey, UserKey) {
     (min, max)
 }
 
-fn level_desired_size(level_idx: u8, ratio: u8) -> usize {
-    (ratio as usize).pow(u32::from(level_idx))
+fn desired_level_size_in_bytes(level_idx: u8, ratio: u8, target_size: u32) -> usize {
+    (ratio as usize).pow(u32::from(level_idx)) * (target_size as usize)
 }
 
 impl CompactionStrategy for Strategy {
@@ -63,39 +73,51 @@ impl CompactionStrategy for Strategy {
         // segments from left to right, so lower key bound + creation date match up)
         let busy_levels = levels.busy_levels();
 
-        for (level_index, level) in resolved_view
+        for (curr_level_index, level) in resolved_view
             .iter()
             .enumerate()
+            .map(|(idx, lvl)| (idx as u8, lvl))
             .skip(1)
             .take(resolved_view.len() - 2)
             .rev()
         {
-            let level_index = level_index as u8;
-            let next_level_index = level_index + 1;
+            let next_level_index = curr_level_index + 1;
 
-            if busy_levels.contains(&level_index) || busy_levels.contains(&next_level_index) {
+            if level.is_empty() {
                 continue;
             }
 
-            // The amount of segments that should be compacted down
-            // because they cause the level to be larger than the desired size
-            let level_size_overshoot = (level.len() as isize)
-                - (level_desired_size(level_index, config.level_ratio) as isize);
+            if busy_levels.contains(&curr_level_index) || busy_levels.contains(&next_level_index) {
+                continue;
+            }
 
-            if level_size_overshoot > 0 {
-                let current_level_segments: Vec<_> = level
-                    .iter()
-                    .rev()
-                    .take(level_size_overshoot as usize)
-                    .cloned()
-                    .collect();
+            let curr_level_bytes = level
+                .iter()
+                .fold(0, |bytes, segment| bytes + segment.metadata.file_size);
 
-                let (min, max) = get_key_range(&current_level_segments);
+            let desired_bytes =
+                desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.target_size);
+
+            let mut overshoot = curr_level_bytes.saturating_sub(desired_bytes as u64) as usize;
+
+            if overshoot > 0 {
+                let mut segments_to_compact = vec![];
+
+                for segment in level.iter().rev().cloned() {
+                    if overshoot == 0 {
+                        break;
+                    }
+
+                    overshoot = overshoot.saturating_sub(segment.metadata.file_size as usize);
+                    segments_to_compact.push(segment);
+                }
+
+                let (min, max) = get_key_range(&segments_to_compact);
 
                 let next_level = &resolved_view[next_level_index as usize];
                 let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
 
-                let mut segment_ids: Vec<_> = current_level_segments
+                let mut segment_ids: Vec<_> = segments_to_compact
                     .iter()
                     .map(|x| &x.metadata.id)
                     .cloned()
@@ -106,43 +128,46 @@ impl CompactionStrategy for Strategy {
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
                     dest_level: next_level_index,
-                    target_size: u64::from(config.max_memtable_size),
+                    target_size: self.target_size as u64,
                 });
             }
         }
 
-        if busy_levels.contains(&0) || busy_levels.contains(&1) {
-            return Choice::DoNothing;
+        {
+            let Some(first_level) = &resolved_view.get(0) else {
+                return Choice::DoNothing;
+            };
+
+            if first_level.len() >= self.l0_threshold.into()
+                && !busy_levels.contains(&0)
+                && !busy_levels.contains(&1)
+            {
+                let mut first_level_segments: Vec<_> = first_level.iter().cloned().collect();
+                first_level_segments
+                    .sort_by(|a, b| a.metadata.key_range.0.cmp(&b.metadata.key_range.0));
+
+                let (min, max) = get_key_range(&first_level_segments);
+
+                let next_level = &resolved_view[1];
+                let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
+
+                let mut segment_ids: Vec<_> = first_level_segments
+                    .iter()
+                    .map(|x| &x.metadata.id)
+                    .cloned()
+                    .collect();
+
+                segment_ids.extend(overlapping_segment_ids.into_iter().cloned());
+
+                return Choice::DoCompact(CompactionInput {
+                    segment_ids,
+                    dest_level: 1,
+                    target_size: self.target_size as u64,
+                });
+            }
         }
 
-        let Some(first_level) = &resolved_view.get(0) else {
-            return Choice::DoNothing;
-        };
-
-        if first_level.len() >= 2 && first_level.len() >= self.l0_threshold.into() {
-            let first_level_segments: Vec<_> = first_level.iter().cloned().collect();
-
-            let (min, max) = get_key_range(&first_level_segments);
-
-            let next_level = &resolved_view[1];
-            let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
-
-            let mut segment_ids: Vec<_> = first_level_segments
-                .iter()
-                .map(|x| &x.metadata.id)
-                .cloned()
-                .collect();
-
-            segment_ids.extend(overlapping_segment_ids.into_iter().cloned());
-
-            Choice::DoCompact(CompactionInput {
-                segment_ids,
-                dest_level: 1,
-                target_size: u64::from(config.max_memtable_size),
-            })
-        } else {
-            Choice::DoNothing
-        }
+        Choice::DoNothing
     }
 }
 
@@ -164,7 +189,7 @@ mod tests {
     use test_log::test;
 
     #[allow(clippy::expect_used)]
-    fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
+    fn fixture_segment(id: String, key_range: (UserKey, UserKey), size: u64) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {
@@ -179,7 +204,7 @@ mod tests {
                 block_size: 0,
                 created_at: unix_timestamp().as_nanos(),
                 id,
-                file_size: 0,
+                file_size: size,
                 compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
                 key_range,
@@ -216,6 +241,7 @@ mod tests {
         levels.add(fixture_segment(
             "1".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         assert_eq!(
             compactor.choose(&levels, &Config::default()),
@@ -225,6 +251,7 @@ mod tests {
         levels.add(fixture_segment(
             "2".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         assert_eq!(
             compactor.choose(&levels, &Config::default()),
@@ -234,6 +261,7 @@ mod tests {
         levels.add(fixture_segment(
             "3".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         assert_eq!(
             compactor.choose(&levels, &Config::default()),
@@ -243,6 +271,7 @@ mod tests {
         levels.add(fixture_segment(
             "4".into(),
             ("a".as_bytes().into(), "z".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
 
         assert_eq!(
@@ -250,7 +279,7 @@ mod tests {
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
-                target_size: 64 * 1024 * 1024
+                target_size: 128 * 1024 * 1024
             })
         );
 
@@ -272,35 +301,55 @@ mod tests {
         levels.add(fixture_segment(
             "1".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "2".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "3".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "4".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
 
         levels.insert_into_level(
             1,
-            fixture_segment("5".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "5".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("6".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "6".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("7".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
+            fixture_segment(
+                "7".into(),
+                ("y".as_bytes().into(), "z".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("8".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
+            fixture_segment(
+                "8".into(),
+                ("y".as_bytes().into(), "z".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         assert_eq!(
@@ -308,7 +357,7 @@ mod tests {
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
-                target_size: 64 * 1024 * 1024
+                target_size: 128 * 1024 * 1024
             })
         );
 
@@ -324,35 +373,55 @@ mod tests {
         levels.add(fixture_segment(
             "1".into(),
             ("a".as_bytes().into(), "g".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "2".into(),
             ("h".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "3".into(),
-            ("h".as_bytes().into(), "t".as_bytes().into()),
+            ("i".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
         levels.add(fixture_segment(
             "4".into(),
-            ("h".as_bytes().into(), "t".as_bytes().into()),
+            ("j".as_bytes().into(), "t".as_bytes().into()),
+            128 * 1_024 * 1_024,
         ));
 
         levels.insert_into_level(
             1,
-            fixture_segment("5".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "5".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("6".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "6".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("7".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
+            fixture_segment(
+                "7".into(),
+                ("y".as_bytes().into(), "z".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         levels.insert_into_level(
             1,
-            fixture_segment("8".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
+            fixture_segment(
+                "8".into(),
+                ("y".as_bytes().into(), "z".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         assert_eq!(
@@ -360,14 +429,14 @@ mod tests {
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec![
-                    "4".into(),
-                    "3".into(),
-                    "2".into(),
                     "1".into(),
+                    "2".into(),
+                    "3".into(),
+                    "4".into(),
                     "6".into(),
                     "5".into()
                 ],
-                target_size: 64 * 1024 * 1024
+                target_size: 128 * 1024 * 1024
             })
         );
 
@@ -392,24 +461,40 @@ mod tests {
 
         levels.insert_into_level(
             2,
-            fixture_segment("4".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
+            fixture_segment(
+                "4".into(),
+                ("f".as_bytes().into(), "l".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
-            fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "1".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
-            fixture_segment("2".into(), ("h".as_bytes().into(), "t".as_bytes().into())),
+            fixture_segment(
+                "2".into(),
+                ("h".as_bytes().into(), "t".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         levels.insert_into_level(
             1,
-            fixture_segment("3".into(), ("h".as_bytes().into(), "t".as_bytes().into())),
+            fixture_segment(
+                "3".into(),
+                ("h".as_bytes().into(), "t".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         assert_eq!(
@@ -417,7 +502,7 @@ mod tests {
             Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["1".into(), "4".into()],
-                target_size: 64 * 1024 * 1024
+                target_size: 128 * 1024 * 1024
             })
         );
 
@@ -436,36 +521,60 @@ mod tests {
 
         levels.insert_into_level(
             3,
-            fixture_segment("5".into(), ("f".as_bytes().into(), "l".as_bytes().into())),
+            fixture_segment(
+                "5".into(),
+                ("f".as_bytes().into(), "l".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("1".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "1".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("2".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "2".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("3".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "3".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
         assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
-            fixture_segment("4".into(), ("a".as_bytes().into(), "g".as_bytes().into())),
+            fixture_segment(
+                "4".into(),
+                ("a".as_bytes().into(), "g".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         levels.insert_into_level(
             2,
-            fixture_segment("6".into(), ("y".as_bytes().into(), "z".as_bytes().into())),
+            fixture_segment(
+                "6".into(),
+                ("y".as_bytes().into(), "z".as_bytes().into()),
+                128 * 1_024 * 1_024,
+            ),
         );
 
         assert_eq!(
@@ -473,7 +582,7 @@ mod tests {
             Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["1".into(), "5".into()],
-                target_size: 64 * 1024 * 1024
+                target_size: 128 * 1024 * 1024
             })
         );
 

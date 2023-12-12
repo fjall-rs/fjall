@@ -1125,7 +1125,10 @@ impl Tree {
     /// Performs major compaction.
     #[doc(hidden)]
     #[must_use]
-    pub fn do_major_compaction(&self) -> std::thread::JoinHandle<crate::Result<()>> {
+    pub fn do_major_compaction(
+        &self,
+        target_size: u64,
+    ) -> std::thread::JoinHandle<crate::Result<()>> {
         log::info!("Starting major compaction thread");
 
         let config = self.config();
@@ -1137,7 +1140,7 @@ impl Tree {
 
         std::thread::spawn(move || {
             let level_lock = levels.write().expect("lock is poisoned");
-            let compactor = crate::compaction::major::Strategy::default();
+            let compactor = crate::compaction::major::Strategy::new(target_size);
             let choice = compactor.choose(&level_lock, &config);
             drop(level_lock);
 

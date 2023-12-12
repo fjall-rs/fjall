@@ -28,7 +28,9 @@ fn snapshot_basic() -> lsm_tree::Result<()> {
 
     tree.flush()?;
     tree.wait_for_memtable_flush()?;
-    tree.do_major_compaction().join().expect("should join")?;
+    tree.do_major_compaction(u64::MAX)
+        .join()
+        .expect("should join")?;
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert_eq!(ITEM_COUNT, snapshot.len()?);

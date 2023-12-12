@@ -12,7 +12,9 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
     tree.insert("c".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.flush()?;
     tree.wait_for_memtable_flush()?;
-    tree.do_major_compaction().join().expect("should join")?;
+    tree.do_major_compaction(u64::MAX)
+        .join()
+        .expect("should join")?;
 
     let item = tree.get_internal_entry("a", true, None)?.unwrap();
     assert_eq!(item.key, "a".as_bytes().into());
@@ -38,7 +40,9 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
     tree.flush()?;
     tree.wait_for_memtable_flush()?;
 
-    tree.do_major_compaction().join().expect("should join")?;
+    tree.do_major_compaction(u64::MAX)
+        .join()
+        .expect("should join")?;
 
     assert_eq!(0, tree.len()?);
     assert_eq!(0, tree.segment_count());
