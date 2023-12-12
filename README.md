@@ -68,11 +68,11 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 
 ## Stable disk format
 
-Is the disk format stable yet? Not quite, notably missing is:
+Is the disk format stable yet? Not quite, but it will be when:
 
-- Finalize journal format
-- Bloom filters
-- Write a specification
+- Journal format is finalized
+- Disk format is pinned by unit tests to prevent breaking changes
+- Version 1.0.0 is released
 
 ## Future
 
