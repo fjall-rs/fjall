@@ -51,7 +51,7 @@ impl Default for Config {
             path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
             block_cache: Arc::new(BlockCache::with_capacity_blocks(16_384)),
-            max_memtable_size: 64 * 1_024 * 1_024,
+            max_memtable_size: 16 * 1_024 * 1_024,
             level_count: 7,
             level_ratio: 8,
             compaction_strategy: Arc::new(compaction::Levelled::default()),
@@ -124,7 +124,7 @@ impl Config {
         self
     }
 
-    /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
+    /// Sets the size ratio between levels of the LSM tree (a.k.a. fanout, growth rate).
     ///
     /// Defaults to 10.
     ///
@@ -141,7 +141,7 @@ impl Config {
 
     /// Sets the maximum memtable size.
     ///
-    /// Defaults to 64 MiB, like `RocksDB`.
+    /// Defaults to 16 MiB.
     #[must_use]
     pub fn max_memtable_size(mut self, bytes: u32) -> Self {
         self.max_memtable_size = bytes;

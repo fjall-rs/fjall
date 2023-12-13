@@ -1,7 +1,7 @@
 use lsm_tree::Config;
 use test_log::test;
 
-const ITEM_COUNT: usize = 100_000;
+const ITEM_COUNT: usize = 10_000;
 
 #[test]
 fn tree_reload_with_memtable() -> lsm_tree::Result<()> {
