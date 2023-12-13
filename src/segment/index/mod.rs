@@ -10,8 +10,8 @@ use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::value::UserKey;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
+use std::io::{BufReader, Seek};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use top_level::{BlockHandleBlockHandle, TopLevelIndex};
 
@@ -52,6 +52,8 @@ impl BlockHandleBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct BlockIndex {
+    path: PathBuf,
+
     descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment ID
@@ -78,7 +80,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(block_key, block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, block_handle)?;
         Ok(index_block.items.first().cloned())
     }
 
@@ -88,7 +90,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(block_key, block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, block_handle)?;
 
         let next_block = index_block.get_next_block_info(key);
 
@@ -117,7 +119,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(block_key, block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, block_handle)?;
         Ok(index_block.get_lower_bound_block_info(key).cloned())
     }
 
@@ -129,7 +131,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(first_block_key, first_block_handle)?;
+        let index_block = self.load_and_cache_index_block(first_block_key, first_block_handle)?;
 
         let maybe_prev = index_block.get_previous_block_info(key);
 
@@ -143,7 +145,7 @@ impl BlockIndex {
                 return Ok(None);
             };
 
-            let index_block = self.load_index_block(prev_block_key, prev_block_handle)?;
+            let index_block = self.load_and_cache_index_block(prev_block_key, prev_block_handle)?;
 
             Ok(index_block.items.last().cloned())
         }
@@ -157,7 +159,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(first_block_key, first_block_handle)?;
+        let index_block = self.load_and_cache_index_block(first_block_key, first_block_handle)?;
 
         let maybe_next = index_block.get_next_block_info(key);
 
@@ -170,7 +172,7 @@ impl BlockIndex {
                 return Ok(None);
             };
 
-            let index_block = self.load_index_block(next_block_key, next_block_handle)?;
+            let index_block = self.load_and_cache_index_block(next_block_key, next_block_handle)?;
 
             Ok(index_block.items.first().cloned())
         }
@@ -179,7 +181,7 @@ impl BlockIndex {
     /// Returns the first block's key
     pub fn get_first_block_key(&self) -> crate::Result<BlockHandle> {
         let (block_key, block_handle) = self.top_level_index.get_first_block_handle();
-        let index_block = self.load_index_block(block_key, block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, block_handle)?;
 
         Ok(index_block
             .items
@@ -191,7 +193,7 @@ impl BlockIndex {
     /// Returns the last block's key
     pub fn get_last_block_key(&self) -> crate::Result<BlockHandle> {
         let (block_key, block_handle) = self.top_level_index.get_last_block_handle();
-        let index_block = self.load_index_block(block_key, block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, block_handle)?;
 
         Ok(index_block
             .items
@@ -200,8 +202,8 @@ impl BlockIndex {
             .clone())
     }
 
-    /// Load an index block from disk
-    fn load_index_block(
+    /// Loads an index block from disk
+    fn load_and_cache_index_block(
         &self,
         block_key: &UserKey,
         block_handle: &BlockHandleBlockHandle,
@@ -244,7 +246,7 @@ impl BlockIndex {
             return Ok(None);
         };
 
-        let index_block = self.load_index_block(block_key, index_block_handle)?;
+        let index_block = self.load_and_cache_index_block(block_key, index_block_handle)?;
 
         Ok(index_block.get_lower_bound_block_info(key).cloned())
     }
@@ -255,6 +257,7 @@ impl BlockIndex {
         let index_block_index = BlockHandleBlockIndex(block_cache);
 
         Self {
+            path: Path::new(".").to_owned(),
             descriptor_table: Arc::new(
                 FileDescriptorTable::new("Cargo.toml").expect("should open"),
             ),
@@ -262,6 +265,31 @@ impl BlockIndex {
             blocks: index_block_index,
             top_level_index: TopLevelIndex::new(BTreeMap::default()),
         }
+    }
+
+    pub fn preload(&self) -> crate::Result<()> {
+        let mut file_reader = BufReader::new(File::open(self.path.join(BLOCKS_FILE))?);
+
+        for (idx, item) in self.top_level_index.data.iter().enumerate() {
+            let (block_key, block_handle) = item;
+
+            if idx == 0 {
+                file_reader.seek(std::io::SeekFrom::Start(block_handle.offset))?;
+            }
+
+            let block =
+                BlockHandleBlock::from_reader_compressed(&mut file_reader, block_handle.size)?;
+
+            let block = Arc::new(block);
+
+            self.blocks.insert(
+                self.segment_id.clone(),
+                block_key.clone(),
+                Arc::clone(&block),
+            );
+        }
+
+        Ok(())
     }
 
     pub fn from_file<P: AsRef<Path>>(
@@ -291,35 +319,16 @@ impl BlockIndex {
         let file_size = std::fs::metadata(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?.len();
 
         let index = BlockHandleBlock::from_file_compressed(
-            &mut BufReader::new(File::open(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?), // TODO:
+            &mut BufReader::new(File::open(path.as_ref().join(TOP_LEVEL_INDEX_FILE))?),
             0,
             file_size as u32,
         )?;
 
-        /* if !index.check_crc(index.crc)? {
-            return Err(crate::Error::CrcCheck);
-        } */
-
         debug_assert!(!index.items.is_empty());
 
-        Ok(Self::from_items(
-            segment_id,
-            descriptor_table,
-            index.items,
-            block_cache,
-        ))
-    }
-
-    // TODO: use this instead of from_file after writing Segment somehow...
-    pub fn from_items(
-        segment_id: String,
-        descriptor_table: Arc<FileDescriptorTable>,
-        items: Vec<BlockHandle>,
-        block_cache: Arc<BlockCache>,
-    ) -> Self {
         let mut tree = BTreeMap::new();
 
-        for item in items {
+        for item in index.items {
             tree.insert(
                 item.start_key,
                 BlockHandleBlockHandle {
@@ -329,11 +338,27 @@ impl BlockIndex {
             );
         }
 
+        Ok(Self {
+            path: path.as_ref().to_owned(),
+            descriptor_table,
+            segment_id,
+            top_level_index: TopLevelIndex::new(tree),
+            blocks: BlockHandleBlockIndex(block_cache),
+        })
+    }
+
+    /* pub fn from_items(
+        segment_id: String,
+        descriptor_table: Arc<FileDescriptorTable>,
+        items: Vec<BlockHandle>,
+        block_cache: Arc<BlockCache>,
+    ) -> Self {
         Self {
+            path,
             descriptor_table,
             segment_id,
             top_level_index: TopLevelIndex::new(tree),
             blocks: BlockHandleBlockIndex(Arc::clone(&block_cache)),
         }
-    }
+    } */
 }

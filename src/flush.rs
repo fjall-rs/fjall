@@ -6,7 +6,7 @@ use crate::{
     journal::Journal,
     memtable::MemTable,
     segment::{index::BlockIndex, meta::Metadata, writer::Writer, Segment},
-    Tree,
+    BlockCache, Tree,
 };
 use std::{fs::File, path::Path, sync::Arc};
 
@@ -43,22 +43,30 @@ fn flush_worker(
 
     let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
 
+    // NOTE: Don't use global block cache for L0 segments
+    // similar to RocksDB's `pin_l0_filter_and_index_blocks_in_cache`
+    let block_cache = Arc::new(BlockCache::with_capacity_blocks(
+        metadata.block_count as usize + 512,
+        /* NOTE: Give a bit of overhead for index blocks */
+    ));
+
     match BlockIndex::from_file(
         segment_id.into(),
         Arc::clone(&descriptor_table),
         &segment_folder,
-        Arc::clone(&tree.block_cache),
+        Arc::clone(&block_cache),
     )
     .map(Arc::new)
     {
         Ok(block_index) => {
-            log::debug!("Read BlockIndex");
+            log::debug!("Preloading BlockIndex");
+            block_index.preload()?;
 
             let created_segment = Segment {
                 descriptor_table,
-                block_index,
-                block_cache: Arc::clone(&tree.block_cache),
                 metadata,
+                block_index,
+                block_cache,
             };
 
             log::debug!("flush: acquiring levels manifest");
