@@ -43,6 +43,6 @@ env_logger = "0.10.1"
 nanoid = "0.4.0"
 test-log = "0.2.14"
 
-[[bench]]
-name = "lsmt"
-harness = false
+# [[bench]]
+# name = "lsmt"
+# harness = false
