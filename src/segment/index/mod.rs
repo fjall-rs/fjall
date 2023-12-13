@@ -10,8 +10,8 @@ use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::value::UserKey;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, Seek};
-use std::path::{Path, PathBuf};
+use std::io::BufReader;
+use std::path::Path;
 use std::sync::Arc;
 use top_level::{BlockHandleBlockHandle, TopLevelIndex};
 
@@ -41,7 +41,7 @@ impl BlockHandleBlockIndex {
         self.0.insert_block_handle_block(segment_id, key, value);
     }
 
-    pub fn get(&self, segment_id: String, key: &UserKey) -> Option<Arc<BlockHandleBlock>> {
+    pub fn get(&self, segment_id: &str, key: &UserKey) -> Option<Arc<BlockHandleBlock>> {
         self.0.get_block_handle_block(segment_id, key)
     }
 }
@@ -52,8 +52,6 @@ impl BlockHandleBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct BlockIndex {
-    path: PathBuf,
-
     descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment ID
@@ -208,7 +206,7 @@ impl BlockIndex {
         block_key: &UserKey,
         block_handle: &BlockHandleBlockHandle,
     ) -> crate::Result<Arc<DiskBlock<BlockHandle>>> {
-        if let Some(block) = self.blocks.get(self.segment_id.clone(), block_key) {
+        if let Some(block) = self.blocks.get(&self.segment_id, block_key) {
             // Cache hit: Copy from block
 
             Ok(block)
@@ -257,7 +255,7 @@ impl BlockIndex {
         let index_block_index = BlockHandleBlockIndex(block_cache);
 
         Self {
-            path: Path::new(".").to_owned(),
+            // path: Path::new(".").to_owned(),
             descriptor_table: Arc::new(
                 FileDescriptorTable::new("Cargo.toml").expect("should open"),
             ),
@@ -267,30 +265,15 @@ impl BlockIndex {
         }
     }
 
-    pub fn preload(&self) -> crate::Result<()> {
-        let mut file_reader = BufReader::new(File::open(self.path.join(BLOCKS_FILE))?);
-
-        for (idx, item) in self.top_level_index.data.iter().enumerate() {
-            let (block_key, block_handle) = item;
-
-            if idx == 0 {
-                file_reader.seek(std::io::SeekFrom::Start(block_handle.offset))?;
-            }
-
-            let block =
-                BlockHandleBlock::from_reader_compressed(&mut file_reader, block_handle.size)?;
-
-            let block = Arc::new(block);
-
-            self.blocks.insert(
-                self.segment_id.clone(),
-                block_key.clone(),
-                Arc::clone(&block),
-            );
+    /* pub fn preload(&self) -> crate::Result<()> {
+        for (block_key, block_handle) in &self.top_level_index.data {
+            // TODO: this function seeks every time
+            // can probably be optimized
+            self.load_and_cache_index_block(block_key, block_handle)?;
         }
 
         Ok(())
-    }
+    } */
 
     pub fn from_file<P: AsRef<Path>>(
         segment_id: String,
@@ -339,26 +322,10 @@ impl BlockIndex {
         }
 
         Ok(Self {
-            path: path.as_ref().to_owned(),
             descriptor_table,
             segment_id,
             top_level_index: TopLevelIndex::new(tree),
             blocks: BlockHandleBlockIndex(block_cache),
         })
     }
-
-    /* pub fn from_items(
-        segment_id: String,
-        descriptor_table: Arc<FileDescriptorTable>,
-        items: Vec<BlockHandle>,
-        block_cache: Arc<BlockCache>,
-    ) -> Self {
-        Self {
-            path,
-            descriptor_table,
-            segment_id,
-            top_level_index: TopLevelIndex::new(tree),
-            blocks: BlockHandleBlockIndex(Arc::clone(&block_cache)),
-        }
-    } */
 }

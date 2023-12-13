@@ -68,9 +68,10 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 
 ## Stable disk format
 
-Is the disk format stable yet? Not quite, but it will be when:
-
-- Disk format is pinned by unit tests to prevent breaking changes
+Is the disk format stable yet? Not quite, but there aren't any plans
+to change it now, and breaking changes will probably result in a
+major bump. If the disk format is fully pinned by unit tests
+(making it immutable for all 0.xx.x versions), this text will be updated.
 
 ## Future
 

@@ -6,12 +6,38 @@ use crate::{
     },
     value::UserKey,
 };
-use quick_cache::sync::Cache;
+use quick_cache::{sync::Cache, Equivalent};
 use std::sync::Arc;
 
-// Type (disk or index), Segment ID, Block key
-type Key = (u8, String, UserKey);
+const DATA_BLOCK_TAG: u8 = 0;
+const INDEX_BLOCK_TAG: u8 = 1;
+
 type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
+
+// (Type (disk or index), Segment ID, Block key)
+#[derive(Eq, std::hash::Hash, PartialEq)]
+struct CacheKey((u8, String, UserKey));
+
+impl From<(u8, String, UserKey)> for CacheKey {
+    fn from(value: (u8, String, UserKey)) -> Self {
+        Self(value)
+    }
+}
+
+impl std::ops::Deref for CacheKey {
+    type Target = (u8, String, UserKey);
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Equivalent<CacheKey> for (u8, &str, &UserKey) {
+    fn equivalent(&self, key: &CacheKey) -> bool {
+        let inner = &**key;
+        self.0 == inner.0 && self.1 == inner.1 && self.2 == &inner.2
+    }
+}
 
 /// Block cache, in which blocks are cached in-memory
 /// after being retrieved from disk. This speeds up
@@ -37,12 +63,9 @@ type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
 /// # Ok::<(), lsm_tree::Error>(())
 /// ```
 pub struct BlockCache {
-    data: Cache<Key, Item>,
+    data: Cache<CacheKey, Item>,
     capacity: usize,
 }
-
-const DATA_BLOCK_TAG: u8 = 0;
-const INDEX_BLOCK_TAG: u8 = 1;
 
 impl BlockCache {
     /// Creates a new block cache with roughly `n` blocks of capacity
@@ -79,7 +102,7 @@ impl BlockCache {
     ) {
         if self.capacity > 0 {
             self.data
-                .insert((DATA_BLOCK_TAG, segment_id, key), Left(value));
+                .insert((DATA_BLOCK_TAG, segment_id, key).into(), Left(value));
         }
     }
 
@@ -91,26 +114,26 @@ impl BlockCache {
     ) {
         if self.capacity > 0 {
             self.data
-                .insert((INDEX_BLOCK_TAG, segment_id, key), Right(value));
+                .insert((INDEX_BLOCK_TAG, segment_id, key).into(), Right(value));
         }
     }
 
     pub(crate) fn get_disk_block(
         &self,
-        segment_id: String,
+        segment_id: &str,
         key: &UserKey,
     ) -> Option<Arc<ValueBlock>> {
-        let key = (DATA_BLOCK_TAG, segment_id, key.clone());
+        let key = (DATA_BLOCK_TAG, segment_id, key);
         let item = self.data.get(&key)?;
         Some(item.left().clone())
     }
 
     pub(crate) fn get_block_handle_block(
         &self,
-        segment_id: String,
+        segment_id: &str,
         key: &UserKey,
     ) -> Option<Arc<BlockHandleBlock>> {
-        let key = (INDEX_BLOCK_TAG, segment_id, key.clone());
+        let key = (INDEX_BLOCK_TAG, segment_id, key);
         let item = self.data.get(&key)?;
         Some(item.right().clone())
     }

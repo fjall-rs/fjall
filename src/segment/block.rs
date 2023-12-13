@@ -15,9 +15,7 @@ pub fn load_and_cache_by_block_handle(
     block_handle: &BlockHandle,
 ) -> crate::Result<Option<Arc<ValueBlock>>> {
     Ok(
-        if let Some(block) =
-            block_cache.get_disk_block(segment_id.to_string(), &block_handle.start_key)
-        {
+        if let Some(block) = block_cache.get_disk_block(segment_id, &block_handle.start_key) {
             // Cache hit: Copy from block
 
             Some(block)
