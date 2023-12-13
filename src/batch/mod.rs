@@ -17,15 +17,19 @@ impl Batch {
     }
 
     /// Inserts a key-value pair into the batch
-    pub fn insert<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(&mut self, key: K, value: V) {
-        self.data
-            .push(Value::new(key.into(), value.into(), 0, ValueType::Value));
+    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, key: K, value: V) {
+        self.data.push(Value::new(
+            key.as_ref(),
+            value.as_ref(),
+            0,
+            ValueType::Value,
+        ));
     }
 
     /// Adds a tombstone marker for a key
-    pub fn remove<K: Into<Vec<u8>>>(&mut self, key: K) {
+    pub fn remove<K: AsRef<[u8]>>(&mut self, key: K) {
         self.data
-            .push(Value::new(key.into(), vec![], 0, ValueType::Tombstone));
+            .push(Value::new(key.as_ref(), vec![], 0, ValueType::Tombstone));
     }
 
     /// Commits the batch to the LSM-tree atomically.
