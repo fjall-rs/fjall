@@ -643,7 +643,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn iter(&self) -> Range<'_> {
+    #[must_use] pub fn iter(&self) -> Range<'_> {
         self.create_iter(None)
     }
 

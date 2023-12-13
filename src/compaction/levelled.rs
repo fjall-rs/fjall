@@ -128,7 +128,7 @@ impl CompactionStrategy for Strategy {
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
                     dest_level: next_level_index,
-                    target_size: self.target_size as u64,
+                    target_size: u64::from(self.target_size),
                 });
             }
         }
@@ -162,7 +162,7 @@ impl CompactionStrategy for Strategy {
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
                     dest_level: 1,
-                    target_size: self.target_size as u64,
+                    target_size: u64::from(self.target_size),
                 });
             }
         }
