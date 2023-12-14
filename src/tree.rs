@@ -277,6 +277,41 @@ impl Tree {
         Ok(segment_size + active_journal_size)
     }
 
+    /// Approximates the item count of the tree.
+    ///
+    /// This metric is only reliable if the keyspace grows monotonically
+    /// (no updates). Otherwise, the value may become less accurate over time
+    /// and only converge to the real value time as compaction kicks in.
+    ///
+    /// This operation has O(1) complexity and can be used
+    /// without feeling bad about it.
+    pub fn approximate_len(&self) -> crate::Result<u64> {
+        let segment_size = self
+            .levels
+            .read()
+            .expect("lock is poisoned")
+            .get_all_segments()
+            .values()
+            .map(|x| x.metadata.key_count)
+            .sum::<u64>();
+
+        let active_memtable_size = self
+            .active_memtable
+            .read()
+            .expect("lock is poisoned")
+            .items
+            .len() as u64;
+
+        let immutable_memtables_sizes = self
+            .immutable_memtables
+            .read()
+            .iter()
+            .map(|x| x.len() as u64)
+            .sum::<u64>();
+
+        Ok(segment_size + active_memtable_size + immutable_memtables_sizes)
+    }
+
     /// Returns the tree configuration.
     ///
     /// # Examples
