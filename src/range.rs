@@ -55,7 +55,7 @@ impl<'a> RangeIterator<'a> {
             )),
             Bound::Excluded(key) => Bound::Excluded(ParsedInternalKey::new(
                 key.clone(),
-                SeqNo::MAX,
+                0,
                 crate::value::ValueType::Tombstone,
             )),
             Bound::Unbounded => Bound::Unbounded,

@@ -125,7 +125,10 @@ impl std::fmt::Debug for Value {
             "{:?}:{}:{} => {:?}",
             self.key,
             self.seqno,
-            u8::from(self.value_type),
+            match self.value_type {
+                ValueType::Value => "V",
+                ValueType::Tombstone => "T",
+            },
             self.value
         )
     }
