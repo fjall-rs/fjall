@@ -279,8 +279,8 @@ impl Tree {
 
     /// Approximates the item count of the tree.
     ///
-    /// This metric is only reliable if the keyspace grows monotonically
-    /// (no updates). Otherwise, the value may become less accurate over time
+    /// This metric is only reliable for insert-only (no updates, deletes) workloads.
+    /// Otherwise, the value may become less accurate over time
     /// and only converge to the real value time as compaction kicks in.
     ///
     /// This operation has O(1) complexity and can be used
