@@ -95,7 +95,7 @@ How can you help?
 
 - [Ask a question](https://github.com/marvin-j97/lsm-tree/discussions/new?category=q-a)
 - [Post benchmarks and things you created](https://github.com/marvin-j97/lsm-tree/discussions/new?category=show-and-tell)
-- [Open an issue](https://github.com/marvin-j97/lsm-tree/issues) (bug report, weirdness)
+- [Open an issue](https://github.com/marvin-j97/lsm-tree/issues/new) (bug report, weirdness)
 - [Open a PR](https://github.com/marvin-j97/lsm-tree/compare)
 
 All contributions are to be licensed as MIT OR Apache-2.0.
