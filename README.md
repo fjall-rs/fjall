@@ -6,7 +6,9 @@
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
 
-A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
+A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rust.
+
+## Basic usage
 
 ```bash
 cargo add lsm-tree
