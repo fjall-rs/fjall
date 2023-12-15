@@ -74,7 +74,8 @@ impl Config {
     ///
     /// That means in case of a fatal crash (not proper unwind) at most the last `ms` of data may be lost.
     /// Without fsyncing, your data is at the mercy of your operating system's syncing logic.
-    /// If you want to make sure a write is definitely durable call [`Tree::flush`] manually after writing.
+    /// If you want to make sure a write is definitely durable, call [`Tree::flush`] manually after writing.
+    /// Flushing after every write has dramatic performance implications (100x-1000x slower for SSDs).
     /// Even when disabled, the tree will always try to fsync when it is being dropped.
     ///
     /// Defaults to 1 second.
