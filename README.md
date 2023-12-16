@@ -5,8 +5,11 @@
 [![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
+![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
 
-A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs).
+A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rust.
+
+## Basic usage
 
 ```bash
 cargo add lsm-tree
@@ -73,12 +76,6 @@ to change it now, and breaking changes will probably result in a
 major bump. If the disk format is fully pinned by unit tests
 (making it immutable for all 0.xx.x versions), this text will be updated.
 
-## Future
-
-- Bloom filters to avoid expensive disk access for non-existing items
-- Range tombstones / remove_range [2] / remove_prefix
-- WiscKey-like ValueLog for blob storage [3] [4]
-
 ## Examples
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
@@ -95,7 +92,7 @@ How can you help?
 
 - [Ask a question](https://github.com/marvin-j97/lsm-tree/discussions/new?category=q-a)
 - [Post benchmarks and things you created](https://github.com/marvin-j97/lsm-tree/discussions/new?category=show-and-tell)
-- [Open an issue](https://github.com/marvin-j97/lsm-tree/issues) (bug report, weirdness)
+- [Open an issue](https://github.com/marvin-j97/lsm-tree/issues/new) (bug report, weirdness)
 - [Open a PR](https://github.com/marvin-j97/lsm-tree/compare)
 
 All contributions are to be licensed as MIT OR Apache-2.0.
