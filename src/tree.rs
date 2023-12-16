@@ -267,7 +267,8 @@ impl Tree {
             .map(|x| x.metadata.file_size)
             .sum::<u64>();
 
-        // TODO: this sometimes fails because it's not locking the journal (presumably?)
+        let _lock = self.journal.shards.full_lock();
+
         // TODO: replace fs extra with Journal::disk_space
         let active_journal_size = fs_extra::dir::get_size(&self.journal.path)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
