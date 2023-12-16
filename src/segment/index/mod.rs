@@ -37,7 +37,7 @@ impl BlockHandleBlock {
 pub struct BlockHandleBlockIndex(Arc<BlockCache>);
 
 impl BlockHandleBlockIndex {
-    pub fn insert(&self, segment_id: String, key: UserKey, value: Arc<BlockHandleBlock>) {
+    pub fn insert(&self, segment_id: Arc<str>, key: UserKey, value: Arc<BlockHandleBlock>) {
         self.0.insert_block_handle_block(segment_id, key, value);
     }
 
@@ -55,7 +55,7 @@ pub struct BlockIndex {
     descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment ID
-    segment_id: String,
+    segment_id: Arc<str>,
 
     /// Level-0 index ("fence pointers"). Is read-only and always fully loaded.
     ///
@@ -251,7 +251,7 @@ impl BlockIndex {
 
     /// Only used for tests
     #[allow(dead_code, clippy::expect_used)]
-    pub(crate) fn new(segment_id: String, block_cache: Arc<BlockCache>) -> Self {
+    pub(crate) fn new(segment_id: Arc<str>, block_cache: Arc<BlockCache>) -> Self {
         let index_block_index = BlockHandleBlockIndex(block_cache);
 
         Self {
@@ -276,7 +276,7 @@ impl BlockIndex {
     } */
 
     pub fn from_file<P: AsRef<Path>>(
-        segment_id: String,
+        segment_id: Arc<str>,
         descriptor_table: Arc<FileDescriptorTable>,
         path: P,
         block_cache: Arc<BlockCache>,

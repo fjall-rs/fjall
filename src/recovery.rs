@@ -80,12 +80,14 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
         log::trace!("Recovered old journal");
         drop(recovered_journal);
 
-        let segment_id = dirent
+        let segment_id: Arc<str> = dirent
             .file_name()
             .to_str()
             .expect("invalid journal folder name")
-            .to_string();
-        let segment_folder = config.path.join(SEGMENTS_FOLDER).join(&segment_id);
+            .to_string()
+            .into();
+
+        let segment_folder = config.path.join(SEGMENTS_FOLDER).join(&*segment_id);
 
         if !levels.contains_id(&segment_id) {
             // The level manifest does not contain the segment
@@ -127,7 +129,7 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
 pub fn recover_segments<P: AsRef<Path>>(
     folder: P,
     block_cache: &Arc<BlockCache>,
-) -> crate::Result<HashMap<String, Arc<Segment>>> {
+) -> crate::Result<HashMap<Arc<str>, Arc<Segment>>> {
     let folder = folder.as_ref();
 
     // NOTE: First we load the level manifest without any
@@ -148,7 +150,9 @@ pub fn recover_segments<P: AsRef<Path>>(
             .file_name()
             .to_str()
             .expect("invalid segment folder name")
-            .to_owned();
+            .to_owned()
+            .into();
+
         log::debug!("Recovering segment from {}", path.display());
 
         if segment_ids_to_recover.contains(&segment_id) {
@@ -203,7 +207,7 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
         let next_journal_path = config
             .path
             .join(JOURNALS_FOLDER)
-            .join(generate_segment_id());
+            .join(&*generate_segment_id());
         (Journal::create_new(next_journal_path)?, MemTable::default())
     };
 

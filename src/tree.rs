@@ -1,6 +1,5 @@
 use crate::{
     compaction::CompactionStrategy,
-    entry::{OccupiedEntry, VacantEntry},
     file::{JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
     id::generate_segment_id,
     journal::{shard::JournalShard, Journal},
@@ -8,7 +7,6 @@ use crate::{
     memtable::MemTable,
     prefix::Prefix,
     range::{MemTableGuard, Range},
-    stop_signal::StopSignal,
     tree_inner::TreeInner,
     value::{SeqNo, UserData, UserKey, ValueType},
     version::Version,
@@ -16,10 +14,7 @@ use crate::{
 };
 use std::{
     ops::RangeBounds,
-    sync::{
-        atomic::{AtomicU32, AtomicU64},
-        Arc, RwLock, RwLockWriteGuard,
-    },
+    sync::{Arc, RwLock, RwLockWriteGuard},
 };
 use std_semaphore::Semaphore;
 
@@ -144,6 +139,8 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn entry<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<crate::entry::Entry> {
+        use crate::entry::{OccupiedEntry, VacantEntry};
+
         let key = key.as_ref();
         let item = self.get_internal_entry(key, true, None)?;
 
@@ -270,6 +267,7 @@ impl Tree {
             .map(|x| x.metadata.file_size)
             .sum::<u64>();
 
+        // TODO: this sometimes fails because it's not locking the journal (presumably?)
         // TODO: replace fs extra with Journal::disk_space
         let active_journal_size = fs_extra::dir::get_size(&self.journal.path)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
@@ -417,6 +415,8 @@ impl Tree {
     /// - Will return `Err` if an IO error occurs
     /// - Will fail, if the folder already occupied
     fn create_new(config: Config) -> crate::Result<Self> {
+        use std::sync::atomic::{AtomicU32, AtomicU64};
+
         log::info!("Creating LSM-tree at {}", config.path.display());
 
         // Setup folders
@@ -430,7 +430,8 @@ impl Tree {
         let first_journal_path = config
             .path
             .join(JOURNALS_FOLDER)
-            .join(generate_segment_id());
+            .join(&*generate_segment_id());
+
         let levels =
             Levels::create_new(config.level_count, config.path.join(LEVELS_MANIFEST_FILE))?;
 
@@ -451,7 +452,7 @@ impl Tree {
             compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)), // TODO: config
             approx_active_memtable_size: AtomicU32::default(),
             open_snapshots: Arc::new(AtomicU32::new(0)),
-            stop_signal: StopSignal::default(),
+            stop_signal: crate::stop_signal::StopSignal::default(),
         };
 
         #[cfg(not(target_os = "windows"))]

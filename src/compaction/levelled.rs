@@ -123,7 +123,7 @@ impl CompactionStrategy for Strategy {
                     .cloned()
                     .collect();
 
-                segment_ids.extend(overlapping_segment_ids.into_iter().cloned());
+                segment_ids.extend(overlapping_segment_ids);
 
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
@@ -157,7 +157,7 @@ impl CompactionStrategy for Strategy {
                     .cloned()
                     .collect();
 
-                segment_ids.extend(overlapping_segment_ids.into_iter().cloned());
+                segment_ids.extend(overlapping_segment_ids);
 
                 return Choice::DoCompact(CompactionInput {
                     segment_ids,
@@ -189,7 +189,7 @@ mod tests {
     use test_log::test;
 
     #[allow(clippy::expect_used)]
-    fn fixture_segment(id: String, key_range: (UserKey, UserKey), size: u64) -> Arc<Segment> {
+    fn fixture_segment(id: Arc<str>, key_range: (UserKey, UserKey), size: u64) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {

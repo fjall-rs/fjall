@@ -4,16 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 
 #[derive(Serialize, Deserialize)]
-pub struct Level(Vec<String>);
+pub struct Level(Vec<Arc<str>>);
 
 impl Level {
     pub(crate) fn contains_id(&self, id: &str) -> bool {
-        self.0.iter().any(|x| x == id)
+        self.0.iter().any(|x| &**x == id)
     }
 }
 
 impl std::ops::Deref for Level {
-    type Target = Vec<String>;
+    type Target = Vec<Arc<str>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -53,7 +53,7 @@ impl ResolvedLevel {
     pub fn new(
         level: &Level,
         hidden_set: &HiddenSet,
-        segments: &HashMap<String, Arc<Segment>>,
+        segments: &HashMap<Arc<str>, Arc<Segment>>,
     ) -> Self {
         let mut new_level = Vec::new();
 
@@ -71,7 +71,7 @@ impl ResolvedLevel {
         Self(new_level)
     }
 
-    pub fn get_overlapping_segments(&self, start: UserKey, end: UserKey) -> Vec<&String> {
+    pub fn get_overlapping_segments(&self, start: UserKey, end: UserKey) -> Vec<Arc<str>> {
         use std::ops::Bound::Included;
 
         let bounds = (Included(start), Included(end));
@@ -80,6 +80,7 @@ impl ResolvedLevel {
             .iter()
             .filter(|x| Segment::check_key_range_overlap(x, &bounds))
             .map(|x| &x.metadata.id)
+            .cloned()
             .collect()
     }
 }

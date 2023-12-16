@@ -12,6 +12,7 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     path::PathBuf,
+    sync::Arc,
 };
 
 /// Like `Writer` but will rotate to a new segment, once a segment grows larger than `target_size`
@@ -28,7 +29,7 @@ pub struct MultiWriter {
     pub opts: Options,
     created_items: Vec<Metadata>,
 
-    pub current_segment_id: String,
+    pub current_segment_id: Arc<str>,
     pub writer: Writer,
 }
 
@@ -38,7 +39,7 @@ impl MultiWriter {
         let segment_id = generate_segment_id();
 
         let writer = Writer::new(Options {
-            path: opts.path.join(&segment_id),
+            path: opts.path.join(&*segment_id),
             evict_tombstones: opts.evict_tombstones,
             block_size: opts.block_size,
         })?;
@@ -62,7 +63,7 @@ impl MultiWriter {
         let new_segment_id = generate_segment_id();
 
         let new_writer = Writer::new(Options {
-            path: self.opts.path.join(&new_segment_id),
+            path: self.opts.path.join(&*new_segment_id),
             evict_tombstones: self.opts.evict_tombstones,
             block_size: self.opts.block_size,
         })?;
@@ -362,7 +363,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+        let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
@@ -416,7 +417,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+        let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
         assert_eq!(ITEM_COUNT * VERSION_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);

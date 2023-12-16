@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::{Datelike, Timelike};
 use rand::Rng;
 
@@ -23,7 +25,7 @@ fn to_base36(mut x: u32) -> String {
 ///
 /// Like <https://cassandra.apache.org/_/blog/Apache-Cassandra-4.1-New-SSTable-Identifiers.html>
 #[allow(clippy::module_name_repetitions)]
-pub fn generate_segment_id() -> String {
+pub fn generate_segment_id() -> Arc<str> {
     let now = chrono::Utc::now();
 
     let month = now.month();
@@ -46,4 +48,5 @@ pub fn generate_segment_id() -> String {
         to_base36(nano),
         to_base36(random),
     )
+    .into()
 }

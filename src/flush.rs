@@ -38,7 +38,7 @@ fn flush_worker(
     segment_writer.finish()?;
     log::debug!("Finalized segment write");
 
-    let metadata = Metadata::from_writer(segment_id.to_string(), segment_writer)?;
+    let metadata = Metadata::from_writer(segment_id.into(), segment_writer)?;
     metadata.write_to_file()?;
 
     let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
@@ -157,7 +157,7 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .config
         .path
         .join(JOURNALS_FOLDER)
-        .join(generate_segment_id());
+        .join(&*generate_segment_id());
 
     Journal::rotate(new_journal_path, &mut journal_lock)?;
 

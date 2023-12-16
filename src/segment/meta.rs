@@ -10,6 +10,7 @@ use std::{
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ pub struct Metadata {
     pub path: PathBuf,
 
     /// Segment ID
-    pub id: String,
+    pub id: Arc<str>,
 
     /// Creation time as unix timestamp (in µs)
     pub created_at: u128,
@@ -73,7 +74,7 @@ pub struct Metadata {
 
 impl Metadata {
     /// Consumes a writer and its metadata to create the segment metadata
-    pub fn from_writer(id: String, writer: Writer) -> crate::Result<Self> {
+    pub fn from_writer(id: Arc<str>, writer: Writer) -> crate::Result<Self> {
         Ok(Self {
             id,
             version: Version::V0,

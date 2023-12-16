@@ -91,7 +91,7 @@ mod tests {
     use test_log::test;
 
     #[allow(clippy::expect_used)]
-    fn fixture_segment(id: String, created_at: u128) -> Arc<Segment> {
+    fn fixture_segment(id: Arc<str>, created_at: u128) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {

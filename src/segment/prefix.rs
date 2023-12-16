@@ -12,7 +12,7 @@ pub struct PrefixedReader {
     descriptor_table: Arc<FileDescriptorTable>,
     block_index: Arc<BlockIndex>,
     block_cache: Arc<BlockCache>,
-    segment_id: String,
+    segment_id: Arc<str>,
 
     prefix: UserKey,
 
@@ -22,7 +22,7 @@ pub struct PrefixedReader {
 impl PrefixedReader {
     pub fn new<K: Into<UserKey>>(
         descriptor_table: Arc<FileDescriptorTable>,
-        segment_id: String,
+        segment_id: Arc<str>,
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
         prefix: K,
@@ -201,7 +201,7 @@ mod tests {
 
             writer.finish()?;
 
-            let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+            let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
             metadata.write_to_file()?;
 
             let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
@@ -286,7 +286,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+        let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));

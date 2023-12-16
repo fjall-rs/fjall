@@ -16,16 +16,16 @@ type Item = Either<Arc<ValueBlock>, Arc<BlockHandleBlock>>;
 
 // (Type (disk or index), Segment ID, Block key)
 #[derive(Eq, std::hash::Hash, PartialEq)]
-struct CacheKey((u8, String, UserKey));
+struct CacheKey((u8, Arc<str>, UserKey));
 
-impl From<(u8, String, UserKey)> for CacheKey {
-    fn from(value: (u8, String, UserKey)) -> Self {
+impl From<(u8, Arc<str>, UserKey)> for CacheKey {
+    fn from(value: (u8, Arc<str>, UserKey)) -> Self {
         Self(value)
     }
 }
 
 impl std::ops::Deref for CacheKey {
-    type Target = (u8, String, UserKey);
+    type Target = (u8, Arc<str>, UserKey);
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -35,7 +35,7 @@ impl std::ops::Deref for CacheKey {
 impl Equivalent<CacheKey> for (u8, &str, &UserKey) {
     fn equivalent(&self, key: &CacheKey) -> bool {
         let inner = &**key;
-        self.0 == inner.0 && self.1 == inner.1 && self.2 == &inner.2
+        self.0 == inner.0 && self.1 == &*inner.1 && self.2 == &inner.2
     }
 }
 
@@ -96,7 +96,7 @@ impl BlockCache {
     ///
     pub(crate) fn insert_disk_block(
         &self,
-        segment_id: String,
+        segment_id: Arc<str>,
         key: UserKey,
         value: Arc<ValueBlock>,
     ) {
@@ -108,7 +108,7 @@ impl BlockCache {
 
     pub(crate) fn insert_block_handle_block(
         &self,
-        segment_id: String,
+        segment_id: Arc<str>,
         key: UserKey,
         value: Arc<BlockHandleBlock>,
     ) {

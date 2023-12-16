@@ -147,7 +147,7 @@ pub fn do_compaction(
 
     for key in &payload.segment_ids {
         log::trace!("rm -rf segment folder {}", key);
-        std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(key))?;
+        std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(&**key))?;
     }
 
     segments_lock.show_segments(&payload.segment_ids);
@@ -210,7 +210,7 @@ pub fn compaction_worker(
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
-                    std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(key))?;
+                    std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(&**key))?;
                 }
 
                 log::trace!("Deleted {} segments", payload.len());

@@ -17,7 +17,7 @@ use std::{
     sync::Arc,
 };
 
-pub type HiddenSet = HashSet<String>;
+pub type HiddenSet = HashSet<Arc<str>>;
 pub type ResolvedView = Vec<ResolvedLevel>;
 
 /// Represents the levels of a log-structured merge tree.
@@ -29,7 +29,7 @@ pub struct Levels {
     /// RocksDB has 7 by default
     level_count: u8,
 
-    segments: HashMap<String, Arc<Segment>>,
+    segments: HashMap<Arc<str>, Arc<Segment>>,
     levels: Vec<Level>,
 
     /// Set of segment IDs that are masked
@@ -47,7 +47,7 @@ impl Levels {
         self.levels.iter().any(|lvl| lvl.contains_id(id))
     }
 
-    pub(crate) fn list_ids(&self) -> Vec<String> {
+    pub(crate) fn list_ids(&self) -> Vec<Arc<str>> {
         let items = self.levels.iter().map(|f| &**f).cloned();
         items.flatten().collect()
     }
@@ -110,7 +110,7 @@ impl Levels {
 
     pub(crate) fn recover<P: AsRef<Path>>(
         path: P,
-        segments: HashMap<String, Arc<Segment>>,
+        segments: HashMap<Arc<str>, Arc<Segment>>,
     ) -> crate::Result<Self> {
         let level_manifest = fs::read_to_string(&path)?;
         let levels: Vec<_> = serde_json::from_str(&level_manifest).expect("deserialize error");
@@ -162,7 +162,7 @@ impl Levels {
         self.insert_into_level(0, segment);
     }
 
-    pub(crate) fn add_id(&mut self, segment_id: String) {
+    pub(crate) fn add_id(&mut self, segment_id: Arc<str>) {
         self.levels
             .first_mut()
             .expect("should have at least one level")
@@ -197,7 +197,7 @@ impl Levels {
         self.write_segment_history_entry("insert").ok();
     }
 
-    pub(crate) fn remove(&mut self, segment_id: &String) {
+    pub(crate) fn remove(&mut self, segment_id: &Arc<str>) {
         for level in &mut self.levels {
             level.retain(|x| segment_id != x);
         }
@@ -283,7 +283,7 @@ impl Levels {
         output
     }
 
-    pub(crate) fn get_all_segments(&self) -> HashMap<String, Arc<Segment>> {
+    pub(crate) fn get_all_segments(&self) -> HashMap<Arc<str>, Arc<Segment>> {
         let mut output = HashMap::new();
 
         for segment in self.get_all_segments_flattened() {
@@ -293,14 +293,14 @@ impl Levels {
         output
     }
 
-    pub(crate) fn get_segments(&self) -> HashMap<String, Arc<Segment>> {
+    pub(crate) fn get_segments(&self) -> HashMap<Arc<str>, Arc<Segment>> {
         self.get_all_segments()
             .into_iter()
             .filter(|(key, _)| !self.hidden_set.contains(key))
             .collect()
     }
 
-    pub(crate) fn show_segments(&mut self, keys: &[String]) {
+    pub(crate) fn show_segments(&mut self, keys: &[Arc<str>]) {
         for key in keys {
             self.hidden_set.remove(key);
         }
@@ -309,9 +309,9 @@ impl Levels {
         self.write_segment_history_entry("show").ok();
     }
 
-    pub(crate) fn hide_segments(&mut self, keys: &[String]) {
+    pub(crate) fn hide_segments(&mut self, keys: &[Arc<str>]) {
         for key in keys {
-            self.hidden_set.insert(key.to_string());
+            self.hidden_set.insert(key.clone());
         }
 
         #[cfg(feature = "segment_history")]
@@ -331,7 +331,7 @@ mod tests {
     use std::sync::Arc;
 
     #[allow(clippy::expect_used)]
-    fn fixture_segment(id: String, key_range: (UserKey, UserKey)) -> Arc<Segment> {
+    fn fixture_segment(id: Arc<str>, key_range: (UserKey, UserKey)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
 
         Arc::new(Segment {
@@ -367,17 +367,17 @@ mod tests {
         let level = ResolvedLevel(vec![seg0, seg1]);
 
         assert_eq!(
-            Vec::<&str>::new(),
+            Vec::<Arc<str>>::new(),
             level.get_overlapping_segments(b"a".to_vec().into(), b"b".to_vec().into()),
         );
 
         assert_eq!(
-            vec!["1"],
+            vec![Arc::<str>::from("1")],
             level.get_overlapping_segments(b"d".to_vec().into(), b"k".to_vec().into()),
         );
 
         assert_eq!(
-            vec!["1", "2"],
+            vec![Arc::<str>::from("1"), Arc::<str>::from("2")],
             level.get_overlapping_segments(b"f".to_vec().into(), b"x".to_vec().into()),
         );
     }

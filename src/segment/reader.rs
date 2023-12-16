@@ -14,7 +14,7 @@ pub struct Reader {
     descriptor_table: Arc<FileDescriptorTable>,
     block_index: Arc<BlockIndex>,
 
-    segment_id: String,
+    segment_id: Arc<str>,
     block_cache: Arc<BlockCache>,
 
     blocks: HashMap<UserKey, VecDeque<Value>>,
@@ -29,7 +29,7 @@ pub struct Reader {
 impl Reader {
     pub fn new(
         descriptor_table: Arc<FileDescriptorTable>,
-        segment_id: String,
+        segment_id: Arc<str>,
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
         start_offset: Option<&UserKey>,
@@ -296,7 +296,7 @@ mod tests {
 
         writer.finish()?;
 
-        let metadata = Metadata::from_writer(nanoid::nanoid!(), writer)?;
+        let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
         let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));

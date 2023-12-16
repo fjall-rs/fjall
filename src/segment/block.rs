@@ -35,7 +35,7 @@ pub fn load_and_cache_by_block_handle(
             let block = Arc::new(block);
 
             block_cache.insert_disk_block(
-                segment_id.to_string(),
+                segment_id.into(),
                 block_handle.start_key.clone(),
                 Arc::clone(&block),
             );

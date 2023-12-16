@@ -50,7 +50,7 @@ impl Default for Config {
         Self {
             path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
-            block_cache: Arc::new(BlockCache::with_capacity_blocks(16_384)),
+            block_cache: Arc::new(BlockCache::with_capacity_blocks(4_096)),
             max_memtable_size: 16 * 1_024 * 1_024,
             level_count: 7,
             level_ratio: 8,
@@ -165,7 +165,10 @@ impl Config {
 
     /// Sets the block cache.
     ///
-    /// Defaults to a block cache with 64 MiB of capacity.
+    /// You can create a global [`BlockCache`] and share it between multiple
+    /// trees to cap global cache memory usage.
+    ///
+    /// Defaults to a block cache with 16 MiB of capacity *per tree*.
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
