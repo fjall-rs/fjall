@@ -1,11 +1,16 @@
 use super::{Choice, CompactionStrategy};
-use crate::{levels::Levels, Config};
+use crate::{levels::Levels, segment::Segment, Config};
 use std::sync::Arc;
 
-/// FIFO-style compaction
+const L0_SEGMENT_CAP: usize = 24;
+
+/// FIFO-style compaction.
 ///
 /// Limits the tree size to roughly `limit` bytes, deleting the oldest segment(s)
-/// when the threshold is reached
+/// when the threshold is reached.
+///
+/// Will also merge segments if the amount of segments in level 0 grows too much, which
+/// could cause write stalls.
 ///
 /// ###### Caution
 ///
@@ -36,6 +41,37 @@ impl Strategy {
     pub fn new(limit: u64) -> Arc<Self> {
         Arc::new(Self { limit })
     }
+}
+
+/// Choose a run of segments that has the least file size sum
+///
+/// This minimizes the compaction time (+ write amp) for a amount of segments we
+/// want to get rid of
+fn choose_least_effort_compaction(segments: &[Arc<Segment>], n: usize) -> Vec<Arc<str>> {
+    let num_segments = segments.len();
+
+    // Ensure that n is not greater than the number of segments
+    assert!(
+        n <= num_segments,
+        "N must be less than or equal to the number of segments"
+    );
+
+    // Create an iterator over consecutive windows of size N
+    let windows = segments.windows(n);
+
+    // Find the window with the minimum combined file size
+    let (min_window_index, _) = windows
+        .enumerate()
+        .min_by_key(|(_, window)| window.iter().map(|s| s.metadata.file_size).sum::<u64>())
+        .expect("should have at least one window");
+
+    // Return the selected segments
+    let result = segments[min_window_index..min_window_index + n]
+        .iter()
+        .map(|x| x.metadata.id.clone())
+        .collect();
+
+    result
 }
 
 impl CompactionStrategy for Strategy {
@@ -69,6 +105,21 @@ impl CompactionStrategy for Strategy {
             }
 
             Choice::DeleteSegments(ids)
+        } else if first_level.len() > L0_SEGMENT_CAP {
+            // NOTE: +1 because two will merge into one
+            // So if we have 18 segments, and merge two, we'll have 17, not 16
+            let segments_to_merge = first_level.len() - L0_SEGMENT_CAP + 1;
+
+            // Sort the level by creation date
+            first_level.sort_by(|a, b| a.metadata.created_at.cmp(&b.metadata.created_at));
+
+            let segment_ids = choose_least_effort_compaction(&first_level, segments_to_merge);
+
+            Choice::DoCompact(super::Input {
+                dest_level: 0,
+                segment_ids,
+                target_size: u64::MAX,
+            })
         } else {
             Choice::DoNothing
         }
