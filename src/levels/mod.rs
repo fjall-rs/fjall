@@ -57,7 +57,7 @@ impl Levels {
     }
 
     pub(crate) fn create_new<P: AsRef<Path>>(level_count: u8, path: P) -> crate::Result<Self> {
-        assert!(level_count > 1, "level_count should be > 1");
+        assert!(level_count > 0, "level_count should be >= 1");
 
         let levels = (0..level_count)
             .map(|_| Level::default())

@@ -506,17 +506,20 @@ impl Tree {
 
         if memtable_size > self.config.max_memtable_size {
             log::debug!("Memtable reached threshold size");
-            crate::flush::start(self)?;
 
-            // NOTE: We need to calculate minus the amount of flush threads (N)
-            // because otherwise there may be N more segments in the L0
-            while self.first_level_segment_count() > (32 - self.config.flush_threads).into() {
+            while self.first_level_segment_count() > 32 {
                 // NOTE: Spin lock to stall writes
                 // It's not beautiful, but better than
                 // running out of file descriptors and crashing
                 //
                 // TODO: maybe make this configurable
+
+                log::warn!("Write stall!");
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
+
+            log::debug!("Flushing active memtable");
+            crate::flush::start(self)?;
         }
 
         Ok(())
@@ -1193,6 +1196,7 @@ impl Tree {
         let block_cache = Arc::clone(&self.block_cache);
 
         std::thread::spawn(move || {
+            log::debug!("major compaction: acquiring levels manifest write lock");
             let level_lock = levels.write().expect("lock is poisoned");
             let compactor = crate::compaction::major::Strategy::new(target_size);
             let choice = compactor.choose(&level_lock, &config);

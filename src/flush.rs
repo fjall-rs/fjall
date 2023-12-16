@@ -69,16 +69,17 @@ fn flush_worker(
                 block_cache: Arc::clone(&tree.block_cache),
             };
 
-            log::debug!("flush: acquiring levels manifest");
+            log::debug!("flush: acquiring levels manifest write lock");
             let mut levels = tree.levels.write().expect("lock is poisoned");
             levels.add(Arc::new(created_segment));
             levels.write_to_disk()?;
-            drop(levels);
 
             log::debug!("flush: acquiring immu memtables write lock");
             let mut memtable_lock = tree.immutable_memtables.write().expect("lock is poisoned");
             memtable_lock.remove(segment_id);
+
             drop(memtable_lock);
+            drop(levels);
 
             log::debug!(
                 "Deleting old journal folder: {}",

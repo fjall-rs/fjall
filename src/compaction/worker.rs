@@ -39,6 +39,7 @@ pub fn do_compaction(
         payload.dest_level
     );
 
+    log::debug!("compaction worker: acquiring levels manifest write lock");
     let mut segments_lock = levels.write().expect("lock is poisoned");
 
     let merge_iter = {
@@ -63,7 +64,7 @@ pub fn do_compaction(
 
     segments_lock.hide_segments(&payload.segment_ids);
     drop(segments_lock);
-    log::trace!("Freed segment lock");
+    log::trace!("Freed levels manifest lock");
 
     // NOTE: Only evict tombstones when reaching the last level,
     // That way we don't resurrect data beneath the tombstone
@@ -82,7 +83,7 @@ pub fn do_compaction(
         segment_writer.write(item?)?;
 
         if idx % 100_000 == 0 && stop_signal.is_stopped() {
-            log::debug!("compaction thread: stopping amidst compaction because of stop signal");
+            log::debug!("compaction worker: stopping amidst compaction because of stop signal");
             return Ok(());
         }
     }
@@ -117,7 +118,7 @@ pub fn do_compaction(
         })
         .collect::<crate::Result<Vec<_>>>()?;
 
-    log::debug!("compaction: acquiring levels manifest write lock");
+    log::debug!("compaction worker: acquiring levels manifest write lock");
     let mut segments_lock = levels.write().expect("lock is poisoned");
 
     log::debug!(
@@ -127,7 +128,7 @@ pub fn do_compaction(
     );
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::debug!("compaction: acquiring immu memtables write lock");
+    log::debug!("compaction worker: acquiring immu memtables write lock");
     let memtable_lock = immutable_memtables.write().expect("lock is poisoned");
 
     for segment in created_segments {
@@ -154,6 +155,7 @@ pub fn do_compaction(
 
     drop(memtable_lock);
     drop(segments_lock);
+
     log::debug!("Compaction successful");
 
     Ok(())
@@ -196,7 +198,7 @@ pub fn compaction_worker(
             Choice::DeleteSegments(payload) => {
                 // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
                 log::debug!("compaction: acquiring immu memtables write lock");
-                let _memtable_lock = immutable_memtables.write().expect("lock is poisoned");
+                let memtable_lock = immutable_memtables.write().expect("lock is poisoned");
 
                 for key in &payload {
                     log::trace!("Removing segment {}", key);
@@ -207,6 +209,9 @@ pub fn compaction_worker(
                 // Write the segment with the removed segments first
                 // Otherwise the folder is deleted, but the segment is still referenced!
                 segments_lock.write_to_disk()?;
+
+                drop(memtable_lock);
+                drop(segments_lock);
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
@@ -231,7 +236,6 @@ pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Re
     let immutable_memtables = Arc::clone(&tree.immutable_memtables);
     let open_snapshots = Arc::clone(&tree.open_snapshots);
     let block_cache = Arc::clone(&tree.block_cache);
-
     let compaction_semaphore = Arc::clone(&tree.compaction_semaphore);
 
     std::thread::spawn(move || {
