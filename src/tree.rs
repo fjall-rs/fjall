@@ -758,18 +758,14 @@ impl Tree {
         prefix: K,
         seqno: Option<SeqNo>,
     ) -> Prefix<'_> {
-        use std::ops::Bound::{self, Included, Unbounded};
-
         let prefix = prefix.into();
 
         let lock = self.levels.read().expect("lock is poisoned");
 
-        let bounds: (Bound<UserKey>, Bound<UserKey>) = (Included(prefix.clone()), Unbounded);
-
         let segment_info = lock
             .get_all_segments()
             .values()
-            .filter(|x| x.check_key_range_overlap(&bounds))
+            .filter(|x| x.check_prefix_overlap(&prefix))
             .cloned()
             .collect();
 

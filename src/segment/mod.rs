@@ -260,6 +260,11 @@ impl Segment {
         self.metadata.key_range_contains(key)
     }
 
+    /// Returns `true` if the prefix matches any key in the segment's key range.
+    pub(crate) fn check_prefix_overlap(&self, prefix: &[u8]) -> bool {
+        self.metadata.check_prefix_overlap(prefix)
+    }
+
     /// Checks if a key range is (partially or fully) contained in this segment.
     pub(crate) fn check_key_range_overlap(
         &self,
