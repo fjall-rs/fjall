@@ -269,8 +269,7 @@ impl Tree {
 
         let _lock = self.journal.shards.full_lock();
 
-        // TODO: replace fs extra with Journal::disk_space
-        let active_journal_size = fs_extra::dir::get_size(&self.journal.path)
+        let active_journal_size = fs_extra::dir::get_size(self.config().path.join(JOURNALS_FOLDER))
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
 
         Ok(segment_size + active_journal_size)
