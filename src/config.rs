@@ -82,11 +82,11 @@ impl Config {
     ///
     /// # Panics
     ///
-    /// Panics if ms is below 100ms.
+    /// Panics if ms is below 100.
     #[must_use]
     pub fn fsync_ms(mut self, ms: Option<usize>) -> Self {
         if let Some(ms) = ms {
-            assert!(ms > 0);
+            assert!(ms >= 100);
         }
 
         self.fsync_ms = ms;
