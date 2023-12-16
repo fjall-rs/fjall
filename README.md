@@ -75,12 +75,6 @@ to change it now, and breaking changes will probably result in a
 major bump. If the disk format is fully pinned by unit tests
 (making it immutable for all 0.xx.x versions), this text will be updated.
 
-## Future
-
-- Bloom filters to avoid expensive disk access for non-existing items
-- Range tombstones / remove_range [2] / remove_prefix
-- WiscKey-like ValueLog for blob storage [3] [4]
-
 ## Examples
 
 [See here](https://github.com/marvin-j97/lsm-tree/tree/main/examples) for practical examples.
