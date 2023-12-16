@@ -5,6 +5,7 @@
 [![CI](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml/badge.svg)](https://github.com/marvin-j97/lsm-tree/actions/workflows/test.yml)
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
+![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rust.
 
