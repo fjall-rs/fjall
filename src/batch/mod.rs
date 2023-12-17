@@ -1,4 +1,8 @@
-use crate::{value::ValueType, Tree, Value};
+use crate::{
+    value::{UserData, UserKey, ValueType},
+    Tree, Value,
+};
+use std::sync::Arc;
 
 /// An atomic write batch
 pub struct Batch {
@@ -55,7 +59,9 @@ impl Batch {
 
         // NOTE: Add some pointers to better approximate memory usage of memtable
         // Because the data is stored with less overhead than in memory
-        let size = bytes_written_to_disk + (items.len() * std::mem::size_of::<Vec<u8>>() * 2);
+        let size = bytes_written_to_disk
+            + (items.len() * (std::mem::size_of::<UserKey>() + std::mem::size_of::<UserData>()));
+
         let memtable_size = self
             .tree
             .approx_active_memtable_size
