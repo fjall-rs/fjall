@@ -42,6 +42,7 @@ jobs:
             . -> target
             examples/actix-kv -> target
             examples/actix-triplestore -> target
+            examples/structured -> target
       - name: Build
         run: cargo build -v
       - name: Format
