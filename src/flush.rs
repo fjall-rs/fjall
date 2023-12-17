@@ -123,12 +123,13 @@ pub fn start(tree: &Tree) -> crate::Result<std::thread::JoinHandle<crate::Result
         .expect("journal shard should have parent folder")
         .to_path_buf();
 
-    let segment_id = old_journal_folder
+    let segment_id: Arc<str> = old_journal_folder
         .file_name()
         .expect("invalid journal folder name")
         .to_str()
         .expect("invalid journal folder name")
-        .to_string();
+        .to_string()
+        .into();
 
     let old_memtable = std::mem::take(&mut *memtable_lock);
     let old_memtable = Arc::new(old_memtable);

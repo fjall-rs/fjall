@@ -71,7 +71,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(
+    pub fn get<K: AsRef<[u8]>>(
         &self,
         key: K,
         seqno: Option<SeqNo>,

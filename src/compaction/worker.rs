@@ -21,7 +21,7 @@ pub fn do_compaction(
     config: &Config,
     levels: &Arc<RwLock<Levels>>,
     stop_signal: &StopSignal,
-    immutable_memtables: &Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    immutable_memtables: &Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
     open_snapshots: &Arc<AtomicU32>,
     block_cache: &Arc<BlockCache>,
     payload: &crate::compaction::Input,
@@ -166,7 +166,7 @@ pub fn compaction_worker(
     levels: &Arc<RwLock<Levels>>,
     stop_signal: &StopSignal,
     compaction_strategy: &Arc<dyn CompactionStrategy + Send + Sync>,
-    immutable_memtables: &Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    immutable_memtables: &Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
     open_snapshots: &Arc<AtomicU32>,
     block_cache: &Arc<BlockCache>,
 ) -> crate::Result<()> {

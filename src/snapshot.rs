@@ -53,7 +53,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<Option<UserData>> {
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<UserData>> {
         Ok(self
             .tree
             .get_internal_entry(key, true, Some(self.seqno))?
@@ -244,7 +244,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]> + std::hash::Hash>(&self, key: K) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
         self.get(key).map(|x| x.is_some())
     }
 

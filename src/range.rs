@@ -13,7 +13,7 @@ use std::{
 
 pub struct MemTableGuard<'a> {
     pub(crate) active: RwLockReadGuard<'a, MemTable>,
-    pub(crate) immutable: RwLockReadGuard<'a, BTreeMap<String, Arc<MemTable>>>,
+    pub(crate) immutable: RwLockReadGuard<'a, BTreeMap<Arc<str>, Arc<MemTable>>>,
 }
 
 pub struct Range<'a> {

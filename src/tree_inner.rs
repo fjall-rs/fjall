@@ -29,7 +29,7 @@ pub struct TreeInner {
     pub(crate) journal: Arc<Journal>,
 
     /// Memtables that are being flushed
-    pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<String, Arc<MemTable>>>>,
+    pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
 
     /// Tree levels that contain segments
     pub(crate) levels: Arc<RwLock<Levels>>,
