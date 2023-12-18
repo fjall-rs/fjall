@@ -40,9 +40,10 @@ impl Equivalent<CacheKey> for (u8, &str, &UserKey) {
 }
 
 /// Block cache, in which blocks are cached in-memory
-/// after being retrieved from disk. This speeds up
-/// consecutive queries to nearby data, improving read
-/// performance for hot data.
+/// after being retrieved from disk.
+///
+/// This speeds up consecutive queries to nearby data, improving
+/// read performance for hot data.
 ///
 /// # Examples
 ///
@@ -93,7 +94,6 @@ impl BlockCache {
         self.len() == 0
     }
 
-    ///
     pub(crate) fn insert_disk_block(
         &self,
         segment_id: Arc<str>,
