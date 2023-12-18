@@ -8,7 +8,7 @@ for (const exampleName of await readdir(examplesFolder)) {
   const folder = resolve(examplesFolder, exampleName);
 
   {
-    const proc = spawn("cargo build -r", {
+    const proc = spawn("cargo build -v", {
       cwd: folder,
       shell: true,
     });
@@ -30,7 +30,7 @@ for (const exampleName of await readdir(examplesFolder)) {
   }
 
   {
-    const proc = spawn("cargo test -r", {
+    const proc = spawn("cargo test", {
       cwd: folder,
       shell: true,
     });
