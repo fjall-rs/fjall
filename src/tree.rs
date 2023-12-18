@@ -1183,14 +1183,14 @@ impl Tree {
         &self,
         target_size: u64,
     ) -> std::thread::JoinHandle<crate::Result<()>> {
-        log::info!("Starting major compaction thread");
-
         let config = self.config();
         let levels = Arc::clone(&self.levels);
         let stop_signal = self.stop_signal.clone();
         let immutable_memtables = Arc::clone(&self.immutable_memtables);
         let open_snapshots = Arc::clone(&self.open_snapshots);
         let block_cache = Arc::clone(&self.block_cache);
+
+        log::info!("Starting major compaction thread");
 
         std::thread::spawn(move || {
             log::debug!("major compaction: acquiring levels manifest write lock");
