@@ -2,7 +2,6 @@ use crate::{
     value::{UserData, UserKey, ValueType},
     Tree, Value,
 };
-use std::sync::Arc;
 
 /// An atomic write batch
 pub struct Batch {
