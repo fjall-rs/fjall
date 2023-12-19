@@ -39,6 +39,7 @@ impl MultiWriter {
         let segment_id = generate_segment_id();
 
         let writer = Writer::new(Options {
+            partition: opts.partition.clone(),
             path: opts.path.join(&*segment_id),
             evict_tombstones: opts.evict_tombstones,
             block_size: opts.block_size,
@@ -63,6 +64,7 @@ impl MultiWriter {
         let new_segment_id = generate_segment_id();
 
         let new_writer = Writer::new(Options {
+            partition: self.opts.partition.clone(),
             path: self.opts.path.join(&*new_segment_id),
             evict_tombstones: self.opts.evict_tombstones,
             block_size: self.opts.block_size,
@@ -137,6 +139,7 @@ pub struct Writer {
 }
 
 pub struct Options {
+    pub partition: Arc<str>,
     pub path: PathBuf,
     pub evict_tombstones: bool,
     pub block_size: u32,
@@ -343,6 +346,7 @@ mod tests {
         let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
+            partition: "default".into(),
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
@@ -397,6 +401,7 @@ mod tests {
         let folder = tempfile::tempdir()?.into_path();
 
         let mut writer = Writer::new(Options {
+            partition: "default".into(),
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,

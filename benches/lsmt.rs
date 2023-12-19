@@ -61,7 +61,7 @@ fn memtable_point_reads(c: &mut Criterion) {
     }
 
     assert_eq!(tree.len().unwrap() as u32, max);
-    assert_eq!(0, tree.segment_count());
+    assert_eq!(0, tree.get_default_partition().segment_count());
 
     for thread_count in [1_u32, 2, 4 /* , 8*/] {
         group.bench_function(

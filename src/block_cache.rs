@@ -50,9 +50,9 @@ impl Equivalent<CacheKey> for (u8, &str, &UserKey) {
 /// Sharing block cache between multiple trees
 ///
 /// ```
-/// use lsm_tree::{Tree, Config, BlockCache};
-/// use std::sync::Arc;
-///
+/// # use lsm_tree::{Tree, Config, BlockCache};
+/// # use std::sync::Arc;
+/// #
 /// // Provide 10'000 blocks (10'000 * 4 KiB = 40 MB) of cache capacity
 /// let block_cache = Arc::new(BlockCache::with_capacity_blocks(10_000));
 ///

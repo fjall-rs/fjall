@@ -1,9 +1,9 @@
 use crate::{
-    block_cache::BlockCache, journal::Journal, levels::Levels, memtable::MemTable,
-    stop_signal::StopSignal, Config,
+    block_cache::BlockCache, journal::Journal, partition::Partition, stop_signal::StopSignal,
+    Config,
 };
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     sync::{
         atomic::{AtomicU32, AtomicU64},
         Arc, RwLock,
@@ -16,23 +16,13 @@ pub struct TreeInner {
     pub(crate) config: Config,
 
     /// Next sequence number (last sequence number (LSN) + 1)
-    pub(crate) next_lsn: AtomicU64,
-
-    // TODO: move into memtable
-    /// Approximate active memtable size
-    /// If this grows to large, a flush is triggered
-    pub(crate) approx_active_memtable_size: AtomicU32,
-
-    pub(crate) active_memtable: Arc<RwLock<MemTable>>,
+    pub(crate) next_lsn: Arc<AtomicU64>,
 
     /// Journal aka Commit log aka Write-ahead log (WAL)
     pub(crate) journal: Arc<Journal>,
 
-    /// Memtables that are being flushed
-    pub(crate) immutable_memtables: Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
-
-    /// Tree levels that contain segments
-    pub(crate) levels: Arc<RwLock<Levels>>,
+    /// Data partitions
+    pub(crate) partitions: Arc<RwLock<HashMap<Arc<str>, Partition>>>,
 
     /// Concurrent block cache
     pub(crate) block_cache: Arc<BlockCache>,

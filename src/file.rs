@@ -5,6 +5,7 @@ pub const FLUSH_MARKER: &str = ".flush";
 pub const LEVELS_MANIFEST_FILE: &str = "levels.json";
 pub const JOURNALS_FOLDER: &str = "journals";
 
+pub const PARTITIONS_FOLDER: &str = "partitions";
 pub const SEGMENTS_FOLDER: &str = "segments";
 pub const BLOCKS_FILE: &str = "blocks";
 pub const INDEX_BLOCKS_FILE: &str = "index_blocks";

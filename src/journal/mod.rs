@@ -5,8 +5,10 @@ pub mod shard;
 use self::shard::JournalShard;
 use crate::{memtable::MemTable, sharded::Sharded};
 use std::{
+    collections::HashMap,
+    fs::File,
     path::{Path, PathBuf},
-    sync::{RwLock, RwLockWriteGuard},
+    sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
 const SHARD_COUNT: u8 = 4;
@@ -21,18 +23,18 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, MemTable)> {
+    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, HashMap<Arc<str>, MemTable>)> {
         log::info!("Recovering journal from {}", path.as_ref().display());
 
         let path = path.as_ref();
 
-        let memtable = MemTable::default();
+        let mut memtables = HashMap::new();
 
         for idx in 0..SHARD_COUNT {
             let shard_path = get_shard_path(path, idx);
 
             if shard_path.exists() {
-                JournalShard::recover_and_repair(shard_path, &memtable)?;
+                JournalShard::recover_and_repair(shard_path, &mut memtables)?;
                 log::trace!("Recovered journal shard");
             } else {
                 log::trace!("Journal shard file does not exist (yet)");
@@ -47,14 +49,12 @@ impl Journal {
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
-        log::info!("Recovered all journal shards");
-
         Ok((
             Self {
                 shards: Sharded::new(shards),
                 path: path.to_path_buf(),
             },
-            memtable,
+            memtables,
         ))
     }
 
@@ -70,6 +70,13 @@ impl Journal {
 
         for (idx, shard) in shards.iter_mut().enumerate() {
             shard.rotate(path.join(idx.to_string()))?;
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Fsync folder on Unix
+            let folder = File::open(path)?;
+            folder.sync_all()?;
         }
 
         Ok(())
@@ -117,7 +124,7 @@ impl Journal {
 mod tests {
     use super::marker::Marker;
     use super::*;
-    use crate::{serde::Serializable, value::ValueType, Value};
+    use crate::{batch::BatchItem, serde::Serializable, value::ValueType};
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;
@@ -128,19 +135,20 @@ mod tests {
         let shard_path = dir.path().join("0");
 
         let values = [
-            &Value::new(*b"abc", *b"def", 0, ValueType::Value),
-            &Value::new(*b"yxc", *b"ghj", 1, ValueType::Value),
+            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values)?;
+            shard.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
 
         {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
             assert_eq!(memtable.items.len(), values.len());
         }
 
@@ -153,7 +161,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -174,7 +183,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -195,19 +205,21 @@ mod tests {
         let shard_path = dir.path().join("0");
 
         let values = [
-            &Value::new(*b"abc", *b"def", 0, ValueType::Value),
-            &Value::new(*b"yxc", *b"ghj", 1, ValueType::Value),
+            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values)?;
+            shard.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
 
         {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
+
             assert_eq!(memtable.items.len(), values.len());
         }
 
@@ -224,7 +236,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -249,7 +262,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -270,19 +284,21 @@ mod tests {
         let shard_path = dir.path().join("0");
 
         let values = [
-            &Value::new(*b"abc", *b"def", 0, ValueType::Value),
-            &Value::new(*b"yxc", *b"ghj", 1, ValueType::Value),
+            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values)?;
+            shard.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
 
         {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
+
             assert_eq!(memtable.items.len(), values.len());
         }
 
@@ -295,7 +311,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -316,7 +333,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -337,19 +355,21 @@ mod tests {
         let shard_path = dir.path().join("0");
 
         let values = [
-            &Value::new(*b"abc", *b"def", 0, ValueType::Value),
-            &Value::new(*b"yxc", *b"ghj", 1, ValueType::Value),
+            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values)?;
+            shard.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
 
         {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
+
             assert_eq!(memtable.items.len(), values.len());
         }
 
@@ -357,6 +377,7 @@ mod tests {
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::Item {
+                partition: "default".into(),
                 key: "zzz".as_bytes().into(),
                 value: "".as_bytes().into(),
                 value_type: ValueType::Tombstone,
@@ -368,7 +389,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());
@@ -384,6 +406,7 @@ mod tests {
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::Item {
+                partition: "default".into(),
                 key: "zzz".as_bytes().into(),
                 value: "".as_bytes().into(),
                 value_type: ValueType::Tombstone,
@@ -395,7 +418,8 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtable) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir)?;
+            let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
             assert_eq!(memtable.items.len(), values.len());

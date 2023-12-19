@@ -1,7 +1,6 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
 use crate::{levels::Levels, Config};
 
-#[derive(Default)]
 /// Size-tiered compaction strategy (STCS)
 ///
 /// If a level reaches a threshold, it is merged into a larger segment to the next level
@@ -9,49 +8,8 @@ use crate::{levels::Levels, Config};
 /// STCS suffers from high read and temporary space amplification, but decent write amplification
 ///
 /// More info here: <https://opensource.docs.scylladb.com/stable/cql/compaction.html#size-tiered-compaction-strategy-stcs>
-pub struct Strategy {
-    /*  min_threshold: usize,
-    max_threshold: usize, */
-}
-
-impl Strategy {
-    /*  /// Configures a new `SizeTiered` compaction strategy
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use lsm_tree::{Config, compaction::SizeTiered};
-    ///
-    /// let config = Config::default().compaction_strategy(SizeTiered::new(4, 8));
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics, if `min_threshold` is equal to 0 or larger than `max_threshold`
-    #[must_use]
-    pub fn new(min_threshold: usize, max_threshold: usize) -> Arc<Self> {
-        assert!(min_threshold > 0, "SizeTiered::new: invalid thresholds");
-
-        assert!(
-            min_threshold <= max_threshold,
-            "SizeTiered::new: invalid thresholds"
-        );
-
-        Arc::new(Self {
-            min_threshold,
-            max_threshold,
-        })
-    } */
-}
-
-/* impl Default for Strategy {
-    fn default() -> Self {
-        Self {} /* {
-                    min_threshold: 4,
-                    max_threshold: 8,
-                } */
-    }
-} */
+#[derive(Default)]
+pub struct Strategy;
 
 impl CompactionStrategy for Strategy {
     fn choose(&self, levels: &Levels, config: &Config) -> Choice {
@@ -111,6 +69,7 @@ mod tests {
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),
+                partition: "default".into(),
                 version: crate::version::Version::V0,
                 block_count: 0,
                 block_size: 0,
@@ -132,7 +91,7 @@ mod tests {
     #[test]
     fn empty_levels() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy;
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -147,7 +106,7 @@ mod tests {
     #[test]
     fn default_l0() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy;
         let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -177,7 +136,7 @@ mod tests {
     #[test]
     fn more_than_min() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default(/* 2, 8 */);
+        let compactor = Strategy;
         let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -206,7 +165,7 @@ mod tests {
     #[test]
     fn many_segments() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default(/* 2, 2 */);
+        let compactor = Strategy;
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -230,7 +189,7 @@ mod tests {
     #[test]
     fn deeper_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default(/* 2, 4 */);
+        let compactor = Strategy;
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -269,7 +228,7 @@ mod tests {
     #[test]
     fn last_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default(/* 2, 4 */);
+        let compactor = Strategy;
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;

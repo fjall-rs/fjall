@@ -1,12 +1,14 @@
 use super::marker::Marker;
 use crate::{
-    journal::recovery::JournalShardReader, memtable::MemTable, serde::Serializable, value::SeqNo,
-    SerializeError, Value,
+    batch::BatchItem, journal::recovery::JournalShardReader, memtable::MemTable,
+    serde::Serializable, value::SeqNo, SerializeError,
 };
 use std::{
+    collections::HashMap,
     fs::{File, OpenOptions},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 // TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error
@@ -74,7 +76,10 @@ impl JournalShard {
     /// Recovers a journal shard and writes the items into the given memtable
     ///
     /// Will truncate the file to the position of the last valid batch
-    pub fn recover_and_repair<P: AsRef<Path>>(path: P, memtable: &MemTable) -> crate::Result<()> {
+    pub fn recover_and_repair<P: AsRef<Path>>(
+        path: P,
+        memtables: &mut HashMap<Arc<str>, MemTable>,
+    ) -> crate::Result<()> {
         let path = path.as_ref();
         let recoverer = JournalShardReader::new(path)?;
 
@@ -84,7 +89,7 @@ impl JournalShard {
         let mut batch_seqno = SeqNo::default();
         let mut last_valid_pos = 0;
 
-        let mut items = vec![];
+        let mut items: Vec<BatchItem> = vec![];
 
         'a: for item in recoverer {
             let (journal_file_pos, item) = item?;
@@ -142,20 +147,30 @@ impl JournalShard {
                     // but in this case probably not
                     #[allow(clippy::iter_with_drain)]
                     for item in items.drain(..) {
-                        memtable.insert(item);
+                        memtables
+                            .entry(item.partition)
+                            .or_default()
+                            .insert(crate::Value {
+                                key: item.key,
+                                value: item.value,
+                                seqno: batch_seqno,
+                                value_type: item.value_type,
+                            });
                     }
 
                     last_valid_pos = journal_file_pos;
                 }
                 Marker::Item {
+                    partition,
                     key,
                     value,
                     value_type,
                 } => {
                     let item = Marker::Item {
-                        value_type,
+                        partition: partition.clone(),
                         key: key.clone(),
                         value: value.clone(),
+                        value_type,
                     };
                     let mut bytes = Vec::with_capacity(100);
                     item.serialize(&mut bytes)?;
@@ -181,10 +196,10 @@ impl JournalShard {
 
                     batch_counter -= 1;
 
-                    items.push(crate::Value {
+                    items.push(BatchItem {
+                        partition,
                         key,
                         value,
-                        seqno: batch_seqno,
                         value_type,
                     });
                 }
@@ -233,11 +248,11 @@ impl JournalShard {
     }
 
     /// Appends a single item wrapped in a batch to the journal
-    pub(crate) fn write(&mut self, item: &Value) -> crate::Result<usize> {
-        self.write_batch(&[item])
+    pub(crate) fn write(&mut self, item: &BatchItem, seqno: SeqNo) -> crate::Result<usize> {
+        self.write_batch(&[item], seqno)
     }
 
-    pub fn write_batch(&mut self, items: &[&Value]) -> crate::Result<usize> {
+    pub fn write_batch(&mut self, items: &[&BatchItem], seqno: SeqNo) -> crate::Result<usize> {
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
         let item_count = items.len() as u32;
@@ -245,13 +260,14 @@ impl JournalShard {
         let mut hasher = crc32fast::Hasher::new();
         let mut byte_count = 0;
 
-        byte_count += write_start(&mut self.file, item_count, items[0].seqno)?;
+        byte_count += write_start(&mut self.file, item_count, seqno)?;
 
         for item in items {
             let item = Marker::Item {
-                value_type: item.value_type,
+                partition: item.partition.clone(),
                 key: item.key.clone(),
                 value: item.value.clone(),
+                value_type: item.value_type,
             };
             let mut bytes = Vec::new();
             item.serialize(&mut bytes)?;

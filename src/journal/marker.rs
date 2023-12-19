@@ -1,4 +1,5 @@
 use crate::{
+    batch::PartitionKey,
     serde::{Deserializable, DeserializeError, Serializable, SerializeError},
     value::{SeqNo, UserData, UserKey, ValueType},
 };
@@ -27,6 +28,7 @@ pub enum Marker {
         seqno: SeqNo,
     },
     Item {
+        partition: PartitionKey,
         key: UserKey,
         value: UserData,
         value_type: ValueType,
@@ -72,6 +74,7 @@ impl Serializable for Marker {
                 writer.write_u64::<BigEndian>(*seqno)?;
             }
             Item {
+                partition,
                 key,
                 value,
                 value_type,
@@ -79,6 +82,11 @@ impl Serializable for Marker {
                 writer.write_u8(Tag::Item.into())?;
 
                 writer.write_u8(u8::from(*value_type))?;
+
+                // NOTE: Truncation is okay and actually needed
+                #[allow(clippy::cast_possible_truncation)]
+                writer.write_u8(partition.as_bytes().len() as u8)?;
+                writer.write_all(partition.as_bytes())?;
 
                 // NOTE: Truncation is okay and actually needed
                 #[allow(clippy::cast_possible_truncation)]
@@ -110,18 +118,27 @@ impl Deserializable for Marker {
             Tag::Item => {
                 let value_type = reader.read_u8()?.into();
 
+                // Read partition key
+                let partition_len = reader.read_u8()?;
+                let mut partition = vec![0; partition_len.into()];
+                reader.read_exact(&mut partition)?;
+                let partition = std::str::from_utf8(&partition).expect("should be utf-8");
+
+                // Read key
                 let key_len = reader.read_u16::<BigEndian>()?;
                 let mut key = vec![0; key_len.into()];
                 reader.read_exact(&mut key)?;
 
+                // Read value
                 let value_len = reader.read_u16::<BigEndian>()?;
                 let mut value = vec![0; value_len as usize];
                 reader.read_exact(&mut value)?;
 
                 Ok(Self::Item {
-                    value_type,
+                    partition: partition.into(),
                     key: key.into(),
                     value: value.into(),
+                    value_type,
                 })
             }
             Tag::End => {
@@ -140,6 +157,7 @@ mod tests {
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
         let item = Marker::Item {
+            partition: "default".into(),
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
             value_type: ValueType::Value,

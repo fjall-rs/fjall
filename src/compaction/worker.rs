@@ -3,10 +3,11 @@ use crate::{
     block_cache::BlockCache,
     compaction::Choice,
     descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, SEGMENTS_FOLDER},
+    file::{BLOCKS_FILE, PARTITIONS_FOLDER, SEGMENTS_FOLDER},
     levels::Levels,
     memtable::MemTable,
     merge::MergeIterator,
+    partition::Partition,
     segment::{index::BlockIndex, writer::MultiWriter, Segment},
     stop_signal::StopSignal,
     Config, Tree,
@@ -17,6 +18,7 @@ use std::{
     time::Instant,
 };
 
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn do_compaction(
     config: &Config,
     levels: &Arc<RwLock<Levels>>,
@@ -25,6 +27,7 @@ pub fn do_compaction(
     open_snapshots: &Arc<AtomicU32>,
     block_cache: &Arc<BlockCache>,
     payload: &crate::compaction::Input,
+    partition: &Partition,
 ) -> crate::Result<()> {
     if stop_signal.is_stopped() {
         log::debug!("Got stop signal: compaction thread is stopping");
@@ -44,7 +47,7 @@ pub fn do_compaction(
 
     let merge_iter = {
         let to_merge: Vec<Arc<Segment>> = {
-            let segments = segments_lock.get_segments();
+            let segments = segments_lock.get_all_segments();
             payload
                 .segment_ids
                 .iter()
@@ -73,9 +76,14 @@ pub fn do_compaction(
     let mut segment_writer = MultiWriter::new(
         payload.target_size,
         crate::segment::writer::Options {
+            partition: partition.name.clone(),
             block_size: config.block_size,
             evict_tombstones: should_evict_tombstones,
-            path: config.path.join(SEGMENTS_FOLDER),
+            path: config
+                .path
+                .join(PARTITIONS_FOLDER)
+                .join(&*partition.name)
+                .join(SEGMENTS_FOLDER),
         },
     )?;
 
@@ -131,6 +139,12 @@ pub fn do_compaction(
     log::debug!("compaction worker: acquiring immu memtables write lock");
     let memtable_lock = immutable_memtables.write().expect("lock is poisoned");
 
+    let segments_base_folder = config
+        .path
+        .join(PARTITIONS_FOLDER)
+        .join(&*partition.name)
+        .join(SEGMENTS_FOLDER);
+
     for segment in created_segments {
         log::trace!("Persisting segment {}", segment.metadata.id);
         segments_lock.insert_into_level(payload.dest_level, segment.into());
@@ -147,8 +161,10 @@ pub fn do_compaction(
     segments_lock.write_to_disk()?;
 
     for key in &payload.segment_ids {
-        log::trace!("rm -rf segment folder {}", key);
-        std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(&**key))?;
+        let segment_folder = segments_base_folder.join(&**key);
+
+        log::trace!("rm -rf segment folder at {}", segment_folder.display());
+        std::fs::remove_dir_all(segment_folder)?;
     }
 
     segments_lock.show_segments(&payload.segment_ids);
@@ -161,6 +177,7 @@ pub fn do_compaction(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn compaction_worker(
     config: &Config,
     levels: &Arc<RwLock<Levels>>,
@@ -169,6 +186,7 @@ pub fn compaction_worker(
     immutable_memtables: &Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
     open_snapshots: &Arc<AtomicU32>,
     block_cache: &Arc<BlockCache>,
+    partition: &Partition,
 ) -> crate::Result<()> {
     loop {
         log::debug!("compaction: acquiring levels manifest write lock");
@@ -193,6 +211,7 @@ pub fn compaction_worker(
                     open_snapshots,
                     block_cache,
                     &payload,
+                    &partition.clone(),
                 )?;
             }
             Choice::DeleteSegments(payload) => {
@@ -215,7 +234,14 @@ pub fn compaction_worker(
 
                 for key in &payload {
                     log::trace!("rm -rf segment folder {}", key);
-                    std::fs::remove_dir_all(config.path.join(SEGMENTS_FOLDER).join(&**key))?;
+                    std::fs::remove_dir_all(
+                        config
+                            .path
+                            .join(PARTITIONS_FOLDER)
+                            .join(&*partition.name)
+                            .join(SEGMENTS_FOLDER)
+                            .join(&**key),
+                    )?;
                 }
 
                 log::trace!("Deleted {} segments", payload.len());
@@ -228,12 +254,15 @@ pub fn compaction_worker(
     }
 }
 
-pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Result<()>> {
+pub fn start_compaction_thread(
+    tree: &Tree,
+    partition: Partition,
+) -> std::thread::JoinHandle<crate::Result<()>> {
     let config = tree.config();
-    let levels = Arc::clone(&tree.levels);
+    let levels = Arc::clone(&partition.levels);
     let stop_signal = tree.stop_signal.clone();
     let compaction_strategy = Arc::clone(&config.compaction_strategy);
-    let immutable_memtables = Arc::clone(&tree.immutable_memtables);
+    let immutable_memtables = Arc::clone(&partition.immutable_memtables);
     let open_snapshots = Arc::clone(&tree.open_snapshots);
     let block_cache = Arc::clone(&tree.block_cache);
     let compaction_semaphore = Arc::clone(&tree.compaction_semaphore);
@@ -251,6 +280,7 @@ pub fn start_compaction_thread(tree: &Tree) -> std::thread::JoinHandle<crate::Re
             &immutable_memtables,
             &open_snapshots,
             &block_cache,
+            &partition,
         )?;
 
         log::trace!("Post compaction semaphore");

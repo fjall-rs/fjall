@@ -152,6 +152,7 @@ mod tests {
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),
+                partition: "default".into(),
                 version: crate::version::Version::V0,
                 block_count: 0,
                 block_size: 0,

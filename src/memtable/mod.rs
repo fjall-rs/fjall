@@ -1,6 +1,7 @@
 use crate::value::{ParsedInternalKey, SeqNo, UserData, ValueType};
 use crate::Value;
 use crossbeam_skiplist::SkipMap;
+use std::sync::atomic::AtomicU32;
 
 /// The `MemTable` serves as an intermediary storage for new items
 ///
@@ -10,6 +11,10 @@ use crossbeam_skiplist::SkipMap;
 #[derive(Default)]
 pub struct MemTable {
     pub(crate) items: SkipMap<ParsedInternalKey, UserData>,
+
+    /// Approximate active memtable size
+    /// If this grows to large, a flush is triggered
+    pub(crate) approximate_size: AtomicU32,
 }
 
 impl MemTable {
@@ -62,6 +67,17 @@ impl MemTable {
     pub fn insert(&self, entry: Value) {
         let key = ParsedInternalKey::new(entry.key, entry.seqno, entry.value_type);
         self.items.insert(key, entry.value);
+    }
+
+    pub(crate) fn get_lsn(&self) -> SeqNo {
+        self.items
+            .iter()
+            .map(|x| {
+                let key = x.key();
+                key.seqno + 1
+            })
+            .max()
+            .unwrap_or(0)
     }
 }
 

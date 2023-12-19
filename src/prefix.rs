@@ -7,16 +7,16 @@ use crate::{
 };
 use std::sync::Arc;
 
-pub struct Prefix<'a> {
-    guard: MemTableGuard<'a>,
+pub struct Prefix {
+    guard: MemTableGuard,
     prefix: UserKey,
     segments: Vec<Arc<Segment>>,
     seqno: Option<SeqNo>,
 }
 
-impl<'a> Prefix<'a> {
+impl Prefix {
     pub fn new(
-        guard: MemTableGuard<'a>,
+        guard: MemTableGuard,
         prefix: UserKey,
         segments: Vec<Arc<Segment>>,
         seqno: Option<SeqNo>,
@@ -36,7 +36,7 @@ pub struct PrefixIterator<'a> {
 }
 
 impl<'a> PrefixIterator<'a> {
-    fn new(lock: &'a Prefix<'a>, seqno: Option<SeqNo>) -> Self {
+    fn new(lock: &'a Prefix, seqno: Option<SeqNo>) -> Self {
         let mut segment_iters: Vec<BoxedIterator<'a>> = vec![];
 
         for segment in &lock.segments {
@@ -106,7 +106,7 @@ impl<'a> DoubleEndedIterator for PrefixIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a Prefix<'a> {
+impl<'a> IntoIterator for &'a Prefix {
     type IntoIter = PrefixIterator<'a>;
     type Item = <Self::IntoIter as Iterator>::Item;
 

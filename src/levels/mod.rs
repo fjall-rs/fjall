@@ -140,7 +140,7 @@ impl Levels {
     }
 
     pub(crate) fn write_to_disk(&mut self) -> crate::Result<()> {
-        log::trace!("Writing level manifest");
+        log::trace!("Writing level manifest to {}", self.path.display());
 
         // NOTE: Serialization can't fail here
         #[allow(clippy::expect_used)]
@@ -341,6 +341,7 @@ mod tests {
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),
+                partition: "default".into(),
                 version: crate::version::Version::V0,
                 block_count: 0,
                 block_size: 0,

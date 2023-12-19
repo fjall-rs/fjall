@@ -5,27 +5,24 @@ use crate::{
     value::{ParsedInternalKey, SeqNo, UserData, UserKey, ValueType},
     Value,
 };
-use std::{
-    collections::BTreeMap,
-    ops::Bound,
-    sync::{Arc, RwLockReadGuard},
-};
+use guardian::ArcRwLockReadGuardian;
+use std::{collections::BTreeMap, ops::Bound, sync::Arc};
 
-pub struct MemTableGuard<'a> {
-    pub(crate) active: RwLockReadGuard<'a, MemTable>,
-    pub(crate) immutable: RwLockReadGuard<'a, BTreeMap<Arc<str>, Arc<MemTable>>>,
+pub struct MemTableGuard {
+    pub(crate) active: ArcRwLockReadGuardian<MemTable>,
+    pub(crate) immutable: ArcRwLockReadGuardian<BTreeMap<Arc<str>, Arc<MemTable>>>,
 }
 
-pub struct Range<'a> {
-    guard: MemTableGuard<'a>,
+pub struct Range {
+    guard: MemTableGuard,
     bounds: (Bound<UserKey>, Bound<UserKey>),
     segments: Vec<Arc<Segment>>,
     seqno: Option<SeqNo>,
 }
 
-impl<'a> Range<'a> {
+impl Range {
     pub fn new(
-        guard: MemTableGuard<'a>,
+        guard: MemTableGuard,
         bounds: (Bound<UserKey>, Bound<UserKey>),
         segments: Vec<Arc<Segment>>,
         seqno: Option<SeqNo>,
@@ -45,7 +42,7 @@ pub struct RangeIterator<'a> {
 }
 
 impl<'a> RangeIterator<'a> {
-    fn new(lock: &'a Range<'a>, seqno: Option<SeqNo>) -> Self {
+    fn new(lock: &'a Range, seqno: Option<SeqNo>) -> Self {
         let lo = match &lock.bounds.0 {
             // NOTE: See memtable.rs for range explanation
             Bound::Included(key) => Bound::Included(ParsedInternalKey::new(
@@ -146,7 +143,7 @@ impl<'a> DoubleEndedIterator for RangeIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a Range<'a> {
+impl<'a> IntoIterator for &'a Range {
     type IntoIter = RangeIterator<'a>;
     type Item = <Self::IntoIter as Iterator>::Item;
 

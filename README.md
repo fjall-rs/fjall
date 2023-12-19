@@ -20,7 +20,7 @@ use lsm_tree::{Config, Tree};
 
 let folder = "data";
 
-// A tree is a single physical keyspace/index/...
+// A tree is a single physical structure
 // and supports a BTreeMap-like API
 // but all data is persisted to disk.
 let tree = Config::new(folder).open()?;
@@ -49,6 +49,17 @@ for item in &tree.range("a"..="z") {
 for item in tree.prefix("prefix").into_iter().rev() {
   // ...
 }
+
+// Partitions are physically separate keyspaces inside the tree
+// which can be used to create indices or locality groups with atomic semantics
+// across the entire tree.
+//
+// If you know RocksDB: partitions are equivalent to column families.
+let partition = tree.partition("my-partition")?;
+partition.insert("my_key", "my_value_in_another_index");
+
+let item = partition.get("my_key")?;
+assert_eq!(Some("my_value_in_another_index".as_bytes().into()), item);
 ```
 
 ## About

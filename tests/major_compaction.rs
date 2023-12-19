@@ -3,9 +3,10 @@ use test_log::test;
 
 #[test]
 fn tree_major_compaction() -> lsm_tree::Result<()> {
-    let folder = tempfile::tempdir()?.into_path();
+    let folder = tempfile::tempdir()?;
+    let path = folder.path();
 
-    let tree = Config::new(folder.clone()).open()?;
+    let tree = Config::new(path).open()?;
 
     tree.insert("a".as_bytes(), nanoid::nanoid!().as_bytes())?;
     tree.insert("b".as_bytes(), nanoid::nanoid!().as_bytes())?;
@@ -32,7 +33,7 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
     assert_eq!(item.seqno, 2);
 
     assert_eq!(3, tree.len()?);
-    assert_eq!(1, tree.segment_count());
+    assert_eq!(1, tree.get_default_partition().segment_count());
 
     tree.remove("a".as_bytes())?;
     tree.remove("b".as_bytes())?;
@@ -45,7 +46,7 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
         .expect("should join")?;
 
     assert_eq!(0, tree.len()?);
-    assert_eq!(0, tree.segment_count());
+    assert_eq!(0, tree.get_default_partition().segment_count());
 
     Ok(())
 }

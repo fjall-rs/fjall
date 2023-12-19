@@ -1,14 +1,14 @@
 use crate::{
-    compaction::worker::start_compaction_thread,
     descriptor_table::FileDescriptorTable,
     file::{
         BLOCKS_FILE, FLUSH_MARKER, JOURNALS_FOLDER, LEVELS_MANIFEST_FILE, LSM_MARKER,
-        SEGMENTS_FOLDER,
+        PARTITIONS_FOLDER, SEGMENTS_FOLDER,
     },
     id::generate_segment_id,
     journal::Journal,
     levels::Levels,
     memtable::MemTable,
+    partition::Partition,
     segment::{self, Segment},
     stop_signal::StopSignal,
     tree_inner::TreeInner,
@@ -25,11 +25,10 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
-pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal, MemTable)>> {
-    // Load previous levels manifest
-    // Add all flushed segments to it, then recover properly
-    let mut levels = Levels::recover(config.path.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
-
+#[allow(clippy::type_complexity)]
+pub fn recover_active_journal(
+    config: &Config,
+) -> crate::Result<Option<(Journal, HashMap<Arc<str>, MemTable>)>> {
     let mut active_journal = None;
 
     for dirent in std::fs::read_dir(config.path.join(JOURNALS_FOLDER))? {
@@ -47,6 +46,7 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
             continue;
         }
 
+        // If the marker does not exist, it's the active journal
         if !journal_path.join(FLUSH_MARKER).exists() {
             // TODO: handle this
             assert!(active_journal.is_none(), "Second active journal found :(");
@@ -54,8 +54,9 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
             if journal_size < config.max_memtable_size.into() {
                 log::info!("Setting {} as active journal", journal_path.display());
 
-                let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
-                active_journal = Some((recovered_journal, memtable));
+                let (recovered_journal, memtables) = Journal::recover(journal_path.clone())?;
+
+                active_journal = Some((recovered_journal, memtables));
 
                 continue;
             }
@@ -67,56 +68,90 @@ pub fn recover_active_journal(config: &Config) -> crate::Result<Option<(Journal,
 
             // Journal is too large to be continued to be used
             // Just flush it
+        } else {
+            log::info!(
+                "Flushing orphaned journal {} to segment",
+                dirent.path().to_string_lossy()
+            );
         }
-
-        log::info!(
-            "Flushing orphaned journal {} to segment",
-            dirent.path().to_string_lossy()
-        );
 
         // TODO: optimize this
 
-        let (recovered_journal, memtable) = Journal::recover(journal_path.clone())?;
+        let (recovered_journal, mut memtables) = Journal::recover(journal_path.clone())?;
         log::trace!("Recovered old journal");
         drop(recovered_journal);
 
-        let segment_id: Arc<str> = dirent
+        let segment_id = dirent
             .file_name()
             .to_str()
             .expect("invalid journal folder name")
-            .to_string()
-            .into();
+            .to_string();
 
-        let segment_folder = config.path.join(SEGMENTS_FOLDER).join(&*segment_id);
+        for partition_marker_dirent in std::fs::read_dir(dirent.path())? {
+            let partition_marker_dirent = partition_marker_dirent?;
+            let file_name = partition_marker_dirent.file_name();
+            let file_name = file_name.to_string_lossy();
 
-        if !levels.contains_id(&segment_id) {
-            // The level manifest does not contain the segment
-            // If the segment is maybe half written, clean it up here
-            // and then write it
-            if segment_folder.exists() {
-                std::fs::remove_dir_all(&segment_folder)?;
-            }
+            if file_name.starts_with(".pt_") {
+                let partition_name = file_name.to_string().replace(".pt_", "");
 
-            let mut segment_writer = segment::writer::Writer::new(segment::writer::Options {
-                path: segment_folder.clone(),
-                evict_tombstones: false,
-                block_size: config.block_size,
-            })?;
+                let partition_folder = config.path.join(PARTITIONS_FOLDER).join(&partition_name);
 
-            for (key, value) in memtable.items {
-                segment_writer.write(crate::Value::from((key, value)))?;
-            }
+                // Load previous levels manifest
+                // Add all flushed segments to it, then recover properly
+                let mut levels =
+                    Levels::recover(partition_folder.join(LEVELS_MANIFEST_FILE), HashMap::new())?;
 
-            segment_writer.finish()?;
+                let memtable = memtables
+                    .remove(&*partition_name)
+                    .expect("memtable should exist");
 
-            if segment_writer.item_count > 0 {
-                let metadata = segment::meta::Metadata::from_writer(segment_id, segment_writer)?;
-                metadata.write_to_file()?;
+                let segment_folder = partition_folder.join(SEGMENTS_FOLDER).join(&segment_id);
 
-                log::info!("Written segment from orphaned journal: {:?}", metadata.id);
+                if !levels.contains_id(&segment_id) {
+                    // The level manifest does not contain the segment
+                    // If the segment is maybe half written, clean it up here
+                    // and then write it
+                    if segment_folder.exists() {
+                        std::fs::remove_dir_all(&segment_folder)?;
+                    }
 
-                levels.add_id(metadata.id);
-                levels.write_to_disk()?;
+                    let mut segment_writer =
+                        segment::writer::Writer::new(segment::writer::Options {
+                            partition: partition_name.clone().into(),
+                            path: segment_folder.clone(),
+                            evict_tombstones: false,
+                            block_size: config.block_size,
+                        })?;
+
+                    for (key, value) in memtable.items {
+                        segment_writer.write(crate::Value::from((key, value)))?;
+                    }
+
+                    segment_writer.finish()?;
+
+                    if segment_writer.item_count > 0 {
+                        let metadata = segment::meta::Metadata::from_writer(
+                            segment_id.clone().into(),
+                            segment_writer,
+                        )?;
+                        metadata.write_to_file()?;
+
+                        log::info!(
+                            "Written segment {:?} from orphaned journal to partition {partition_name:?}",
+                            metadata.id
+                        );
+
+                        levels.add_id(metadata.id);
+                        levels.write_to_disk()?;
+
+                        log::debug!(
+                            "Deleting partition marker for old journal: {} -> {partition_name}",
+                            journal_path.display()
+                        );
+                        std::fs::remove_file(partition_marker_dirent.path())?;
+                    }
+                }
             }
         }
 
@@ -199,79 +234,110 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
     log::info!("Restoring journal");
     let active_journal = crate::recovery::recover_active_journal(&config)?;
 
-    log::info!("Restoring memtable");
-
-    let (journal, memtable) = if let Some(active_journal) = active_journal {
+    let (journal, memtables) = if let Some(active_journal) = active_journal {
+        log::debug!("Restored {} memtables", active_journal.1.len());
         active_journal
     } else {
         let next_journal_path = config
             .path
             .join(JOURNALS_FOLDER)
             .join(&*generate_segment_id());
-        (Journal::create_new(next_journal_path)?, MemTable::default())
+
+        log::debug!(
+            "No active journal found, creating new one at {}",
+            next_journal_path.display()
+        );
+
+        (Journal::create_new(next_journal_path)?, HashMap::default())
     };
 
-    // TODO: optimize this... do on journal load...
-    let lsn = memtable
-        .items
-        .iter()
-        .map(|x| {
-            let key = x.key();
-            key.seqno + 1
-        })
-        .max()
-        .unwrap_or(0);
-
-    // Load segments
-    log::info!("Restoring segments");
-
     let block_cache = Arc::clone(&config.block_cache);
-
-    let segments = crate::recovery::recover_segments(&config.path, &block_cache)?;
-
-    // Check if a segment has a higher seqno and then take it
-    let lsn = lsn.max(
-        segments
-            .values()
-            .map(|x| x.metadata.seqnos.1 + 1)
-            .max()
-            .unwrap_or(0),
-    );
 
     // Finalize Tree
     log::debug!("Loading level manifest");
 
-    let mut levels = Levels::recover(config.path.join(LEVELS_MANIFEST_FILE), segments)?;
-    levels.sort_levels();
-
     let compaction_threads = 4; // TODO: config
     let flush_threads = config.flush_threads.into();
 
-    // TODO: replace fs extra with Journal::disk_space
+    let journal = Arc::new(journal);
+
+    // TODO: need to track journal size separately from memtables
+    /* // TODO: replace fs extra with Journal::disk_space
     let active_journal_size = fs_extra::dir::get_size(&journal.path)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?;
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "fs_extra error"))?; */
+
+    let next_lsn = memtables.values().map(MemTable::get_lsn).max().unwrap_or(0);
+    let next_lsn = Arc::new(AtomicU64::new(next_lsn));
+
+    let mut partitions = memtables
+        .into_iter()
+        .map(|(name, table)| {
+            Ok((
+                name.clone(),
+                Partition::recover(
+                    config.path.join(PARTITIONS_FOLDER).join(&*name),
+                    name.clone(),
+                    config.clone(),
+                    table,
+                    journal.clone(),
+                    next_lsn.clone(),
+                )?,
+            ))
+        })
+        .collect::<crate::Result<HashMap<_, _>>>()?;
+
+    for entry in std::fs::read_dir(config.path.join(PARTITIONS_FOLDER))? {
+        let partition_name = entry?;
+        let partition_name = partition_name.file_name();
+        let partition_name: Arc<str> = partition_name.to_string_lossy().to_string().into();
+
+        if !partitions.contains_key(&partition_name) {
+            partitions.insert(
+                partition_name.clone(),
+                Partition::recover(
+                    config.path.join(PARTITIONS_FOLDER).join(&*partition_name),
+                    partition_name,
+                    config.clone(),
+                    MemTable::default(),
+                    journal.clone(),
+                    next_lsn.clone(),
+                )?,
+            );
+        }
+    }
+
+    let partition_highest_lsn = partitions
+        .values()
+        .map(Partition::get_lsn)
+        .max()
+        .unwrap_or(0);
+
+    next_lsn.store(
+        next_lsn
+            .load(std::sync::atomic::Ordering::Acquire)
+            .max(partition_highest_lsn),
+        std::sync::atomic::Ordering::Release,
+    );
 
     let inner = TreeInner {
         config,
-        journal: Arc::new(journal),
-        active_memtable: Arc::new(RwLock::new(memtable)),
-        immutable_memtables: Arc::default(),
+        journal,
         block_cache,
-        next_lsn: AtomicU64::new(lsn),
-        levels: Arc::new(RwLock::new(levels)),
+        next_lsn,
+        partitions: Arc::new(RwLock::new(partitions)),
         flush_semaphore: Arc::new(Semaphore::new(flush_threads)),
         compaction_semaphore: Arc::new(Semaphore::new(compaction_threads)),
-        approx_active_memtable_size: AtomicU32::new(active_journal_size as u32),
         open_snapshots: Arc::new(AtomicU32::new(0)),
         stop_signal: StopSignal::default(),
     };
 
     let tree = Tree(Arc::new(inner));
 
-    log::debug!("Starting {compaction_threads} compaction threads");
+    // TODO:
+    /* log::debug!("Starting {compaction_threads} compaction threads");
     for _ in 0..compaction_threads {
         start_compaction_thread(&tree);
-    }
+    } */
 
     log::info!("Tree loaded in {}s", start.elapsed().as_secs_f32());
 
@@ -281,7 +347,7 @@ pub fn recover_tree(config: Config) -> crate::Result<Tree> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file::FLUSH_MARKER;
+    use crate::{file::FLUSH_MARKER, get_default_partition_key};
     use test_log::test;
 
     #[test]
@@ -290,37 +356,86 @@ mod tests {
         let path = folder.path();
 
         {
-            let _ = crate::Config::new(path).open()?;
+            let tree = crate::Config::new(path).open()?;
+            tree.insert("abc", "def")?;
+            tree.flush()?;
         }
 
-        let subfolder = path.join("journals").join("abc");
-        std::fs::create_dir_all(&subfolder)?;
-        assert!(subfolder.exists());
+        let journal_dir = std::fs::read_dir(path.join(JOURNALS_FOLDER))?
+            .next()
+            .expect("should exist")?
+            .path();
 
-        // Write item
-        {
-            let (journal, _) = Journal::recover(&subfolder)?;
-
-            let mut shard = journal.lock_shard();
-            shard.write(&crate::Value {
-                key: "abc".as_bytes().into(),
-                value: "def".as_bytes().into(),
-                seqno: 0,
-                value_type: crate::value::ValueType::Value,
-            })?;
-            shard.flush()?;
-        }
-
-        let marker = std::fs::File::create(subfolder.join(FLUSH_MARKER))?;
+        let marker = std::fs::File::create(journal_dir.join(FLUSH_MARKER))?;
         marker.sync_all()?;
-        assert!(subfolder.join(FLUSH_MARKER).exists());
+
+        let marker = std::fs::File::create(
+            journal_dir.join(format!(".pt_{}", get_default_partition_key())),
+        )?;
+        marker.sync_all()?;
+
+        assert!(journal_dir.join(FLUSH_MARKER).exists());
+        assert!(journal_dir
+            .join(format!(".pt_{}", get_default_partition_key()))
+            .exists());
 
         {
             let tree = crate::Config::new(path).open()?;
-            assert!(tree.contains_key("abc")?);
+            assert!(tree.get("abc")?.is_some());
         }
 
-        assert!(!subfolder.exists());
+        assert!(!journal_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tree_flush_with_partition_on_recover() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let path = folder.path();
+
+        {
+            let tree = crate::Config::new(path).open()?;
+            tree.insert("abc", "def")?;
+            tree.partition("another_one")?.insert("abc", "xyz")?;
+            tree.flush()?;
+        }
+
+        let journal_dir = std::fs::read_dir(path.join(JOURNALS_FOLDER))?
+            .next()
+            .expect("should exist")?
+            .path();
+
+        let marker = std::fs::File::create(journal_dir.join(FLUSH_MARKER))?;
+        marker.sync_all()?;
+
+        let marker = std::fs::File::create(
+            journal_dir.join(format!(".pt_{}", get_default_partition_key())),
+        )?;
+        marker.sync_all()?;
+
+        let marker = std::fs::File::create(journal_dir.join(".pt_another_one"))?;
+        marker.sync_all()?;
+
+        assert!(journal_dir.join(FLUSH_MARKER).exists());
+        assert!(journal_dir
+            .join(format!(".pt_{}", get_default_partition_key()))
+            .exists());
+
+        {
+            let tree = crate::Config::new(path).open()?;
+            assert_eq!(Some("def".as_bytes().into()), tree.get("abc")?);
+        }
+
+        {
+            let tree = crate::Config::new(path).open()?;
+            assert_eq!(
+                Some("xyz".as_bytes().into()),
+                tree.partition("another_one")?.get("abc")?
+            );
+        }
+
+        assert!(!journal_dir.exists());
 
         Ok(())
     }

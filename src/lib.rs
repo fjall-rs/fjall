@@ -53,6 +53,17 @@
 //! for item in tree.prefix("prefix").into_iter().rev() {
 //!   // ...
 //! }
+//!
+//! // Partitions are physically separate keyspaces inside the tree
+//! // which can be used to create indices or locality groups with atomic semantics
+//! // across the entire tree.
+//! //
+//! // If you know RocksDB: partitions are equivalent to column families.
+//! let partition = tree.partition("my-partition")?;
+//! partition.insert("my_key", "my_value_in_another_index");
+//!
+//! let item = partition.get("my_key")?;
+//! assert_eq!(Some("my_value_in_another_index".as_bytes().into()), item);
 //! #
 //! # Ok::<(), lsm_tree::Error>(())
 //! ```
@@ -73,7 +84,6 @@ mod config;
 mod descriptor_table;
 mod disk_block;
 mod either;
-mod entry;
 mod error;
 mod file;
 mod flush;
@@ -82,6 +92,7 @@ mod journal;
 mod levels;
 mod memtable;
 mod merge;
+mod partition;
 mod prefix;
 mod range;
 mod recovery;
@@ -96,6 +107,19 @@ mod tree_inner;
 mod value;
 mod version;
 
+use std::sync::{Arc, OnceLock};
+
+/// Name of the default partition
+pub const DEFAULT_PARTITION_KEY: &str = "default";
+
+static DEFAULT_PARTITION_ARC: OnceLock<Arc<str>> = OnceLock::new();
+
+pub(crate) fn get_default_partition_key() -> Arc<str> {
+    DEFAULT_PARTITION_ARC
+        .get_or_init(|| Arc::from(DEFAULT_PARTITION_KEY))
+        .clone()
+}
+
 #[doc(hidden)]
 pub use value::Value;
 
@@ -104,9 +128,9 @@ pub use {
     batch::Batch,
     block_cache::BlockCache,
     config::Config,
-    entry::Entry,
     error::{Error, Result},
     journal::shard::RecoveryError as JournalRecoveryError,
-    snapshot::Snapshot,
+    partition::Partition,
+    snapshot::{PartitionSnapshot, Snapshot},
     tree::Tree,
 };

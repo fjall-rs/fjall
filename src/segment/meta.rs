@@ -34,6 +34,9 @@ pub struct Metadata {
     /// Segment ID
     pub id: Arc<str>,
 
+    /// Partition
+    pub partition: Arc<str>,
+
     /// Creation time as unix timestamp (in µs)
     pub created_at: u128,
 
@@ -77,6 +80,7 @@ impl Metadata {
     pub fn from_writer(id: Arc<str>, writer: Writer) -> crate::Result<Self> {
         Ok(Self {
             id,
+            partition: writer.opts.partition,
             version: Version::V0,
             path: writer.opts.path,
             block_count: writer.block_count as u32,
@@ -164,6 +168,7 @@ mod tests {
     fn fixture_meta(key_range: (UserKey, UserKey)) -> Metadata {
         Metadata {
             path: ".".into(),
+            partition: "default".into(),
             version: crate::version::Version::V0,
             block_count: 0,
             block_size: 0,
