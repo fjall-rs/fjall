@@ -1,0 +1,47 @@
+[package]
+name = "lsm-tree"
+description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
+version = "0.3.0"
+repository = "https://github.com/marvin-j97/fjall"
+include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+categories.homepage = true
+
+[lib]
+name = "lsm_tree"
+path = "src/lib.rs"
+
+[features]
+default = []
+segment_history = []
+
+[dependencies]
+byteorder = "1.5.0"
+chrono = "0.4.31"
+crc32fast = "1.3.2"
+crossbeam-skiplist = "0.1.1"
+fs_extra = "1.3.0"
+guardian = "1.1.0"
+log = "0.4.20"
+lz4_flex = "0.11.1"
+min-max-heap = "1.3.0"
+quick_cache = { version = "0.4.0", default-features = false, features = [] }
+rand = "0.8.5"
+serde = { version = "1.0.193", features = ["derive", "rc"] }
+serde_json = "1.0.108"
+std-semaphore = "0.1.0"
+tempfile = "3.8.1"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+nanoid = "0.4.0"
+test-log = "0.2.14"
+
+# [[bench]]
+# name = "lsmt"
+# harness = false

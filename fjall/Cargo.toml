@@ -1,0 +1,32 @@
+[package]
+name = "fjall"
+description = "LSM-based key-value storage engine"
+version = "0.1.0"
+repository = "https://github.com/marvin-j97/fjall"
+include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+categories.homepage = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "fjall"
+path = "src/lib.rs"
+
+[dependencies]
+byteorder = "1.5.0"
+env_logger = "0.10.1"
+# TODO: use cargo version when published
+lsm-tree = { path = "../lsm-tree" }
+log = "0.4.20"
+tempfile = "3.8.1"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+nanoid = "0.4.0"
+test-log = "0.2.14"
