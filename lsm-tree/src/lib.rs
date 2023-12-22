@@ -5,7 +5,7 @@
 //! > This crate only provides the primitives for an LSM-tree.
 //! > You probably want to use <https://crates.io/crates/fjall> instead.
 //! > For example, it does not ship with a write-ahead log, so writes are not
-//! > persisted until manually calling `flush`.
+//! > persisted until manually flushing the memtable.
 //!
 //! ##### About
 //!
