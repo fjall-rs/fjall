@@ -493,7 +493,6 @@ impl Tree {
         self.create_range::<UserKey, _>(.., seqno)
     }
 
-    #[allow(clippy::iter_not_returning_iterator)]
     /// Returns an iterator that scans through the entire tree.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
@@ -517,6 +516,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[allow(clippy::iter_not_returning_iterator)]
     #[must_use]
     pub fn iter(&self) -> Range {
         self.create_iter(None)
