@@ -19,7 +19,7 @@ It is not:
 
 - a standalone server
 - a relational database
-- a wide-column database, it has no notions of columns
+- a wide-column database - it has no notion of columns
 
 ## Basic usage
 
