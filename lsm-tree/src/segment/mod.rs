@@ -27,18 +27,18 @@ use std::{ops::Bound, path::Path, sync::Arc};
 ///
 /// Segments can be merged together to remove duplicates, reducing disk space and improving read performance.
 pub struct Segment {
-    pub descriptor_table: Arc<FileDescriptorTable>,
+    pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment metadata object (will be stored in a JSON file)
-    pub metadata: meta::Metadata,
+    pub(crate) metadata: meta::Metadata,
 
     /// Translates key (first item of a block) to block offset (address inside file) and (compressed) size
-    pub block_index: Arc<BlockIndex>,
+    pub(crate) block_index: Arc<BlockIndex>,
 
     /// Block cache
     ///
     /// Stores index and data blocks
-    pub block_cache: Arc<BlockCache>,
+    pub(crate) block_cache: Arc<BlockCache>,
 }
 
 impl Segment {
@@ -246,7 +246,7 @@ impl Segment {
     }
 
     /// Returns the highest sequence number in the segment.
-    pub fn lsn(&self) -> SeqNo {
+    pub fn get_lsn(&self) -> SeqNo {
         self.metadata.seqnos.1
     }
 

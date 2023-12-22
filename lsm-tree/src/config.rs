@@ -16,6 +16,7 @@ pub struct Config {
     /// Block size of data and index blocks
     pub block_size: u32,
 
+    // TODO: 0.3.0 maybe remove from config, move into ConfigBuilder, make Config serde
     /// Block cache
     pub block_cache: Arc<BlockCache>,
 

@@ -59,22 +59,32 @@ impl MemTable {
         None
     }
 
+    /// Count the amount of items in the memtable
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Returns `true` if the memtable is empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Inserts an item into the memtable
     pub fn insert(&self, item: Value) {
         let key = ParsedInternalKey::new(item.key, item.seqno, item.value_type);
         self.items.insert(key, item.value);
     }
 
-    /// Returns the highest seqno in the memtable + 1
-    pub fn get_next_seqno(&self) -> SeqNo {
+    /// Returns the highest sequence number in the memtable
+    pub fn get_lsn(&self) -> Option<SeqNo> {
         self.items
             .iter()
             .map(|x| {
                 let key = x.key();
-                key.seqno + 1
+                key.seqno
             })
             .max()
-            .unwrap_or_default()
     }
 }
 

@@ -1,5 +1,5 @@
 use super::marker::Marker;
-use crate::serde::Deserializable;
+use lsm_tree::{serde::Deserializable, DeserializeError};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
@@ -53,7 +53,7 @@ impl Iterator for JournalShardReader {
                 Some(Ok((self.last_valid_pos, abc)))
             }
             Err(e) => match e {
-                crate::serde::DeserializeError::Io(e) => match e.kind() {
+                DeserializeError::Io(e) => match e.kind() {
                     std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
                         let stream_pos = self
                             .reader
@@ -68,7 +68,7 @@ impl Iterator for JournalShardReader {
                     }
                     _ => Some(Err(crate::Error::Io(e))),
                 },
-                crate::serde::DeserializeError::InvalidTag(_) => {
+                DeserializeError::InvalidTag(_) => {
                     let stream_pos = self
                         .reader
                         .stream_position()

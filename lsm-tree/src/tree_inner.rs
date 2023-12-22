@@ -7,20 +7,20 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub type ImmutableMemtables = BTreeMap<Arc<str>, Arc<MemTable>>;
+pub type SealedMemtables = BTreeMap<Arc<str>, Arc<MemTable>>;
 
 pub struct TreeInner {
     /// Active memtable that is being written to
     pub(crate) active_memtable: Arc<RwLock<MemTable>>,
 
     /// Frozen memtables that are being flushed
-    pub(crate) immutable_memtables: Arc<RwLock<ImmutableMemtables>>,
+    pub(crate) sealed_memtables: Arc<RwLock<SealedMemtables>>,
 
     /// Levels manifest
     pub(crate) levels: Arc<RwLock<Levels>>,
 
     /// Tree configuration
-    pub(crate) config: Config,
+    pub config: Config,
 
     /// Keeps track of open snapshots
     pub(crate) open_snapshots: SnapshotCounter,
@@ -38,7 +38,7 @@ impl TreeInner {
         Ok(Self {
             config,
             active_memtable: Arc::default(),
-            immutable_memtables: Arc::default(),
+            sealed_memtables: Arc::default(),
             levels: Arc::new(RwLock::new(levels)),
             open_snapshots: SnapshotCounter::default(),
             stop_signal: StopSignal::default(),

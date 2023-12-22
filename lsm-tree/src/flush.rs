@@ -8,6 +8,7 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 
 /// Flush options
+#[doc(hidden)]
 pub struct Options {
     /// MemTable to flush
     pub memtable: Arc<MemTable>,
@@ -28,7 +29,8 @@ pub struct Options {
 }
 
 /// Flushes a memtable, creating a segment in the given folder
-pub(crate) fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
+#[doc(hidden)]
+pub fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
     let segment_folder = opts.folder.join(&*opts.segment_id);
     log::debug!("Flushing segment to {}", segment_folder.display());
 

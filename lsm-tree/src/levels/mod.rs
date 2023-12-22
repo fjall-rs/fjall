@@ -252,7 +252,7 @@ impl Levels {
     /// hiding all segments that currently are being compacted
     #[must_use]
     pub fn resolved_view(&self) -> ResolvedView {
-        let mut output = Vec::new();
+        let mut output = Vec::with_capacity(self.len());
 
         for raw_level in &self.levels {
             output.push(ResolvedLevel::new(

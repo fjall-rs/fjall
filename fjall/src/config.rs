@@ -49,7 +49,10 @@ impl Config {
         self
     }
 
-    /// Max size of all journals in MiB
+    /// Max size of all journals in MiB.
+    ///
+    /// Note: This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
+    /// anything less will immediately stall the system.
     ///
     /// Default = 128 MiB
     #[must_use]

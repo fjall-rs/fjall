@@ -74,7 +74,7 @@ impl<'a> MergeIterator<'a> {
 
     pub fn from_segments(segments: &[Arc<Segment>]) -> Box<MergeIterator<'a>> {
         let mut iter_vec: Vec<Box<dyn DoubleEndedIterator<Item = crate::Result<Value>>>> =
-            Vec::new();
+            Vec::with_capacity(segments.len());
 
         for segment in segments {
             let iter = Box::new(segment.iter());

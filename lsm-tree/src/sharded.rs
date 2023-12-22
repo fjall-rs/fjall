@@ -1,6 +1,6 @@
-use std::sync::{PoisonError, RwLock, RwLockWriteGuard};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
-type Shard<T> = RwLock<T>;
+type Shard<T> = Mutex<T>;
 
 /// Defines a sharded structure
 ///
@@ -26,10 +26,10 @@ impl<T> Sharded<T> {
     }
 
     /// Gives write access to a shard
-    pub fn write_one(&self) -> RwLockWriteGuard<'_, T> {
+    pub fn lock_one(&self) -> MutexGuard<'_, T> {
         loop {
             for shard in &self.shards {
-                if let Ok(shard) = shard.try_write() {
+                if let Ok(shard) = shard.try_lock() {
                     return shard;
                 }
             }
@@ -37,9 +37,7 @@ impl<T> Sharded<T> {
     }
 
     /// Gives exclusive control over the entire structure
-    pub fn full_lock(
-        &self,
-    ) -> Result<Vec<RwLockWriteGuard<'_, T>>, PoisonError<RwLockWriteGuard<'_, T>>> {
-        self.shards.iter().map(|shard| shard.write()).collect()
+    pub fn full_lock(&self) -> Result<Vec<MutexGuard<'_, T>>, PoisonError<MutexGuard<'_, T>>> {
+        self.shards.iter().map(|shard| shard.lock()).collect()
     }
 }

@@ -12,7 +12,7 @@
 //! // Each partition is its own logical keyspace
 //! // however modifications may cross partition boundaries
 //! // and keep atomic semantics
-//! let items = keyspace.open_partition("default")?;
+//! let items = keyspace.open_partition("my_items")?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -63,10 +63,13 @@
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
 
+mod batch;
 mod config;
 mod error;
 mod file;
-// mod journal;
+mod flush;
+mod journal;
+mod journal_manager;
 mod keyspace;
 mod partition;
 mod sharded;

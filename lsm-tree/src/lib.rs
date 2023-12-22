@@ -99,7 +99,10 @@ mod disk_block;
 mod either;
 mod error;
 mod file;
-mod flush;
+
+#[doc(hidden)]
+pub mod flush;
+
 mod id;
 mod levels;
 mod memtable;
@@ -113,7 +116,10 @@ pub mod range;
 
 mod segment;
 mod seqno;
-mod serde;
+
+#[doc(hidden)]
+pub mod serde;
+
 mod sharded;
 mod snapshot;
 mod stop_signal;
@@ -127,7 +133,10 @@ pub use {
     block_cache::BlockCache,
     config::Config,
     error::{Error, Result},
+    flush::flush_to_segment,
+    id::generate_segment_id,
     memtable::MemTable,
+    segment::Segment,
     seqno::SequenceNumberCounter,
     serde::{DeserializeError, SerializeError},
     snapshot::Snapshot,

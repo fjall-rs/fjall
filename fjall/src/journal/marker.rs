@@ -1,9 +1,9 @@
-use crate::{
-    batch::PartitionKey,
-    serde::{Deserializable, DeserializeError, Serializable, SerializeError},
-    value::{SeqNo, UserKey, UserValue, ValueType},
-};
+use crate::batch::PartitionKey;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use lsm_tree::{
+    serde::{Deserializable, Serializable},
+    DeserializeError, SeqNo, SerializeError, UserKey, UserValue, ValueType,
+};
 use std::io::{Read, Write};
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.

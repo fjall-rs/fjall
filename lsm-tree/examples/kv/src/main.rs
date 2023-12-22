@@ -30,9 +30,7 @@ impl KvStore {
             start.elapsed().as_secs_f32()
         );
 
-        let seqno = SequenceNumberCounter::new(
-            memtable.get_next_seqno(), // TODO: 0.3.0 Need Tree::get_next_seqno, which is based on MemTable & segments
-        );
+        let seqno = SequenceNumberCounter::new(memtable.get_lsn().unwrap_or_default());
 
         tree.set_active_memtable(memtable);
 

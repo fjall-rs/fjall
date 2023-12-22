@@ -25,8 +25,8 @@ pub struct Options {
     /// Levels manifest.
     pub levels: Arc<RwLock<Levels>>,
 
-    /// Immutable memtables (required for temporarily locking).
-    pub immutable_memtables: Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
+    /// sealed memtables (required for temporarily locking).
+    pub sealed_memtables: Arc<RwLock<BTreeMap<Arc<str>, Arc<MemTable>>>>,
 
     /// Snapshot counter (required for checking if there are open snapshots).
     pub open_snapshots: SnapshotCounter,
@@ -168,8 +168,8 @@ fn merge_segments(
     let mut levels = opts.levels.write().expect("lock is poisoned");
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::debug!("compactor: acquiring immu memtables write lock");
-    let memtable = opts.immutable_memtables.write().expect("lock is poisoned");
+    log::debug!("compactor: acquiring sealed memtables write lock");
+    let memtable = opts.sealed_memtables.write().expect("lock is poisoned");
 
     let segments_base_folder = opts.config.path.join(SEGMENTS_FOLDER);
 
@@ -213,8 +213,8 @@ fn drop_segments(
     log::debug!("compactor: Chosen {} segments to drop", segment_ids.len(),);
 
     // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::debug!("compaction: acquiring immu memtables write lock");
-    let memtable_lock = opts.immutable_memtables.write().expect("lock is poisoned");
+    log::debug!("compaction: acquiring sealed memtables write lock");
+    let memtable_lock = opts.sealed_memtables.write().expect("lock is poisoned");
 
     for key in segment_ids {
         log::trace!("Removing segment {}", key);

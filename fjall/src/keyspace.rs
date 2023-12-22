@@ -1,30 +1,46 @@
 use crate::{
     config::Config,
     file::{FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER},
-    //_journal::Journal,
+    flush::manager::FlushManager,
+    journal::Journal,
+    journal_manager::JournalManager,
+    partition::PartitionHandleInner,
     version::Version,
     PartitionHandle,
 };
-use lsm_tree::{SequenceNumberCounter, Tree as LsmTree};
+use lsm_tree::{generate_segment_id, SequenceNumberCounter, Tree as LsmTree};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
+use std_semaphore::Semaphore;
 
 type Partitions = HashMap<Arc<str>, LsmTree>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
-    // pub(crate) journal: Journal,
+    pub(crate) journal: Arc<Journal>,
     pub(crate) config: Config,
     pub(crate) seqno: SequenceNumberCounter,
+    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+    pub(crate) flush_semaphore: Arc<Semaphore>,
+}
+
+impl Drop for KeyspaceInner {
+    fn drop(&mut self) {
+        log::trace!("Dropping Keyspace, trying to flush journal");
+
+        if let Err(e) = self.journal.flush() {
+            log::error!("Flush error on drop: {e:?}");
+        }
+    }
 }
 
 /// The keyspace houses multiple partitions (column families).
 #[derive(Clone)]
 #[doc(alias = "database")]
-#[doc(alias = "table")]
 #[doc(alias = "collection")]
 pub struct Keyspace(pub(crate) Arc<KeyspaceInner>);
 
@@ -52,8 +68,7 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn persist(&self) -> crate::Result<()> {
-        // TODO:
-        Ok(())
+        self.journal.flush()
     }
 
     /// Opens a keyspace in the given directory.
@@ -116,29 +131,53 @@ impl Keyspace {
             // TODO: split open_partition and create_partition
             // TODO: open_partition will have a Runtime config, create will have a disk-backed, immutable PartitionConfig
 
-            let tree_next_seqno = tree.get_next_seqno();
+            let tree_next_seqno = tree.get_lsn().unwrap_or_default();
             self.seqno
                 .fetch_max(tree_next_seqno, std::sync::atomic::Ordering::AcqRel);
 
             tree
         };
 
-        Ok(PartitionHandle {
+        Ok(PartitionHandle(Arc::new(PartitionHandleInner {
+            name: name.into(),
             keyspace: self.clone(),
             tree,
-        })
+        })))
     }
 
     /// Recovers existing keyspace from directory
     fn recover(config: Config) -> crate::Result<Self> {
+        todo!()
+        /* /* let (journal, _) = Journal::recover(
+            config
+                .path
+                .join(JOURNALS_FOLDER)
+                .join(&*generate_segment_id()),
+        )?; */
+
+        let active_journal_path = config
+            .path
+            .join(JOURNALS_FOLDER)
+            .join(&*generate_segment_id());
+
+        //  TODO:
+        let journal = Journal::create_new(active_journal_path)?;
+        let journal = Arc::new(journal);
+
         let inner = KeyspaceInner {
-            //  journal: Journal::recover(config.path.join(JOURNALS_FOLDER).join("active")),
-            partitions: Arc::default(),
             config,
+            journal,
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
             seqno: SequenceNumberCounter::default(),
+            flush_manager: Arc::default(),
+            journal_manager: Arc::new(RwLock::new(JournalManager::new(
+                journal,
+                active_journal_path,
+            ))),
+            flush_semaphore: Arc::new(Semaphore::new(0)),
         };
 
-        Ok(Self(Arc::new(inner)))
+        Ok(Self(Arc::new(inner))) */
     }
 
     /// Lists all partitions
@@ -169,16 +208,25 @@ impl Keyspace {
         std::fs::create_dir_all(path.join(JOURNALS_FOLDER))?;
         std::fs::create_dir_all(path.join(PARTITIONS_FOLDER))?;
 
+        let active_journal_path = path.join(JOURNALS_FOLDER).join(&*generate_segment_id());
+        let journal = Journal::create_new(&active_journal_path)?;
+        let journal = Arc::new(journal);
+
         let inner = KeyspaceInner {
-            //  journal: Journal::create_new(path.join(JOURNALS_FOLDER).join("active")),
-            partitions: Arc::default(),
             config,
+            journal: journal.clone(),
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
             seqno: SequenceNumberCounter::default(),
+            flush_manager: Arc::default(),
+            journal_manager: Arc::new(RwLock::new(JournalManager::new(
+                journal,
+                active_journal_path,
+            ))),
+            flush_semaphore: Arc::new(Semaphore::new(0)),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
-        // -> the DB is fully initialized
-
+        // -> the keyspace is fully initialized
         let mut file = std::fs::File::create(marker_path)?;
         Version::V0.write_file_header(&mut file)?;
         file.sync_all()?;
@@ -197,6 +245,13 @@ impl Keyspace {
             folder.sync_all()?;
         }
 
-        Ok(Self(Arc::new(inner)))
+        let keyspace = Self(Arc::new(inner));
+        keyspace.spawn_flush_worker();
+
+        Ok(keyspace)
+    }
+
+    fn spawn_flush_worker(&self) {
+        crate::flush::worker::start(self.clone(), self.flush_semaphore.clone());
     }
 }

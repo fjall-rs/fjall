@@ -47,7 +47,7 @@ impl<'a> PrefixIterator<'a> {
 
         let mut iters: Vec<BoxedIterator<'a>> = vec![Box::new(MergeIterator::new(segment_iters))];
 
-        for (_, memtable) in lock.guard.immutable.iter() {
+        for (_, memtable) in lock.guard.sealed.iter() {
             iters.push(Box::new(
                 memtable
                     .items

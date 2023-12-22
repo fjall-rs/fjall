@@ -1,12 +1,10 @@
-use super::marker::Marker;
-use crate::{
-    _journal::recovery::JournalShardReader, batch::BatchItem, memtable::MemTable,
-    serde::Serializable, value::SeqNo, SerializeError,
-};
+use super::{marker::Marker, writer::JournalWriter};
+use crate::batch::Item as BatchItem;
+use crate::journal::recovery::JournalShardReader;
+use lsm_tree::{serde::Serializable, MemTable, SeqNo};
 use std::{
     collections::HashMap,
-    fs::{File, OpenOptions},
-    io::{BufWriter, Write},
+    fs::OpenOptions,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -30,46 +28,29 @@ pub enum RecoveryError {
 
 pub struct JournalShard {
     pub(crate) path: PathBuf,
-    file: BufWriter<File>,
-}
-
-/// Writes a batch start marker to the journal
-fn write_start(
-    writer: &mut BufWriter<File>,
-    item_count: u32,
-    seqno: SeqNo,
-) -> Result<usize, SerializeError> {
-    let mut bytes = Vec::new();
-    Marker::Start { item_count, seqno }.serialize(&mut bytes)?;
-
-    writer.write_all(&bytes)?;
-    Ok(bytes.len())
-}
-
-/// Writes a batch end marker to the journal
-fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeError> {
-    let mut bytes = Vec::new();
-    Marker::End(crc).serialize(&mut bytes)?;
-
-    writer.write_all(&bytes)?;
-    Ok(bytes.len())
+    pub(crate) writer: JournalWriter,
+    pub(crate) should_sync: bool,
 }
 
 impl JournalShard {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
-        let file = File::create(&path)?;
-        self.file = BufWriter::new(file);
-        self.path = path.as_ref().to_path_buf();
-        Ok(())
+        self.should_sync = false;
+        self.writer.rotate(path)
     }
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let path = path.as_ref();
-        let file = File::create(path)?;
-
         Ok(Self {
-            file: BufWriter::new(file),
-            path: path.to_path_buf(),
+            path: path.as_ref().to_path_buf(),
+            writer: JournalWriter::create_new(path)?,
+            should_sync: bool::default(),
+        })
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+        Ok(Self {
+            path: path.as_ref().to_path_buf(),
+            writer: JournalWriter::from_file(path)?,
+            should_sync: bool::default(),
         })
     }
 
@@ -150,7 +131,7 @@ impl JournalShard {
                         memtables
                             .entry(item.partition)
                             .or_default()
-                            .insert(crate::Value {
+                            .insert(lsm_tree::Value {
                                 key: item.key,
                                 value: item.value,
                                 seqno: batch_seqno,
@@ -217,70 +198,5 @@ impl JournalShard {
         }
 
         Ok(())
-    }
-
-    pub fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let path = path.as_ref();
-
-        if !path.exists() {
-            return Ok(Self {
-                file: BufWriter::new(
-                    std::fs::OpenOptions::new()
-                        .create_new(true)
-                        .append(true)
-                        .open(path)?,
-                ),
-                path: path.to_path_buf(),
-            });
-        }
-
-        Ok(Self {
-            file: BufWriter::new(std::fs::OpenOptions::new().append(true).open(path)?),
-            path: path.to_path_buf(),
-        })
-    }
-
-    /// Flushes the journal file
-    pub(crate) fn flush(&mut self) -> crate::Result<()> {
-        self.file.flush()?;
-        self.file.get_mut().sync_all()?;
-        Ok(())
-    }
-
-    /// Appends a single item wrapped in a batch to the journal
-    pub(crate) fn write(&mut self, item: &BatchItem, seqno: SeqNo) -> crate::Result<usize> {
-        self.write_batch(&[item], seqno)
-    }
-
-    pub fn write_batch(&mut self, items: &[&BatchItem], seqno: SeqNo) -> crate::Result<usize> {
-        // NOTE: entries.len() is surely never > u32::MAX
-        #[allow(clippy::cast_possible_truncation)]
-        let item_count = items.len() as u32;
-
-        let mut hasher = crc32fast::Hasher::new();
-        let mut byte_count = 0;
-
-        byte_count += write_start(&mut self.file, item_count, seqno)?;
-
-        for item in items {
-            let item = Marker::Item {
-                partition: item.partition.clone(),
-                key: item.key.clone(),
-                value: item.value.clone(),
-                value_type: item.value_type,
-            };
-            let mut bytes = Vec::new();
-            item.serialize(&mut bytes)?;
-
-            self.file.write_all(&bytes)?;
-
-            hasher.update(&bytes);
-            byte_count += bytes.len();
-        }
-
-        let crc = hasher.finalize();
-        byte_count += write_end(&mut self.file, crc)?;
-
-        Ok(byte_count)
     }
 }

@@ -14,7 +14,7 @@ use crate::{
     segment::Segment,
     snapshot::SnapshotCounter,
     stop_signal::StopSignal,
-    tree_inner::{ImmutableMemtables, TreeInner},
+    tree_inner::{SealedMemtables, TreeInner},
     version::Version,
     BlockCache, Config, SeqNo, Snapshot, UserKey, UserValue, Value, ValueType,
 };
@@ -78,7 +78,7 @@ impl Tree {
 
         do_compaction(&CompactionOptions {
             config: self.config.clone(),
-            immutable_memtables: self.immutable_memtables.clone(),
+            sealed_memtables: self.sealed_memtables.clone(),
             levels: self.levels.clone(),
             open_snapshots: self.open_snapshots.clone(),
             stop_signal: self.stop_signal.clone(),
@@ -137,6 +137,24 @@ impl Tree {
         Snapshot::new(self.clone(), seqno)
     }
 
+    /// Atomically registers flushed disk segments into the tree, removing their associated sealed memtables
+    pub fn register_segments(&self, segments: &[Arc<Segment>]) -> crate::Result<()> {
+        log::debug!("flush: acquiring levels manifest write lock");
+        let mut levels = self.levels.write().expect("lock is poisoned");
+        for segment in segments {
+            levels.add(segment.clone());
+        }
+        levels.write_to_disk()?;
+
+        log::debug!("flush: acquiring sealed memtables write lock");
+        let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
+        for segment in segments {
+            memtable_lock.remove(&segment.metadata.id);
+        }
+
+        Ok(())
+    }
+
     /// Flushes the active memtable to a disk segment, returning a thread that may be awaited.
     ///
     /// The function may not return a thread, if, during concurrent workloads, the memtable
@@ -150,59 +168,29 @@ impl Tree {
     pub fn flush_active_memtable(&self) -> Option<std::thread::JoinHandle<crate::Result<PathBuf>>> {
         log::debug!("flush: flushing active memtable");
 
-        let segment_id = generate_segment_id();
-        let segment_folder = self.config.path.join(SEGMENTS_FOLDER);
+        let (segment_id, yanked_memtable) = self.rotate_memtable()?;
 
-        log::debug!("flush: acquiring active memtable write lock");
-        let mut active_memtable = self.lock_active_memtable();
-
-        if active_memtable.items.is_empty() {
-            return None;
-        }
-
-        log::debug!("flush: acquiring immu memtables write lock");
-        let mut immutable_memtables = self.lock_immutable_memtables();
-
-        let yanked_memtable = std::mem::take(&mut *active_memtable);
-        let yanked_memtable = Arc::new(yanked_memtable);
-        immutable_memtables.insert(segment_id.clone(), yanked_memtable.clone());
-
-        drop(immutable_memtables);
-        drop(active_memtable);
-
-        let config = self.config.clone();
-        let levels = self.levels.clone();
-        let immutable_memtables = self.immutable_memtables.clone();
+        let tree = self.clone();
 
         Some(std::thread::spawn(move || {
+            let segment_folder = tree.config.path.join(SEGMENTS_FOLDER);
             log::debug!("flush: writing segment to {}", segment_folder.display());
+
             let segment = flush_to_segment(FlushOptions {
                 memtable: yanked_memtable,
-                block_cache: config.block_cache.clone(),
-                block_size: config.block_size,
+                block_cache: tree.config.block_cache.clone(),
+                block_size: tree.config.block_size,
                 folder: segment_folder,
                 segment_id: segment_id.clone(),
             })?;
+            let segment = Arc::new(segment);
             let result_path = segment.metadata.path.clone();
 
-            // TODO: 0.3.0 need a way to set a marker... here...
-
-            // Once we have written the segment, we need to add it to the level manifest...
-            log::debug!("flush: acquiring levels manifest write lock");
-            let mut levels = levels.write().expect("lock is poisoned");
-            levels.add(Arc::new(segment));
-            levels.write_to_disk()?;
-
-            // ...and remove it from the immutable memtables
-            log::debug!("flush: acquiring immu memtables write lock");
-            let mut memtable_lock = immutable_memtables.write().expect("lock is poisoned");
-            memtable_lock.remove(&segment_id);
-
-            drop(memtable_lock);
-            drop(levels);
+            // Once we have written the segment, we need to add it to the level manifest
+            // and remove it from the sealed memtables
+            tree.register_segments(&[segment])?;
 
             log::debug!("flush: thread done");
-
             Ok(result_path)
         }))
     }
@@ -245,13 +233,35 @@ impl Tree {
     }
 
     /// Write-locks the active memtable for exclusive access
-    pub fn lock_active_memtable(&self) -> RwLockWriteGuard<'_, MemTable> {
+    fn lock_active_memtable(&self) -> RwLockWriteGuard<'_, MemTable> {
         self.active_memtable.write().expect("lock is poisoned")
     }
 
-    /// Write-locks the immutable memtables for exclusive access
-    pub fn lock_immutable_memtables(&self) -> RwLockWriteGuard<'_, ImmutableMemtables> {
-        self.immutable_memtables.write().expect("lock is poisoned")
+    /// Write-locks the sealed memtables for exclusive access
+    fn lock_sealed_memtables(&self) -> RwLockWriteGuard<'_, SealedMemtables> {
+        self.sealed_memtables.write().expect("lock is poisoned")
+    }
+
+    /// Seals the active memtable, and returns a reference to it
+    #[must_use]
+    pub fn rotate_memtable(&self) -> Option<(Arc<str>, Arc<MemTable>)> {
+        log::debug!("rotate: acquiring active memtable write lock");
+        let mut active_memtable: RwLockWriteGuard<'_, MemTable> = self.lock_active_memtable();
+
+        if active_memtable.items.is_empty() {
+            return None;
+        }
+
+        log::debug!("rotate: acquiring sealed memtables write lock");
+        let mut sealed_memtables = self.lock_sealed_memtables();
+
+        let yanked_memtable = std::mem::take(&mut *active_memtable);
+        let yanked_memtable = Arc::new(yanked_memtable);
+
+        let tmp_memtable_id = generate_segment_id();
+        sealed_memtables.insert(tmp_memtable_id.clone(), yanked_memtable.clone());
+
+        Some((tmp_memtable_id, yanked_memtable))
     }
 
     /// Sets the active memtable.
@@ -263,11 +273,17 @@ impl Tree {
         *memtable_lock = memtable;
     }
 
-    /// Sets the immutable memtables.
+    /// Free a sealed memtable
+    pub fn free_sealed_memtable(&self, id: &Arc<str>) {
+        let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
+        memtable_lock.remove(id);
+    }
+
+    /// Sets the sealed memtables.
     ///
     /// May be used to restore the LSM-tree's in-memory state from some journals.
-    pub fn set_immutable_memtables(&self, memtables: ImmutableMemtables) {
-        let mut memtable_lock = self.immutable_memtables.write().expect("lock is poisoned");
+    pub fn set_sealed_memtables(&self, memtables: SealedMemtables) {
+        let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
         *memtable_lock = memtables;
     }
 
@@ -355,8 +371,8 @@ impl Tree {
         };
         drop(memtable_lock);
 
-        // Now look in immutable memtables
-        let memtable_lock = self.immutable_memtables.read().expect("lock is poisoned");
+        // Now look in sealed memtables
+        let memtable_lock = self.sealed_memtables.read().expect("lock is poisoned");
         for (_, memtable) in memtable_lock.iter().rev() {
             if let Some(item) = memtable.get(&key, seqno) {
                 if evict_tombstone {
@@ -556,7 +572,7 @@ impl Tree {
             crate::range::MemTableGuard {
                 active: guardian::ArcRwLockReadGuardian::take(self.active_memtable.clone())
                     .expect("lock is poisoned"),
-                immutable: guardian::ArcRwLockReadGuardian::take(self.immutable_memtables.clone())
+                sealed: guardian::ArcRwLockReadGuardian::take(self.sealed_memtables.clone())
                     .expect("lock is poisoned"),
             },
             bounds,
@@ -612,7 +628,7 @@ impl Tree {
             MemTableGuard {
                 active: guardian::ArcRwLockReadGuardian::take(self.active_memtable.clone())
                     .expect("lock is poisoned"),
-                immutable: guardian::ArcRwLockReadGuardian::take(self.immutable_memtables.clone())
+                sealed: guardian::ArcRwLockReadGuardian::take(self.sealed_memtables.clone())
                     .expect("lock is poisoned"),
             },
             prefix,
@@ -738,7 +754,7 @@ impl Tree {
 
         let inner = TreeInner {
             active_memtable: Arc::default(),
-            immutable_memtables: Arc::default(),
+            sealed_memtables: Arc::default(),
             levels: Arc::new(RwLock::new(levels)),
             open_snapshots: SnapshotCounter::default(),
             stop_signal: StopSignal::default(),
@@ -782,25 +798,32 @@ impl Tree {
         Ok(Self(Arc::new(inner)))
     }
 
-    /// Returns the highest seqno in the tree + 1
-    pub fn get_next_seqno(&self) -> SeqNo {
-        let memtable_next_seqno = self
-            .active_memtable
-            .read()
-            .expect("lock is poisoned")
-            .get_next_seqno();
-
-        let segment_seqnos = self
-            .levels
+    /// Returns the highest sequence number that is flushed to disk
+    pub fn get_segment_lsn(&self) -> Option<SeqNo> {
+        self.levels
             .read()
             .expect("lock is poisoned")
             .get_all_segments_flattened()
             .iter()
-            .map(|seg| seg.metadata.seqnos.1)
+            .map(|s| s.get_lsn())
             .max()
-            .unwrap_or_default();
+    }
 
-        memtable_next_seqno.max(segment_seqnos)
+    /// Returns the highest sequence number
+    pub fn get_lsn(&self) -> Option<SeqNo> {
+        let memtable_lsn = self
+            .active_memtable
+            .read()
+            .expect("lock is poisoned")
+            .get_lsn();
+
+        let segment_lsn = self.get_segment_lsn();
+
+        match (memtable_lsn, segment_lsn) {
+            (Some(x), Some(y)) => Some(x.max(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        }
     }
 
     /// Recovers the level manifest, loading all segments from disk.

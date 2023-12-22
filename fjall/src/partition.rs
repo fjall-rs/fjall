@@ -1,17 +1,37 @@
-use crate::Keyspace;
+use crate::{flush::manager::Task as FlushTask, journal_manager::PartitionSeqno, Keyspace};
 use lsm_tree::{prefix::Prefix, range::Range, Tree as LsmTree, UserKey, UserValue};
-use std::ops::RangeBounds;
+use std::{ops::RangeBounds, path::PathBuf, sync::Arc, time::Duration};
 
-/// Access to a keyspace partition.
 #[allow(clippy::module_name_repetitions)]
-pub struct PartitionHandle {
+pub struct PartitionHandleInner {
+    /// Partition name
+    pub name: Arc<str>,
+
     pub(crate) keyspace: Keyspace,
 
-    /// TEMP
+    /// TEMP pub
     pub tree: LsmTree, // TODO: not pub
 }
 
+/// Access to a keyspace partition.partition
+#[derive(Clone)]
+#[allow(clippy::module_name_repetitions)]
+pub struct PartitionHandle(pub(crate) Arc<PartitionHandleInner>);
+
+impl std::ops::Deref for PartitionHandle {
+    type Target = PartitionHandleInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl PartitionHandle {
+    /// Returns the LSM-tree path
+    pub(crate) fn path(&self) -> PathBuf {
+        self.tree.config.path.clone()
+    }
+
     /// Destroys the partition, removing all data associated with it.
     pub fn destroy(mut self) -> crate::Result<()> {
         // TODO: this needs to be atomic...
@@ -276,6 +296,73 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
+    fn rotate_memtable(&self) -> crate::Result<()> {
+        log::debug!("partition: acquiring flush manager lock");
+        let mut flush_manager = self
+            .keyspace
+            .flush_manager
+            .write()
+            .expect("lock is poisoned");
+
+        // Rotate memtable
+        let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
+            return Ok(());
+        };
+
+        log::trace!("Writing partition seqno");
+        let memtable_max_seqno = yanked_memtable
+            .get_lsn()
+            .expect("sealed memtable is never empty");
+
+        let mut journal_manager = self
+            .keyspace
+            .journal_manager
+            .write()
+            .expect("lock is poisoned");
+
+        journal_manager.rotate_journal(
+            std::iter::once((
+                self.name.clone(),
+                PartitionSeqno {
+                    lsn: memtable_max_seqno,
+                    partition: self.clone(),
+                },
+            ))
+            .collect(),
+        )?;
+
+        flush_manager.enqueue_task(
+            self.name.clone(),
+            FlushTask {
+                id: yanked_id,
+                partition: self.clone(),
+                sealed_memtable: yanked_memtable,
+            },
+        );
+
+        // Notify flush workers that new work has arrived
+        self.keyspace.flush_semaphore.release();
+
+        while journal_manager.disk_space_used()
+            > self.keyspace.config.max_journaling_size_in_bytes.into()
+        {
+            log::warn!("Too many journals amassed, stalling writes...");
+            std::thread::sleep(Duration::from_millis(500));
+        }
+
+        if self.tree.first_level_segment_count() > 16 {
+            eprintln!("Stalling writes...");
+            std::thread::sleep(Duration::from_millis(1_000));
+        }
+
+        while self.tree.first_level_segment_count() > 20 {
+            eprintln!("Halting writes until L0 is cleared up...");
+            std::thread::sleep(Duration::from_millis(1_000));
+        }
+
+        Ok(())
+    }
+
     /// Inserts a key-value pair into the partition.
     ///
     /// Key and value may be up to 65536 bytes long.
@@ -302,13 +389,27 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        // TODO: lock shard, write to journal
+        let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
 
-        self.tree.insert(key, value, seqno);
+        shard.writer.write(
+            &crate::batch::Item {
+                key: key.as_ref().into(),
+                value: value.as_ref().into(),
+                partition: self.name.clone(),
+                value_type: lsm_tree::ValueType::Value,
+            },
+            seqno,
+        )?;
+        drop(shard);
 
-        // TODO: check size of TREE
+        let memtable_size = self.tree.insert(key, value, seqno);
+
+        // TODO: 0.3.0 max_memtable_size
+        if memtable_size > 8_000_000 {
+            self.rotate_memtable()?;
+        }
 
         Ok(())
     }
@@ -343,13 +444,27 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        // TODO: lock shard, write to journal
+        let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
 
-        self.tree.remove(key, seqno);
+        shard.writer.write(
+            &crate::batch::Item {
+                key: key.as_ref().into(),
+                value: [].into(),
+                partition: self.name.clone(),
+                value_type: lsm_tree::ValueType::Tombstone,
+            },
+            seqno,
+        )?;
+        drop(shard);
 
-        // TODO: check size of TREE
+        let memtable_size = self.tree.remove(key, seqno);
+
+        // TODO: 0.3.0 max_memtable_size
+        if memtable_size > 8_000_000 {
+            self.rotate_memtable()?;
+        }
 
         Ok(())
     }

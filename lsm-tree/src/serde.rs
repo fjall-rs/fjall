@@ -29,13 +29,15 @@ impl From<std::io::Error> for DeserializeError {
     }
 }
 
+/// Trait to serialize stuff
 pub trait Serializable {
-    // Serialize to bytes
+    /// Serialize to bytes
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError>;
 }
 
+/// Trait to deserialize stuff
 pub trait Deserializable {
-    // Deserialize from bytes
+    /// Deserialize from bytes
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError>
     where
         Self: Sized;

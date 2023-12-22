@@ -1,9 +1,11 @@
 mod marker;
 mod recovery;
 pub mod shard;
+pub mod writer;
 
 use self::shard::JournalShard;
-use crate::{memtable::MemTable, sharded::Sharded};
+use crate::sharded::Sharded;
+use lsm_tree::MemTable;
 use std::{
     collections::HashMap,
     fs::File,
@@ -62,7 +64,7 @@ impl Journal {
         path: P,
         shards: &mut [RwLockWriteGuard<'_, JournalShard>],
     ) -> crate::Result<()> {
-        log::info!("Rotating active journal to {}", path.as_ref().display());
+        log::debug!("Rotating active journal to {}", path.as_ref().display());
 
         let path = path.as_ref();
 
@@ -108,13 +110,18 @@ impl Journal {
         })
     }
 
-    pub(crate) fn lock_shard(&self) -> RwLockWriteGuard<'_, JournalShard> {
-        self.shards.write_one()
+    pub(crate) fn get_writer(&self) -> RwLockWriteGuard<'_, JournalShard> {
+        let mut shard = self.shards.write_one();
+        shard.should_sync = true;
+        shard
     }
 
     pub fn flush(&self) -> crate::Result<()> {
         for mut shard in self.shards.full_lock().expect("lock is poisoned") {
-            shard.flush()?;
+            if shard.should_sync {
+                shard.writer.flush()?;
+                shard.should_sync = false;
+            }
         }
         Ok(())
     }
@@ -124,7 +131,8 @@ impl Journal {
 mod tests {
     use super::marker::Marker;
     use super::*;
-    use crate::{batch::BatchItem, serde::Serializable, value::ValueType};
+    use crate::batch::item::Item as BatchItem;
+    use lsm_tree::{serde::Serializable, ValueType};
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;
@@ -141,7 +149,7 @@ mod tests {
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values, 0)?;
+            shard.writer.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
@@ -149,7 +157,7 @@ mod tests {
         {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
         }
 
         // Mangle journal
@@ -165,7 +173,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -187,7 +195,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -211,7 +219,7 @@ mod tests {
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values, 0)?;
+            shard.writer.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
@@ -220,7 +228,7 @@ mod tests {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
 
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
         }
 
         // Mangle journal
@@ -240,7 +248,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -266,7 +274,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -290,7 +298,7 @@ mod tests {
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values, 0)?;
+            shard.writer.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
@@ -299,7 +307,7 @@ mod tests {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
 
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
         }
 
         // Mangle journal
@@ -315,7 +323,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -337,7 +345,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -361,7 +369,7 @@ mod tests {
 
         {
             let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.write_batch(&values, 0)?;
+            shard.writer.write_batch(&values, 0)?;
         }
 
         let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
@@ -370,7 +378,7 @@ mod tests {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
 
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
         }
 
         // Mangle journal
@@ -393,7 +401,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(
@@ -422,7 +430,7 @@ mod tests {
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
-            assert_eq!(memtable.items.len(), values.len());
+            assert_eq!(memtable.len(), values.len());
 
             // Should truncate to before-mangled state
             assert_eq!(

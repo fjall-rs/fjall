@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, ops::Bound, sync::Arc};
 
 pub struct MemTableGuard {
     pub(crate) active: ArcRwLockReadGuardian<MemTable>,
-    pub(crate) immutable: ArcRwLockReadGuardian<BTreeMap<Arc<str>, Arc<MemTable>>>,
+    pub(crate) sealed: ArcRwLockReadGuardian<BTreeMap<Arc<str>, Arc<MemTable>>>,
 }
 
 pub struct Range {
@@ -98,7 +98,7 @@ impl<'a> RangeIterator<'a> {
 
         let mut iters: Vec<BoxedIterator<'a>> = vec![Box::new(MergeIterator::new(segment_iters))];
 
-        for (_, memtable) in lock.guard.immutable.iter() {
+        for (_, memtable) in lock.guard.sealed.iter() {
             iters.push(Box::new(memtable.items.range(range.clone()).map(|entry| {
                 Ok(Value::from((entry.key().clone(), entry.value().clone())))
             })));
