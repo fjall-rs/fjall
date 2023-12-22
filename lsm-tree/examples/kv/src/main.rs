@@ -128,6 +128,13 @@ impl KvStore {
         if memtable_size > 8 * 1_024 * 1_024 {
             self.force_flush()?;
 
+            // NOTE: This is not safe and should not be used in a real implementation:
+            // If the system crashes >here<, the WAL will still exist, and on
+            // recovery we will have the flushed data on disk AND in the memtable
+            // only to get flushed again
+            //
+            // You can try and think of a way of how to solve this ;)
+
             // NOTE: Because we are doing synchronous flushing, we can safely
             // truncate the log, as we now know all data is flushed to segments.
             self.wal.truncate()?;
