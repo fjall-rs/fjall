@@ -66,10 +66,6 @@ will result in a major bump.
 
 And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired mini wide-column database using `fjall` as its storage engine.
 
-## Minimum supported rust version (MSRV)
-
-1.74.0
-
 ## Contributing
 
 How can you help?

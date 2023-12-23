@@ -17,6 +17,7 @@ Cargo.lock
 
 /target
 .lsm.data
+.fjall_data
 .data
 .fjall_data
 
