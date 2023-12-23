@@ -731,14 +731,9 @@ impl Tree {
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value);
 
-        let memtable_size = self
-            .active_memtable
-            .read()
-            .expect("lock is poisoned")
+        memtable_lock
             .approximate_size
-            .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed);
-
-        memtable_size
+            .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Recovers previous state, by loading the level manifest and segments.
