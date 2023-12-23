@@ -141,16 +141,22 @@ impl Tree {
     pub fn register_segments(&self, segments: &[Arc<Segment>]) -> crate::Result<()> {
         log::debug!("flush: acquiring levels manifest write lock");
         let mut levels = self.levels.write().expect("lock is poisoned");
+
         for segment in segments {
             levels.add(segment.clone());
         }
-        levels.write_to_disk()?;
 
         log::debug!("flush: acquiring sealed memtables write lock");
         let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
+
         for segment in segments {
             memtable_lock.remove(&segment.metadata.id);
         }
+
+        // NOTE: Segments are registered, we can unlock the memtable(s) safely
+        drop(memtable_lock);
+
+        levels.write_to_disk()?;
 
         Ok(())
     }
@@ -246,7 +252,7 @@ impl Tree {
     #[must_use]
     pub fn rotate_memtable(&self) -> Option<(Arc<str>, Arc<MemTable>)> {
         log::debug!("rotate: acquiring active memtable write lock");
-        let mut active_memtable: RwLockWriteGuard<'_, MemTable> = self.lock_active_memtable();
+        let mut active_memtable = self.lock_active_memtable();
 
         if active_memtable.items.is_empty() {
             return None;

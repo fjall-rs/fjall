@@ -74,6 +74,8 @@ fn merge_segments(
         log::debug!("compactor: stopping before compaction because of stop signal");
     }
 
+    let segments_base_folder = opts.config.path.join(SEGMENTS_FOLDER);
+
     log::debug!(
         "compactor: Chosen {} segments to compact into a single new segment at level {}",
         payload.segment_ids.len(),
@@ -167,21 +169,22 @@ fn merge_segments(
     log::debug!("compactor: acquiring levels manifest write lock");
     let mut levels = opts.levels.write().expect("lock is poisoned");
 
-    // IMPORTANT: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::debug!("compactor: acquiring sealed memtables write lock");
-    let memtable = opts.sealed_memtables.write().expect("lock is poisoned");
-
-    let segments_base_folder = opts.config.path.join(SEGMENTS_FOLDER);
-
     for segment in created_segments {
         log::trace!("Persisting segment {}", segment.metadata.id);
         levels.insert_into_level(payload.dest_level, segment.into());
     }
 
+    // IMPORTANT: Write lock memtable(s), otherwise segments may get deleted while a range read is happening
+    log::debug!("compactor: acquiring sealed memtables write lock");
+    let sealed_memtables_guard = opts.sealed_memtables.write().expect("lock is poisoned");
+
     for key in &payload.segment_ids {
         log::trace!("Removing segment {}", key);
         levels.remove(key);
     }
+
+    // NOTE: Segments are registered, we can unlock the memtable(s) safely
+    drop(sealed_memtables_guard);
 
     // IMPORTANT: Write the segment with the removed segments first
     // Otherwise the folder is deleted, but the segment is still referenced!
@@ -196,7 +199,6 @@ fn merge_segments(
 
     levels.show_segments(&payload.segment_ids);
 
-    drop(memtable);
     drop(levels);
 
     log::debug!("compactor: done");
