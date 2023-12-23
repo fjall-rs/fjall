@@ -1,4 +1,4 @@
-use crate::{flush::manager::Task as FlushTask, journal_manager::PartitionSeqno, Keyspace};
+use crate::{flush::manager::Task as FlushTask, journal::manager::PartitionSeqno, Keyspace};
 use lsm_tree::{prefix::Prefix, range::Range, Tree as LsmTree, UserKey, UserValue};
 use std::{ops::RangeBounds, path::PathBuf, sync::Arc, time::Duration};
 

@@ -81,7 +81,6 @@ mod error;
 mod file;
 mod flush;
 mod journal;
-mod journal_manager;
 mod keyspace;
 mod partition;
 mod sharded;

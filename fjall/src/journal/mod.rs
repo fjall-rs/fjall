@@ -1,3 +1,4 @@
+pub mod manager;
 mod marker;
 mod recovery;
 pub mod shard;

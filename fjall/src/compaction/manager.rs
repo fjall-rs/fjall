@@ -19,6 +19,14 @@ impl Default for CompactionManagerInner {
     }
 }
 
+/// The compaction manager keeps track of which partitions
+/// have recently been flushed in a FIFO queue.
+///
+/// Its semaphore notifies compaction threads which will wake
+/// up and consume the queue items.
+///
+/// The semaphore is incremented by the flush worker and optionally
+/// by the individual partitions in case of write halting.
 #[derive(Clone, Default)]
 pub struct CompactionManager(Arc<CompactionManagerInner>);
 
