@@ -1,4 +1,5 @@
 use crate::{
+    compaction::manager::CompactionManager,
     config::Config,
     file::{FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER},
     flush::manager::FlushManager,
@@ -17,6 +18,8 @@ use std_semaphore::Semaphore;
 
 type Partitions = HashMap<Arc<str>, LsmTree>;
 
+// TODO: fsync thread
+
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
@@ -26,6 +29,8 @@ pub struct KeyspaceInner {
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) flush_semaphore: Arc<Semaphore>,
+    pub(crate) compaction_manager: CompactionManager,
+    // TODO: stop signal
 }
 
 impl Drop for KeyspaceInner {
@@ -175,6 +180,7 @@ impl Keyspace {
                 active_journal_path,
             ))),
             flush_semaphore: Arc::new(Semaphore::new(0)),
+            compaction_manager: CompactionManager::default(),
         };
 
         Ok(Self(Arc::new(inner))) */
@@ -223,6 +229,7 @@ impl Keyspace {
                 active_journal_path,
             ))),
             flush_semaphore: Arc::new(Semaphore::new(0)),
+            compaction_manager: CompactionManager::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -248,10 +255,24 @@ impl Keyspace {
         let keyspace = Self(Arc::new(inner));
         keyspace.spawn_flush_worker();
 
+        for _ in 0..4 {
+            keyspace.spawn_compaction_worker();
+        }
+
         Ok(keyspace)
     }
 
+    fn spawn_compaction_worker(&self) {
+        let keyspace = self.clone();
+        std::thread::spawn(move || {
+            crate::compaction::worker::run(&keyspace);
+        });
+    }
+
     fn spawn_flush_worker(&self) {
-        crate::flush::worker::start(self.clone(), self.flush_semaphore.clone());
+        let keyspace = self.clone();
+        std::thread::spawn(move || {
+            crate::flush::worker::run(&keyspace);
+        });
     }
 }

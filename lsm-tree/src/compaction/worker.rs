@@ -45,7 +45,7 @@ pub struct Options {
 /// This will block until the compactor is fully finished.
 pub fn do_compaction(opts: &Options) -> crate::Result<()> {
     log::debug!("compactor: acquiring levels manifest lock");
-    let mut levels = opts.levels.write().expect("lock is poisoned");
+    let levels = opts.levels.write().expect("lock is poisoned");
 
     log::trace!("compactor: consulting compaction strategy");
     let choice = opts.strategy.choose(&levels, &opts.config);
@@ -167,7 +167,7 @@ fn merge_segments(
     log::debug!("compactor: acquiring levels manifest write lock");
     let mut levels = opts.levels.write().expect("lock is poisoned");
 
-    // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
+    // IMPORTANT: Write lock memtable, otherwise segments may get deleted while a range read is happening
     log::debug!("compactor: acquiring sealed memtables write lock");
     let memtable = opts.sealed_memtables.write().expect("lock is poisoned");
 
@@ -183,8 +183,7 @@ fn merge_segments(
         levels.remove(key);
     }
 
-    // NOTE: This is really important
-    // Write the segment with the removed segments first
+    // IMPORTANT: Write the segment with the removed segments first
     // Otherwise the folder is deleted, but the segment is still referenced!
     levels.write_to_disk()?;
 
@@ -212,7 +211,7 @@ fn drop_segments(
 ) -> crate::Result<()> {
     log::debug!("compactor: Chosen {} segments to drop", segment_ids.len(),);
 
-    // NOTE: Write lock memtable, otherwise segments may get deleted while a range read is happening
+    // IMPORTANT: Write lock memtable, otherwise segments may get deleted while a range read is happening
     log::debug!("compaction: acquiring sealed memtables write lock");
     let memtable_lock = opts.sealed_memtables.write().expect("lock is poisoned");
 
@@ -221,8 +220,7 @@ fn drop_segments(
         levels.remove(key);
     }
 
-    // NOTE: This is really important
-    // Write the segment with the removed segments first
+    // IMPORTANT: Write the segment with the removed segments first
     // Otherwise the folder is deleted, but the segment is still referenced!
     levels.write_to_disk()?;
 

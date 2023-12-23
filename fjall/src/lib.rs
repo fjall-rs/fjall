@@ -1,17 +1,29 @@
 //! An LSM-based embedded key-value storage engine written in Rust.
 //!
+//! It is not:
+//!
+//! - a standalone server
+//! - a relational database
+//! - a wide-column database: it has no notion of columns
+//!
+//! This crates exports a `Keyspace`, which is a single logical database, which is split
+//! into `partitions` (a.k.a. column families). Each partition is logically a single
+//! LSM-tree; however, write operations across partitions are atomic as they are persisted
+//! in a single database-level journal, which will be recovered after a crash.
+//!
+//! Please not, keys and values are limited to 2^16 bytes. As is normal with any kind of storage
+//! engine, larger keys and values have a bigger performance impact.
+//!
+//! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+//!
 //! ```
 //! use fjall::{Config, Keyspace};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
-//! // A keyspace is a single database, which houses
-//! // multiple partitions ("column families")
 //! let keyspace = Config::new(folder).open()?;
 //!
-//! // Each partition is its own logical keyspace
-//! // however modifications may cross partition boundaries
-//! // and keep atomic semantics
+//! // Each partition is its own physical LSM-tree
 //! let items = keyspace.open_partition("my_items")?;
 //!
 //! // Write some data
@@ -52,18 +64,18 @@
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
-//!
-//! For the underlying LSM-tree implementation, see: <https://github.com/marvin-j97/fjall/tree/main/lsm-tree>.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/fjall/logo.png")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/fjall/logo.png")]
 #![forbid(unsafe_code)]
 #![deny(clippy::all, missing_docs, clippy::cargo)]
 #![deny(clippy::unwrap_used)]
+#![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
 
 mod batch;
+mod compaction;
 mod config;
 mod error;
 mod file;
@@ -74,6 +86,8 @@ mod keyspace;
 mod partition;
 mod sharded;
 mod version;
+
+pub use lsm_tree::BlockCache;
 
 pub use {
     config::Config,

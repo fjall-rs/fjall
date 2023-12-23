@@ -44,6 +44,11 @@ impl FlushManager {
         let mut collected: HashMap<Arc<str>, Vec<Arc<Task>>> = HashMap::new();
         let mut cnt = 0;
 
+        // NOTE: Returning multiple tasks per partition is fine and will
+        // help with flushing very active partitions.
+        //
+        // Because we are flushing them atomically inside one batch,
+        // we will never cover up a lower seqno of some other segment.
         'outer: for (partition_name, queue) in &self.queues {
             for item in queue {
                 if cnt == limit {
@@ -54,18 +59,10 @@ impl FlushManager {
                     .entry(partition_name.clone())
                     .or_default()
                     .push(item.clone());
+
+                cnt += 1;
             }
         }
-
-        /*  for (partition_name, queue) in &self.queues {
-            for item in queue {
-                if collected.len() < lookahead {
-                    collected.push((partition_name.clone(), item.clone()));
-                } else {
-                    break;
-                }
-            }
-        } */
 
         collected
     }

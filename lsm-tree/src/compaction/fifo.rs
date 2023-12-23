@@ -1,6 +1,6 @@
 use super::{Choice, CompactionStrategy};
 use crate::{levels::Levels, segment::Segment, Config};
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 const L0_SEGMENT_CAP: usize = 24;
 
@@ -71,7 +71,11 @@ impl CompactionStrategy for Strategy {
     fn choose(&self, levels: &Levels, _: &Config) -> Choice {
         let resolved_view = levels.resolved_view();
 
-        let mut first_level = resolved_view[0].clone();
+        let mut first_level = resolved_view
+            .first()
+            .expect("L0 should always exist")
+            .deref()
+            .clone();
 
         let db_size = levels
             .get_all_segments()

@@ -31,17 +31,25 @@ impl TryFrom<u16> for Version {
     }
 }
 
+const MAGIC_BYTES: [u8; 3] = [b'L', b'S', b'M'];
+
 impl Version {
     pub fn len() -> u8 {
         5
     }
 
     pub fn parse_file_header(bytes: &[u8]) -> Option<Self> {
-        if bytes[0..3] == [b'L', b'S', b'M'] {
-            let slice = &bytes[3..5];
+        let Some(first_three) = bytes.get(0..3) else {
+            return None;
+        };
+
+        if first_three == MAGIC_BYTES {
+            let Some(next_two) = bytes.get(3..5) else {
+                return None;
+            };
 
             let mut bytes = [0; 2];
-            bytes.copy_from_slice(slice);
+            bytes.copy_from_slice(next_two);
             let mut cursor = Cursor::new(&bytes);
 
             let value = cursor.read_u16::<BigEndian>().ok()?;
@@ -54,7 +62,7 @@ impl Version {
     }
 
     pub fn write_file_header<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<usize> {
-        writer.write_all(&[b'L', b'S', b'M'])?;
+        writer.write_all(&MAGIC_BYTES)?;
         writer.write_u16::<BigEndian>(u16::from(self))?;
         Ok(5)
     }

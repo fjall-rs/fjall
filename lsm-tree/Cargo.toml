@@ -10,7 +10,7 @@ license.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-categories.homepage = true
+homepage.workspace = true
 
 [lib]
 name = "lsm_tree"

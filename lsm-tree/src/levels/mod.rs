@@ -219,7 +219,7 @@ impl Levels {
     }
 
     pub fn first_level_segment_count(&self) -> usize {
-        self.levels[0].len()
+        self.levels.first().expect("L0 should always exist").len()
     }
 
     /// Returns the amount of levels in the tree

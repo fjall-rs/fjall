@@ -1,10 +1,12 @@
 use crate::{file::SEGMENTS_FOLDER, Keyspace};
 use std::sync::Arc;
-use std_semaphore::Semaphore;
 
-pub fn start(keyspace: Keyspace, flush_semaphore: Arc<Semaphore>) {
-    std::thread::spawn(move || loop {
-        flush_semaphore.acquire();
+/// Runs flush worker.
+///
+/// Only spawn one of these, it will internally spawn worker threads as needed.
+pub fn run(keyspace: &Keyspace) {
+    loop {
+        keyspace.flush_semaphore.acquire();
 
         let mut flush_manager = keyspace.flush_manager.write().expect("lock is poisoned");
         let partitioned_tasks =
@@ -25,7 +27,11 @@ pub fn start(keyspace: Keyspace, flush_semaphore: Arc<Semaphore>) {
                         tasks.len()
                     );
 
-                    let partition = tasks[0].partition.clone();
+                    let partition = tasks
+                        .first()
+                        .expect("should always have at least one task")
+                        .partition
+                        .clone();
 
                     // NOTE: Don't trust clippy
                     #[allow(clippy::needless_collect)]
@@ -65,31 +71,42 @@ pub fn start(keyspace: Keyspace, flush_semaphore: Arc<Semaphore>) {
             })
             .collect::<Vec<_>>();
 
-        for thread in threads {
-            // TODO: handle flush fail
-            // TODO: need to partially send results to flush manager (per partition)
-            let (partition, results) = thread
-                .join()
-                .expect("should join")
-                .expect("flush failed :(");
+        let results = threads
+            .into_iter()
+            .map(|t| t.join().expect("should join"))
+            .collect::<Vec<_>>();
 
-            // TODO: handle this
-            partition
-                .tree
-                .register_segments(&results)
-                .expect("should not fail");
-        }
-
-        log::trace!("All worker threads are done");
-
+        log::trace!("All flush worker threads are done");
         let mut flush_manager = keyspace.flush_manager.write().expect("lock is poisoned");
 
-        for (partition_name, tasks) in partitioned_tasks {
-            for task in tasks {
-                flush_manager.dequeue_task(partition_name.clone());
-                task.partition.tree.free_sealed_memtable(&task.id);
+        // TODO: handle flush fail
+        for result in results {
+            match result {
+                Ok((partition, segments)) => {
+                    // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
+                    // otherwise we could cover up an unwritten journal, which will result in data loss
+
+                    match partition.tree.register_segments(&segments) {
+                        Ok(()) => {
+                            for segment in segments {
+                                flush_manager.dequeue_task(partition.name.clone());
+                                partition.tree.free_sealed_memtable(&segment.metadata.id);
+                            }
+
+                            keyspace.compaction_manager.notify(partition);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to register segments: {e:?}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Flush error: {e:?}");
+                }
             }
         }
+
+        drop(flush_manager);
 
         if let Err(e) = keyspace
             .journal_manager
@@ -99,5 +116,7 @@ pub fn start(keyspace: Keyspace, flush_semaphore: Arc<Semaphore>) {
         {
             log::error!("journal GC failed: {e:?}");
         };
-    });
+
+        // TODO: check for deleted partitions
+    }
 }

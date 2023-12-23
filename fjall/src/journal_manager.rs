@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::Arc};
 use crate::{
     file::{FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
-    Keyspace, PartitionHandle,
+    PartitionHandle,
 };
 
 pub struct PartitionSeqno {
@@ -35,17 +35,9 @@ impl std::fmt::Debug for Item {
     }
 }
 
-// TODO: keep track of journal size, let partition spin lock if too high
-
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different partitions.
-///
-/// Once the LSN of *every* partition's segments [1] is higher than the journal's stored partition seqno,
-/// it can be deleted from disk, as we know the entire journal has been flushed to segments.
-///
-/// [1] We cannot use the partition's max seqno, because the memtable will get writes, which increase the seqno.
-/// We *need* to check the disk segments specifically, they are the source of truth for flushed data.
 pub struct JournalManager {
     journal: Arc<Journal>,
     active_path: PathBuf,
@@ -68,9 +60,13 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
+    /// Performs maintenance, maybe deleting some old journalsPerforms maintenance, maybe deleting some old journals
     pub fn maintenance(&mut self) -> crate::Result<()> {
-        'outer: for idx in 0..self.items.len() {
-            let item = &self.items[idx];
+        // NOTE: Walk backwards because of shifting indices
+        'outer: for idx in (0..self.items.len()).rev() {
+            let Some(item) = &self.items.get(idx) else {
+                continue 'outer;
+            };
 
             for item in item.partition_seqnos.values() {
                 let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
@@ -82,6 +78,15 @@ impl JournalManager {
                 }
             }
 
+            // NOTE: Once the LSN of *every* partition's segments [1] is higher than the journal's stored partition seqno,
+            // it can be deleted from disk, as we know the entire journal has been flushed to segments [2].
+            //
+            // [1] We cannot use the partition's max seqno, because the memtable will get writes, which increase the seqno.
+            // We *need* to check the disk segments specifically, they are the source of truth for flushed data.
+            //
+            // [2] Checking the seqno is safe because the queues inside the flush manager are FIFO.
+            //
+            // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
             log::debug!("Removing fully flushed journal at {}", item.path.display());
             std::fs::remove_dir_all(&item.path)?;
 

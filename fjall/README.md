@@ -7,8 +7,7 @@
 
 // TODO: 0.3.0
 
-<!-- TODO: split CI pipelines, add badge here -->
-
+[![CI](https://github.com/marvin-j97/fjall/actions/workflows/test_fjall.yml/badge.svg)](https://github.com/marvin-j97/fjall/actions/workflows/test_fjall.yml)
 [![docs.rs](https://img.shields.io/docsrs/fjall?color=green)](https://docs.rs/fjall)
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
@@ -19,7 +18,17 @@ It is not:
 
 - a standalone server
 - a relational database
-- a wide-column database - it has no notion of columns
+- a wide-column database: it has no notion of columns
+
+This crates exports a `Keyspace`, which is a single logical database, which is split
+into `partitions` (a.k.a. column families). Each partition is logically a single
+LSM-tree; however, write operations across partitions are atomic as they are persisted
+in a single database-level journal, which will be recovered after a crash.
+
+Please not, keys and values are limited to 2^16 bytes. As is normal with any kind of storage
+engine, larger keys and values have a bigger performance impact.
+
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 
 ## Basic usage
 
@@ -31,7 +40,7 @@ cargo add fjall
 TODO:
 ```
 
-## About
+## Details
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
@@ -46,15 +55,10 @@ TODO:
 - Cross-partition snapshots (MVCC)
 - Automatic background compaction
 
-For the underlying LSM-tree implementation, see: https://github.com/marvin-j97/fjall/tree/main/lsm-tree.
-
 ## Stable disk format
 
-// TODO: 0.3.0
-
-Is the disk format stable yet? Once 1.0.0 is released.
-From that point onwards, breaking disk format changes will result
-in a major bump.
+The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that
+will result in a major bump.
 
 ## Examples
 

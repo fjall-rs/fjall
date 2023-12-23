@@ -30,7 +30,7 @@ pub struct Segment {
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Segment metadata object (will be stored in a JSON file)
-    pub(crate) metadata: meta::Metadata,
+    pub metadata: meta::Metadata,
 
     /// Translates key (first item of a block) to block offset (address inside file) and (compressed) size
     pub(crate) block_index: Arc<BlockIndex>,

@@ -39,25 +39,27 @@ jobs:
         with:
           prefix-key: ${{ runner.os }}-cargo
           workspaces: >
-            lsm-tree -> target
-            lsm-tree/examples/kv -> target
+            fjall -> target
+            fjall/examples/actix-kv -> target
+            fjall/examples/actix-triplestore -> target
+            fjall/examples/structured -> target
       - name: Build
         run: cargo build -v
-        working-directory: lsm-tree
+        working-directory: fjall
       - name: Format
         run: cargo fmt --all -- --check
-        working-directory: lsm-tree
+        working-directory: fjall
       - name: Clippy
         run: cargo clippy
-        working-directory: lsm-tree
+        working-directory: fjall
       - name: Run tests
         run: cargo test -v -- --nocapture
-        working-directory: lsm-tree
+        working-directory: fjall
         env:
           RUST_LOG: debug
-      - name: Build & test LSM examples
+      - name: Build & test examples
         run: node compile_examples.mjs
-        working-directory: lsm-tree
+        working-directory: fjall
   cross:
     name: cross
     strategy:

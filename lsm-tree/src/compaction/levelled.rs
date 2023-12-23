@@ -38,7 +38,12 @@ impl Default for Strategy {
 }
 
 fn get_key_range(segments: &[Arc<Segment>]) -> (UserKey, UserKey) {
-    let (mut min, mut max) = segments[0].metadata.key_range.clone();
+    let (mut min, mut max) = segments
+        .get(0)
+        .expect("segment should always exist")
+        .metadata
+        .key_range
+        .clone();
 
     for other in segments.iter().skip(1) {
         if other.metadata.key_range.0 < min {
@@ -114,7 +119,10 @@ impl CompactionStrategy for Strategy {
 
                 let (min, max) = get_key_range(&segments_to_compact);
 
-                let next_level = &resolved_view[next_level_index as usize];
+                let Some(next_level) = &resolved_view.get(next_level_index as usize) else {
+                    break;
+                };
+
                 let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
 
                 let mut segment_ids: Vec<_> = segments_to_compact
@@ -148,7 +156,10 @@ impl CompactionStrategy for Strategy {
 
                 let (min, max) = get_key_range(&first_level_segments);
 
-                let next_level = &resolved_view[1];
+                let Some(next_level) = &resolved_view.get(1) else {
+                    return Choice::DoNothing;
+                };
+
                 let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
 
                 let mut segment_ids: Vec<_> = first_level_segments

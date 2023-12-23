@@ -11,6 +11,10 @@ pub struct PartitionHandleInner {
 
     /// TEMP pub
     pub tree: LsmTree, // TODO: not pub
+
+                       // TODO: need a destroyed flag or something, so GC can check the partition is deleted
+                       // TODO: handle mid-flush deletes of partition folders... (don't delete folder immediately)
+                       // TODO: just attach marker to folder and let GC handle it, when no flushes are running
 }
 
 /// Access to a keyspace partition.partition
@@ -351,12 +355,13 @@ impl PartitionHandle {
         }
 
         if self.tree.first_level_segment_count() > 16 {
-            eprintln!("Stalling writes...");
+            log::info!("Stalling writes...");
             std::thread::sleep(Duration::from_millis(1_000));
         }
 
         while self.tree.first_level_segment_count() > 20 {
-            eprintln!("Halting writes until L0 is cleared up...");
+            log::warn!("Halting writes until L0 is cleared up...");
+            self.keyspace.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
 

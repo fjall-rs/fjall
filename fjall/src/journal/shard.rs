@@ -26,6 +26,7 @@ pub enum RecoveryError {
     CrcCheck,
 }
 
+// TODO: don't require locking for sync check
 pub struct JournalShard {
     pub(crate) path: PathBuf,
     pub(crate) writer: JournalWriter,

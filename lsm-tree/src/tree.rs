@@ -74,8 +74,6 @@ impl Tree {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn compact(&self, strategy: Box<dyn CompactionStrategy>) -> crate::Result<()> {
-        log::info!("Starting compaction");
-
         do_compaction(&CompactionOptions {
             config: self.config.clone(),
             sealed_memtables: self.sealed_memtables.clone(),
@@ -84,6 +82,8 @@ impl Tree {
             stop_signal: self.stop_signal.clone(),
             strategy,
         })?;
+
+        log::debug!("lsm-tree: compaction run over");
 
         Ok(())
     }

@@ -2,8 +2,7 @@
   <img src="/lsm-tree/logo.png" height="128">
 </p>
 
-<!-- TODO: split CI pipelines, add badge here -->
-
+[![CI](https://github.com/marvin-j97/fjall/actions/workflows/test_lsmt.yml/badge.svg)](https://github.com/marvin-j97/fjall/actions/workflows/test_lsmt.yml)
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
@@ -83,9 +82,8 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 
 ## Stable disk format
 
-The disk format is stable as of 0.3.0.
-
-Breaking changes will result in a major bump.
+The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that
+will result in a major bump.
 
 ## Contributing
 

@@ -15,11 +15,12 @@
 //! on disk and perform fast lookup queries.
 //! Instead of updating a disk-based data structure in-place,
 //! deltas (inserts and deletes) are added into an in-memory write buffer (`MemTable`).
-//! Data is then continuously flushed to disk segments.
+//! Data is then flushed to disk segments, as the write buffer reaches some threshold.
 //!
 //! Amassing many segments on disk will degrade read performance and waste disk space usage, so segments
-//! can be periodically merged into larger segments in a process called "Compaction".
-//! Different compaction strategies have different advantages and drawbacks, depending on your use case.
+//! can be periodically merged into larger segments in a process called `Compaction`.
+//! Different compaction strategies have different advantages and drawbacks, and should be chosen based
+//! on the workload characteristics.
 //!
 //! Because maintaining an efficient structure is deferred to the compaction process, writing to an LSMT
 //! is very fast (O(1) complexity).
@@ -87,6 +88,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all, missing_docs, clippy::cargo)]
 #![deny(clippy::unwrap_used)]
+#![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
