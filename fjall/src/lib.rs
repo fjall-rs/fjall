@@ -11,7 +11,7 @@
 //! LSM-tree; however, write operations across partitions are atomic as they are persisted
 //! in a single database-level journal, which will be recovered after a crash.
 //!
-//! Please not, keys and values are limited to 2^16 bytes. As is normal with any kind of storage
+//! Please note, keys and values are limited to 2^16 bytes. As is normal with any kind of storage
 //! engine, larger keys and values have a bigger performance impact.
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
