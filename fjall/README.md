@@ -47,7 +47,7 @@ TODO:
 - Range & prefix searching with forward and reverse iteration
 - Block-based tables with LZ4 compression
 - Size-tiered, (concurrent) Levelled and FIFO compaction strategies
-- Column families (partitions) with cross-partition atomic semantics (atomic write batches)
+- Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
 - Partitioned block index to reduce memory footprint and keep startup time minimal [1]
 - Journal truncation on recovery for consistency
 - Block caching to keep hot data in memory
