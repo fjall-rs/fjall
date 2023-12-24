@@ -13,58 +13,8 @@ A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rus
 > For example, it does not ship with a write-ahead log.
 > You probably want to use https://github.com/marvin-j97/fjall instead.
 
-## Basic usage
-
 ```bash
 cargo add lsm-tree
-```
-
-```rs
-use lsm_tree::{Tree, Config};
-
-let folder = tempfile::tempdir()?;
-
-// A tree is a single physical keyspace/index/...
-// and supports a BTreeMap-like API
-let tree = Config::new(folder).open()?;
-
-// Note compared to the BTreeMap API, operations return a Result<T>
-// So you can handle I/O errors if they occur
-tree.insert("my_key", "my_value", /* sequence number */ 0);
-
-let item = tree.get("my_key")?;
-assert_eq!(Some("my_value".as_bytes().into()), item);
-
-// Search by prefix
-for item in &tree.prefix("prefix") {
-  // ...
-}
-
-// Search by range
-for item in &tree.range("a"..="z") {
-  // ...
-}
-
-// Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for item in tree.prefix("prefix").into_iter().rev() {
-  // ...
-}
-
-// Flush to secondary storage, clearing the memtable
-// and persisting all in-memory data.
-tree.flush_active_memtable().expect("should flush").join().unwrap()?;
-assert_eq!(Some("my_value".as_bytes().into()), item);
-
-// When some disk segments have amassed, use compaction
-// to reduce the amount of disk segments
-
-// (Choose compaction strategy based on workload)
-use lsm_tree::compaction::Levelled;
-
-let strategy = Levelled::default();
-tree.compact(Box::new(strategy))?;
-
-assert_eq!(Some("my_value".as_bytes().into()), item);
 ```
 
 ## About
@@ -79,6 +29,9 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 - Partitioned block index to reduce memory footprint and keep startup time tiny [1]
 - Block caching to keep hot data in memory
 - Snapshots (MVCC)
+
+Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage
+engine, larger keys and values have a bigger performance impact.
 
 ## Stable disk format
 
