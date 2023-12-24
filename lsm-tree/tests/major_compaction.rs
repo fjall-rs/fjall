@@ -14,10 +14,7 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
     tree.insert("b".as_bytes(), "abc", seqno.next());
     tree.insert("c".as_bytes(), "abc", seqno.next());
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     tree.major_compact(u64::MAX)?;
 
     let item = tree.get_internal_entry("a", true, None)?.unwrap();
@@ -43,10 +40,7 @@ fn tree_major_compaction() -> lsm_tree::Result<()> {
     tree.remove("b".as_bytes(), batch_seqno);
     tree.remove("c".as_bytes(), batch_seqno);
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     tree.major_compact(u64::MAX)?;
 
     assert_eq!(0, tree.len()?);

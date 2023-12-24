@@ -48,10 +48,7 @@ fn tree_reload() -> lsm_tree::Result<()> {
             tree.insert(key, value.as_bytes(), seqno.next());
         }
 
-        tree.flush_active_memtable()
-            .expect("should flush")
-            .join()
-            .expect("should join")?;
+        tree.flush_active_memtable()?;
 
         for x in 0..ITEM_COUNT as u64 {
             let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
@@ -69,10 +66,7 @@ fn tree_reload() -> lsm_tree::Result<()> {
             ITEM_COUNT * 2
         );
 
-        tree.flush_active_memtable()
-            .expect("should flush")
-            .join()
-            .expect("should join")?;
+        tree.flush_active_memtable()?;
     }
 
     {

@@ -42,10 +42,7 @@ fn tree_flushed_count() -> lsm_tree::Result<()> {
         tree.insert(key, value.as_bytes(), 0);
     }
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert_eq!(
@@ -74,10 +71,7 @@ fn tree_non_locking_count() -> lsm_tree::Result<()> {
         tree.insert(key, value.as_bytes(), x);
     }
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     // NOTE: don't care
     #[allow(clippy::type_complexity)]

@@ -28,10 +28,7 @@ fn tree_range_count() -> lsm_tree::Result<()> {
             .count()
     );
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(2, tree.range("a"..="f").into_iter().count());
     assert_eq!(

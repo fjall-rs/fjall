@@ -161,9 +161,9 @@ impl Tree {
         Ok(())
     }
 
-    /// Flushes the active memtable to a disk segment, returning a thread that may be awaited.
+    /// Synchronously flushes the active memtable to a disk segment.
     ///
-    /// The function may not return a thread, if, during concurrent workloads, the memtable
+    /// The function may not return a result, if, during concurrent workloads, the memtable
     /// ends up being empty before the flush thread is set up.
     ///
     /// The result will contain the disk segment's path, relative to the tree's base path.
@@ -171,34 +171,32 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn flush_active_memtable(&self) -> Option<std::thread::JoinHandle<crate::Result<PathBuf>>> {
+    pub fn flush_active_memtable(&self) -> crate::Result<Option<PathBuf>> {
         log::debug!("flush: flushing active memtable");
 
-        let (segment_id, yanked_memtable) = self.rotate_memtable()?;
+        let Some((segment_id, yanked_memtable)) = self.rotate_memtable() else {
+            return Ok(None);
+        };
 
-        let tree = self.clone();
+        let segment_folder = self.config.path.join(SEGMENTS_FOLDER);
+        log::debug!("flush: writing segment to {}", segment_folder.display());
 
-        Some(std::thread::spawn(move || {
-            let segment_folder = tree.config.path.join(SEGMENTS_FOLDER);
-            log::debug!("flush: writing segment to {}", segment_folder.display());
+        let segment = flush_to_segment(FlushOptions {
+            memtable: yanked_memtable,
+            block_cache: self.config.block_cache.clone(),
+            block_size: self.config.block_size,
+            folder: segment_folder,
+            segment_id,
+        })?;
+        let segment = Arc::new(segment);
+        let result_path = segment.metadata.path.clone();
 
-            let segment = flush_to_segment(FlushOptions {
-                memtable: yanked_memtable,
-                block_cache: tree.config.block_cache.clone(),
-                block_size: tree.config.block_size,
-                folder: segment_folder,
-                segment_id: segment_id.clone(),
-            })?;
-            let segment = Arc::new(segment);
-            let result_path = segment.metadata.path.clone();
+        // Once we have written the segment, we need to add it to the level manifest
+        // and remove it from the sealed memtables
+        self.register_segments(&[segment])?;
 
-            // Once we have written the segment, we need to add it to the level manifest
-            // and remove it from the sealed memtables
-            tree.register_segments(&[segment])?;
-
-            log::debug!("flush: thread done");
-            Ok(result_path)
-        }))
+        log::debug!("flush: thread done");
+        Ok(Some(result_path))
     }
 
     /// Returns `true` if there are some segments that are being compacted.

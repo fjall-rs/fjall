@@ -26,10 +26,7 @@ fn tree_write_and_read() -> lsm_tree::Result<()> {
     assert!(!item.is_tombstone());
     assert_eq!(item.seqno, 2);
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     let tree = Config::new(folder).open()?;
 

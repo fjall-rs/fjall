@@ -1,4 +1,4 @@
-use lsm_tree::{generate_segment_id, segment::block::ValueBlock, BlockCache, Value};
+use lsm_tree::{id::generate_segment_id, segment::block::ValueBlock, BlockCache, Value};
 use std::sync::Arc;
 use test_log::test;
 

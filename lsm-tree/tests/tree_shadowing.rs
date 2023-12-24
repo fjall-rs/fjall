@@ -15,10 +15,7 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
@@ -28,10 +25,7 @@ fn tree_shadowing_upsert() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
@@ -52,10 +46,7 @@ fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     assert_eq!(tree.len()?, 1);
     assert_eq!(tree.get(key)?, Some(value.into()));
 
@@ -63,10 +54,7 @@ fn tree_shadowing_delete() -> lsm_tree::Result<()> {
     assert_eq!(tree.len()?, 0);
     assert!(tree.get(key)?.is_none());
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
     assert_eq!(tree.len()?, 0);
     assert!(tree.get(key)?.is_none());
 
@@ -89,10 +77,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
         tree.insert(key, value, seqno.next());
     }
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert!(tree
@@ -112,10 +97,7 @@ fn tree_shadowing_range() -> lsm_tree::Result<()> {
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT);
     assert!(tree
@@ -144,10 +126,7 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
         tree.insert(format!("prefix:{x}").as_bytes(), value, batch_seqno);
     }
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
     assert_eq!(
@@ -185,10 +164,7 @@ fn tree_shadowing_prefix() -> lsm_tree::Result<()> {
         .into_iter()
         .all(|x| x.unwrap().1 == "new".as_bytes().into()));
 
-    tree.flush_active_memtable()
-        .expect("should flush")
-        .join()
-        .expect("should join")?;
+    tree.flush_active_memtable()?;
 
     assert_eq!(tree.len()?, ITEM_COUNT * 2);
     assert_eq!(
