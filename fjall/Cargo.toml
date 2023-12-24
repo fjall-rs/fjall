@@ -1,7 +1,7 @@
 [package]
 name = "fjall"
 description = "LSM-based key-value storage engine"
-version = "0.1.0"
+version = "0.3.0"
 repository = "https://github.com/marvin-j97/fjall"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 edition.workspace = true
@@ -32,3 +32,9 @@ fs_extra = "1.3.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.14"
+rand = "0.8.5"
+
+[[bench]]
+name = "lsmt"
+harness = false
+path = "benches/fjall.rs"

@@ -1,13 +1,13 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lsm_tree::{generate_segment_id, segment::block::ValueBlock, BlockCache, Value};
-use rand::Rng;
-use std::sync::Arc;
+use lsm_tree::{segment::block::ValueBlock, serde::Serializable, Value};
+use lz4_flex::compress_prepend_size;
+use std::io::Write;
 
 fn value_block_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("ValueBlock::size");
 
     for item_count in [10, 100, 1_000] {
-        group.bench_function(format!("ValueBlock::size - {item_count} items"), |b| {
+        group.bench_function(format!("{item_count} items"), |b| {
             let items = (0..item_count)
                 .map(|_| {
                     Value::new(
@@ -28,70 +28,56 @@ fn value_block_size(c: &mut Criterion) {
     }
 }
 
-fn block_cache_insert(c: &mut Criterion) {
-    let block_cache = BlockCache::with_capacity_bytes(1_000);
+fn load_block_from_disk(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Load block from disk");
 
-    let items = (0..100)
-        .map(|_| {
-            Value::new(
-                "a".repeat(16).as_bytes(),
-                "a".repeat(100).as_bytes(),
-                63,
-                lsm_tree::ValueType::Tombstone,
-            )
-        })
-        .collect();
+    for block_size in [1, 4, 8, 16, 32, 64] {
+        group.bench_function(format!("{block_size} KiB"), |b| {
+            let block_size = block_size * 1_024;
 
-    let block = Arc::new(ValueBlock { items, crc: 0 });
+            let mut size = 0;
 
-    c.bench_function("BlockCache::insert_disk_block", |b| {
-        b.iter(|| {
-            block_cache.insert_disk_block(
-                generate_segment_id(),
-                "asdasdasdasd".as_bytes().into(),
-                block.clone(),
-            );
+            let mut items = vec![];
+
+            for x in 0u64.. {
+                let value = Value::new(
+                    x.to_be_bytes(),
+                    x.to_string().repeat(100).as_bytes(),
+                    63,
+                    lsm_tree::ValueType::Tombstone,
+                );
+
+                size += value.size();
+
+                items.push(value);
+
+                if size >= block_size {
+                    break;
+                }
+            }
+
+            let mut block = ValueBlock { items, crc: 0 };
+            let mut file = tempfile::tempfile().unwrap();
+
+            let mut bytes = Vec::with_capacity(u16::MAX.into());
+            block.crc = ValueBlock::create_crc(&block.items).unwrap();
+            block.serialize(&mut bytes).unwrap();
+            let bytes = compress_prepend_size(&bytes);
+            file.write_all(&bytes).unwrap();
+
+            let block_size_on_disk = bytes.len();
+
+            b.iter(|| {
+                let loaded_block =
+                    ValueBlock::from_file_compressed(&mut file, 0, block_size_on_disk as u32)
+                        .unwrap();
+
+                assert_eq!(loaded_block.items.len(), block.items.len());
+                assert_eq!(loaded_block.crc, block.crc);
+            });
         });
-    });
+    }
 }
 
-fn block_cache_get(c: &mut Criterion) {
-    let block_cache = BlockCache::with_capacity_bytes(u64::MAX);
-
-    let items = (0..100)
-        .map(|_| {
-            Value::new(
-                "a".repeat(16).as_bytes(),
-                "a".repeat(100).as_bytes(),
-                63,
-                lsm_tree::ValueType::Tombstone,
-            )
-        })
-        .collect();
-
-    let seg_id = generate_segment_id();
-    let block = Arc::new(ValueBlock { items, crc: 0 });
-
-    (0u64..100_000).for_each(|idx| {
-        block_cache.insert_disk_block(seg_id.clone(), idx.to_be_bytes().into(), block.clone())
-    });
-    assert_eq!(100_000, block_cache.len());
-
-    let mut rng = rand::thread_rng();
-
-    c.bench_function("BlockCache::get_disk_block", |b| {
-        b.iter(|| {
-            let key = rng.gen_range(0u64..100_000).to_be_bytes();
-            let key: Arc<[u8]> = key.into();
-            block_cache.get_disk_block(&seg_id, &key).unwrap();
-        });
-    });
-}
-
-criterion_group!(
-    benches,
-    value_block_size,
-    block_cache_insert,
-    block_cache_get
-);
+criterion_group!(benches, value_block_size, load_block_from_disk);
 criterion_main!(benches);
