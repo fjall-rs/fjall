@@ -67,10 +67,14 @@ impl FlushManager {
         collected
     }
 
-    pub fn dequeue_task(&mut self, partition_name: Arc<str>) {
-        self.queues
+    pub fn dequeue_tasks(&mut self, partition_name: Arc<str>, cnt: usize) {
+        let mut queue = self
+            .queues
             .entry(partition_name)
-            .or_insert_with(|| Vec::with_capacity(10))
-            .remove(0);
+            .or_insert_with(|| Vec::with_capacity(10));
+
+        for _ in 0..cnt {
+            queue.remove(0);
+        }
     }
 }

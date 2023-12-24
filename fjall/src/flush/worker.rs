@@ -6,15 +6,29 @@ use std::sync::Arc;
 /// Only spawn one of these, it will internally spawn worker threads as needed.
 pub fn run(keyspace: &Keyspace) {
     loop {
+        log::debug!("flush worker: acquiring flush semaphore");
         keyspace.flush_semaphore.acquire();
 
+        log::debug!("flush worker: write locking flush manager");
         let mut flush_manager = keyspace.flush_manager.write().expect("lock is poisoned");
         let partitioned_tasks =
-            flush_manager.collect_tasks(1 /* TODO: parallelism, CPU cores probably */);
+            flush_manager.collect_tasks(4 /* TODO: parallelism, CPU cores probably */);
         drop(flush_manager);
 
-        log::trace!("Spawning {} worker threads", partitioned_tasks.len());
+        let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
 
+        if task_count == 0 {
+            log::debug!("flush worker: No tasks collected");
+            continue;
+        }
+
+        log::debug!(
+            "flush worker: spawning {} worker threads",
+            partitioned_tasks.len()
+        );
+
+        // NOTE: Don't trust clippy
+        #[allow(clippy::needless_collect)]
         let threads = partitioned_tasks
             .iter()
             .map(|(partition_name, tasks)| {
@@ -23,7 +37,7 @@ pub fn run(keyspace: &Keyspace) {
 
                 std::thread::spawn(move || {
                     log::trace!(
-                        "Flush thread, Flushing {} memtables for partition {partition_name:?}",
+                        "flush thread: flushing {} memtables for partition {partition_name:?}",
                         tasks.len()
                     );
 
@@ -76,9 +90,6 @@ pub fn run(keyspace: &Keyspace) {
             .map(|t| t.join().expect("should join"))
             .collect::<Vec<_>>();
 
-        log::trace!("All flush worker threads are done");
-        let mut flush_manager = keyspace.flush_manager.write().expect("lock is poisoned");
-
         // TODO: handle flush fail
         for result in results {
             match result {
@@ -88,10 +99,18 @@ pub fn run(keyspace: &Keyspace) {
 
                     match partition.tree.register_segments(&segments) {
                         Ok(()) => {
-                            for segment in segments {
-                                flush_manager.dequeue_task(partition.name.clone());
+                            for segment in &segments {
                                 partition.tree.free_sealed_memtable(&segment.metadata.id);
                             }
+
+                            // NOTE: We can safely partially remove tasks
+                            // as there is only one flush thread
+                            log::debug!(
+                                "flush worker: write locking flush manager to submit results"
+                            );
+                            let mut flush_manager =
+                                keyspace.flush_manager.write().expect("lock is poisoned");
+                            flush_manager.dequeue_tasks(partition.name.clone(), segments.len());
 
                             keyspace.compaction_manager.notify(partition);
                         }
@@ -106,8 +125,7 @@ pub fn run(keyspace: &Keyspace) {
             }
         }
 
-        drop(flush_manager);
-
+        log::debug!("flush worker: write locking journal manager to maybe do maintenance");
         if let Err(e) = keyspace
             .journal_manager
             .write()
@@ -116,6 +134,8 @@ pub fn run(keyspace: &Keyspace) {
         {
             log::error!("journal GC failed: {e:?}");
         };
+
+        log::debug!("flush worker: fully done");
 
         // TODO: check for deleted partitions
     }
