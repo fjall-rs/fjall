@@ -1,6 +1,7 @@
 use super::PartitionKey;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
+#[derive(Debug)]
 pub struct Item {
     /// Partition key - an arbitrary byte array
     ///
@@ -14,7 +15,7 @@ pub struct Item {
 
     /// User-defined value - an arbitrary byte array
     ///
-    /// Supports up to 2^16 bytes
+    /// Supports up to 2^32 bytes
     pub value: UserValue,
 
     /// Tombstone marker - if this is true, the value has been deleted
@@ -36,7 +37,7 @@ impl Item {
         assert!(!k.is_empty());
         assert!(p.len() <= u8::MAX.into());
         assert!(k.len() <= u16::MAX.into());
-        assert!(v.len() <= u16::MAX.into());
+        assert!(u32::try_from(v.len()).is_ok());
 
         Self {
             partition: p,

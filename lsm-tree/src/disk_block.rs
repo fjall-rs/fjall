@@ -30,7 +30,6 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
         offset: u64,
         size: u32,
     ) -> crate::Result<Self> {
-        // Read bytes from disk
         reader.seek(std::io::SeekFrom::Start(offset))?;
         Self::from_reader_compressed(reader, size)
     }
@@ -38,7 +37,7 @@ impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
 
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {
     /// Calculates the CRC from a list of values
-    pub(crate) fn create_crc(items: &Vec<T>) -> crate::Result<u32> {
+    pub fn create_crc(items: &Vec<T>) -> crate::Result<u32> {
         let mut hasher = crc32fast::Hasher::new();
 
         // NOTE: Truncation is okay and actually needed

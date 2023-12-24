@@ -105,7 +105,7 @@ impl Ord for ParsedInternalKey {
 ///
 /// # Disk representation
 ///
-/// \[seqno; 8 bytes] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
+/// \[seqno; 8 bytes] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 4 bytes] \[value: N bytes]
 #[derive(Clone, PartialEq, Eq)]
 pub struct Value {
     /// User-defined key - an arbitrary byte array
@@ -115,7 +115,7 @@ pub struct Value {
 
     /// User-defined value - an arbitrary byte array
     ///
-    /// Supports up to 2^16 bytes
+    /// Supports up to 2^32 bytes
     pub value: UserValue,
 
     /// Sequence number
@@ -186,7 +186,7 @@ impl Value {
 
         assert!(!k.is_empty());
         assert!(k.len() <= u16::MAX.into());
-        assert!(v.len() <= u16::MAX.into());
+        assert!(u32::try_from(v.len()).is_ok());
 
         Self {
             key: k,
@@ -233,7 +233,7 @@ impl Serializable for Value {
 
         // NOTE: Truncation is okay and actually needed
         #[allow(clippy::cast_possible_truncation)]
-        writer.write_u16::<BigEndian>(self.value.len() as u16)?;
+        writer.write_u32::<BigEndian>(self.value.len() as u32)?;
         writer.write_all(&self.value)?;
 
         Ok(())
@@ -249,7 +249,7 @@ impl Deserializable for Value {
         let mut key = vec![0; key_len.into()];
         reader.read_exact(&mut key)?;
 
-        let value_len = reader.read_u16::<BigEndian>()?;
+        let value_len = reader.read_u32::<BigEndian>()?;
         let mut value = vec![0; value_len as usize];
         reader.read_exact(&mut value)?;
 

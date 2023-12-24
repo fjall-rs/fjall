@@ -401,7 +401,7 @@ impl PartitionHandle {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Key and value may be up to 65536 bytes long.
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.

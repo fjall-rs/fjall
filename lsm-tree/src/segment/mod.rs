@@ -19,7 +19,8 @@ use crate::{
 };
 use std::{ops::Bound, path::Path, sync::Arc};
 
-/// Represents a `LSMT` segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
+/// Disk segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
+///
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
 /// The block offset and size in the file is saved in the "block index".
 ///

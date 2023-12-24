@@ -1,5 +1,6 @@
 use std::{fs::File, io::Write, path::Path};
 
+#[doc(hidden)]
 pub const LSM_MARKER: &str = ".lsm";
 pub const SEGMENTS_FOLDER: &str = "segments";
 pub const LEVELS_MANIFEST_FILE: &str = "levels.json";

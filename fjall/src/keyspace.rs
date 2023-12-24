@@ -8,7 +8,7 @@ use crate::{
     version::Version,
     PartitionHandle,
 };
-use lsm_tree::{generate_segment_id, SequenceNumberCounter, Tree as LsmTree};
+use lsm_tree::{id::generate_segment_id, SequenceNumberCounter, Tree as LsmTree};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -16,8 +16,6 @@ use std::{
 use std_semaphore::Semaphore;
 
 type Partitions = HashMap<Arc<str>, LsmTree>;
-
-// TODO: fsync thread
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
@@ -95,8 +93,9 @@ impl Keyspace {
             keyspace.spawn_compaction_worker();
         }
 
-        // TODO: option inside config
-        keyspace.spawn_fsync_thread(1_000);
+        if let Some(ms) = keyspace.config.fsync_ms {
+            keyspace.spawn_fsync_thread(ms.into());
+        }
 
         Ok(keyspace)
     }

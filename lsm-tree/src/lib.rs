@@ -25,6 +25,9 @@
 //! Because maintaining an efficient structure is deferred to the compaction process, writing to an LSMT
 //! is very fast (O(1) complexity).
 //!
+//! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage
+//! engine, larger keys and values have a bigger performance impact.
+//!
 //! # Example usage
 //!
 //! ```
@@ -62,7 +65,8 @@
 //!
 //! // Flush to secondary storage, clearing the memtable
 //! // and persisting all in-memory data.
-//! tree.flush_active_memtable().expect("should flush").join().unwrap()?;
+//! // Note, this flushes synchronously, which may not be desired
+//! tree.flush_active_memtable()?;
 //! assert_eq!(Some("my_value".as_bytes().into()), item);
 //!
 //! // When some disk segments have amassed, use compaction
@@ -101,12 +105,16 @@ mod descriptor_table;
 mod disk_block;
 mod either;
 mod error;
-mod file;
+
+#[doc(hidden)]
+pub mod file;
 
 #[doc(hidden)]
 pub mod flush;
 
-mod id;
+#[doc(hidden)]
+pub mod id;
+
 mod levels;
 mod memtable;
 mod merge;
@@ -138,8 +146,6 @@ pub use {
     block_cache::BlockCache,
     config::Config,
     error::{Error, Result},
-    flush::flush_to_segment,
-    id::generate_segment_id,
     memtable::MemTable,
     segment::Segment,
     seqno::SequenceNumberCounter,

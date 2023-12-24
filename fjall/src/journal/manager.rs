@@ -1,4 +1,4 @@
-use lsm_tree::{generate_segment_id, SeqNo};
+use lsm_tree::{id::generate_segment_id, SeqNo};
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::Arc};
 
 use crate::{

@@ -55,7 +55,7 @@ pub fn run(keyspace: &Keyspace) {
                             std::thread::spawn(move || {
                                 use lsm_tree::flush::Options;
 
-                                let segment = lsm_tree::flush_to_segment(Options {
+                                let segment = lsm_tree::flush::flush_to_segment(Options {
                                     memtable: task.sealed_memtable.clone(),
                                     segment_id: task.id.clone(),
                                     folder: task

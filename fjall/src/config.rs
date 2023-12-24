@@ -1,5 +1,5 @@
 use crate::Keyspace;
-use lsm_tree::BlockCache;
+use lsm_tree::{compaction::CompactionStrategy, BlockCache};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -15,15 +15,23 @@ pub struct Config {
 
     /// Max size of all journals in bytes
     pub(crate) max_journaling_size_in_bytes: u32,
+
+    /// Fsync every N ms asynchronously
+    pub(crate) fsync_ms: Option<u16>,
+
+    /// Test temporary
+    // TODO: temporary, should be configurable per partition
+    pub compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             path: ".fjall_data".into(),
-            // TODO: partitions may have different block sizes... need bytes as capacity...
-            block_cache: Arc::new(BlockCache::with_capacity_blocks(16 * 1_024)),
+            block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
+            fsync_ms: Some(1_000),
             max_journaling_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
+            compaction_strategy: Arc::<lsm_tree::compaction::Levelled>::default(),
         }
     }
 }
@@ -42,7 +50,8 @@ impl Config {
     /// You can create a global [`BlockCache`] and share it between multiple
     /// keyspaces to cap global cache memory usage.
     ///
-    /// Defaults to a block cache 64 16 MiB of capacity *per keyspace*.
+    /// Defaults to a block cache 16 MiB of capacity shared
+    /// between all partitions inside this keyspace.
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
@@ -58,6 +67,24 @@ impl Config {
     #[must_use]
     pub fn max_journaling_size(mut self, mib: u32) -> Self {
         self.max_journaling_size_in_bytes = mib;
+        self
+    }
+
+    /// If Some, starts an fsync thread that asynchronously
+    /// persists data.
+    ///
+    /// Default = 1 second
+    ///
+    /// # Panics
+    ///
+    /// Panics if ms is 0
+    #[must_use]
+    pub fn fsync_ms(mut self, ms: Option<u16>) -> Self {
+        if let Some(ms) = ms {
+            assert!(ms > 0);
+        }
+
+        self.fsync_ms = ms;
         self
     }
 

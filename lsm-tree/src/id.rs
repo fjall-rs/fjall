@@ -25,6 +25,7 @@ fn to_base36(mut x: u32) -> String {
 ///
 /// Like <https://cassandra.apache.org/_/blog/Apache-Cassandra-4.1-New-SSTable-Identifiers.html>
 #[allow(clippy::module_name_repetitions)]
+#[doc(hidden)]
 #[must_use]
 pub fn generate_segment_id() -> Arc<str> {
     let now = chrono::Utc::now();

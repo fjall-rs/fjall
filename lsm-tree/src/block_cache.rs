@@ -98,7 +98,7 @@ impl BlockCache {
     #[must_use]
     pub fn with_capacity_bytes(bytes: u64) -> Self {
         Self {
-            data: Cache::with_weighter(1, bytes, BlockWeighter),
+            data: Cache::with_weighter(10_000, bytes, BlockWeighter),
             capacity: bytes,
         }
     }
