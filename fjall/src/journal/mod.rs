@@ -153,8 +153,6 @@ mod tests {
             shard.writer.write_batch(&values, 0)?;
         }
 
-        let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
-
         {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
@@ -166,7 +164,6 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -175,12 +172,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         // Mangle journal
@@ -188,7 +179,6 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -197,12 +187,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         Ok(())
@@ -223,8 +207,6 @@ mod tests {
             shard.writer.write_batch(&values, 0)?;
         }
 
-        let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
-
         {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
@@ -241,7 +223,6 @@ mod tests {
             }
             .serialize(&mut file)?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -250,12 +231,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         // Mangle journal
@@ -267,7 +242,6 @@ mod tests {
             }
             .serialize(&mut file)?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -276,12 +250,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         Ok(())
@@ -302,8 +270,6 @@ mod tests {
             shard.writer.write_batch(&values, 0)?;
         }
 
-        let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
-
         {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
@@ -316,7 +282,6 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::End(5432).serialize(&mut file)?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -325,12 +290,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         // Mangle journal
@@ -338,7 +297,6 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::End(5432).serialize(&mut file)?;
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -347,12 +305,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         Ok(())
@@ -373,8 +325,6 @@ mod tests {
             shard.writer.write_batch(&values, 0)?;
         }
 
-        let file_size_before_mangle = std::fs::metadata(&shard_path)?.len();
-
         {
             let (_, memtables) = Journal::recover(&dir)?;
             let memtable = memtables.get("default").expect("should exist");
@@ -394,7 +344,6 @@ mod tests {
             .serialize(&mut file)?;
 
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -403,12 +352,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         // Mangle journal
@@ -423,7 +366,6 @@ mod tests {
             .serialize(&mut file)?;
 
             file.sync_all()?;
-            assert!(file.metadata()?.len() > file_size_before_mangle);
         }
 
         for _ in 0..10 {
@@ -432,12 +374,6 @@ mod tests {
 
             // Should recover all items
             assert_eq!(memtable.len(), values.len());
-
-            // Should truncate to before-mangled state
-            assert_eq!(
-                std::fs::metadata(&shard_path)?.len(),
-                file_size_before_mangle
-            );
         }
 
         Ok(())

@@ -28,8 +28,10 @@ impl JournalShardReader {
     }
 
     fn truncate_file(&mut self, pos: u64) -> crate::Result<()> {
-        log::debug!("truncating log to {}", pos);
-        self.reader.get_mut().set_len(pos)?;
+        let pos_with_preallocation = pos.max(4 * 1_024 * 1_024);
+        log::debug!("truncating log to {pos_with_preallocation}");
+
+        self.reader.get_mut().set_len(pos_with_preallocation)?;
         self.reader.get_mut().sync_all()?;
         Ok(())
     }
