@@ -113,11 +113,7 @@ impl KvStore {
 
     pub fn force_flush(&self) -> lsm_tree::Result<()> {
         eprintln!("Flushing memtable");
-
-        if let Some(t) = self.tree.flush_active_memtable() {
-            t.join().expect("should join")?;
-        }
-
+        self.tree.flush_active_memtable()?;
         Ok(())
     }
 
