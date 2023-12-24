@@ -1,7 +1,4 @@
-use crate::{
-    compaction::{self, CompactionStrategy},
-    BlockCache, Tree,
-};
+use crate::{BlockCache, Tree};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -30,10 +27,6 @@ pub struct Config {
     ///
     /// A level target size is: max_memtable_size * level_ratio.pow(#level + 1)
     pub level_ratio: u8,
-
-    /// Compaction strategy to use
-    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
-    // TODO: 0.3.0 remove strategy from Config
 }
 
 const DEFAULT_FILE_FOLDER: &str = ".lsm.data";
@@ -43,10 +36,9 @@ impl Default for Config {
         Self {
             path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
-            block_cache: Arc::new(BlockCache::with_capacity_blocks(4_096)),
+            block_cache: Arc::new(BlockCache::with_capacity_bytes(8 * 1_024 * 1_024)),
             level_count: 7,
             level_ratio: 8,
-            compaction_strategy: Arc::new(compaction::Levelled::default()),
         }
     }
 }
@@ -110,22 +102,10 @@ impl Config {
     /// You can create a global [`BlockCache`] and share it between multiple
     /// trees to cap global cache memory usage.
     ///
-    /// Defaults to a block cache with 16 MiB of capacity *per tree*.
+    /// Defaults to a block cache with 8 MiB of capacity *per tree*.
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
-        self
-    }
-
-    /// Sets the compaction strategy to use.
-    ///
-    /// Defaults to [`compaction::Levelled`]
-    #[must_use]
-    pub fn compaction_strategy(
-        mut self,
-        strategy: Arc<dyn CompactionStrategy + Send + Sync>,
-    ) -> Self {
-        self.compaction_strategy = strategy;
         self
     }
 

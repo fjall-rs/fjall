@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(ITEM_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
-        let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
+        let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(ITEM_COUNT * VERSION_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
-        let block_cache = Arc::new(BlockCache::with_capacity_blocks(usize::MAX));
+        let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),

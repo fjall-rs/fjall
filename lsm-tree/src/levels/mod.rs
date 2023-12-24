@@ -38,10 +38,6 @@ pub struct Levels {
 }
 
 impl Levels {
-    pub(crate) fn contains_id(&self, id: &str) -> bool {
-        self.levels.iter().any(|lvl| lvl.contains_id(id))
-    }
-
     pub(crate) fn is_compacting(&self) -> bool {
         !self.hidden_set.is_empty()
     }
@@ -55,9 +51,9 @@ impl Levels {
 
         let mut levels = Self {
             path: path.as_ref().to_path_buf(),
-            segments: HashMap::new(),
+            segments: HashMap::with_capacity(100),
             levels,
-            hidden_set: HashSet::new(),
+            hidden_set: HashSet::with_capacity(10),
 
             #[cfg(feature = "segment_history")]
             segment_history_writer: segment_history::Writer::new()?,
@@ -110,11 +106,6 @@ impl Levels {
         let level_manifest = fs::read_to_string(&path)?;
         let levels: Vec<_> = serde_json::from_str(&level_manifest).expect("deserialize error");
 
-        // NOTE: There are never that many levels
-        // so it's fine to just truncate it
-        #[allow(clippy::cast_possible_truncation)]
-        let level_count = levels.len() as u8;
-
         let segments = segments
             .into_iter()
             .map(|seg| (seg.metadata.id.clone(), seg))
@@ -125,7 +116,7 @@ impl Levels {
         let mut levels = Self {
             segments,
             levels,
-            hidden_set: HashSet::new(),
+            hidden_set: HashSet::with_capacity(10),
             path: path.as_ref().to_path_buf(),
 
             #[cfg(feature = "segment_history")]
@@ -159,13 +150,6 @@ impl Levels {
 
     pub(crate) fn add(&mut self, segment: Arc<Segment>) {
         self.insert_into_level(0, segment);
-    }
-
-    pub(crate) fn add_id(&mut self, segment_id: Arc<str>) {
-        self.levels
-            .first_mut()
-            .expect("should have at least one level")
-            .push(segment_id);
     }
 
     pub(crate) fn sort_levels(&mut self) {
@@ -331,7 +315,7 @@ mod tests {
 
     #[allow(clippy::expect_used)]
     fn fixture_segment(id: Arc<str>, key_range: (UserKey, UserKey)) -> Arc<Segment> {
-        let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
+        let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
 
         Arc::new(Segment {
             descriptor_table: Arc::new(

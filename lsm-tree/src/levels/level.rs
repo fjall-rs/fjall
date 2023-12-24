@@ -6,12 +6,6 @@ use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 #[derive(Serialize, Deserialize)]
 pub struct Level(Vec<Arc<str>>);
 
-impl Level {
-    pub(crate) fn contains_id(&self, id: &str) -> bool {
-        self.0.iter().any(|x| &**x == id)
-    }
-}
-
 impl std::ops::Deref for Level {
     type Target = Vec<Arc<str>>;
 

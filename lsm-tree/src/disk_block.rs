@@ -8,8 +8,8 @@ use std::io::{Cursor, Read, Write};
 /// The integrity of a block can be checked using the CRC value that is saved in it.
 #[derive(Clone, Debug)]
 pub struct DiskBlock<T: Clone + Serializable + Deserializable> {
-    pub(crate) items: Vec<T>,
-    pub(crate) crc: u32,
+    pub items: Vec<T>,
+    pub crc: u32,
 }
 
 impl<T: Clone + Serializable + Deserializable> DiskBlock<T> {

@@ -7,7 +7,6 @@ include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 homepage.workspace = true

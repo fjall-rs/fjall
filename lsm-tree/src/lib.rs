@@ -70,9 +70,10 @@
 //!
 //! // Choose compaction strategy based on workload
 //! use lsm_tree::compaction::Levelled;
+//! # use std::sync::Arc;
 //!
 //! let strategy = Levelled::default();
-//! tree.compact(Box::new(strategy))?;
+//! tree.compact(Arc::new(strategy))?;
 //!
 //! assert_eq!(Some("my_value".as_bytes().into()), item);
 //! #
@@ -116,7 +117,9 @@ pub mod prefix;
 #[doc(hidden)]
 pub mod range;
 
-mod segment;
+#[doc(hidden)]
+pub mod segment;
+
 mod seqno;
 
 #[doc(hidden)]

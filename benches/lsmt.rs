@@ -97,7 +97,7 @@ fn disk_point_reads(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache(BlockCache::with_capacity_blocks(0).into())
+        .block_cache(BlockCache::with_capacity_bytes(0).into())
         .open()
         .unwrap();
 
@@ -178,7 +178,7 @@ fn cached_retrieve_disk_random(c: &mut Criterion) {
     group.sample_size(10);
 
     let tree = Config::new(tempdir().unwrap())
-        .block_cache(BlockCache::with_capacity_blocks(/* 256 MB */ 62 * 1_000).into())
+        .block_cache(BlockCache::with_capacity_bytes(/* 256 MB */ 62 * 1_000).into())
         .open()
         .unwrap();
 
@@ -262,7 +262,7 @@ fn full_scan(c: &mut Criterion) {
 
     group.bench_function("full scan uncached", |b| {
         let tree = Config::new(tempdir().unwrap())
-            .block_cache(BlockCache::with_capacity_blocks(0).into())
+            .block_cache(BlockCache::with_capacity_bytes(0).into())
             .open()
             .unwrap();
 

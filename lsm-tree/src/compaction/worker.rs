@@ -34,7 +34,7 @@ pub struct Options {
     /// Compaction strategy.
     ///
     /// The one inside `config` is NOT used.
-    pub strategy: Box<dyn CompactionStrategy>,
+    pub strategy: Arc<dyn CompactionStrategy>,
 
     /// Stop signal
     pub stop_signal: StopSignal,

@@ -73,7 +73,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn compact(&self, strategy: Box<dyn CompactionStrategy>) -> crate::Result<()> {
+    pub fn compact(&self, strategy: Arc<dyn CompactionStrategy>) -> crate::Result<()> {
         do_compaction(&CompactionOptions {
             config: self.config.clone(),
             sealed_memtables: self.sealed_memtables.clone(),
@@ -101,7 +101,7 @@ impl Tree {
     #[doc(hidden)]
     pub fn major_compact(&self, target_size: u64) -> crate::Result<()> {
         log::info!("Starting major compaction");
-        let strategy = Box::new(crate::compaction::major::Strategy::new(target_size));
+        let strategy = Arc::new(crate::compaction::major::Strategy::new(target_size));
         self.compact(strategy)
     }
 

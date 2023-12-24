@@ -8,6 +8,12 @@ use std::sync::Arc;
 /// The integrity of a block can be checked using the CRC value that is saved in it.
 pub type ValueBlock = DiskBlock<Value>;
 
+impl ValueBlock {
+    pub fn size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.items.iter().map(Value::size).sum::<usize>()
+    }
+}
+
 pub fn load_and_cache_by_block_handle(
     descriptor_table: &FileDescriptorTable,
     block_cache: &BlockCache,

@@ -2,6 +2,12 @@ use crate::{flush::manager::Task as FlushTask, journal::manager::PartitionSeqno,
 use lsm_tree::{prefix::Prefix, range::Range, Tree as LsmTree, UserKey, UserValue};
 use std::{ops::RangeBounds, path::PathBuf, sync::Arc, time::Duration};
 
+const VALID_CHARACTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+
+pub fn is_valid_partition_name(s: &str) -> bool {
+    s.chars().all(|c| VALID_CHARACTERS.contains(c))
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
     /// Partition name
@@ -31,8 +37,9 @@ impl std::ops::Deref for PartitionHandle {
 }
 
 impl PartitionHandle {
-    /// Returns the LSM-tree path
-    pub(crate) fn path(&self) -> PathBuf {
+    /// Returns the underlying LSM-tree's path
+    #[must_use]
+    pub fn path(&self) -> PathBuf {
         self.tree.config.path.clone()
     }
 
@@ -301,28 +308,23 @@ impl PartitionHandle {
     }
 
     fn rotate_memtable(&self) -> crate::Result<()> {
-        log::debug!("partition: acquiring flush manager lock");
-        let mut flush_manager = self
-            .keyspace
-            .flush_manager
-            .write()
-            .expect("lock is poisoned");
-
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
+            log::debug!("Got no sealed memtable, someone beat us to it");
             return Ok(());
         };
 
-        log::trace!("Writing partition seqno");
-        let memtable_max_seqno = yanked_memtable
-            .get_lsn()
-            .expect("sealed memtable is never empty");
-
+        log::debug!("partition: acquiring journal manager lock");
         let mut journal_manager = self
             .keyspace
             .journal_manager
             .write()
             .expect("lock is poisoned");
+
+        log::trace!("partition: writing partition seqno");
+        let memtable_max_seqno = yanked_memtable
+            .get_lsn()
+            .expect("sealed memtable is never empty");
 
         journal_manager.rotate_journal(
             std::iter::once((
@@ -335,6 +337,13 @@ impl PartitionHandle {
             .collect(),
         )?;
 
+        log::debug!("partition: acquiring flush manager lock");
+        let mut flush_manager = self
+            .keyspace
+            .flush_manager
+            .write()
+            .expect("lock is poisoned");
+
         flush_manager.enqueue_task(
             self.name.clone(),
             FlushTask {
@@ -344,23 +353,45 @@ impl PartitionHandle {
             },
         );
 
-        // Notify flush workers that new work has arrived
+        let journal_size = journal_manager.disk_space_used();
+        drop(journal_manager);
+        drop(flush_manager);
+
+        // Notify flush worker that new work has arrived
         self.keyspace.flush_semaphore.release();
 
-        while journal_manager.disk_space_used()
-            > self.keyspace.config.max_journaling_size_in_bytes.into()
-        {
-            log::warn!("Too many journals amassed, stalling writes...");
-            std::thread::sleep(Duration::from_millis(500));
+        if journal_size > self.keyspace.config.max_journaling_size_in_bytes.into() {
+            // TODO: maybe exponential backoff
+
+            loop {
+                log::warn!("Too many journals amassed, halting writes...");
+
+                self.keyspace.flush_semaphore.release();
+                std::thread::sleep(Duration::from_millis(1_000));
+
+                let bytes = self
+                    .keyspace
+                    .journal_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .disk_space_used();
+
+                if bytes <= self.keyspace.config.max_journaling_size_in_bytes.into() {
+                    log::debug!("Ending write halt");
+                    break;
+                }
+            }
         }
 
         if self.tree.first_level_segment_count() > 16 {
             log::info!("Stalling writes...");
+
             std::thread::sleep(Duration::from_millis(1_000));
         }
 
         while self.tree.first_level_segment_count() > 20 {
             log::warn!("Halting writes until L0 is cleared up...");
+
             self.keyspace.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
@@ -394,6 +425,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+        log::trace!("insert: acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
@@ -412,7 +444,8 @@ impl PartitionHandle {
         let memtable_size = self.tree.insert(key, value, seqno);
 
         // TODO: 0.3.0 max_memtable_size
-        if memtable_size > 8_000_000 {
+        if memtable_size > 16_000_000 {
+            log::debug!("insert: rotating memtable");
             self.rotate_memtable()?;
         }
 
@@ -449,6 +482,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+        log::trace!("remove: acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
@@ -467,7 +501,8 @@ impl PartitionHandle {
         let memtable_size = self.tree.remove(key, seqno);
 
         // TODO: 0.3.0 max_memtable_size
-        if memtable_size > 8_000_000 {
+        if memtable_size > 16_000_000 {
+            log::debug!("remove: rotating memtable");
             self.rotate_memtable()?;
         }
 

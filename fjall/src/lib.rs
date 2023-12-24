@@ -86,6 +86,7 @@ mod partition;
 mod sharded;
 mod version;
 
+pub use lsm_tree::compaction as lsm_compaction; // TODO: fix naming conflict
 pub use lsm_tree::BlockCache;
 
 pub use {

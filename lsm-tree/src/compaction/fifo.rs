@@ -27,18 +27,6 @@ pub struct Strategy {
 
 impl Strategy {
     /// Configures a new `Fifo` compaction strategy
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use lsm_tree::{Config, compaction::Fifo};
-    /// # use std::sync::Arc;
-    ///
-    /// let one_gb = 1 * 1_024 * 1_024 * 1_024;
-    ///
-    /// let strategy = Arc::new(Fifo::new(one_gb));
-    /// let config = Config::default().compaction_strategy(strategy);
-    /// ```
     #[must_use]
     pub fn new(limit: u64) -> Self {
         Self { limit }
@@ -140,7 +128,7 @@ mod tests {
 
     #[allow(clippy::expect_used)]
     fn fixture_segment(id: Arc<str>, created_at: u128) -> Arc<Segment> {
-        let block_cache = Arc::new(BlockCache::with_capacity_blocks(0));
+        let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
 
         Arc::new(Segment {
             descriptor_table: Arc::new(

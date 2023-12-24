@@ -4,7 +4,7 @@ use crate::{
     file::{FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER},
     flush::manager::FlushManager,
     journal::{manager::JournalManager, Journal},
-    partition::PartitionHandleInner,
+    partition::{is_valid_partition_name, PartitionHandleInner},
     version::Version,
     PartitionHandle,
 };
@@ -89,6 +89,15 @@ impl Keyspace {
             Self::create_new(config)
         }?;
 
+        keyspace.spawn_flush_worker();
+
+        for _ in 0..4 {
+            keyspace.spawn_compaction_worker();
+        }
+
+        // TODO: option inside config
+        keyspace.spawn_fsync_thread(1_000);
+
         Ok(keyspace)
     }
 
@@ -97,12 +106,16 @@ impl Keyspace {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the partition name includes characters other than: a-z A-Z 0-9 _ -
     pub fn open_partition(
         &self,
         name: &str,
         // config: PartitionConfig,
     ) -> crate::Result<PartitionHandle> {
-        // TODO: limit naming of partition to a-zA-Z0-9_-
+        assert!(is_valid_partition_name(name));
 
         let partitions = self.partitions.write().expect("lock is poisoned");
 
@@ -251,14 +264,27 @@ impl Keyspace {
             folder.sync_all()?;
         }
 
-        let keyspace = Self(Arc::new(inner));
-        keyspace.spawn_flush_worker();
+        Ok(Self(Arc::new(inner)))
+    }
 
-        for _ in 0..4 {
-            keyspace.spawn_compaction_worker();
-        }
+    fn spawn_fsync_thread(&self, ms: usize) {
+        let journal = self.journal.clone();
 
-        Ok(keyspace)
+        std::thread::spawn(move || loop {
+            log::trace!("fsync thread: sleeping {ms}ms");
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+
+            // TODO:
+            /* if stop_signal.is_stopped() {
+                log::debug!("fsync thread: exiting because tree is dropping");
+                return;
+            } */
+
+            log::trace!("fsync thread: fsycing journal");
+            if let Err(e) = journal.flush() {
+                log::error!("Fsync failed: {e:?}");
+            }
+        });
     }
 
     fn spawn_compaction_worker(&self) {
