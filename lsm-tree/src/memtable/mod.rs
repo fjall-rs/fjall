@@ -16,7 +16,7 @@ pub struct MemTable {
 impl MemTable {
     /// Returns the item by key if it exists
     ///
-    /// The item with the highest seqno will be returned
+    /// The item with the highest seqno will be returned, if `seqno` is None
     pub fn get<K: AsRef<[u8]>>(&self, key: K, seqno: Option<SeqNo>) -> Option<Value> {
         let prefix = key.as_ref();
 
@@ -41,9 +41,14 @@ impl MemTable {
         for entry in self.items.range(range) {
             let key = entry.key();
 
-            // We are past the user key, so we can immediately return None
-            if !key.user_key.starts_with(prefix) {
+            // TODO: add benchmark to check upper bound of this query
+            // We are past the searched key, so we can immediately return None
+            if &*key.user_key > prefix {
                 return None;
+            }
+
+            if &*key.user_key != prefix {
+                continue;
             }
 
             // Check for seqno if needed
