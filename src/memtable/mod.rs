@@ -15,7 +15,7 @@ pub struct MemTable {
 impl MemTable {
     /// Returns the item by key if it exists
     ///
-    /// The item with the highest seqno will be returned
+    /// The item with the highest seqno will be returned, if `seqno` is None
     pub fn get<K: AsRef<[u8]>>(&self, key: K, seqno: Option<SeqNo>) -> Option<Value> {
         let prefix = key.as_ref();
 
