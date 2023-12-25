@@ -40,8 +40,9 @@ impl MemTable {
         for entry in self.items.range(range) {
             let key = entry.key();
 
+            // TODO: add benchmark to check upper bound of this query
             // We are past the searched key, so we can immediately return None
-            if prefix > &key.user_key {
+            if &*key.user_key > prefix {
                 return None;
             }
 
