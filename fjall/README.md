@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/logo.png" height="128">
+  <img src="/fjall/logo.png" height="128">
 </p>
 <p align="center>
   (temporary logo)
