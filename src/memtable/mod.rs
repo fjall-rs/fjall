@@ -45,6 +45,10 @@ impl MemTable {
                 return None;
             }
 
+            if &*key.user_key != prefix {
+                continue;
+            }
+
             // Check for seqno if needed
             if let Some(seqno) = seqno {
                 if key.seqno < seqno {

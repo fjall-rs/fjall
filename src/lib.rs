@@ -80,7 +80,10 @@ mod flush;
 mod id;
 mod journal;
 mod levels;
-mod memtable;
+
+#[doc(hidden)]
+pub mod memtable;
+
 mod merge;
 mod prefix;
 mod range;
@@ -97,7 +100,7 @@ mod value;
 mod version;
 
 #[doc(hidden)]
-pub use value::Value;
+pub use value::{Value, ValueType};
 
 pub use {
     crate::serde::{DeserializeError, SerializeError},
