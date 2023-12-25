@@ -40,7 +40,7 @@ impl MemTable {
         for entry in self.items.range(range) {
             let key = entry.key();
 
-            // We are past the user key, so we can immediately return None
+            // We are past the searched key, so we can immediately return None
             if prefix > &key.user_key {
                 return None;
             }
