@@ -41,7 +41,7 @@ impl MemTable {
             let key = entry.key();
 
             // We are past the user key, so we can immediately return None
-            if !key.user_key.starts_with(prefix) {
+            if prefix > &key.user_key {
                 return None;
             }
 
