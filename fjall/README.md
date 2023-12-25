@@ -35,7 +35,7 @@ For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-t
 cargo add fjall
 ```
 
-```rs
+```rust
 TODO:
 ```
 
