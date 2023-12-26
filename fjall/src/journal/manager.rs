@@ -51,7 +51,7 @@ impl JournalManager {
             journal,
             active_path: path.into(),
             items: Vec::with_capacity(10),
-            disk_space_in_bytes: 0, /* TODO: on recovery set to active journal size */
+            disk_space_in_bytes: 0, /* TODO: 0.3.0 on recovery set to active journal size */
         }
     }
 
@@ -60,7 +60,7 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
-    /// Performs maintenance, maybe deleting some old journalsPerforms maintenance, maybe deleting some old journals
+    /// Performs maintenance, maybe deleting some old journals
     pub fn maintenance(&mut self) -> crate::Result<()> {
         // NOTE: Walk backwards because of shifting indices
         'outer: for idx in (0..self.items.len()).rev() {
