@@ -66,7 +66,7 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
-    /// Performs maintenance, maybe deleting some old journalsPerforms maintenance, maybe deleting some old journals
+    /// Performs maintenance, maybe deleting some old journals
     pub fn maintenance(&mut self) -> crate::Result<()> {
         // NOTE: Walk backwards because of shifting indices
         'outer: for idx in (0..self.items.len()).rev() {
