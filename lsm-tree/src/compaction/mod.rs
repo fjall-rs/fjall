@@ -6,7 +6,7 @@ pub(crate) mod major;
 pub(crate) mod tiered;
 pub(crate) mod worker;
 
-use crate::{levels::Levels, Config};
+use crate::{config::PersistedConfig, levels::Levels};
 use std::sync::Arc;
 
 /// Input for compactor.
@@ -51,7 +51,7 @@ pub enum Choice {
 #[allow(clippy::module_name_repetitions)]
 pub trait CompactionStrategy {
     /// Decides on what to do based on the current state of the LSM-tree's levels
-    fn choose(&self, _: &Levels, config: &Config) -> Choice;
+    fn choose(&self, _: &Levels, config: &PersistedConfig) -> Choice;
 }
 
 pub use fifo::Strategy as Fifo;

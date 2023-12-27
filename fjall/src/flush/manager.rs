@@ -41,7 +41,7 @@ impl FlushManager {
 
     /// Returns a list of tasks per partition.
     pub fn collect_tasks(&mut self, limit: usize) -> HashMap<Arc<str>, Vec<Arc<Task>>> {
-        let mut collected: HashMap<Arc<str>, Vec<Arc<Task>>> = HashMap::new();
+        let mut collected: HashMap<_, Vec<_>> = HashMap::default();
         let mut cnt = 0;
 
         // NOTE: Returning multiple tasks per partition is fine and will

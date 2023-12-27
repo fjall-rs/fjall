@@ -17,14 +17,14 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, Keyspace};
+//! use fjall::{Config, Keyspace, PartitionConfig};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
 //! let keyspace = Config::new(folder).open()?;
 //!
 //! // Each partition is its own physical LSM-tree
-//! let items = keyspace.open_partition("my_items")?;
+//! let items = keyspace.open_partition("my_items", PartitionConfig::default())?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -93,5 +93,5 @@ pub use {
     config::Config,
     error::{Error, Result},
     keyspace::Keyspace,
-    partition::PartitionHandle,
+    partition::{config::Config as PartitionConfig, PartitionHandle},
 };

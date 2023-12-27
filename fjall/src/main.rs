@@ -1,4 +1,4 @@
-use fjall::Config;
+use fjall::{Config, PartitionConfig};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -50,20 +50,33 @@ pub fn main() -> fjall::Result<()> {
 
     let keyspace = Config::new(".data").open()?;
 
-    let items = keyspace.open_partition("default" /* PartitionConfig {} */)?;
+    /* for x in 0..10 {
+        keyspace.open_partition(&format!("data-{x}"), PartitionConfig::default())?;
+        eprintln!("partition {x} opened");
+    } */
 
-    eprintln!("hello partition");
+    let items = keyspace.open_partition("default", PartitionConfig::default())?;
 
-    let start = Instant::now();
+    for x in 0u64..100_000 {
+        items.insert(x.to_be_bytes(), "321awwararwabrwarwarb")?;
+    }
 
-    for x in 0..1000 {
+    keyspace.persist()?;
+
+    eprintln!("hello partitions");
+
+    // loop {}
+
+    /*  let start = Instant::now();
+
+    for x in 0..100 {
         items.insert(format!("hello world-{x}"), generate_random_string())?;
         keyspace.persist()?;
     }
 
     eprintln!("Took {}s", start.elapsed().as_secs_f32());
 
-    assert_eq!(1000, items.len()?);
+    assert_eq!(1000, items.len()?); */
 
     /* for x in 0..50_000_000 {
         assert!(items.get(format!("hello world-{x}"))?.is_some());

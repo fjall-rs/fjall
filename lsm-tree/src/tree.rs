@@ -3,8 +3,9 @@ use crate::{
         worker::{do_compaction, Options as CompactionOptions},
         CompactionStrategy,
     },
+    config::Config,
     descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
+    file::{BLOCKS_FILE, CONFIG_FILE, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
     flush::{flush_to_segment, Options as FlushOptions},
     id::generate_segment_id,
     levels::Levels,
@@ -16,9 +17,10 @@ use crate::{
     stop_signal::StopSignal,
     tree_inner::{SealedMemtables, TreeInner},
     version::Version,
-    BlockCache, Config, SeqNo, Snapshot, UserKey, UserValue, Value, ValueType,
+    BlockCache, SeqNo, Snapshot, UserKey, UserValue, Value, ValueType,
 };
 use std::{
+    io::Write,
     ops::RangeBounds,
     path::{Path, PathBuf},
     sync::{Arc, RwLock, RwLockWriteGuard},
@@ -48,7 +50,8 @@ impl Tree {
     /// Opens an LSM-tree in the given directory.
     ///
     /// Will recover previous state if the folder was previously
-    /// occupied by an LSM-tree.
+    /// occupied by an LSM-tree, including the previous configuration.
+    /// If not, a new tree will be initialized with the given config.
     ///
     /// After recovering a previous state, use [`Tree::set_active_memtable`]
     /// to fill the memtable with data from a write-ahead log for full durability.
@@ -57,10 +60,10 @@ impl Tree {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        log::debug!("Opening LSM-tree at {}", config.path.display());
+        log::debug!("Opening LSM-tree at {}", config.inner.path.display());
 
-        let tree = if config.path.join(LSM_MARKER).try_exists()? {
-            Self::recover(config)
+        let tree = if config.inner.path.join(LSM_MARKER).try_exists()? {
+            Self::recover(config.inner.path, config.block_cache)
         } else {
             Self::create_new(config)
         }?;
@@ -80,6 +83,7 @@ impl Tree {
             levels: self.levels.clone(),
             open_snapshots: self.open_snapshots.clone(),
             stop_signal: self.stop_signal.clone(),
+            block_cache: self.block_cache.clone(),
             strategy,
         })?;
 
@@ -183,7 +187,7 @@ impl Tree {
 
         let segment = flush_to_segment(FlushOptions {
             memtable: yanked_memtable,
-            block_cache: self.config.block_cache.clone(),
+            block_cache: self.block_cache.clone(),
             block_size: self.config.block_size,
             folder: segment_folder,
             segment_id,
@@ -283,12 +287,12 @@ impl Tree {
         memtable_lock.remove(id);
     }
 
-    /// Sets the sealed memtables.
+    /// ADds a sealed memtables.
     ///
     /// May be used to restore the LSM-tree's in-memory state from some journals.
-    pub fn set_sealed_memtables(&self, memtables: SealedMemtables) {
+    pub fn add_sealed_memtables(&self, id: Arc<str>, memtable: Arc<MemTable>) {
         let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
-        *memtable_lock = memtables;
+        memtable_lock.insert(id, memtable);
     }
 
     /// Scans the entire tree, returning the amount of items.
@@ -730,14 +734,8 @@ impl Tree {
     ///
     /// Returns the new size of the memtable.
     fn append_entry(&self, value: Value) -> u32 {
-        let size = value.size();
-
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
-        memtable_lock.insert(value);
-
-        memtable_lock
-            .approximate_size
-            .fetch_add(size as u32, std::sync::atomic::Ordering::Relaxed)
+        memtable_lock.insert(value)
     }
 
     /// Recovers previous state, by loading the level manifest and segments.
@@ -745,11 +743,14 @@ impl Tree {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering LSM-tree at {}", config.path.display());
+    fn recover<P: AsRef<Path>>(path: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
+        log::info!("Recovering LSM-tree at {}", path.as_ref().display());
 
-        let mut levels = Self::recover_levels(&config.path, &config.block_cache)?;
+        let mut levels = Self::recover_levels(&path, &block_cache)?;
         levels.sort_levels();
+
+        let config_str = std::fs::read_to_string(path.as_ref().join(CONFIG_FILE))?;
+        let config = serde_json::from_str(&config_str).expect("should be valid JSON");
 
         let inner = TreeInner {
             active_memtable: Arc::default(),
@@ -758,6 +759,7 @@ impl Tree {
             open_snapshots: SnapshotCounter::default(),
             stop_signal: StopSignal::default(),
             config,
+            block_cache,
         };
 
         Ok(Self(Arc::new(inner)))
@@ -765,7 +767,7 @@ impl Tree {
 
     /// Creates a new LSM-tree in a directory.
     fn create_new(config: Config) -> crate::Result<Self> {
-        let path = config.path.clone();
+        let path = config.inner.path.clone();
 
         std::fs::create_dir_all(&path)?;
 
@@ -773,6 +775,12 @@ impl Tree {
         assert!(!marker_path.try_exists()?);
 
         std::fs::create_dir_all(path.join(SEGMENTS_FOLDER))?;
+
+        let config_str =
+            serde_json::to_string_pretty(&config.inner).expect("should serialize JSON");
+        let mut file = std::fs::File::create(path.join(CONFIG_FILE))?;
+        file.write_all(config_str.as_bytes())?;
+        file.sync_all()?;
 
         let inner = TreeInner::create_new(config)?;
 
@@ -797,7 +805,20 @@ impl Tree {
         Ok(Self(Arc::new(inner)))
     }
 
+    /// Returns the disk space usage
+    #[must_use]
+    pub fn disk_space(&self) -> u64 {
+        let segments = self
+            .levels
+            .read()
+            .expect("lock is poisoned")
+            .get_all_segments_flattened();
+
+        segments.into_iter().map(|x| x.metadata.file_size).sum()
+    }
+
     /// Returns the highest sequence number that is flushed to disk
+    #[must_use]
     pub fn get_segment_lsn(&self) -> Option<SeqNo> {
         self.levels
             .read()
@@ -809,6 +830,7 @@ impl Tree {
     }
 
     /// Returns the highest sequence number
+    #[must_use]
     pub fn get_lsn(&self) -> Option<SeqNo> {
         let memtable_lsn = self
             .active_memtable

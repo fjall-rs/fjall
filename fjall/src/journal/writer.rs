@@ -73,9 +73,15 @@ impl JournalWriter {
     }
 
     /// Flushes the journal file
-    pub(crate) fn flush(&mut self) -> crate::Result<()> {
+    pub(crate) fn flush(&mut self, sync_metadata: bool) -> crate::Result<()> {
         self.file.flush()?;
-        self.file.get_mut().sync_data()?;
+
+        if sync_metadata {
+            self.file.get_mut().sync_all()
+        } else {
+            self.file.get_mut().sync_data()
+        }?;
+
         Ok(())
     }
 

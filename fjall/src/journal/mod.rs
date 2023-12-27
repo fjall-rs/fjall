@@ -1,6 +1,6 @@
 pub mod manager;
 mod marker;
-mod recovery;
+mod reader;
 pub mod shard;
 pub mod writer;
 
@@ -26,23 +26,32 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, HashMap<Arc<str>, MemTable>)> {
-        log::info!("Recovering journal from {}", path.as_ref().display());
-
+    pub fn recover_memtables<P: AsRef<Path>>(
+        path: P,
+        whitelist: Option<&[Arc<str>]>,
+    ) -> crate::Result<HashMap<Arc<str>, MemTable>> {
         let path = path.as_ref();
-
         let mut memtables = HashMap::new();
 
         for idx in 0..SHARD_COUNT {
             let shard_path = get_shard_path(path, idx);
 
             if shard_path.exists() {
-                JournalShard::recover_and_repair(shard_path, &mut memtables)?;
+                JournalShard::recover_and_repair(shard_path, &mut memtables, whitelist)?;
                 log::trace!("Recovered journal shard");
             } else {
                 log::trace!("Journal shard file does not exist (yet)");
             }
         }
+
+        Ok(memtables)
+    }
+
+    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, HashMap<Arc<str>, MemTable>)> {
+        let path = path.as_ref();
+        log::info!("Recovering journal from {}", path.display());
+
+        let memtables = Self::recover_memtables(path, None)?;
 
         let shards = (0..SHARD_COUNT)
             .map(|idx| {
@@ -117,10 +126,10 @@ impl Journal {
         shard
     }
 
-    pub fn flush(&self) -> crate::Result<()> {
+    pub fn flush(&self, sync_metadata: bool) -> crate::Result<()> {
         for mut shard in self.shards.full_lock().expect("lock is poisoned") {
             if shard.should_sync {
-                shard.writer.flush()?;
+                shard.writer.flush(sync_metadata)?;
                 shard.should_sync = false;
             }
         }

@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::{levels::Levels, segment::Segment, value::UserKey, Config};
+use crate::{config::PersistedConfig, levels::Levels, segment::Segment, value::UserKey};
 use std::sync::Arc;
 
 /// Levelled compaction strategy (LCS)
@@ -61,8 +61,10 @@ fn desired_level_size_in_bytes(level_idx: u8, ratio: u8, target_size: u32) -> us
     (ratio as usize).pow(u32::from(level_idx)) * (target_size as usize)
 }
 
+// TODO: test with timeseries workload
+
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels, config: &Config) -> Choice {
+    fn choose(&self, levels: &Levels, config: &PersistedConfig) -> Choice {
         let resolved_view = levels.resolved_view();
 
         // If there are any levels that already have a compactor working on it
@@ -108,7 +110,7 @@ impl CompactionStrategy for Strategy {
             if overshoot > 0 {
                 let mut segments_to_compact = vec![];
 
-                for segment in level.iter().rev().cloned() {
+                for segment in level.iter().rev().take(config.level_ratio.into()).cloned() {
                     if overshoot == 0 {
                         break;
                     }
@@ -236,7 +238,7 @@ mod tests {
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -256,7 +258,7 @@ mod tests {
             128 * 1_024 * 1_024,
         ));
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -266,7 +268,7 @@ mod tests {
             128 * 1_024 * 1_024,
         ));
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -276,7 +278,7 @@ mod tests {
             128 * 1_024 * 1_024,
         ));
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -287,7 +289,7 @@ mod tests {
         ));
 
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
@@ -297,7 +299,7 @@ mod tests {
 
         levels.hide_segments(&["4".into()]);
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -365,7 +367,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
@@ -437,7 +439,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec![
@@ -454,7 +456,7 @@ mod tests {
 
         levels.hide_segments(&["5".into()]);
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &Config::default().inner),
             Choice::DoNothing
         );
 
@@ -479,7 +481,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
@@ -489,7 +491,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             1,
@@ -510,7 +512,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["1".into(), "4".into()],
@@ -539,7 +541,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
@@ -549,7 +551,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
@@ -559,7 +561,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
@@ -569,7 +571,7 @@ mod tests {
                 128 * 1_024 * 1_024,
             ),
         );
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.insert_into_level(
             2,
@@ -590,7 +592,7 @@ mod tests {
         );
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["1".into(), "5".into()],

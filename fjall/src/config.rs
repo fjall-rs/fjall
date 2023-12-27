@@ -1,5 +1,5 @@
 use crate::Keyspace;
-use lsm_tree::{compaction::CompactionStrategy, BlockCache};
+use lsm_tree::BlockCache;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -16,12 +16,14 @@ pub struct Config {
     /// Max size of all journals in bytes
     pub(crate) max_journaling_size_in_bytes: u32,
 
+    /// Max size of all active memtables
+    ///
+    /// This can be used to cap the memory usage if there are
+    /// many (possibly inactive) partitions.
+    pub(crate) max_write_buffer_size_in_bytes: u32, // TODO: use
+
     /// Fsync every N ms asynchronously
     pub(crate) fsync_ms: Option<u16>,
-
-    /// Test temporary
-    // TODO: temporary, should be configurable per partition
-    pub compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
 impl Default for Config {
@@ -29,9 +31,9 @@ impl Default for Config {
         Self {
             path: ".fjall_data".into(),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
-            fsync_ms: Some(1_000),
+            max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
-            compaction_strategy: Arc::<lsm_tree::compaction::Levelled>::default(),
+            fsync_ms: Some(1_000),
         }
     }
 }
@@ -58,15 +60,24 @@ impl Config {
         self
     }
 
-    /// Max size of all journals in MiB.
+    /// Max size of all journals in bytes.
     ///
     /// Note: This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
     /// anything less will immediately stall the system.
     ///
     /// Default = 128 MiB
     #[must_use]
-    pub fn max_journaling_size(mut self, mib: u32) -> Self {
-        self.max_journaling_size_in_bytes = mib;
+    pub fn max_journaling_size(mut self, bytes: u32) -> Self {
+        self.max_journaling_size_in_bytes = bytes;
+        self
+    }
+
+    /// Max size of all active memtables in bytes.
+    ///
+    /// Default = 64 MiB
+    #[must_use]
+    pub fn max_write_buffer_size(mut self, bytes: u32) -> Self {
+        self.max_write_buffer_size_in_bytes = bytes;
         self
     }
 

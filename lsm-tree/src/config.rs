@@ -1,21 +1,18 @@
 use crate::{BlockCache, Tree};
+use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-#[derive(Clone)]
 /// Tree configuration
-pub struct Config {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PersistedConfig {
     /// Folder path
-    pub path: PathBuf,
+    pub path: PathBuf, // TODO: not needed, move to Config
 
     /// Block size of data and index blocks
     pub block_size: u32,
-
-    // TODO: 0.3.0 maybe remove from config, move into ConfigBuilder, make Config serde
-    /// Block cache
-    pub block_cache: Arc<BlockCache>,
 
     /// Amount of levels of the LSM tree (depth of tree)
     pub level_count: u8,
@@ -31,14 +28,35 @@ pub struct Config {
 
 const DEFAULT_FILE_FOLDER: &str = ".lsm.data";
 
-impl Default for Config {
+impl Default for PersistedConfig {
     fn default() -> Self {
         Self {
             path: DEFAULT_FILE_FOLDER.into(),
             block_size: 4_096,
-            block_cache: Arc::new(BlockCache::with_capacity_bytes(8 * 1_024 * 1_024)),
             level_count: 7,
             level_ratio: 8,
+        }
+    }
+}
+
+/// Tree configuration builder
+pub struct Config {
+    /// Persistent configuration
+    ///
+    /// Once set, this configuration is permanent
+    #[doc(hidden)]
+    pub inner: PersistedConfig,
+
+    /// Block cache to use
+    #[doc(hidden)]
+    pub block_cache: Arc<BlockCache>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            block_cache: Arc::new(BlockCache::with_capacity_bytes(8 * 1_024 * 1_024)),
+            inner: PersistedConfig::default(),
         }
     }
 }
@@ -46,8 +64,13 @@ impl Default for Config {
 impl Config {
     /// Initializes a new config
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        Self {
+        let inner = PersistedConfig {
             path: path.as_ref().into(),
+            ..Default::default()
+        };
+
+        Self {
+            inner,
             ..Default::default()
         }
     }
@@ -63,7 +86,7 @@ impl Config {
     pub fn level_count(mut self, n: u8) -> Self {
         assert!(n > 0);
 
-        self.level_count = n;
+        self.inner.level_count = n;
         self
     }
 
@@ -78,7 +101,7 @@ impl Config {
     pub fn level_ratio(mut self, n: u8) -> Self {
         assert!(n > 1);
 
-        self.level_ratio = n;
+        self.inner.level_ratio = n;
         self
     }
 
@@ -93,7 +116,7 @@ impl Config {
     pub fn block_size(mut self, block_size: u32) -> Self {
         assert!(block_size >= 1024);
 
-        self.block_size = block_size;
+        self.inner.block_size = block_size;
         self
     }
 

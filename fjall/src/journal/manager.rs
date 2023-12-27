@@ -7,12 +7,12 @@ use crate::{
     PartitionHandle,
 };
 
-pub struct PartitionSeqno {
+pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
     pub(crate) lsn: SeqNo,
 }
 
-impl std::fmt::Debug for PartitionSeqno {
+impl std::fmt::Debug for PartitionSeqNo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.lsn)
     }
@@ -21,7 +21,7 @@ impl std::fmt::Debug for PartitionSeqno {
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: HashMap<Arc<str>, PartitionSeqno>,
+    pub(crate) partition_seqnos: HashMap<Arc<str>, PartitionSeqNo>,
 }
 
 impl std::fmt::Debug for Item {
@@ -35,6 +35,7 @@ impl std::fmt::Debug for Item {
     }
 }
 
+// TODO: accessing journal manager shouldn't take RwLock... but changing its internals should
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different partitions.
@@ -42,7 +43,7 @@ pub struct JournalManager {
     journal: Arc<Journal>,
     active_path: PathBuf,
     items: Vec<Item>,
-    disk_space_in_bytes: u64,
+    pub(crate) disk_space_in_bytes: u64,
 }
 
 impl JournalManager {
@@ -51,8 +52,13 @@ impl JournalManager {
             journal,
             active_path: path.into(),
             items: Vec::with_capacity(10),
-            disk_space_in_bytes: 0, /* TODO: on recovery set to active journal size */
+            disk_space_in_bytes: 0,
         }
+    }
+
+    pub fn enqueue(&mut self, item: Item) {
+        self.disk_space_in_bytes += item.size_in_bytes;
+        self.items.push(item);
     }
 
     /// Returns the amount of bytes used on disk by journals
@@ -99,7 +105,7 @@ impl JournalManager {
 
     pub fn rotate_journal(
         &mut self,
-        seqnos: HashMap<Arc<str>, PartitionSeqno>,
+        seqnos: HashMap<Arc<str>, PartitionSeqNo>,
     ) -> crate::Result<()> {
         log::debug!("Sealing journal");
 
@@ -140,9 +146,7 @@ impl JournalManager {
         let journal_size = fs_extra::dir::get_size(&old_journal_path)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
 
-        self.disk_space_in_bytes += journal_size;
-
-        self.items.push(Item {
+        self.enqueue(Item {
             path: old_journal_path,
             partition_seqnos: seqnos,
             size_in_bytes: journal_size,

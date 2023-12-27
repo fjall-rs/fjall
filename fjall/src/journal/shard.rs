@@ -1,6 +1,6 @@
 use super::{marker::Marker, writer::JournalWriter};
 use crate::batch::Item as BatchItem;
-use crate::journal::recovery::JournalShardReader;
+use crate::journal::reader::JournalShardReader;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
 use std::{
     collections::HashMap,
@@ -61,6 +61,7 @@ impl JournalShard {
     pub fn recover_and_repair<P: AsRef<Path>>(
         path: P,
         memtables: &mut HashMap<Arc<str>, MemTable>,
+        whitelist: Option<&[Arc<str>]>,
     ) -> crate::Result<()> {
         let path = path.as_ref();
         let recoverer = JournalShardReader::new(path)?;
@@ -114,6 +115,11 @@ impl JournalShard {
                         break 'a;
                     }
 
+                    eprintln!("=====");
+                    for item in &items {
+                        eprintln!("{item:?}");
+                    }
+
                     let crc = hasher.finalize();
                     if crc != checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {checksum}, got: {crc}");
@@ -129,15 +135,22 @@ impl JournalShard {
                     // but in this case probably not
                     #[allow(clippy::iter_with_drain)]
                     for item in items.drain(..) {
-                        memtables
-                            .entry(item.partition)
-                            .or_default()
-                            .insert(lsm_tree::Value {
-                                key: item.key,
-                                value: item.value,
-                                seqno: batch_seqno,
-                                value_type: item.value_type,
-                            });
+                        if let Some(whitelist) = whitelist {
+                            if !whitelist.contains(&item.partition) {
+                                continue;
+                            }
+                        }
+
+                        let memtable = memtables.entry(item.partition).or_default();
+
+                        let value = lsm_tree::Value {
+                            key: item.key,
+                            value: item.value,
+                            seqno: batch_seqno,
+                            value_type: item.value_type,
+                        };
+
+                        memtable.insert(value);
                     }
 
                     last_valid_pos = journal_file_pos;

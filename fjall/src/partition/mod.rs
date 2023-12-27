@@ -1,12 +1,16 @@
-use crate::{flush::manager::Task as FlushTask, journal::manager::PartitionSeqno, Keyspace};
-use lsm_tree::{prefix::Prefix, range::Range, Tree as LsmTree, UserKey, UserValue};
+pub mod config;
+pub mod name;
+
+use crate::{
+    file::PARTITIONS_FOLDER, flush::manager::Task as FlushTask, journal::manager::PartitionSeqNo,
+    Keyspace,
+};
+use config::Config;
+use lsm_tree::{
+    compaction::CompactionStrategy, prefix::Prefix, range::Range, Tree as LsmTree, UserKey,
+    UserValue,
+};
 use std::{ops::RangeBounds, path::PathBuf, sync::Arc, time::Duration};
-
-const VALID_CHARACTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
-
-pub fn is_valid_partition_name(s: &str) -> bool {
-    s.chars().all(|c| VALID_CHARACTERS.contains(c))
-}
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
@@ -16,11 +20,15 @@ pub struct PartitionHandleInner {
     pub(crate) keyspace: Keyspace,
 
     /// TEMP pub
-    pub tree: LsmTree, // TODO: not pub
+    pub(crate) tree: LsmTree,
 
-                       // TODO: need a destroyed flag or something, so GC can check the partition is deleted
-                       // TODO: handle mid-flush deletes of partition folders... (don't delete folder immediately)
-                       // TODO: just attach marker to folder and let GC handle it, when no flushes are running
+    /// Maximum size of this partition's memtable
+    pub(crate) max_memtable_size: u32, // TODO: make editable
+
+    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
+    // TODO: need a destroyed flag or something, so GC can check the partition is deleted
+    // TODO: handle mid-flush deletes of partition folders... (don't delete folder immediately)
+    // TODO: just attach marker to folder and let GC handle it, when no flushes are running
 }
 
 /// Access to a keyspace partition.partition
@@ -37,14 +45,46 @@ impl std::ops::Deref for PartitionHandle {
 }
 
 impl PartitionHandle {
+    /// Creates a new partition
+    pub(crate) fn create_new(
+        keyspace: Keyspace,
+        name: Arc<str>,
+        config: Config,
+    ) -> crate::Result<Self> {
+        log::debug!("Creating partition {name}");
+
+        let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+
+        let tree = lsm_tree::Config::new(path)
+            .block_cache(keyspace.config.block_cache.clone())
+            .block_size(config.block_size)
+            .level_count(config.level_count)
+            .level_ratio(config.level_ratio)
+            .open()?;
+
+        Ok(Self(Arc::new(PartitionHandleInner {
+            name,
+            keyspace,
+            tree,
+            compaction_strategy: config.compaction_strategy,
+            max_memtable_size: config.max_memtable_size,
+        })))
+    }
+
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.tree.config.path.clone()
     }
 
+    /// Returns the disk space usage of this partition
+    #[must_use]
+    pub fn disk_space(&self) -> u64 {
+        self.tree.disk_space()
+    }
+
     /// Destroys the partition, removing all data associated with it.
-    pub fn destroy(mut self) -> crate::Result<()> {
+    pub fn destroy(self) -> crate::Result<()> {
         // TODO: this needs to be atomic...
         // TODO: remove from partitions
         // TODO: delete folder...
@@ -59,11 +99,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
@@ -87,11 +127,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
@@ -114,11 +154,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("ab", "abc")?;
     /// partition.insert("abc", "abc")?;
@@ -146,11 +186,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// assert_eq!(partition.len()?, 0);
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
@@ -181,11 +221,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// assert!(partition.is_empty()?);
     ///
     /// partition.insert("a", "abc")?;
@@ -206,11 +246,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// assert!(!partition.contains_key("a")?);
     ///
     /// partition.insert("a", "abc")?;
@@ -231,11 +271,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "my_value")?;
     ///
     /// let item = partition.get("a")?;
@@ -257,11 +297,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
     /// partition.insert("5", "abc")?;
@@ -285,11 +325,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
     /// partition.insert("5", "abc")?;
@@ -329,7 +369,7 @@ impl PartitionHandle {
         journal_manager.rotate_journal(
             std::iter::once((
                 self.name.clone(),
-                PartitionSeqno {
+                PartitionSeqNo {
                     lsn: memtable_max_seqno,
                     partition: self.clone(),
                 },
@@ -383,6 +423,10 @@ impl PartitionHandle {
             }
         }
 
+        Ok(())
+    }
+
+    fn check_write_stall(&self) {
         if self.tree.first_level_segment_count() > 16 {
             log::info!("Stalling writes...");
 
@@ -395,8 +439,6 @@ impl PartitionHandle {
             self.keyspace.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
-
-        Ok(())
     }
 
     /// Inserts a key-value pair into the partition.
@@ -409,11 +451,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// assert!(!partition.is_empty()?);
@@ -425,7 +467,6 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        log::trace!("insert: acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
@@ -443,10 +484,10 @@ impl PartitionHandle {
 
         let memtable_size = self.tree.insert(key, value, seqno);
 
-        // TODO: 0.3.0 max_memtable_size
-        if memtable_size > 16_000_000 {
+        if memtable_size > self.max_memtable_size {
             log::debug!("insert: rotating memtable");
             self.rotate_memtable()?;
+            self.check_write_stall();
         }
 
         Ok(())
@@ -460,11 +501,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace};
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default")?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let item = partition.get("a")?.expect("should have item");
@@ -482,7 +523,6 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        log::trace!("remove: acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
         let seqno = self.keyspace.seqno.next();
@@ -500,10 +540,10 @@ impl PartitionHandle {
 
         let memtable_size = self.tree.remove(key, seqno);
 
-        // TODO: 0.3.0 max_memtable_size
-        if memtable_size > 16_000_000 {
+        if memtable_size > self.max_memtable_size {
             log::debug!("remove: rotating memtable");
             self.rotate_memtable()?;
+            self.check_write_stall();
         }
 
         Ok(())

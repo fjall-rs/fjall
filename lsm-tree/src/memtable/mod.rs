@@ -60,6 +60,12 @@ impl MemTable {
         None
     }
 
+    /// Get approximate size of memtable in bytes
+    pub fn size(&self) -> u32 {
+        self.approximate_size
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Count the amount of items in the memtable
     pub fn len(&self) -> usize {
         self.items.len()
@@ -72,9 +78,15 @@ impl MemTable {
     }
 
     /// Inserts an item into the memtable
-    pub fn insert(&self, item: Value) {
+    pub fn insert(&self, item: Value) -> u32 {
+        let size_now = self
+            .approximate_size
+            .fetch_add(item.size() as u32, std::sync::atomic::Ordering::Relaxed);
+
         let key = ParsedInternalKey::new(item.key, item.seqno, item.value_type);
         self.items.insert(key, item.value);
+
+        size_now
     }
 
     /// Returns the highest sequence number in the memtable

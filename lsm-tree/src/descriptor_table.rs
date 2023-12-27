@@ -11,7 +11,7 @@ pub struct FileDescriptorTable {
     files: Sharded<File>,
 }
 
-const SHARD_COUNT: usize = 4;
+const SHARD_COUNT: usize = 1; // TODO:
 
 impl FileDescriptorTable {
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {

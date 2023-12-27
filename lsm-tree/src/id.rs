@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use chrono::{Datelike, Timelike};
 use rand::Rng;
+use std::sync::Arc;
 
 const BASE_36_RADIX: u32 = 36;
 
@@ -31,26 +30,29 @@ pub fn generate_segment_id() -> Arc<str> {
     let now = chrono::Utc::now();
 
     let year = now.year().unsigned_abs();
-    let month = now.month();
-    let day = now.day();
+    let month = now.month() as u8;
+    let day = (now.day() - 1) as u8;
 
-    let hour = now.hour();
-    let min = now.minute();
+    let hour = now.hour() as u8;
+    let min = now.minute() as u8;
 
+    let sec = now.second() as u8;
     let nano = now.timestamp_subsec_nanos();
 
     let mut rng = rand::thread_rng();
-    let random = rng.gen::<u32>();
+    let random = rng.gen::<u16>();
 
     format!(
-        "{}_{}{}_{}{}_{}_{}",
+        "{:0>4}_{}{}{:0>2}{:0>2}_{:0>2}{:0>8}_{:0>4}",
         to_base36(year),
-        to_base36(month),
-        to_base36(day),
-        to_base36(hour),
-        to_base36(min),
+        to_base36(u32::from(month)),
+        to_base36(u32::from(day)),
+        to_base36(u32::from(hour)),
+        to_base36(u32::from(min)),
+        to_base36(u32::from(sec)),
+        // Need to pad start
         to_base36(nano),
-        to_base36(random),
+        to_base36(u32::from(random)),
     )
     .into()
 }
@@ -62,19 +64,13 @@ mod tests {
 
     #[test]
     pub fn id_order() {
-        let ids = [
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-            generate_segment_id(),
-        ];
-        let mut sorted = ids.clone();
-        sorted.sort();
+        for _ in 0..1_000_000 {
+            let ids = (0..10).map(|_| generate_segment_id()).collect::<Vec<_>>();
 
-        assert_eq!(ids, sorted);
+            let mut sorted = ids.clone();
+            sorted.sort();
+
+            assert_eq!(ids, sorted, "ID is not monotonic");
+        }
     }
 }

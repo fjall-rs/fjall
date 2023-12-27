@@ -1,6 +1,11 @@
 use crate::{
-    file::LEVELS_MANIFEST_FILE, levels::Levels, memtable::MemTable, snapshot::SnapshotCounter,
-    stop_signal::StopSignal, Config,
+    config::{Config, PersistedConfig},
+    file::LEVELS_MANIFEST_FILE,
+    levels::Levels,
+    memtable::MemTable,
+    snapshot::SnapshotCounter,
+    stop_signal::StopSignal,
+    BlockCache,
 };
 use std::{
     collections::BTreeMap,
@@ -20,7 +25,10 @@ pub struct TreeInner {
     pub(crate) levels: Arc<RwLock<Levels>>,
 
     /// Tree configuration
-    pub config: Config,
+    pub config: PersistedConfig,
+
+    /// Block cache
+    pub block_cache: Arc<BlockCache>,
 
     /// Keeps track of open snapshots
     pub(crate) open_snapshots: SnapshotCounter,
@@ -32,11 +40,14 @@ pub struct TreeInner {
 
 impl TreeInner {
     pub fn create_new(config: Config) -> crate::Result<Self> {
-        let levels =
-            Levels::create_new(config.level_count, config.path.join(LEVELS_MANIFEST_FILE))?;
+        let levels = Levels::create_new(
+            config.inner.level_count,
+            config.inner.path.join(LEVELS_MANIFEST_FILE),
+        )?;
 
         Ok(Self {
-            config,
+            config: config.inner,
+            block_cache: config.block_cache,
             active_memtable: Arc::default(),
             sealed_memtables: Arc::default(),
             levels: Arc::new(RwLock::new(levels)),

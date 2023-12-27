@@ -1,6 +1,7 @@
 use super::{CompactionStrategy, Input as CompactionPayload};
 use crate::{
     compaction::Choice,
+    config::PersistedConfig,
     descriptor_table::FileDescriptorTable,
     file::{BLOCKS_FILE, SEGMENTS_FOLDER},
     levels::Levels,
@@ -9,7 +10,7 @@ use crate::{
     segment::{index::BlockIndex, writer::MultiWriter, Segment},
     snapshot::SnapshotCounter, /* Tree, */
     stop_signal::StopSignal,
-    Config,
+    BlockCache,
 };
 use std::{
     collections::BTreeMap,
@@ -20,7 +21,10 @@ use std::{
 /// Compaction options
 pub struct Options {
     /// Configuration of tree.
-    pub config: Config,
+    pub config: PersistedConfig,
+
+    /// Block cache to use
+    pub block_cache: Arc<BlockCache>,
 
     /// Levels manifest.
     pub levels: Arc<RwLock<Levels>>,
@@ -154,12 +158,12 @@ fn merge_segments(
             Ok(Segment {
                 descriptor_table: descriptor_table.clone(),
                 metadata,
-                block_cache: opts.config.block_cache.clone(),
+                block_cache: opts.block_cache.clone(),
                 block_index: BlockIndex::from_file(
                     segment_id,
                     descriptor_table,
                     path,
-                    opts.config.block_cache.clone(),
+                    opts.block_cache.clone(),
                 )?
                 .into(),
             })

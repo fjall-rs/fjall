@@ -1,6 +1,8 @@
 use crate::{file::SEGMENTS_FOLDER, Keyspace};
 use std::sync::Arc;
 
+// TODO: stop signal
+
 /// Runs flush worker.
 ///
 /// Only spawn one of these, it will internally spawn worker threads as needed.
@@ -58,15 +60,9 @@ pub fn run(keyspace: &Keyspace) {
                                 let segment = lsm_tree::flush::flush_to_segment(Options {
                                     memtable: task.sealed_memtable.clone(),
                                     segment_id: task.id.clone(),
-                                    folder: task
-                                        .partition
-                                        .tree
-                                        .config
-                                        .path
-                                        .join(SEGMENTS_FOLDER)
-                                        .join(&*task.id),
+                                    folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
                                     block_size: task.partition.tree.config.block_size,
-                                    block_cache: task.partition.tree.config.block_cache.clone(),
+                                    block_cache: task.partition.tree.block_cache.clone(),
                                 })?;
                                 let segment = Arc::new(segment);
 

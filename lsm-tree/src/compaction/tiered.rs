@@ -1,5 +1,5 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
-use crate::{levels::Levels, Config};
+use crate::{config::PersistedConfig, levels::Levels};
 
 /// Size-tiered compaction strategy (STCS)
 ///
@@ -12,13 +12,14 @@ use crate::{levels::Levels, Config};
 pub struct Strategy;
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels, config: &Config) -> Choice {
+    fn choose(&self, levels: &Levels, config: &PersistedConfig) -> Choice {
         let resolved_view = levels.resolved_view();
 
         for (level_index, level) in resolved_view
             .iter()
             .enumerate()
             .take(resolved_view.len() - 1)
+            .rev()
         {
             if level.len() >= config.level_ratio.into() {
                 // NOTE: There are never that many levels
@@ -49,6 +50,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         compaction::{Choice, CompactionStrategy, Input as CompactionInput},
+        config::PersistedConfig,
         descriptor_table::FileDescriptorTable,
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
@@ -95,7 +97,7 @@ mod tests {
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         assert_eq!(
-            compactor.choose(&levels, &Config::default()),
+            compactor.choose(&levels, &PersistedConfig::default()),
             Choice::DoNothing
         );
 
@@ -111,17 +113,17 @@ mod tests {
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
         levels.add(fixture_segment("1".into()));
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.add(fixture_segment("2".into()));
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.add(fixture_segment("3".into()));
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         levels.add(fixture_segment("4".into()));
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
@@ -150,7 +152,7 @@ mod tests {
         levels.insert_into_level(1, fixture_segment("8".into()));
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
@@ -174,7 +176,7 @@ mod tests {
         levels.add(fixture_segment("4".into()));
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
                 segment_ids: vec!["1".into(), "2".into()],
@@ -198,7 +200,7 @@ mod tests {
         levels.insert_into_level(1, fixture_segment("3".into()));
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 2,
                 segment_ids: vec!["2".into(), "3".into()],
@@ -213,7 +215,7 @@ mod tests {
         levels.insert_into_level(2, fixture_segment("3".into()));
 
         assert_eq!(
-            compactor.choose(&levels, &config),
+            compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 3,
                 segment_ids: vec!["2".into(), "3".into()],
@@ -234,7 +236,7 @@ mod tests {
         levels.insert_into_level(3, fixture_segment("2".into()));
         levels.insert_into_level(3, fixture_segment("3".into()));
 
-        assert_eq!(compactor.choose(&levels, &config), Choice::DoNothing);
+        assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
         Ok(())
     }

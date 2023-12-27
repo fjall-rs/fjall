@@ -1,7 +1,6 @@
 use super::PartitionKey;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
-#[derive(Debug)]
 pub struct Item {
     /// Partition key - an arbitrary byte array
     ///
@@ -20,6 +19,22 @@ pub struct Item {
 
     /// Tombstone marker - if this is true, the value has been deleted
     pub value_type: ValueType,
+}
+
+impl std::fmt::Debug for Item {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{:?}:{} => {:?}",
+            self.partition,
+            self.key,
+            match self.value_type {
+                ValueType::Value => "V",
+                ValueType::Tombstone => "T",
+            },
+            self.value
+        )
+    }
 }
 
 impl Item {
