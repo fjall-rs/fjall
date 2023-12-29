@@ -16,6 +16,7 @@ pub fn run(keyspace: &Keyspace) {
 
         // TODO: stop signal
 
+        log::trace!("compactor: calling compaction strategy");
         let strategy = item.compaction_strategy.clone();
 
         if let Err(e) = item.tree.compact(strategy) {

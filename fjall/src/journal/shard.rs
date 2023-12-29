@@ -115,11 +115,6 @@ impl JournalShard {
                         break 'a;
                     }
 
-                    eprintln!("=====");
-                    for item in &items {
-                        eprintln!("{item:?}");
-                    }
-
                     let crc = hasher.finalize();
                     if crc != checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {checksum}, got: {crc}");

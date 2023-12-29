@@ -427,15 +427,8 @@ impl PartitionHandle {
     }
 
     fn check_write_stall(&self) {
-        if self.tree.first_level_segment_count() > 16 {
-            log::info!("Stalling writes...");
-
-            std::thread::sleep(Duration::from_millis(1_000));
-        }
-
         while self.tree.first_level_segment_count() > 20 {
             log::warn!("Halting writes until L0 is cleared up...");
-
             self.keyspace.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
@@ -490,6 +483,12 @@ impl PartitionHandle {
             self.check_write_stall();
         }
 
+        if self.tree.first_level_segment_count() > 16 {
+            log::info!("Stalling writes...");
+            self.keyspace.compaction_manager.notify(self.clone());
+            std::thread::sleep(Duration::from_millis(1_000));
+        }
+
         Ok(())
     }
 
@@ -542,8 +541,14 @@ impl PartitionHandle {
 
         if memtable_size > self.max_memtable_size {
             log::debug!("remove: rotating memtable");
-            self.rotate_memtable()?;
             self.check_write_stall();
+            self.rotate_memtable()?;
+        }
+
+        if self.tree.first_level_segment_count() > 16 {
+            log::info!("Stalling writes...");
+            self.keyspace.compaction_manager.notify(self.clone());
+            std::thread::sleep(Duration::from_millis(1_000));
         }
 
         Ok(())

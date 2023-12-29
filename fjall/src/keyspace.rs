@@ -101,17 +101,21 @@ impl Keyspace {
             Self::create_new(config)
         }?;
 
-        keyspace.spawn_flush_worker();
-
-        for _ in 0..4 {
-            keyspace.spawn_compaction_worker();
-        }
-
-        if let Some(ms) = keyspace.config.fsync_ms {
-            keyspace.spawn_fsync_thread(ms.into());
-        }
+        keyspace.start_background_threads();
 
         Ok(keyspace)
+    }
+
+    fn start_background_threads(&self) {
+        self.spawn_flush_worker();
+
+        for _ in 0..4 {
+            self.spawn_compaction_worker();
+        }
+
+        if let Some(ms) = self.config.fsync_ms {
+            self.spawn_fsync_thread(ms.into());
+        }
     }
 
     /// Creates or opens a keyspace partition.
