@@ -216,8 +216,7 @@ async fn main() -> std::io::Result<()> {
     let port = std::env::var("PORT").unwrap_or("8000".into());
     let port = port.parse::<u16>().expect("invalid port");
 
-    let data_folder = std::env::var("DATA_FOLDER").unwrap_or(".data".into());
-    log::info!("Opening database at {data_folder}");
+    log::info!("Opening database");
 
     let keyspace = Config::default().open()?;
     /// TODO: maybe use multiple partitions for subjects vs verbs
