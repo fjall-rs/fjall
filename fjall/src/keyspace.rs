@@ -151,8 +151,21 @@ impl Keyspace {
 
     /// Recovers existing keyspace from directory
     #[allow(clippy::too_many_lines)]
-    fn recover(config: Config) -> crate::Result<Self> {
+    #[doc(hidden)]
+    pub fn recover(config: Config) -> crate::Result<Self> {
         log::debug!("Recovering keyspace at {}", config.path.display());
+
+        {
+            let bytes = std::fs::read(config.path.join(FJALL_MARKER))?;
+
+            if let Some(version) = Version::parse_file_header(&bytes) {
+                if version != Version::V0 {
+                    return Err(crate::Error::InvalidVersion(Some(version)));
+                }
+            } else {
+                return Err(crate::Error::InvalidVersion(None));
+            }
+        }
 
         let journals_folder = config.path.join(JOURNALS_FOLDER);
 
@@ -393,7 +406,8 @@ impl Keyspace {
         Ok(keyspace)
     }
 
-    fn create_new(config: Config) -> crate::Result<Self> {
+    #[doc(hidden)]
+    pub fn create_new(config: Config) -> crate::Result<Self> {
         let path = config.path.clone();
         log::info!("Creating keyspace at {}", path.display());
 

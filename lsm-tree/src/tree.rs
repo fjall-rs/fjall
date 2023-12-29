@@ -744,12 +744,26 @@ impl Tree {
     ///
     /// Returns error, if an IO error occured.
     fn recover<P: AsRef<Path>>(path: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
-        log::info!("Recovering LSM-tree at {}", path.as_ref().display());
+        let path = path.as_ref();
 
-        let mut levels = Self::recover_levels(&path, &block_cache)?;
+        log::info!("Recovering LSM-tree at {}", path.display());
+
+        {
+            let bytes = std::fs::read(path.join(LSM_MARKER))?;
+
+            if let Some(version) = Version::parse_file_header(&bytes) {
+                if version != Version::V0 {
+                    return Err(crate::Error::InvalidVersion(Some(version)));
+                }
+            } else {
+                return Err(crate::Error::InvalidVersion(None));
+            }
+        }
+
+        let mut levels = Self::recover_levels(path, &block_cache)?;
         levels.sort_levels();
 
-        let config_str = std::fs::read_to_string(path.as_ref().join(CONFIG_FILE))?;
+        let config_str = std::fs::read_to_string(path.join(CONFIG_FILE))?;
         let config = serde_json::from_str(&config_str).expect("should be valid JSON");
 
         let inner = TreeInner {
