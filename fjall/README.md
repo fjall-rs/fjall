@@ -44,14 +44,11 @@ TODO:
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
-- Block-based tables with LZ4 compression
-- Size-tiered, (concurrent) Levelled and FIFO compaction strategies
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
-- Partitioned block index to reduce memory footprint and keep startup time minimal [1]
-- Block caching to keep hot data in memory
 - Sharded journal for concurrent writes
 - Cross-partition snapshots (MVCC)
 - Automatic background compaction
+- anything else implemented in [`lsm-tree`](https://github.com/marvin-j97/fjall/tree/main/lsm-tree)
 
 ## Stable disk format
 

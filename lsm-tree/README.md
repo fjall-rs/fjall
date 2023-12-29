@@ -25,7 +25,8 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 - 100% safe & stable Rust
 - Block-based tables with LZ4 compression
 - Range & prefix searching with forward and reverse iteration
-- Size-tiered, (concurrent) Levelled and FIFO compaction strategies
+- Size-tiered, (concurrent) Levelled and FIFO compaction 
+- Multi-threaded flushing (immutable/sealed memtables)
 - Partitioned block index to reduce memory footprint and keep startup time tiny [1]
 - Block caching to keep hot data in memory
 - Snapshots (MVCC)
