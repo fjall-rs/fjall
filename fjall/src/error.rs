@@ -1,4 +1,4 @@
-use crate::journal::shard::RecoveryError as JournalRecoveryError;
+use crate::{journal::shard::RecoveryError as JournalRecoveryError, version::Version};
 use lsm_tree::{DeserializeError, SerializeError};
 
 /// Errors that may occur in the storage engine
@@ -18,6 +18,9 @@ pub enum Error {
 
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
+
+    /// Invalid disk format version
+    InvalidVersion(Option<Version>),
 }
 
 impl std::fmt::Display for Error {

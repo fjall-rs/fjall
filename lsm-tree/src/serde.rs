@@ -15,6 +15,9 @@ pub enum DeserializeError {
 
     /// Invalid enum tag
     InvalidTag(u8),
+
+    /// Invalid trailer
+    InvalidTrailer,
 }
 
 impl From<std::io::Error> for SerializeError {

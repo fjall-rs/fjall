@@ -1,4 +1,7 @@
-use crate::serde::{DeserializeError, SerializeError};
+use crate::{
+    serde::{DeserializeError, SerializeError},
+    version::Version,
+};
 use lz4_flex::block::DecompressError;
 
 /// Represents errors that can occur in the LSM-tree
@@ -15,6 +18,9 @@ pub enum Error {
 
     /// Decompression failed
     Decompress(DecompressError),
+
+    /// Invalid data format version
+    InvalidVersion(Option<Version>),
 }
 
 impl std::fmt::Display for Error {
