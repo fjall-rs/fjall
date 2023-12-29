@@ -101,6 +101,11 @@ impl Serializable for Marker {
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
                 writer.write_u32::<BigEndian>(*val)?;
+
+                // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
+                // Otherwise we couldn't know if the CRC value is maybe mangled
+                // (only partially written, with the rest being padding zeroes)
+                writer.write_all("END".as_bytes());
             }
         }
         Ok(())
@@ -143,6 +148,18 @@ impl Deserializable for Marker {
             }
             Tag::End => {
                 let crc = reader.read_u32::<BigEndian>()?;
+
+                // Check trailer
+                {
+                    let e = reader.read_u8()?;
+                    let n = reader.read_u8()?;
+                    let d = reader.read_u8()?;
+
+                    if e != b'E' || n != b'N' || d != b'D' {
+                        return Err(DeserializeError::InvalidTrailer);
+                    }
+                }
+
                 Ok(Self::End(crc))
             }
         }

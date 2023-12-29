@@ -74,7 +74,7 @@ impl Iterator for JournalShardReader {
                     }
                     _ => Some(Err(crate::Error::Io(e))),
                 },
-                DeserializeError::InvalidTag(_) => {
+                DeserializeError::InvalidTag(_) | DeserializeError::InvalidTrailer => {
                     let stream_pos = self
                         .reader
                         .stream_position()
