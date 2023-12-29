@@ -173,7 +173,7 @@ impl Segment {
                     let iter = Reader::new(
                         Arc::clone(&self.descriptor_table),
                         self.metadata.id.clone(),
-                        Arc::clone(&self.block_cache),
+                        Some(Arc::clone(&self.block_cache)),
                         Arc::clone(&self.block_index),
                         Some(&next_block_handle.start_key),
                         None,
@@ -205,11 +205,19 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn iter(&self) -> Reader {
+    #[must_use]
+    #[allow(clippy::iter_without_into_iter)]
+    pub fn iter(&self, use_cache: bool) -> Reader {
+        let cache = if use_cache {
+            Some(Arc::clone(&self.block_cache))
+        } else {
+            None
+        };
+
         Reader::new(
             Arc::clone(&self.descriptor_table),
             self.metadata.id.clone(),
-            Arc::clone(&self.block_cache),
+            cache,
             Arc::clone(&self.block_index),
             None,
             None,
@@ -221,6 +229,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[must_use]
     pub fn range(&self, range: (Bound<UserKey>, Bound<UserKey>)) -> Range {
         Range::new(
             Arc::clone(&self.descriptor_table),
@@ -236,6 +245,7 @@ impl Segment {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[must_use]
     pub fn prefix<K: Into<UserKey>>(&self, prefix: K) -> PrefixedReader {
         PrefixedReader::new(
             Arc::clone(&self.descriptor_table),
@@ -247,11 +257,13 @@ impl Segment {
     }
 
     /// Returns the highest sequence number in the segment.
+    #[must_use]
     pub fn get_lsn(&self) -> SeqNo {
         self.metadata.seqnos.1
     }
 
     /// Returns the amount of tombstone markers in the `Segment`.
+    #[must_use]
     pub fn tombstone_count(&self) -> u64 {
         self.metadata.tombstone_count
     }

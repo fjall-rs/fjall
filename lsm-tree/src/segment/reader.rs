@@ -1,4 +1,7 @@
-use super::{block::load_and_cache_block_by_item_key, index::BlockIndex};
+use super::{
+    block::{load_and_cache_block_by_item_key, ValueBlock},
+    index::BlockIndex,
+};
 use crate::{
     block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
 };
@@ -15,7 +18,7 @@ pub struct Reader {
     block_index: Arc<BlockIndex>,
 
     segment_id: Arc<str>,
-    block_cache: Arc<BlockCache>,
+    block_cache: Option<Arc<BlockCache>>,
 
     blocks: HashMap<UserKey, VecDeque<Value>>,
     current_lo: Option<UserKey>,
@@ -30,7 +33,7 @@ impl Reader {
     pub fn new(
         descriptor_table: Arc<FileDescriptorTable>,
         segment_id: Arc<str>,
-        block_cache: Arc<BlockCache>,
+        block_cache: Option<Arc<BlockCache>>,
         block_index: Arc<BlockIndex>,
         start_offset: Option<&UserKey>,
         end_offset: Option<&UserKey>,
@@ -73,21 +76,39 @@ impl Reader {
     }
 
     fn load_block(&mut self, key: &[u8]) -> crate::Result<Option<()>> {
-        Ok(
-            if let Some(block) = load_and_cache_block_by_item_key(
-                &self.descriptor_table,
-                &self.block_index,
-                &self.block_cache,
-                &self.segment_id,
-                key,
-            )? {
-                let items = block.items.clone().into();
-                self.blocks.insert(key.to_vec().into(), items);
-                Some(())
-            } else {
-                None
-            },
-        )
+        if let Some(block_cache) = &self.block_cache {
+            Ok(
+                if let Some(block) = load_and_cache_block_by_item_key(
+                    &self.descriptor_table,
+                    &self.block_index,
+                    block_cache,
+                    &self.segment_id,
+                    key,
+                )? {
+                    let items = block.items.clone().into();
+                    self.blocks.insert(key.to_vec().into(), items);
+
+                    Some(())
+                } else {
+                    None
+                },
+            )
+        } else if let Some(block_handle) =
+            self.block_index.get_lower_bound_block_info(key.as_ref())?
+        {
+            let mut file_reader = self.descriptor_table.access();
+
+            let block = ValueBlock::from_file_compressed(
+                &mut *file_reader,
+                block_handle.offset,
+                block_handle.size,
+            )?;
+            self.blocks.insert(key.to_vec().into(), block.items.into());
+
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -312,7 +333,7 @@ mod tests {
         let mut iter = Reader::new(
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata.id.clone(),
-            Arc::clone(&block_cache),
+            Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),
             None,
             None,
@@ -328,7 +349,7 @@ mod tests {
         let mut iter = Reader::new(
             Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
             metadata.id,
-            Arc::clone(&block_cache),
+            Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),
             None,
             None,

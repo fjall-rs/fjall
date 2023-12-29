@@ -215,7 +215,7 @@ mod tests {
             let iter = Reader::new(
                 Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
                 metadata.id.clone(),
-                Arc::clone(&block_cache),
+                Some(Arc::clone(&block_cache)),
                 Arc::clone(&block_index),
                 None,
                 None,

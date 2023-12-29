@@ -159,6 +159,7 @@ fn merge_segments(
                 descriptor_table: descriptor_table.clone(),
                 metadata,
                 block_cache: opts.block_cache.clone(),
+                // TODO: if L0, L1, preload block index (non-partitioned)
                 block_index: BlockIndex::from_file(
                     segment_id,
                     descriptor_table,

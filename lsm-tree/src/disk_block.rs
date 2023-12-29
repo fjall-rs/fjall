@@ -125,7 +125,7 @@ mod tests {
         match deserialized {
             Ok(block) => {
                 assert_eq!(2, block.items.len());
-                assert_eq!(block.items.get(0).cloned(), Some(item1));
+                assert_eq!(block.items.first().cloned(), Some(item1));
                 assert_eq!(block.items.get(1).cloned(), Some(item2));
                 assert_eq!(crc, block.crc);
             }

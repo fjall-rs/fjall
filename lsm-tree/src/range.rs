@@ -92,7 +92,6 @@ impl<'a> RangeIterator<'a> {
 
         for segment in &lock.segments {
             let reader = segment.range(lock.bounds.clone());
-
             segment_iters.push(Box::new(reader));
         }
 

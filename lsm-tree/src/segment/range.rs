@@ -58,7 +58,7 @@ impl Range {
         let reader = Reader::new(
             self.descriptor_table.clone(),
             self.segment_id.clone(),
-            self.block_cache.clone(),
+            Some(self.block_cache.clone()),
             self.block_index.clone(),
             offset_lo.as_ref(),
             offset_hi.as_ref(),

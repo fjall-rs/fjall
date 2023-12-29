@@ -55,6 +55,7 @@ pub fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
 
     let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
 
+    // TODO: if L0, L1, preload block index (non-partitioned)
     let block_index = Arc::new(BlockIndex::from_file(
         opts.segment_id,
         Arc::clone(&descriptor_table),

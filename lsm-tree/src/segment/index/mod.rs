@@ -268,7 +268,7 @@ impl BlockIndex {
     /* pub fn preload(&self) -> crate::Result<()> {
         for (block_key, block_handle) in &self.top_level_index.data {
             // TODO: this function seeks every time
-            // can probably be optimized
+            // can and should probably be optimized
             self.load_and_cache_index_block(block_key, block_handle)?;
         }
 

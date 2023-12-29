@@ -39,7 +39,7 @@ impl Default for Strategy {
 
 fn get_key_range(segments: &[Arc<Segment>]) -> (UserKey, UserKey) {
     let (mut min, mut max) = segments
-        .get(0)
+        .first()
         .expect("segment should always exist")
         .metadata
         .key_range
@@ -144,7 +144,7 @@ impl CompactionStrategy for Strategy {
         }
 
         {
-            let Some(first_level) = &resolved_view.get(0) else {
+            let Some(first_level) = &resolved_view.first() else {
                 return Choice::DoNothing;
             };
 
