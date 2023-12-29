@@ -20,7 +20,7 @@ It is not:
 - a relational database
 - a wide-column database: it has no notion of columns
 
-This crates exports a `Keyspace`, which is a single logical database, which is split
+This crate exports a `Keyspace`, which is a single logical database, split
 into `partitions` (a.k.a. column families). Each partition is logically a single
 LSM-tree; however, write operations across partitions are atomic as they are persisted
 in a single database-level journal, which will be recovered after a crash.
