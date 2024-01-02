@@ -2,22 +2,44 @@ pub mod config;
 pub mod name;
 
 use crate::{
-    file::PARTITIONS_FOLDER, flush::manager::Task as FlushTask, journal::manager::PartitionSeqNo,
+    compaction::manager::CompactionManager,
+    config::Config as KeyspaceConfig,
+    file::PARTITIONS_FOLDER,
+    flush::manager::{FlushManager, Task as FlushTask},
+    journal::{
+        manager::{JournalManager, PartitionSeqNo},
+        Journal,
+    },
+    keyspace::Partitions,
     Keyspace,
 };
 use config::Config;
 use lsm_tree::{
-    compaction::CompactionStrategy, prefix::Prefix, range::Range, Tree as LsmTree, UserKey,
-    UserValue,
+    compaction::CompactionStrategy, prefix::Prefix, range::Range, SequenceNumberCounter, Snapshot,
+    Tree as LsmTree, UserKey, UserValue,
 };
-use std::{ops::RangeBounds, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    ops::RangeBounds,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
+use std_semaphore::Semaphore;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
     /// Partition name
     pub name: Arc<str>,
 
-    pub(crate) keyspace: Keyspace,
+    pub(crate) keyspace_config: KeyspaceConfig,
+    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+    pub(crate) flush_semaphore: Arc<Semaphore>,
+    pub(crate) journal: Arc<Journal>,
+    pub(crate) partitions: Arc<RwLock<Partitions>>,
+    pub(crate) compaction_manager: CompactionManager,
+    pub(crate) seqno: SequenceNumberCounter,
 
     /// TEMP pub
     pub(crate) tree: LsmTree,
@@ -44,10 +66,24 @@ impl std::ops::Deref for PartitionHandle {
     }
 }
 
+impl PartialEq for PartitionHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for PartitionHandle {}
+
+impl std::hash::Hash for PartitionHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write(self.name.as_bytes());
+    }
+}
+
 impl PartitionHandle {
     /// Creates a new partition
     pub(crate) fn create_new(
-        keyspace: Keyspace,
+        keyspace: &Keyspace,
         name: Arc<str>,
         config: Config,
     ) -> crate::Result<Self> {
@@ -64,7 +100,14 @@ impl PartitionHandle {
 
         Ok(Self(Arc::new(PartitionHandleInner {
             name,
-            keyspace,
+            partitions: keyspace.partitions.clone(),
+            keyspace_config: keyspace.config.clone(),
+            flush_manager: keyspace.flush_manager.clone(),
+            flush_semaphore: keyspace.flush_semaphore.clone(),
+            journal_manager: keyspace.journal_manager.clone(),
+            journal: keyspace.journal.clone(),
+            compaction_manager: keyspace.compaction_manager.clone(),
+            seqno: keyspace.seqno.clone(),
             tree,
             compaction_strategy: config.compaction_strategy,
             max_memtable_size: config.max_memtable_size,
@@ -119,6 +162,7 @@ impl PartitionHandle {
     pub fn iter(&self) -> Range {
         self.tree.iter()
     }
+    // TODO: how to handle error...? wrap iterator?
 
     /// Returns an iterator over a range of items.
     ///
@@ -347,7 +391,13 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
-    fn rotate_memtable(&self) -> crate::Result<()> {
+    #[doc(hidden)]
+    pub fn rotate_memtable(&self) -> crate::Result<()> {
+        log::debug!("Rotating memtable {:?}", self.name);
+
+        log::debug!("partition: acquiring full write lock");
+        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
             log::debug!("Got no sealed memtable, someone beat us to it");
@@ -355,34 +405,42 @@ impl PartitionHandle {
         };
 
         log::debug!("partition: acquiring journal manager lock");
-        let mut journal_manager = self
-            .keyspace
-            .journal_manager
-            .write()
-            .expect("lock is poisoned");
+        let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
-        log::trace!("partition: writing partition seqno");
-        let memtable_max_seqno = yanked_memtable
-            .get_lsn()
-            .expect("sealed memtable is never empty");
+        let seqno_map = {
+            let partitions = self.partitions.write().expect("lock is poisoned");
 
-        journal_manager.rotate_journal(
-            std::iter::once((
+            let mut map = HashMap::new();
+
+            for (name, partition) in partitions.iter() {
+                if let Some(lsn) = partition.tree.get_memtable_lsn() {
+                    map.insert(
+                        name.clone(),
+                        PartitionSeqNo {
+                            lsn,
+                            partition: partition.clone(),
+                        },
+                    );
+                }
+            }
+
+            map.insert(
                 self.name.clone(),
                 PartitionSeqNo {
-                    lsn: memtable_max_seqno,
                     partition: self.clone(),
+                    lsn: yanked_memtable
+                        .get_lsn()
+                        .expect("sealed memtable is never empty"),
                 },
-            ))
-            .collect(),
-        )?;
+            );
+
+            map
+        };
+
+        journal_manager.rotate_journal(&mut journal, seqno_map)?;
 
         log::debug!("partition: acquiring flush manager lock");
-        let mut flush_manager = self
-            .keyspace
-            .flush_manager
-            .write()
-            .expect("lock is poisoned");
+        let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
 
         flush_manager.enqueue_task(
             self.name.clone(),
@@ -396,30 +454,53 @@ impl PartitionHandle {
         let journal_size = journal_manager.disk_space_used();
         drop(journal_manager);
         drop(flush_manager);
+        drop(journal);
 
         // Notify flush worker that new work has arrived
-        self.keyspace.flush_semaphore.release();
+        self.flush_semaphore.release();
 
-        if journal_size > self.keyspace.config.max_journaling_size_in_bytes.into() {
+        if journal_size > ((self.keyspace_config.max_journaling_size_in_bytes as f32) * 0.75) as u64
+        {
+            log::debug!("Amassing quite a bit of journals, starting to flush some least recently flushed partitions");
+
+            let least_recently_flush_partition = self
+                .flush_manager
+                .write()
+                .expect("lock is poisoned")
+                .flush_least_recently_used_partition();
+
+            if let Some(least_recently_flush_partition) = least_recently_flush_partition {
+                least_recently_flush_partition.rotate_memtable()?;
+            };
+        }
+
+        if journal_size > self.keyspace_config.max_journaling_size_in_bytes.into() {
             // TODO: maybe exponential backoff
 
             loop {
                 log::warn!("Too many journals amassed, halting writes...");
-
-                self.keyspace.flush_semaphore.release();
                 std::thread::sleep(Duration::from_millis(1_000));
 
                 let bytes = self
-                    .keyspace
                     .journal_manager
-                    .read()
+                    .write()
                     .expect("lock is poisoned")
                     .disk_space_used();
 
-                if bytes <= self.keyspace.config.max_journaling_size_in_bytes.into() {
+                if bytes <= self.keyspace_config.max_journaling_size_in_bytes.into() {
                     log::debug!("Ending write halt");
                     break;
                 }
+
+                let least_recently_flush_partition = self
+                    .flush_manager
+                    .write()
+                    .expect("lock is poisoned")
+                    .flush_least_recently_used_partition();
+
+                if let Some(least_recently_flush_partition) = least_recently_flush_partition {
+                    least_recently_flush_partition.rotate_memtable()?;
+                };
             }
         }
 
@@ -429,10 +510,42 @@ impl PartitionHandle {
     fn check_write_stall(&self) {
         while self.tree.first_level_segment_count() > 20 {
             log::warn!("Halting writes until L0 is cleared up...");
-            self.keyspace.compaction_manager.notify(self.clone());
+            self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
     }
+
+    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
+        if size > self.max_memtable_size {
+            self.rotate_memtable()?;
+            self.check_write_stall();
+        }
+
+        if self.tree.first_level_segment_count() > 16 {
+            log::info!("Stalling writes...");
+            self.compaction_manager.notify(self.clone());
+            std::thread::sleep(Duration::from_millis(1_000));
+        }
+
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn segment_count(&self) -> usize {
+        self.tree.segment_count()
+    }
+
+    /// Opens a snapshot of this partition
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
+        self.tree.snapshot(self.seqno.get())
+    }
+
+    // TODO: snapshot_at
+    // TODO: let instant = keyspace.instant();
+    // TODO: let snapshot = partition0.snapshot_at(instant);
+    // TODO: let snapshot = partition1.snapshot_at(instant);
 
     /// Inserts a key-value pair into the partition.
     ///
@@ -460,9 +573,9 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let mut shard = self.keyspace.journal.get_writer();
+        let mut shard = self.journal.get_writer();
 
-        let seqno = self.keyspace.seqno.next();
+        let seqno = self.seqno.next();
 
         shard.writer.write(
             &crate::batch::Item {
@@ -476,18 +589,7 @@ impl PartitionHandle {
         drop(shard);
 
         let memtable_size = self.tree.insert(key, value, seqno);
-
-        if memtable_size > self.max_memtable_size {
-            log::debug!("insert: rotating memtable");
-            self.rotate_memtable()?;
-            self.check_write_stall();
-        }
-
-        if self.tree.first_level_segment_count() > 16 {
-            log::info!("Stalling writes...");
-            self.keyspace.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(1_000));
-        }
+        self.check_memtable_overflow(memtable_size)?;
 
         Ok(())
     }
@@ -522,9 +624,9 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let mut shard = self.keyspace.journal.get_writer();
+        let mut shard = self.journal.get_writer();
 
-        let seqno = self.keyspace.seqno.next();
+        let seqno = self.seqno.next();
 
         shard.writer.write(
             &crate::batch::Item {
@@ -538,18 +640,7 @@ impl PartitionHandle {
         drop(shard);
 
         let memtable_size = self.tree.remove(key, seqno);
-
-        if memtable_size > self.max_memtable_size {
-            log::debug!("remove: rotating memtable");
-            self.check_write_stall();
-            self.rotate_memtable()?;
-        }
-
-        if self.tree.first_level_segment_count() > 16 {
-            log::info!("Stalling writes...");
-            self.keyspace.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(1_000));
-        }
+        self.check_memtable_overflow(memtable_size)?;
 
         Ok(())
     }

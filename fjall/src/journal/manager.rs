@@ -1,11 +1,19 @@
 use lsm_tree::{id::generate_segment_id, SeqNo};
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, RwLockWriteGuard},
+};
 
 use crate::{
     file::{FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
     PartitionHandle,
 };
+
+use super::shard::JournalShard;
 
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
@@ -40,16 +48,14 @@ impl std::fmt::Debug for Item {
 ///
 /// Each journal may contain items of different partitions.
 pub struct JournalManager {
-    journal: Arc<Journal>,
     active_path: PathBuf,
     items: Vec<Item>,
-    pub(crate) disk_space_in_bytes: u64,
+    disk_space_in_bytes: u64,
 }
 
 impl JournalManager {
-    pub fn new<P: Into<PathBuf>>(journal: Arc<Journal>, path: P) -> Self {
+    pub fn new<P: Into<PathBuf>>(path: P) -> Self {
         Self {
-            journal,
             active_path: path.into(),
             items: Vec::with_capacity(10),
             disk_space_in_bytes: 0,
@@ -93,7 +99,7 @@ impl JournalManager {
             // [2] Checking the seqno is safe because the queues inside the flush manager are FIFO.
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
-            log::debug!("Removing fully flushed journal at {}", item.path.display());
+            log::trace!("Removing fully flushed journal at {}", item.path.display());
             std::fs::remove_dir_all(&item.path)?;
 
             self.disk_space_in_bytes -= item.size_in_bytes;
@@ -105,6 +111,7 @@ impl JournalManager {
 
     pub fn rotate_journal(
         &mut self,
+        journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
         seqnos: HashMap<Arc<str>, PartitionSeqNo>,
     ) -> crate::Result<()> {
         log::debug!("Sealing journal");
@@ -134,10 +141,7 @@ impl JournalManager {
             .join(&*generate_segment_id());
 
         log::debug!("journal manager: acquiring journal full lock");
-        Journal::rotate(
-            &new_journal_path,
-            &mut self.journal.shards.full_lock().expect("lock is poisoned"),
-        )?;
+        Journal::rotate(&new_journal_path, journal_lock)?;
 
         self.active_path = new_journal_path;
 

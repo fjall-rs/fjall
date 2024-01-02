@@ -19,6 +19,28 @@ impl std::fmt::Debug for Task {
     }
 }
 
+#[derive(Default)]
+pub struct LruList {
+    items: Vec<PartitionHandle>,
+}
+
+impl LruList {
+    pub(crate) fn refresh(&mut self, partition: PartitionHandle) {
+        self.items.retain(|x| x.name != partition.name);
+        self.items.push(partition);
+    }
+
+    fn get_least_recently_used(&mut self) -> Option<PartitionHandle> {
+        if self.items.is_empty() {
+            None
+        } else {
+            let front = self.items.remove(0);
+            self.refresh(front.clone());
+            Some(front)
+        }
+    }
+}
+
 /// The [`FlushManager`] stores a dictionary of queues, each queue
 /// containing a list of flush tasks.
 ///
@@ -27,9 +49,14 @@ impl std::fmt::Debug for Task {
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
     pub queues: HashMap<Arc<str>, Vec<Arc<Task>>>,
+    pub(crate) lru_list: LruList,
 }
 
 impl FlushManager {
+    pub fn flush_least_recently_used_partition(&mut self) -> Option<PartitionHandle> {
+        self.lru_list.get_least_recently_used()
+    }
+
     pub fn enqueue_task(&mut self, partition_name: Arc<str>, task: Task) {
         log::debug!("Enqueuing {partition_name}:{} for flushing", task.id);
 
@@ -68,10 +95,14 @@ impl FlushManager {
     }
 
     pub fn dequeue_tasks(&mut self, partition_name: Arc<str>, cnt: usize) {
-        let mut queue = self
+        let queue = self
             .queues
             .entry(partition_name)
             .or_insert_with(|| Vec::with_capacity(10));
+
+        if let Some(task) = queue.first() {
+            self.lru_list.refresh(task.partition.clone());
+        }
 
         for _ in 0..cnt {
             queue.remove(0);

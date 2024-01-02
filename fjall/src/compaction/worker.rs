@@ -1,26 +1,17 @@
-use crate::Keyspace;
+use super::manager::CompactionManager;
 
 /// Runs compaction worker.
 ///
 /// Spawn N of these.
-pub fn run(keyspace: &Keyspace) {
-    loop {
-        // TODO: stop signal
+pub fn run(compaction_manager: &CompactionManager) {
+    let Some(item) = compaction_manager.pop() else {
+        return;
+    };
 
-        // TODO: if there are no more tasks, this thread may wait forever
-        keyspace.compaction_manager.wait_for();
+    log::trace!("compactor: calling compaction strategy");
+    let strategy = item.compaction_strategy.clone();
 
-        let Some(item) = keyspace.compaction_manager.pop() else {
-            continue;
-        };
-
-        // TODO: stop signal
-
-        log::trace!("compactor: calling compaction strategy");
-        let strategy = item.compaction_strategy.clone();
-
-        if let Err(e) = item.tree.compact(strategy) {
-            log::error!("Compaction failed: {e:?}");
-        };
-    }
+    if let Err(e) = item.tree.compact(strategy) {
+        log::error!("Compaction failed: {e:?}");
+    };
 }

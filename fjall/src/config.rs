@@ -6,6 +6,7 @@ use std::{
 };
 
 /// Global keyspace configuration
+#[derive(Clone)]
 pub struct Config {
     /// Base path of database
     pub(crate) path: PathBuf,
@@ -62,12 +63,16 @@ impl Config {
 
     /// Max size of all journals in bytes.
     ///
-    /// Note: This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
-    /// anything less will immediately stall the system.
-    ///
     /// Default = 128 MiB
+    ///
+    /// # Panics
+    ///
+    /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
+    /// anything less will immediately stall the system. Otherwise it will panic.
     #[must_use]
     pub fn max_journaling_size(mut self, bytes: u32) -> Self {
+        assert!(bytes >= 24 * 1_024 * 1_024);
+
         self.max_journaling_size_in_bytes = bytes;
         self
     }

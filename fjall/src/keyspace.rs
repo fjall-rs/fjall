@@ -1,4 +1,5 @@
 use crate::{
+    batch::Batch,
     compaction::manager::CompactionManager,
     config::Config,
     file::{
@@ -14,11 +15,11 @@ use crate::{
 use lsm_tree::{id::generate_segment_id, SequenceNumberCounter};
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{atomic::AtomicUsize, Arc, RwLock},
 };
 use std_semaphore::Semaphore;
 
-type Partitions = HashMap<Arc<str>, PartitionHandle>;
+pub(crate) type Partitions = HashMap<Arc<str>, PartitionHandle>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
@@ -30,15 +31,29 @@ pub struct KeyspaceInner {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) flush_semaphore: Arc<Semaphore>,
     pub(crate) compaction_manager: CompactionManager,
-    // TODO: stop signal
+    pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
+    pub(crate) active_flush_threads: Arc<AtomicUsize>,
 }
 
 impl Drop for KeyspaceInner {
     fn drop(&mut self) {
         log::trace!("Dropping Keyspace, trying to flush journal");
 
+        self.stop_signal.send();
+
         if let Err(e) = self.journal.flush(true) {
             log::error!("Flush error on drop: {e:?}");
+        }
+
+        while self
+            .active_flush_threads
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            // NOTE: Trick threads into waking up
+            self.flush_semaphore.release();
         }
     }
 }
@@ -58,6 +73,38 @@ impl std::ops::Deref for Keyspace {
 }
 
 impl Keyspace {
+    /// Initializes a new atomic write batch.
+    ///
+    /// Items may be written to multiple partitions, which
+    /// will be be updated atomically if the batch is committed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// let mut batch = keyspace.batch();
+    ///
+    /// assert_eq!(partition.len()?, 0);
+    /// batch.insert(&partition, "1", "abc");
+    /// batch.insert(&partition, "3", "abc");
+    /// batch.insert(&partition, "5", "abc");
+    ///
+    /// assert_eq!(partition.len()?, 0);
+    ///
+    /// batch.commit()?;
+    /// assert_eq!(partition.len()?, 3);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn batch(&self) -> Batch {
+        Batch::new(self.clone())
+    }
+
     /// Returns the disk space usage of the entire keyspace
     pub fn disk_space(&self) -> crate::Result<u64> {
         let journal_size = fs_extra::dir::get_size(&self.journal.path)
@@ -109,6 +156,16 @@ impl Keyspace {
     fn start_background_threads(&self) {
         self.spawn_flush_worker();
 
+        for _ in 0..self
+            .flush_manager
+            .read()
+            .expect("lock is poisoned")
+            .queues
+            .len()
+        {
+            self.flush_semaphore.release();
+        }
+
         for _ in 0..4 {
             self.spawn_compaction_worker();
         }
@@ -134,13 +191,24 @@ impl Keyspace {
     ) -> crate::Result<PartitionHandle> {
         assert!(is_valid_partition_name(name));
 
-        let partitions = self.partitions.write().expect("lock is poisoned");
+        let mut partitions = self.partitions.write().expect("lock is poisoned");
 
         Ok(if let Some(partition) = partitions.get(name) {
             partition.clone()
         } else {
+            let name: Arc<str> = name.into();
+
             log::debug!("Creating partition {name}");
-            PartitionHandle::create_new(self.clone(), name.into(), config)?
+            let handle = PartitionHandle::create_new(self, name.clone(), config)?;
+            partitions.insert(name, handle.clone());
+
+            self.flush_manager
+                .write()
+                .expect("lock is poisoned")
+                .lru_list
+                .refresh(handle.clone());
+
+            handle
         })
     }
 
@@ -152,6 +220,10 @@ impl Keyspace {
             .expect("lock is poisoned")
             .contains_key(name)
     }
+
+    // TODO: cross-partition snapshot
+    //#[doc(hidden)]
+    //pub fn snapshot() {}
 
     /// Recovers existing keyspace from directory
     #[allow(clippy::too_many_lines)]
@@ -200,12 +272,7 @@ impl Keyspace {
 
         let partitions_folder = config.path.join(PARTITIONS_FOLDER);
 
-        let mut journal_manager = JournalManager::new(journal.clone(), journal_path);
-
-        journal_manager.disk_space_in_bytes =
-            fs_extra::dir::get_size(&journals_folder).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, format!("fs_extra error: {e:?}"))
-            })?;
+        let journal_manager = JournalManager::new(journal_path);
 
         let inner = KeyspaceInner {
             config,
@@ -216,6 +283,8 @@ impl Keyspace {
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
+            stop_signal: lsm_tree::stop_signal::StopSignal::default(),
+            active_flush_threads: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -256,9 +325,16 @@ impl Keyspace {
             let partition_inner = PartitionHandleInner {
                 max_memtable_size: 8 * 1_024 * 1_024, // TODO:
                 compaction_strategy: Arc::new(lsm_tree::compaction::SizeTiered), // TODO:
-                keyspace: keyspace.clone(),
                 name: partition_name.into(),
                 tree,
+                partitions: keyspace.partitions.clone(),
+                keyspace_config: keyspace.config.clone(),
+                flush_manager: keyspace.flush_manager.clone(),
+                flush_semaphore: keyspace.flush_semaphore.clone(),
+                journal_manager: keyspace.journal_manager.clone(),
+                journal: keyspace.journal.clone(),
+                compaction_manager: keyspace.compaction_manager.clone(),
+                seqno: keyspace.seqno.clone(),
             };
             let partition_inner = Arc::new(partition_inner);
 
@@ -291,6 +367,8 @@ impl Keyspace {
         let mut dirents =
             std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
         dirents.sort_by_key(std::fs::DirEntry::file_name);
+
+        log::debug!("Recovering journals: {dirents:#?}");
 
         for dirent in dirents {
             let journal_path = dirent.path();
@@ -327,23 +405,24 @@ impl Keyspace {
                 for (partition_name, lsn) in partitions_to_consider {
                     let Some(partition) = partitions_lock.get(partition_name) else {
                         // Partition was probably deleted
-                        log::trace!("Partition does not exist");
+                        log::trace!("Partition {partition_name:?} does not exist");
                         continue;
                     };
 
-                    let Some(partition_lsn) = partition.tree.get_segment_lsn() else {
-                        log::trace!("Partition has higher seqno, skipping");
-                        continue;
-                    };
+                    let partition_lsn = partition.tree.get_segment_lsn();
+                    let has_lower_lsn =
+                        partition_lsn.map_or(true, |partition_lsn| lsn > partition_lsn);
 
-                    if lsn > partition_lsn {
+                    if has_lower_lsn {
                         partition_seqno_map.insert(
                             partition_name.into(),
                             crate::journal::manager::PartitionSeqNo {
-                                lsn: partition_lsn,
+                                lsn,
                                 partition: partition.clone(),
                             },
                         );
+                    } else {
+                        log::trace!("Partition {partition_name:?} has higher seqno, skipping");
                     }
                 }
 
@@ -388,9 +467,11 @@ impl Keyspace {
 
                     let maybe_next_seqno =
                         partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
+
                     keyspace
                         .seqno
                         .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
+
                     log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
 
                     flush_manager_lock.enqueue_task(
@@ -429,16 +510,15 @@ impl Keyspace {
 
         let inner = KeyspaceInner {
             config,
-            journal: journal.clone(),
+            journal,
             partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
             seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::default(),
-            journal_manager: Arc::new(RwLock::new(JournalManager::new(
-                journal,
-                active_journal_path,
-            ))),
+            journal_manager: Arc::new(RwLock::new(JournalManager::new(active_journal_path))),
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
+            stop_signal: lsm_tree::stop_signal::StopSignal::default(),
+            active_flush_threads: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -466,16 +546,16 @@ impl Keyspace {
 
     fn spawn_fsync_thread(&self, ms: usize) {
         let journal = self.journal.clone();
+        let stop_signal = self.stop_signal.clone();
 
         std::thread::spawn(move || loop {
             log::trace!("fsync thread: sleeping {ms}ms");
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
-            // TODO:
-            /* if stop_signal.is_stopped() {
+            if stop_signal.is_stopped() {
                 log::debug!("fsync thread: exiting because tree is dropping");
                 return;
-            } */
+            }
 
             log::trace!("fsync thread: fsycing journal");
             if let Err(e) = journal.flush(false) {
@@ -485,16 +565,46 @@ impl Keyspace {
     }
 
     fn spawn_compaction_worker(&self) {
-        let keyspace = self.clone();
-        std::thread::spawn(move || {
-            crate::compaction::worker::run(&keyspace);
+        let compaction_manager = self.compaction_manager.clone();
+        let stop_signal = self.stop_signal.clone();
+
+        std::thread::spawn(move || loop {
+            // TODO: if there are no more tasks, this thread may wait forever
+            log::debug!("compaction: waiting for work");
+            compaction_manager.wait_for();
+
+            if stop_signal.is_stopped() {
+                log::debug!("compaction thread: exiting because tree is dropping");
+                return;
+            }
+
+            crate::compaction::worker::run(&compaction_manager);
         });
     }
 
     fn spawn_flush_worker(&self) {
-        let keyspace = self.clone();
-        std::thread::spawn(move || {
-            crate::flush::worker::run(&keyspace);
+        let flush_manager = self.flush_manager.clone();
+        let journal_manager = self.journal_manager.clone();
+        let compaction_manager = self.compaction_manager.clone();
+        let flush_semaphore = self.flush_semaphore.clone();
+
+        let thread_counter = self.active_flush_threads.clone();
+        let stop_signal = self.stop_signal.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        std::thread::spawn(move || loop {
+            log::debug!("flush worker: acquiring flush semaphore");
+            flush_semaphore.acquire();
+
+            if stop_signal.is_stopped() {
+                log::debug!("flush worker: exiting because tree is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
+
+            // TODO: need a way in lsm_tree to stop all compactions
+            crate::flush::worker::run(&flush_manager, &journal_manager, &compaction_manager);
         });
     }
 }

@@ -31,7 +31,7 @@ pub struct Config {
     /// Compaction strategy to use for this partition
     pub compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 
-    /// Maximum size of this partition's memtable
+    /// Maximum size of this partition's active memtable
     pub max_memtable_size: u32,
 }
 
@@ -50,6 +50,41 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Sets the block size.
+    ///
+    /// Default = 4 KiB
+    ///
+    pub fn block_size(mut self, n: u32) -> Self {
+        self.block_size = n;
+        self
+    }
+
+    /// Sets the maximum size of this partition's active memtable.
+    ///
+    /// Default = 8
+    ///
+    pub fn max_memtable_size(mut self, n: u32) -> Self {
+        self.max_memtable_size = n;
+        self
+    }
+
+    /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
+    ///
+    /// Default = 8
+    ///
+    pub fn level_ratio(mut self, n: u8) -> Self {
+        self.level_ratio = n;
+        self
+    }
+
+    /// Sets the level count (depth of the tree).
+    ///
+    /// Default = 7
+    pub fn level_count(mut self, n: u8) -> Self {
+        self.level_count = n;
+        self
+    }
+
     /// Sets the compaction strategy for this partition
     ///
     /// Default = Levelled
