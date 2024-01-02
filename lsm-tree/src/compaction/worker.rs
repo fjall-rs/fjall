@@ -100,9 +100,13 @@ fn merge_segments(
         // NOTE: When there are open snapshots
         // we don't want to GC old versions of items
         // otherwise snapshots will lose data
+        //
+        // Also, keep versions around for a bit (don't evict when compacting into L0 & L1)
         let no_snapshots_open = !opts.open_snapshots.has_open_snapshots();
+        let is_deep_level = payload.dest_level >= 2;
 
-        MergeIterator::from_segments(&to_merge).evict_old_versions(no_snapshots_open)
+        MergeIterator::from_segments(&to_merge)
+            .evict_old_versions(no_snapshots_open && is_deep_level)
     };
 
     let last_level = levels.last_level_index();
