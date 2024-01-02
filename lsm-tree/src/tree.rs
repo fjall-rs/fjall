@@ -733,7 +733,8 @@ impl Tree {
     /// Adds an item to the active memtable.
     ///
     /// Returns the new size of the memtable.
-    fn append_entry(&self, value: Value) -> u32 {
+    #[doc(hidden)]
+    pub fn append_entry(&self, value: Value) -> u32 {
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value)
     }
@@ -859,6 +860,16 @@ impl Tree {
             (Some(x), None) | (None, Some(x)) => Some(x),
             (None, None) => None,
         }
+    }
+
+    /// Returns the highest sequence number of the active memtable
+    #[must_use]
+    #[doc(hidden)]
+    pub fn get_memtable_lsn(&self) -> Option<SeqNo> {
+        self.active_memtable
+            .read()
+            .expect("lock is poisoned")
+            .get_lsn()
     }
 
     /// Recovers the level manifest, loading all segments from disk.
