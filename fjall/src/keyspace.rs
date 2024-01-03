@@ -198,7 +198,7 @@ impl Keyspace {
         } else {
             let name: Arc<str> = name.into();
 
-            log::debug!("Creating partition {name}");
+            log::info!("Creating partition {name}");
             let handle = PartitionHandle::create_new(self, name.clone(), config)?;
             partitions.insert(name, handle.clone());
 
@@ -359,7 +359,16 @@ impl Keyspace {
                 .partitions
                 .write()
                 .expect("lock is poisoned")
-                .insert(partition_name.into(), partition);
+                .insert(partition_name.into(), partition.clone());
+
+            keyspace.compaction_manager.notify(partition.clone());
+
+            keyspace
+                .flush_manager
+                .write()
+                .expect("lock is poisoned")
+                .lru_list
+                .refresh(partition);
 
             log::trace!("Recovered partition {:?}", partition_name);
         }

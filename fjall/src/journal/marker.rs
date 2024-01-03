@@ -105,7 +105,7 @@ impl Serializable for Marker {
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the CRC value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
-                writer.write_all("END".as_bytes());
+                writer.write_all(b"END")?;
             }
         }
         Ok(())
