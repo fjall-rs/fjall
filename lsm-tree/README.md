@@ -9,7 +9,7 @@
 
 A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rust.
 
-> This crate only provides the primitives for an LSM-tree.
+> This crate only provides a primitive LSM-tree, not a full storage engine.
 > For example, it does not ship with a write-ahead log.
 > You probably want to use https://github.com/marvin-j97/fjall instead.
 
