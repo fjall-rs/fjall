@@ -4,7 +4,7 @@ use crate::{
         CompactionStrategy,
     },
     config::Config,
-    descriptor_table::NewDescriptorTable,
+    descriptor_table::FileDescriptorTable,
     file::{BLOCKS_FILE, CONFIG_FILE, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
     flush::{flush_to_segment, Options as FlushOptions},
     id::generate_segment_id,
@@ -758,7 +758,7 @@ impl Tree {
     fn recover<P: AsRef<Path>>(
         path: P,
         block_cache: Arc<BlockCache>,
-        descriptor_table: Arc<NewDescriptorTable>,
+        descriptor_table: Arc<FileDescriptorTable>,
     ) -> crate::Result<Self> {
         let path = path.as_ref();
 
@@ -892,7 +892,7 @@ impl Tree {
     fn recover_levels<P: AsRef<Path>>(
         tree_path: P,
         block_cache: &Arc<BlockCache>,
-        descriptor_table: &Arc<NewDescriptorTable>,
+        descriptor_table: &Arc<FileDescriptorTable>,
     ) -> crate::Result<Levels> {
         let tree_path = tree_path.as_ref();
         log::debug!("Recovering disk segments from {}", tree_path.display());

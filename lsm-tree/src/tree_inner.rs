@@ -1,6 +1,6 @@
 use crate::{
     config::{Config, PersistedConfig},
-    descriptor_table::NewDescriptorTable,
+    descriptor_table::FileDescriptorTable,
     file::LEVELS_MANIFEST_FILE,
     levels::Levels,
     memtable::MemTable,
@@ -32,7 +32,7 @@ pub struct TreeInner {
     pub block_cache: Arc<BlockCache>,
 
     /// File descriptor cache table
-    pub descriptor_table: Arc<NewDescriptorTable>,
+    pub descriptor_table: Arc<FileDescriptorTable>,
 
     /// Keeps track of open snapshots
     pub(crate) open_snapshots: SnapshotCounter,

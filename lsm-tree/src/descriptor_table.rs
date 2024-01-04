@@ -71,19 +71,19 @@ pub struct FileHandle {
     path: PathBuf,
 }
 
-pub struct NewDescriptorTableInner {
+pub struct FileDescriptorTableInner {
     table: HashMap<Arc<str>, FileHandle>,
     lru: LruList<Arc<str>>,
     size: AtomicUsize,
 }
 
-pub struct NewDescriptorTable {
-    inner: RwLock<NewDescriptorTableInner>,
+pub struct FileDescriptorTable {
+    inner: RwLock<FileDescriptorTableInner>,
     concurrency: usize,
     limit: usize,
 }
 
-impl NewDescriptorTable {
+impl FileDescriptorTable {
     /// Closes all file descriptors
     pub fn clear(&self) {
         let mut lock = self.inner.write().expect("lock is poisoned");
@@ -93,7 +93,7 @@ impl NewDescriptorTable {
     #[must_use]
     pub fn new(limit: usize, concurrency: usize) -> Self {
         Self {
-            inner: RwLock::new(NewDescriptorTableInner {
+            inner: RwLock::new(FileDescriptorTableInner {
                 table: HashMap::with_capacity(100),
                 lru: LruList::default(),
                 size: AtomicUsize::default(),
@@ -189,7 +189,7 @@ impl NewDescriptorTable {
     }
 
     fn inner_insert(
-        mut lock: RwLockWriteGuard<'_, NewDescriptorTableInner>,
+        mut lock: RwLockWriteGuard<'_, FileDescriptorTableInner>,
         path: PathBuf,
         id: Arc<str>,
     ) {
@@ -236,7 +236,7 @@ mod tests {
         File::create(path.join("2"))?;
         File::create(path.join("3"))?;
 
-        let table = NewDescriptorTable::new(2, 1);
+        let table = FileDescriptorTable::new(2, 1);
 
         assert_eq!(0, table.size());
 

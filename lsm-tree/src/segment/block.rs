@@ -1,5 +1,5 @@
 use super::index::{block_handle::BlockHandle, BlockIndex};
-use crate::{descriptor_table::NewDescriptorTable, disk_block::DiskBlock, BlockCache, Value};
+use crate::{descriptor_table::FileDescriptorTable, disk_block::DiskBlock, BlockCache, Value};
 use std::sync::Arc;
 
 /// Value blocks are the building blocks of a [`Segment`]. Each block is a sorted list of [`Value`]s,
@@ -15,7 +15,7 @@ impl ValueBlock {
 }
 
 pub fn load_and_cache_by_block_handle(
-    descriptor_table: &NewDescriptorTable,
+    descriptor_table: &FileDescriptorTable,
     block_cache: &BlockCache,
     segment_id: &str,
     block_handle: &BlockHandle,
@@ -52,7 +52,7 @@ pub fn load_and_cache_by_block_handle(
 }
 
 pub fn load_and_cache_block_by_item_key<K: AsRef<[u8]>>(
-    descriptor_table: &NewDescriptorTable,
+    descriptor_table: &FileDescriptorTable,
     block_index: &BlockIndex,
     block_cache: &BlockCache,
     segment_id: &str,

@@ -1,5 +1,7 @@
 use super::{index::BlockIndex, range::Range};
-use crate::{block_cache::BlockCache, descriptor_table::NewDescriptorTable, value::UserKey, Value};
+use crate::{
+    block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
+};
 use std::{
     ops::Bound::{Excluded, Included, Unbounded},
     sync::Arc,
@@ -7,7 +9,7 @@ use std::{
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PrefixedReader {
-    descriptor_table: Arc<NewDescriptorTable>,
+    descriptor_table: Arc<FileDescriptorTable>,
     block_index: Arc<BlockIndex>,
     block_cache: Arc<BlockCache>,
     segment_id: Arc<str>,
@@ -19,7 +21,7 @@ pub struct PrefixedReader {
 
 impl PrefixedReader {
     pub fn new<K: Into<UserKey>>(
-        descriptor_table: Arc<NewDescriptorTable>,
+        descriptor_table: Arc<FileDescriptorTable>,
         segment_id: Arc<str>,
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
@@ -129,7 +131,7 @@ impl DoubleEndedIterator for PrefixedReader {
 mod tests {
     use crate::{
         block_cache::BlockCache,
-        descriptor_table::NewDescriptorTable,
+        descriptor_table::FileDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
             index::BlockIndex,
@@ -202,7 +204,7 @@ mod tests {
             let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
             metadata.write_to_file()?;
 
-            let table = Arc::new(NewDescriptorTable::new(512, 1));
+            let table = Arc::new(FileDescriptorTable::new(512, 1));
             table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
             let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
@@ -290,7 +292,7 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
-        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        let table = Arc::new(FileDescriptorTable::new(512, 1));
         table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));

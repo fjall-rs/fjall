@@ -1,5 +1,5 @@
 use crate::Keyspace;
-use lsm_tree::{descriptor_table::NewDescriptorTable, BlockCache};
+use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -15,7 +15,7 @@ pub struct Config {
     pub(crate) block_cache: Arc<BlockCache>,
 
     /// Descriptor table that will be shared between partitions
-    pub(crate) descriptor_table: Arc<NewDescriptorTable>,
+    pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Max size of all journals in bytes
     pub(crate) max_journaling_size_in_bytes: u32,
@@ -35,7 +35,7 @@ impl Default for Config {
         Self {
             path: ".fjall_data".into(),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
-            descriptor_table: Arc::new(NewDescriptorTable::new(960, 4)),
+            descriptor_table: Arc::new(FileDescriptorTable::new(960, 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
@@ -61,7 +61,7 @@ impl Config {
     /// Panics if n is equal to 0.
     #[must_use]
     pub fn max_open_files(mut self, n: usize) -> Self {
-        self.descriptor_table = Arc::new(NewDescriptorTable::new(n, 4));
+        self.descriptor_table = Arc::new(FileDescriptorTable::new(n, 4));
         self
     }
 

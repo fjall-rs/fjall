@@ -2,7 +2,7 @@ use super::{CompactionStrategy, Input as CompactionPayload};
 use crate::{
     compaction::Choice,
     config::PersistedConfig,
-    descriptor_table::NewDescriptorTable,
+    descriptor_table::FileDescriptorTable,
     file::{BLOCKS_FILE, SEGMENTS_FOLDER},
     levels::Levels,
     memtable::MemTable,
@@ -27,7 +27,7 @@ pub struct Options {
     pub block_cache: Arc<BlockCache>,
 
     /// Descriptor table
-    pub descriptor_table: Arc<NewDescriptorTable>,
+    pub descriptor_table: Arc<FileDescriptorTable>,
 
     /// Levels manifest.
     pub levels: Arc<RwLock<Levels>>,

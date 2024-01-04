@@ -326,7 +326,7 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::descriptor_table::NewDescriptorTable;
+    use crate::descriptor_table::FileDescriptorTable;
     use crate::value::ValueType;
     use crate::{
         block_cache::BlockCache,
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(ITEM_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
-        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        let table = Arc::new(FileDescriptorTable::new(512, 1));
         table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(ITEM_COUNT * VERSION_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
-        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        let table = Arc::new(FileDescriptorTable::new(512, 1));
         table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));

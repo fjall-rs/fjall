@@ -1,7 +1,7 @@
 use super::index::BlockIndex;
 use super::reader::Reader;
 use crate::block_cache::BlockCache;
-use crate::descriptor_table::NewDescriptorTable;
+use crate::descriptor_table::FileDescriptorTable;
 use crate::value::UserKey;
 use crate::Value;
 use std::ops::Bound;
@@ -9,7 +9,7 @@ use std::ops::RangeBounds;
 use std::sync::Arc;
 
 pub struct Range {
-    descriptor_table: Arc<NewDescriptorTable>,
+    descriptor_table: Arc<FileDescriptorTable>,
     block_index: Arc<BlockIndex>,
     block_cache: Arc<BlockCache>,
     segment_id: Arc<str>,
@@ -21,7 +21,7 @@ pub struct Range {
 
 impl Range {
     pub fn new(
-        descriptor_table: Arc<NewDescriptorTable>,
+        descriptor_table: Arc<FileDescriptorTable>,
         segment_id: Arc<str>,
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
@@ -189,7 +189,7 @@ impl DoubleEndedIterator for Range {
 mod tests {
     use crate::{
         block_cache::BlockCache,
-        descriptor_table::NewDescriptorTable,
+        descriptor_table::FileDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
             index::BlockIndex,
@@ -238,7 +238,7 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
-        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        let table = Arc::new(FileDescriptorTable::new(512, 1));
         table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
@@ -433,7 +433,7 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
-        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        let table = Arc::new(FileDescriptorTable::new(512, 1));
         table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
 
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));

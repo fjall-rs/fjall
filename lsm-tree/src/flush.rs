@@ -1,5 +1,5 @@
 use crate::{
-    descriptor_table::NewDescriptorTable,
+    descriptor_table::FileDescriptorTable,
     memtable::MemTable,
     segment::{index::BlockIndex, meta::Metadata, writer::Writer, Segment},
     BlockCache,
@@ -27,7 +27,7 @@ pub struct Options {
     pub block_cache: Arc<BlockCache>,
 
     // Descriptor table
-    pub descriptor_table: Arc<NewDescriptorTable>,
+    pub descriptor_table: Arc<FileDescriptorTable>,
 }
 
 /// Flushes a memtable, creating a segment in the given folder
