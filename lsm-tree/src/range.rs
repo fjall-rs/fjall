@@ -21,6 +21,7 @@ pub struct Range {
 }
 
 impl Range {
+    #[must_use]
     pub fn new(
         guard: MemTableGuard,
         bounds: (Bound<UserKey>, Bound<UserKey>),

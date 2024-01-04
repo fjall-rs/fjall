@@ -1,4 +1,4 @@
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 type Shard<T> = Mutex<T>;
 
@@ -19,6 +19,12 @@ impl<T> std::ops::Deref for Sharded<T> {
     }
 }
 
+impl<T> std::ops::DerefMut for Sharded<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shards
+    }
+}
+
 impl<T> Sharded<T> {
     /// Creates a new sharded structure
     pub fn new(shards: Vec<Shard<T>>) -> Self {
@@ -34,10 +40,5 @@ impl<T> Sharded<T> {
                 }
             }
         }
-    }
-
-    /// Gives exclusive control over the entire structure
-    pub fn full_lock(&self) -> Result<Vec<MutexGuard<'_, T>>, PoisonError<MutexGuard<'_, T>>> {
-        self.shards.iter().map(|shard| shard.lock()).collect()
     }
 }

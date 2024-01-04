@@ -1,4 +1,4 @@
-use crate::{BlockCache, Tree};
+use crate::{descriptor_table::NewDescriptorTable, BlockCache, Tree};
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -58,12 +58,17 @@ pub struct Config {
     /// Block cache to use
     #[doc(hidden)]
     pub block_cache: Arc<BlockCache>,
+
+    /// Descriptor table to use
+    #[doc(hidden)]
+    pub descriptor_table: Arc<NewDescriptorTable>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             block_cache: Arc::new(BlockCache::with_capacity_bytes(8 * 1_024 * 1_024)),
+            descriptor_table: Arc::new(NewDescriptorTable::new(960, 4)),
             inner: PersistedConfig::default(),
         }
     }
@@ -137,6 +142,13 @@ impl Config {
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
+        self
+    }
+
+    #[must_use]
+    #[doc(hidden)]
+    pub fn descriptor_table(mut self, descriptor_table: Arc<NewDescriptorTable>) -> Self {
+        self.descriptor_table = descriptor_table;
         self
     }
 

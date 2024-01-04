@@ -101,7 +101,10 @@
 mod block_cache;
 pub mod compaction;
 mod config;
-mod descriptor_table;
+
+#[doc(hidden)]
+pub mod descriptor_table;
+
 mod disk_block;
 mod either;
 mod error;

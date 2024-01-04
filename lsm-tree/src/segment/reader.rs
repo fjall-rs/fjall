@@ -2,9 +2,7 @@ use super::{
     block::{load_and_cache_block_by_item_key, ValueBlock},
     index::BlockIndex,
 };
-use crate::{
-    block_cache::BlockCache, descriptor_table::FileDescriptorTable, value::UserKey, Value,
-};
+use crate::{block_cache::BlockCache, descriptor_table::NewDescriptorTable, value::UserKey, Value};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -14,7 +12,7 @@ use std::{
 /// Stupidly iterates through the entries of a segment
 /// This does not account for tombstones
 pub struct Reader {
-    descriptor_table: Arc<FileDescriptorTable>,
+    descriptor_table: Arc<NewDescriptorTable>,
     block_index: Arc<BlockIndex>,
 
     segment_id: Arc<str>,
@@ -31,7 +29,7 @@ pub struct Reader {
 
 impl Reader {
     pub fn new(
-        descriptor_table: Arc<FileDescriptorTable>,
+        descriptor_table: Arc<NewDescriptorTable>,
         segment_id: Arc<str>,
         block_cache: Option<Arc<BlockCache>>,
         block_index: Arc<BlockIndex>,
@@ -96,13 +94,16 @@ impl Reader {
         } else if let Some(block_handle) =
             self.block_index.get_lower_bound_block_info(key.as_ref())?
         {
-            let mut file_reader = self.descriptor_table.access();
+            let file_guard = self.descriptor_table.access(&self.segment_id)?;
 
             let block = ValueBlock::from_file_compressed(
-                &mut *file_reader,
+                &mut *file_guard.file.lock().expect("lock is poisoned"),
                 block_handle.offset,
                 block_handle.size,
             )?;
+
+            drop(file_guard);
+
             self.blocks.insert(key.to_vec().into(), block.items.into());
 
             Ok(Some(()))
@@ -273,7 +274,7 @@ impl DoubleEndedIterator for Reader {
 mod tests {
     use crate::{
         block_cache::BlockCache,
-        descriptor_table::FileDescriptorTable,
+        descriptor_table::NewDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
             index::BlockIndex,
@@ -320,10 +321,13 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
+        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
+
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             &folder,
             Arc::clone(&block_cache),
         )?);
@@ -331,7 +335,7 @@ mod tests {
         log::info!("Getting every item");
 
         let mut iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             metadata.id.clone(),
             Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),
@@ -347,7 +351,7 @@ mod tests {
         log::info!("Getting every item in reverse");
 
         let mut iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table,
             metadata.id,
             Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),

@@ -79,5 +79,36 @@ fn load_block_from_disk(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, value_block_size, load_block_from_disk);
+fn file_descriptor(c: &mut Criterion) {
+    use std::fs::File;
+    use std::sync::Arc;
+
+    let file = tempfile::NamedTempFile::new().unwrap();
+
+    let mut group = c.benchmark_group("Get file descriptor");
+
+    group.bench_function("fopen", |b: &mut criterion::Bencher<'_>| {
+        b.iter(|| {
+            File::open(file.path()).unwrap();
+        });
+    });
+
+    let id: Arc<str> = Arc::from("file");
+    let descriptor_table = lsm_tree::descriptor_table::NewDescriptorTable::new(1, 1);
+    descriptor_table.insert(file.path(), id.clone());
+
+    group.bench_function("descriptor table", |b: &mut criterion::Bencher<'_>| {
+        b.iter(|| {
+            let guard = descriptor_table.access(&id).unwrap();
+            let _fd = guard.file.lock().unwrap();
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    value_block_size,
+    load_block_from_disk,
+    file_descriptor
+);
 criterion_main!(benches);

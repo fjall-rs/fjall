@@ -4,7 +4,7 @@ use crate::{
         CompactionStrategy,
     },
     config::Config,
-    descriptor_table::FileDescriptorTable,
+    descriptor_table::NewDescriptorTable,
     file::{BLOCKS_FILE, CONFIG_FILE, LEVELS_MANIFEST_FILE, LSM_MARKER, SEGMENTS_FOLDER},
     flush::{flush_to_segment, Options as FlushOptions},
     id::generate_segment_id,
@@ -63,7 +63,11 @@ impl Tree {
         log::debug!("Opening LSM-tree at {}", config.inner.path.display());
 
         let tree = if config.inner.path.join(LSM_MARKER).try_exists()? {
-            Self::recover(config.inner.path, config.block_cache)
+            Self::recover(
+                config.inner.path,
+                config.block_cache,
+                config.descriptor_table,
+            )
         } else {
             Self::create_new(config)
         }?;
@@ -85,6 +89,7 @@ impl Tree {
             stop_signal: self.stop_signal.clone(),
             block_cache: self.block_cache.clone(),
             strategy,
+            descriptor_table: self.descriptor_table.clone(),
         })?;
 
         log::debug!("lsm-tree: compaction run over");
@@ -148,6 +153,11 @@ impl Tree {
 
         for segment in segments {
             levels.add(segment.clone());
+
+            self.descriptor_table.insert(
+                segment.metadata.path.join(BLOCKS_FILE),
+                segment.metadata.id.clone(),
+            );
         }
 
         log::debug!("flush: acquiring sealed memtables write lock");
@@ -191,6 +201,7 @@ impl Tree {
             block_size: self.config.block_size,
             folder: segment_folder,
             segment_id,
+            descriptor_table: self.descriptor_table.clone(),
         })?;
         let segment = Arc::new(segment);
         let result_path = segment.metadata.path.clone();
@@ -744,7 +755,11 @@ impl Tree {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    fn recover<P: AsRef<Path>>(path: P, block_cache: Arc<BlockCache>) -> crate::Result<Self> {
+    fn recover<P: AsRef<Path>>(
+        path: P,
+        block_cache: Arc<BlockCache>,
+        descriptor_table: Arc<NewDescriptorTable>,
+    ) -> crate::Result<Self> {
         let path = path.as_ref();
 
         log::info!("Recovering LSM-tree at {}", path.display());
@@ -761,7 +776,7 @@ impl Tree {
             }
         }
 
-        let mut levels = Self::recover_levels(path, &block_cache)?;
+        let mut levels = Self::recover_levels(path, &block_cache, &descriptor_table)?;
         levels.sort_levels();
 
         let config_str = std::fs::read_to_string(path.join(CONFIG_FILE))?;
@@ -775,6 +790,7 @@ impl Tree {
             stop_signal: StopSignal::default(),
             config,
             block_cache,
+            descriptor_table,
         };
 
         Ok(Self(Arc::new(inner)))
@@ -876,6 +892,7 @@ impl Tree {
     fn recover_levels<P: AsRef<Path>>(
         tree_path: P,
         block_cache: &Arc<BlockCache>,
+        descriptor_table: &Arc<NewDescriptorTable>,
     ) -> crate::Result<Levels> {
         let tree_path = tree_path.as_ref();
         log::debug!("Recovering disk segments from {}", tree_path.display());
@@ -905,8 +922,13 @@ impl Tree {
                 let segment = Segment::recover(
                     &segment_path,
                     Arc::clone(block_cache),
-                    Arc::new(FileDescriptorTable::new(segment_path.join(BLOCKS_FILE))?),
+                    descriptor_table.clone(),
                 )?;
+
+                descriptor_table.insert(
+                    segment.metadata.path.join(BLOCKS_FILE),
+                    segment.metadata.id.clone(),
+                );
 
                 segments.push(Arc::new(segment));
                 log::debug!("Recovered segment from {}", segment_path.display());

@@ -190,7 +190,7 @@ mod tests {
     use crate::{
         block_cache::BlockCache,
         compaction::{CompactionStrategy, Input as CompactionInput},
-        descriptor_table::FileDescriptorTable,
+        descriptor_table::NewDescriptorTable,
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::BlockIndex, meta::Metadata, Segment},
@@ -206,9 +206,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
 
         Arc::new(Segment {
-            descriptor_table: Arc::new(
-                FileDescriptorTable::new("Cargo.toml").expect("should open"),
-            ),
+            descriptor_table: Arc::new(NewDescriptorTable::new(512, 1)),
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),

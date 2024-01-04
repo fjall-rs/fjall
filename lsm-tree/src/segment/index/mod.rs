@@ -4,7 +4,7 @@ pub mod writer;
 
 use self::block_handle::BlockHandle;
 use crate::block_cache::BlockCache;
-use crate::descriptor_table::FileDescriptorTable;
+use crate::descriptor_table::NewDescriptorTable;
 use crate::disk_block::DiskBlock;
 use crate::file::{BLOCKS_FILE, TOP_LEVEL_INDEX_FILE};
 use crate::value::UserKey;
@@ -52,7 +52,7 @@ impl BlockHandleBlockIndex {
 ///
 /// See <https://rocksdb.org/blog/2017/05/12/partitioned-index-filter.html>
 pub struct BlockIndex {
-    descriptor_table: Arc<FileDescriptorTable>,
+    descriptor_table: Arc<NewDescriptorTable>,
 
     /// Segment ID
     segment_id: Arc<str>,
@@ -213,15 +213,15 @@ impl BlockIndex {
         } else {
             // Cache miss: load from disk
 
-            let mut file_reader = self.descriptor_table.access();
+            let file_guard = self.descriptor_table.access(&self.segment_id)?;
 
             let block = BlockHandleBlock::from_file_compressed(
-                &mut *file_reader,
+                &mut *file_guard.file.lock().expect("lock is poisoned"),
                 block_handle.offset,
                 block_handle.size,
             )?;
 
-            drop(file_reader);
+            drop(file_guard);
 
             let block = Arc::new(block);
 
@@ -256,9 +256,7 @@ impl BlockIndex {
 
         Self {
             // path: Path::new(".").to_owned(),
-            descriptor_table: Arc::new(
-                FileDescriptorTable::new("Cargo.toml").expect("should open"),
-            ),
+            descriptor_table: Arc::new(NewDescriptorTable::new(512, 1)),
             segment_id,
             blocks: index_block_index,
             top_level_index: TopLevelIndex::new(BTreeMap::default()),
@@ -277,7 +275,7 @@ impl BlockIndex {
 
     pub fn from_file<P: AsRef<Path>>(
         segment_id: Arc<str>,
-        descriptor_table: Arc<FileDescriptorTable>,
+        descriptor_table: Arc<NewDescriptorTable>,
         path: P,
         block_cache: Arc<BlockCache>,
     ) -> crate::Result<Self> {

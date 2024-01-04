@@ -12,8 +12,8 @@ use self::{
 };
 use crate::{
     block_cache::BlockCache,
-    descriptor_table::FileDescriptorTable,
-    file::{BLOCKS_FILE, SEGMENT_METADATA_FILE},
+    descriptor_table::NewDescriptorTable,
+    file::SEGMENT_METADATA_FILE,
     value::{SeqNo, UserKey},
     Value,
 };
@@ -28,7 +28,7 @@ use std::{ops::Bound, path::Path, sync::Arc};
 ///
 /// Segments can be merged together to remove duplicates, reducing disk space and improving read performance.
 pub struct Segment {
-    pub(crate) descriptor_table: Arc<FileDescriptorTable>,
+    pub(crate) descriptor_table: Arc<NewDescriptorTable>,
 
     /// Segment metadata object (will be stored in a JSON file)
     pub metadata: meta::Metadata,
@@ -47,20 +47,20 @@ impl Segment {
     pub fn recover<P: AsRef<Path>>(
         folder: P,
         block_cache: Arc<BlockCache>,
-        descriptor_table: Arc<FileDescriptorTable>,
+        descriptor_table: Arc<NewDescriptorTable>,
     ) -> crate::Result<Self> {
         let folder = folder.as_ref();
 
         let metadata = Metadata::from_disk(folder.join(SEGMENT_METADATA_FILE))?;
         let block_index = BlockIndex::from_file(
             metadata.id.clone(),
-            descriptor_table,
+            descriptor_table.clone(),
             folder,
             Arc::clone(&block_cache),
         )?;
 
         Ok(Self {
-            descriptor_table: Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            descriptor_table,
             metadata,
             block_index: Arc::new(block_index),
             block_cache,

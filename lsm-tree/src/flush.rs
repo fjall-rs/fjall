@@ -1,6 +1,5 @@
 use crate::{
-    descriptor_table::FileDescriptorTable,
-    file::BLOCKS_FILE,
+    descriptor_table::NewDescriptorTable,
     memtable::MemTable,
     segment::{index::BlockIndex, meta::Metadata, writer::Writer, Segment},
     BlockCache,
@@ -26,6 +25,9 @@ pub struct Options {
 
     // Block cache
     pub block_cache: Arc<BlockCache>,
+
+    // Descriptor table
+    pub descriptor_table: Arc<NewDescriptorTable>,
 }
 
 /// Flushes a memtable, creating a segment in the given folder
@@ -53,18 +55,16 @@ pub fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
 
     log::debug!("Finalized segment write at {}", segment_folder.display());
 
-    let descriptor_table = Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
-
     // TODO: if L0, L1, preload block index (non-partitioned)
     let block_index = Arc::new(BlockIndex::from_file(
-        opts.segment_id,
-        Arc::clone(&descriptor_table),
+        opts.segment_id.clone(),
+        opts.descriptor_table.clone(),
         &segment_folder,
         opts.block_cache.clone(),
     )?);
 
     let created_segment = Segment {
-        descriptor_table,
+        descriptor_table: opts.descriptor_table.clone(),
         metadata,
         block_index,
         block_cache: opts.block_cache,

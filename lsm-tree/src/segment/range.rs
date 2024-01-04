@@ -1,7 +1,7 @@
 use super::index::BlockIndex;
 use super::reader::Reader;
 use crate::block_cache::BlockCache;
-use crate::descriptor_table::FileDescriptorTable;
+use crate::descriptor_table::NewDescriptorTable;
 use crate::value::UserKey;
 use crate::Value;
 use std::ops::Bound;
@@ -9,7 +9,7 @@ use std::ops::RangeBounds;
 use std::sync::Arc;
 
 pub struct Range {
-    descriptor_table: Arc<FileDescriptorTable>,
+    descriptor_table: Arc<NewDescriptorTable>,
     block_index: Arc<BlockIndex>,
     block_cache: Arc<BlockCache>,
     segment_id: Arc<str>,
@@ -21,7 +21,7 @@ pub struct Range {
 
 impl Range {
     pub fn new(
-        descriptor_table: Arc<FileDescriptorTable>,
+        descriptor_table: Arc<NewDescriptorTable>,
         segment_id: Arc<str>,
         block_cache: Arc<BlockCache>,
         block_index: Arc<BlockIndex>,
@@ -189,7 +189,7 @@ impl DoubleEndedIterator for Range {
 mod tests {
     use crate::{
         block_cache::BlockCache,
-        descriptor_table::FileDescriptorTable,
+        descriptor_table::NewDescriptorTable,
         file::BLOCKS_FILE,
         segment::{
             index::BlockIndex,
@@ -238,10 +238,13 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
+        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
+
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             &folder,
             Arc::clone(&block_cache),
         )?);
@@ -250,7 +253,7 @@ mod tests {
             log::info!("Getting every item");
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -265,7 +268,7 @@ mod tests {
             log::info!("Getting every item in reverse");
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -284,7 +287,7 @@ mod tests {
             let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -301,7 +304,7 @@ mod tests {
             let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -320,7 +323,7 @@ mod tests {
             let start: Arc<[u8]> = 1_000_u64.to_be_bytes().into();
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -338,7 +341,7 @@ mod tests {
             let end: Arc<[u8]> = 5_000_u64.to_be_bytes().into();
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table,
                 metadata.id,
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -430,10 +433,13 @@ mod tests {
         let metadata = Metadata::from_writer(nanoid::nanoid!().into(), writer)?;
         metadata.write_to_file()?;
 
+        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
+
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             &folder,
             Arc::clone(&block_cache),
         )?);
@@ -456,7 +462,7 @@ mod tests {
             let range = std::ops::Range { start, end };
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),
@@ -475,7 +481,7 @@ mod tests {
             let range = std::ops::Range { start, end };
 
             let mut iter = Range::new(
-                Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+                table.clone(),
                 metadata.id.clone(),
                 Arc::clone(&block_cache),
                 Arc::clone(&block_index),

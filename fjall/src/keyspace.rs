@@ -55,6 +55,8 @@ impl Drop for KeyspaceInner {
             // NOTE: Trick threads into waking up
             self.flush_semaphore.release();
         }
+
+        self.config.descriptor_table.clear();
     }
 }
 
@@ -319,6 +321,7 @@ impl Keyspace {
                 .join(partition_name);
 
             let tree = lsm_tree::Config::new(path)
+                .descriptor_table(keyspace.config.descriptor_table.clone())
                 .block_cache(keyspace.config.block_cache.clone())
                 .open()?;
 
@@ -360,8 +363,6 @@ impl Keyspace {
                 .write()
                 .expect("lock is poisoned")
                 .insert(partition_name.into(), partition.clone());
-
-            keyspace.compaction_manager.notify(partition.clone());
 
             keyspace
                 .flush_manager
@@ -587,6 +588,7 @@ impl Keyspace {
                 return;
             }
 
+            // TODO: need a way in lsm_tree to stop all compactions
             crate::compaction::worker::run(&compaction_manager);
         });
     }
@@ -612,7 +614,6 @@ impl Keyspace {
                 return;
             }
 
-            // TODO: need a way in lsm_tree to stop all compactions
             crate::flush::worker::run(&flush_manager, &journal_manager, &compaction_manager);
         });
     }

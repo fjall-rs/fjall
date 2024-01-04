@@ -51,7 +51,7 @@ mod tests {
         block_cache::BlockCache,
         compaction::{Choice, CompactionStrategy, Input as CompactionInput},
         config::PersistedConfig,
-        descriptor_table::FileDescriptorTable,
+        descriptor_table::NewDescriptorTable,
         file::LEVELS_MANIFEST_FILE,
         levels::Levels,
         segment::{index::BlockIndex, meta::Metadata, Segment},
@@ -65,9 +65,7 @@ mod tests {
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
 
         Arc::new(Segment {
-            descriptor_table: Arc::new(
-                FileDescriptorTable::new("Cargo.toml").expect("should open"),
-            ),
+            descriptor_table: Arc::new(NewDescriptorTable::new(512, 1)),
             block_index: Arc::new(BlockIndex::new(id.clone(), block_cache.clone())),
             metadata: Metadata {
                 path: ".".into(),
@@ -154,8 +152,8 @@ mod tests {
         assert_eq!(
             compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
-                dest_level: 1,
-                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
+                dest_level: 2,
+                segment_ids: vec!["5".into(), "6".into(), "7".into(), "8".into()],
                 target_size: u64::MAX,
             })
         );

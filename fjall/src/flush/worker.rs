@@ -63,6 +63,7 @@ pub fn run(
                                 folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
                                 block_size: task.partition.tree.config.block_size,
                                 block_cache: task.partition.tree.block_cache.clone(),
+                                descriptor_table: task.partition.tree.descriptor_table.clone(),
                             })?;
                             let segment = Arc::new(segment);
 

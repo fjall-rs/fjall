@@ -326,10 +326,10 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::descriptor_table::NewDescriptorTable;
     use crate::value::ValueType;
     use crate::{
         block_cache::BlockCache,
-        descriptor_table::FileDescriptorTable,
         segment::{index::BlockIndex, meta::Metadata, reader::Reader},
         Value,
     };
@@ -368,15 +368,18 @@ mod tests {
         assert_eq!(ITEM_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
+        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
+
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             &folder,
             Arc::clone(&block_cache),
         )?);
         let iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table,
             metadata.id,
             Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),
@@ -422,16 +425,19 @@ mod tests {
         assert_eq!(ITEM_COUNT * VERSION_COUNT, metadata.item_count);
         assert_eq!(ITEM_COUNT, metadata.key_count);
 
+        let table = Arc::new(NewDescriptorTable::new(512, 1));
+        table.insert(metadata.path.join(BLOCKS_FILE), metadata.id.clone());
+
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
         let block_index = Arc::new(BlockIndex::from_file(
             metadata.id.clone(),
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table.clone(),
             &folder,
             Arc::clone(&block_cache),
         )?);
 
         let iter = Reader::new(
-            Arc::new(FileDescriptorTable::new(folder.join(BLOCKS_FILE))?),
+            table,
             metadata.id,
             Some(Arc::clone(&block_cache)),
             Arc::clone(&block_index),

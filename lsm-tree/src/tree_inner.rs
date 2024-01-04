@@ -1,5 +1,6 @@
 use crate::{
     config::{Config, PersistedConfig},
+    descriptor_table::NewDescriptorTable,
     file::LEVELS_MANIFEST_FILE,
     levels::Levels,
     memtable::MemTable,
@@ -30,6 +31,9 @@ pub struct TreeInner {
     /// Block cache
     pub block_cache: Arc<BlockCache>,
 
+    /// File descriptor cache table
+    pub descriptor_table: Arc<NewDescriptorTable>,
+
     /// Keeps track of open snapshots
     pub(crate) open_snapshots: SnapshotCounter,
 
@@ -48,6 +52,7 @@ impl TreeInner {
         Ok(Self {
             config: config.inner,
             block_cache: config.block_cache,
+            descriptor_table: config.descriptor_table,
             active_memtable: Arc::default(),
             sealed_memtables: Arc::default(),
             levels: Arc::new(RwLock::new(levels)),

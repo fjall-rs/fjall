@@ -2,7 +2,7 @@ use super::{CompactionStrategy, Input as CompactionPayload};
 use crate::{
     compaction::Choice,
     config::PersistedConfig,
-    descriptor_table::FileDescriptorTable,
+    descriptor_table::NewDescriptorTable,
     file::{BLOCKS_FILE, SEGMENTS_FOLDER},
     levels::Levels,
     memtable::MemTable,
@@ -25,6 +25,9 @@ pub struct Options {
 
     /// Block cache to use
     pub block_cache: Arc<BlockCache>,
+
+    /// Descriptor table
+    pub descriptor_table: Arc<NewDescriptorTable>,
 
     /// Levels manifest.
     pub levels: Arc<RwLock<Levels>>,
@@ -156,17 +159,14 @@ fn merge_segments(
             let segment_id = metadata.id.clone();
             let path = metadata.path.clone();
 
-            let descriptor_table =
-                Arc::new(FileDescriptorTable::new(metadata.path.join(BLOCKS_FILE))?);
-
             Ok(Segment {
-                descriptor_table: descriptor_table.clone(),
+                descriptor_table: opts.descriptor_table.clone(),
                 metadata,
                 block_cache: opts.block_cache.clone(),
                 // TODO: if L0, L1, preload block index (non-partitioned)
                 block_index: BlockIndex::from_file(
                     segment_id,
-                    descriptor_table,
+                    opts.descriptor_table.clone(),
                     path,
                     opts.block_cache.clone(),
                 )?
@@ -180,6 +180,12 @@ fn merge_segments(
 
     for segment in created_segments {
         log::trace!("Persisting segment {}", segment.metadata.id);
+
+        opts.descriptor_table.insert(
+            segment.metadata.path.join(BLOCKS_FILE),
+            segment.metadata.id.clone(),
+        );
+
         levels.insert_into_level(payload.dest_level, segment.into());
     }
 
@@ -204,6 +210,8 @@ fn merge_segments(
 
         log::trace!("rm -rf segment folder at {}", segment_folder.display());
         std::fs::remove_dir_all(segment_folder)?;
+
+        opts.descriptor_table.remove(key);
     }
 
     levels.show_segments(&payload.segment_ids);
@@ -241,6 +249,8 @@ fn drop_segments(
     for key in segment_ids {
         log::trace!("rm -rf segment folder {}", key);
         std::fs::remove_dir_all(opts.config.path.join(SEGMENTS_FOLDER).join(&**key))?;
+
+        opts.descriptor_table.remove(key);
     }
 
     log::trace!("Dropped {} segments", segment_ids.len());

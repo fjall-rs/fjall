@@ -92,6 +92,7 @@ impl PartitionHandle {
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
 
         let tree = lsm_tree::Config::new(path)
+            .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
@@ -459,9 +460,11 @@ impl PartitionHandle {
         // Notify flush worker that new work has arrived
         self.flush_semaphore.release();
 
-        if journal_size > ((self.keyspace_config.max_journaling_size_in_bytes as f32) * 0.75) as u64
+        if journal_size > ((self.keyspace_config.max_journaling_size_in_bytes as f32) * 0.66) as u64
         {
-            log::debug!("Amassing quite a bit of journals, starting to flush some least recently flushed partitions");
+            log::debug!(
+                "Amassing quite a bit of journals, starting to flush some inactive partitions"
+            );
 
             let least_recently_flush_partition = self
                 .flush_manager
@@ -479,7 +482,7 @@ impl PartitionHandle {
 
             loop {
                 log::warn!("Too many journals amassed, halting writes...");
-                std::thread::sleep(Duration::from_millis(1_000));
+                std::thread::sleep(Duration::from_millis(500));
 
                 let bytes = self
                     .journal_manager
