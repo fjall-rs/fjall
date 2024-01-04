@@ -136,7 +136,6 @@ mod seqno;
 #[doc(hidden)]
 pub mod serde;
 
-mod sharded;
 mod snapshot;
 
 #[doc(hidden)]
