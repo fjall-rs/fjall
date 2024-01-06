@@ -2,6 +2,7 @@ pub mod config;
 pub mod name;
 
 use crate::{
+    batch::PartitionKey,
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
     file::PARTITIONS_FOLDER,
@@ -30,7 +31,7 @@ use std_semaphore::Semaphore;
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
     /// Partition name
-    pub name: Arc<str>,
+    pub name: PartitionKey,
 
     pub(crate) keyspace_config: KeyspaceConfig,
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
@@ -53,9 +54,11 @@ pub struct PartitionHandleInner {
     // TODO: just attach marker to folder and let GC handle it, when no flushes are running
 }
 
-/// Access to a keyspace partition.partition
+/// Access to a keyspace partition
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
+#[doc(alias = "column family")]
+#[doc(alias = "locality group")]
 pub struct PartitionHandle(pub(crate) Arc<PartitionHandleInner>);
 
 impl std::ops::Deref for PartitionHandle {
@@ -84,7 +87,7 @@ impl PartitionHandle {
     /// Creates a new partition
     pub(crate) fn create_new(
         keyspace: &Keyspace,
-        name: Arc<str>,
+        name: PartitionKey,
         config: Config,
     ) -> crate::Result<Self> {
         log::debug!("Creating partition {name}");
@@ -219,6 +222,18 @@ impl PartitionHandle {
         self.tree.prefix(prefix)
     }
 
+    /// Approximates the amount of items in the partition.
+    ///
+    /// For update -or delete-heavy workloads, this value will
+    /// diverge from the real value, but is a O(1) operation.
+    ///
+    /// For insert-only workloads (e.g. logs, time series)
+    /// this value is reliable.
+    #[must_use]
+    pub fn approximate_len(&self) -> u64 {
+        self.tree.approximate_len()
+    }
+
     /// Scans the entire partition, returning the amount of items.
     ///
     /// ###### Caution
@@ -227,6 +242,8 @@ impl PartitionHandle {
     ///
     /// Never, under any circumstances, use .len() == 0 to check
     /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
+    ///
+    /// If you want an estimate, use [`PartitionHandle::approximate_len`] instead.
     ///
     /// # Examples
     ///
@@ -470,7 +487,7 @@ impl PartitionHandle {
                 .flush_manager
                 .write()
                 .expect("lock is poisoned")
-                .flush_least_recently_used_partition();
+                .get_least_recently_used_partition();
 
             if let Some(least_recently_flush_partition) = least_recently_flush_partition {
                 least_recently_flush_partition.rotate_memtable()?;
@@ -499,7 +516,7 @@ impl PartitionHandle {
                     .flush_manager
                     .write()
                     .expect("lock is poisoned")
-                    .flush_least_recently_used_partition();
+                    .get_least_recently_used_partition();
 
                 if let Some(least_recently_flush_partition) = least_recently_flush_partition {
                     least_recently_flush_partition.rotate_memtable()?;

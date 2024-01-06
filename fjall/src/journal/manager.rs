@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    batch::PartitionKey,
     file::{FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
     PartitionHandle,
@@ -29,7 +30,7 @@ impl std::fmt::Debug for PartitionSeqNo {
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: HashMap<Arc<str>, PartitionSeqNo>,
+    pub(crate) partition_seqnos: HashMap<PartitionKey, PartitionSeqNo>,
 }
 
 impl std::fmt::Debug for Item {
@@ -112,7 +113,7 @@ impl JournalManager {
     pub fn rotate_journal(
         &mut self,
         journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
-        seqnos: HashMap<Arc<str>, PartitionSeqNo>,
+        seqnos: HashMap<PartitionKey, PartitionSeqNo>,
     ) -> crate::Result<()> {
         log::debug!("Sealing journal");
 

@@ -5,7 +5,7 @@ pub mod shard;
 pub mod writer;
 
 use self::shard::JournalShard;
-use crate::sharded::Sharded;
+use crate::{batch::PartitionKey, sharded::Sharded};
 use lsm_tree::MemTable;
 use std::{
     collections::HashMap,
@@ -28,8 +28,8 @@ pub struct Journal {
 impl Journal {
     pub fn recover_memtables<P: AsRef<Path>>(
         path: P,
-        whitelist: Option<&[Arc<str>]>,
-    ) -> crate::Result<HashMap<Arc<str>, MemTable>> {
+        whitelist: Option<&[PartitionKey]>,
+    ) -> crate::Result<HashMap<PartitionKey, MemTable>> {
         let path = path.as_ref();
         let mut memtables = HashMap::new();
 
@@ -47,7 +47,9 @@ impl Journal {
         Ok(memtables)
     }
 
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<(Self, HashMap<Arc<str>, MemTable>)> {
+    pub fn recover<P: AsRef<Path>>(
+        path: P,
+    ) -> crate::Result<(Self, HashMap<PartitionKey, MemTable>)> {
         let path = path.as_ref();
         log::info!("Recovering journal from {}", path.display());
 

@@ -1,5 +1,5 @@
 use crate::{
-    batch::Batch,
+    batch::{Batch, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config,
     file::{
@@ -19,7 +19,7 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
-pub(crate) type Partitions = HashMap<Arc<str>, PartitionHandle>;
+pub(crate) type Partitions = HashMap<PartitionKey, PartitionHandle>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
@@ -32,7 +32,7 @@ pub struct KeyspaceInner {
     pub(crate) flush_semaphore: Arc<Semaphore>,
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
-    pub(crate) active_flush_threads: Arc<AtomicUsize>,
+    pub(crate) active_background_threads: Arc<AtomicUsize>,
 }
 
 impl Drop for KeyspaceInner {
@@ -46,7 +46,7 @@ impl Drop for KeyspaceInner {
         }
 
         while self
-            .active_flush_threads
+            .active_background_threads
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
@@ -54,13 +54,15 @@ impl Drop for KeyspaceInner {
 
             // NOTE: Trick threads into waking up
             self.flush_semaphore.release();
+            self.compaction_manager.notify_empty();
         }
 
         self.config.descriptor_table.clear();
     }
 }
 
-/// The keyspace houses multiple partitions (column families).
+/// A keyspace is a single logical database
+/// which houses multiple partitions
 #[derive(Clone)]
 #[doc(alias = "database")]
 #[doc(alias = "collection")]
@@ -127,13 +129,14 @@ impl Keyspace {
     /// This has a dramatic, negative performance impact on writes by 100-1000x.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// the journal (and everything else) are (or should be) crash-safe.
+    /// data is (or should be) crash-safe.
     ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
     pub fn persist(&self) -> crate::Result<()> {
-        self.journal.flush(false)
+        self.journal.flush(false)?;
+        Ok(())
     }
 
     /// Opens a keyspace in the given directory.
@@ -198,7 +201,7 @@ impl Keyspace {
         Ok(if let Some(partition) = partitions.get(name) {
             partition.clone()
         } else {
-            let name: Arc<str> = name.into();
+            let name: PartitionKey = name.into();
 
             log::info!("Creating partition {name}");
             let handle = PartitionHandle::create_new(self, name.clone(), config)?;
@@ -286,7 +289,7 @@ impl Keyspace {
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
-            active_flush_threads: Arc::default(),
+            active_background_threads: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -528,7 +531,7 @@ impl Keyspace {
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
-            active_flush_threads: Arc::default(),
+            active_background_threads: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -577,18 +580,20 @@ impl Keyspace {
     fn spawn_compaction_worker(&self) {
         let compaction_manager = self.compaction_manager.clone();
         let stop_signal = self.stop_signal.clone();
+        let thread_counter = self.active_background_threads.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::spawn(move || loop {
-            // TODO: if there are no more tasks, this thread may wait forever
             log::debug!("compaction: waiting for work");
             compaction_manager.wait_for();
 
             if stop_signal.is_stopped() {
                 log::debug!("compaction thread: exiting because tree is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             }
 
-            // TODO: need a way in lsm_tree to stop all compactions
             crate::compaction::worker::run(&compaction_manager);
         });
     }
@@ -599,7 +604,7 @@ impl Keyspace {
         let compaction_manager = self.compaction_manager.clone();
         let flush_semaphore = self.flush_semaphore.clone();
 
-        let thread_counter = self.active_flush_threads.clone();
+        let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

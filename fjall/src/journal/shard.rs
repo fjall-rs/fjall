@@ -1,5 +1,5 @@
 use super::{marker::Marker, writer::JournalWriter};
-use crate::batch::Item as BatchItem;
+use crate::batch::{Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
 use std::{
@@ -60,8 +60,8 @@ impl JournalShard {
     /// Will truncate the file to the position of the last valid batch
     pub fn recover_and_repair<P: AsRef<Path>>(
         path: P,
-        memtables: &mut HashMap<Arc<str>, MemTable>,
-        whitelist: Option<&[Arc<str>]>,
+        memtables: &mut HashMap<PartitionKey, MemTable>,
+        whitelist: Option<&[PartitionKey]>,
     ) -> crate::Result<()> {
         let path = path.as_ref();
         let recoverer = JournalShardReader::new(path)?;

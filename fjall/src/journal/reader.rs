@@ -1,4 +1,5 @@
 use super::marker::Marker;
+use crate::journal::writer::PRE_ALLOCATED_BYTES;
 use lsm_tree::{serde::Deserializable, DeserializeError};
 use std::{
     fs::{File, OpenOptions},
@@ -31,8 +32,8 @@ impl JournalShardReader {
         log::debug!("truncating log to {pos}");
         self.reader.get_mut().set_len(pos)?;
 
-        if pos < 4 * 1_024 * 1_024 {
-            self.reader.get_mut().set_len(4 * 1_024 * 1_024)?;
+        if pos < PRE_ALLOCATED_BYTES {
+            self.reader.get_mut().set_len(PRE_ALLOCATED_BYTES)?;
         }
 
         self.reader.get_mut().sync_all()?;

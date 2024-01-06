@@ -57,8 +57,11 @@ pub fn main() -> fjall::Result<()> {
 
     let items = keyspace.open_partition("default", PartitionConfig::default())?;
 
-    for x in 0u64..100_000 {
-        items.insert(x.to_be_bytes(), "321awwararwabrwarwarb")?;
+    for x in 0u64..5_000_000 {
+        items.insert(
+            x.to_be_bytes(),
+            "321awwararwabrwarwarbyxyccxyxcyxycycxyxcxc",
+        )?;
     }
 
     keyspace.persist()?;
@@ -150,6 +153,9 @@ pub fn main() -> fjall::Result<()> {
     assert!(items.get("hello world-7")?.is_none());
     assert!(items.get("hello world-8")?.is_none());
     assert!(items.get("hello world-9")?.is_none()); */
+
+    drop(keyspace);
+    println!("I'm doing OK");
 
     Ok(())
 }

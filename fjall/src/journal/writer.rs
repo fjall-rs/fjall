@@ -7,6 +7,8 @@ use std::{
     path::Path,
 };
 
+pub const PRE_ALLOCATED_BYTES: u64 = 8 * 1_024 * 1_024;
+
 pub struct JournalWriter {
     file: BufWriter<File>,
 }
@@ -36,7 +38,7 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
 impl JournalWriter {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
         let file = File::create(&path)?;
-        file.set_len(4 * 1_024 * 1_024)?;
+        file.set_len(PRE_ALLOCATED_BYTES)?;
 
         self.file = BufWriter::new(file);
 
@@ -46,7 +48,7 @@ impl JournalWriter {
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
         let file = File::create(path)?;
-        file.set_len(4 * 1_024 * 1_024)?;
+        file.set_len(PRE_ALLOCATED_BYTES)?;
 
         Ok(Self {
             file: BufWriter::new(file),
@@ -58,7 +60,7 @@ impl JournalWriter {
 
         if !path.try_exists()? {
             let file = OpenOptions::new().create_new(true).write(true).open(path)?;
-            file.set_len(4 * 1_024 * 1_024)?;
+            file.set_len(PRE_ALLOCATED_BYTES)?;
 
             return Ok(Self {
                 file: BufWriter::new(file),

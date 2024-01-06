@@ -49,6 +49,10 @@ impl CompactionManager {
         self.semaphore.release();
     }
 
+    pub fn notify_empty(&self) {
+        self.semaphore.release();
+    }
+
     pub fn pop(&self) -> Option<PartitionHandle> {
         let mut lock = self.partitions.lock().expect("lock is poisoned");
         lock.pop_front()

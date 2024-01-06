@@ -1,4 +1,4 @@
-use crate::PartitionHandle;
+use crate::{batch::PartitionKey, PartitionHandle};
 use lsm_tree::MemTable;
 use std::{collections::HashMap, sync::Arc};
 
@@ -48,16 +48,16 @@ impl LruList {
 #[derive(Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
-    pub queues: HashMap<Arc<str>, Vec<Arc<Task>>>,
+    pub queues: HashMap<PartitionKey, Vec<Arc<Task>>>,
     pub(crate) lru_list: LruList,
 }
 
 impl FlushManager {
-    pub fn flush_least_recently_used_partition(&mut self) -> Option<PartitionHandle> {
+    pub fn get_least_recently_used_partition(&mut self) -> Option<PartitionHandle> {
         self.lru_list.get_least_recently_used()
     }
 
-    pub fn enqueue_task(&mut self, partition_name: Arc<str>, task: Task) {
+    pub fn enqueue_task(&mut self, partition_name: PartitionKey, task: Task) {
         log::debug!("Enqueuing {partition_name}:{} for flushing", task.id);
 
         self.queues
@@ -67,7 +67,7 @@ impl FlushManager {
     }
 
     /// Returns a list of tasks per partition.
-    pub fn collect_tasks(&mut self, limit: usize) -> HashMap<Arc<str>, Vec<Arc<Task>>> {
+    pub fn collect_tasks(&mut self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
         let mut collected: HashMap<_, Vec<_>> = HashMap::default();
         let mut cnt = 0;
 
@@ -94,7 +94,7 @@ impl FlushManager {
         collected
     }
 
-    pub fn dequeue_tasks(&mut self, partition_name: Arc<str>, cnt: usize) {
+    pub fn dequeue_tasks(&mut self, partition_name: PartitionKey, cnt: usize) {
         let queue = self
             .queues
             .entry(partition_name)
