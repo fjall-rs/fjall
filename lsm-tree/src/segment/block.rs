@@ -28,7 +28,9 @@ pub fn load_and_cache_by_block_handle(
         } else {
             // Cache miss: load from disk
 
-            let file_guard = descriptor_table.access(&segment_id.into())?;
+            let file_guard = descriptor_table
+                .access(&segment_id.into())?
+                .expect("should acquire file handle");
 
             let block = ValueBlock::from_file_compressed(
                 &mut *file_guard.file.lock().expect("lock is poisoned"),

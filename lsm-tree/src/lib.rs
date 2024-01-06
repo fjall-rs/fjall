@@ -99,6 +99,10 @@
 #![allow(clippy::missing_const_for_fn)]
 
 mod block_cache;
+
+#[cfg(feature = "bloom")]
+mod bloom;
+
 pub mod compaction;
 mod config;
 

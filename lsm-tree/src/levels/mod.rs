@@ -313,6 +313,9 @@ mod tests {
     };
     use std::sync::Arc;
 
+    #[cfg(feature = "bloom")]
+    use crate::bloom::BloomFilter;
+
     #[allow(clippy::expect_used)]
     fn fixture_segment(id: Arc<str>, key_range: (UserKey, UserKey)) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
@@ -337,6 +340,9 @@ mod tests {
                 seqnos: (0, 0),
             },
             block_cache,
+
+            #[cfg(feature = "bloom")]
+            bloom_filter: BloomFilter::with_fp_rate(1, 0.1),
         })
     }
 

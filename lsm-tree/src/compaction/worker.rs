@@ -18,6 +18,12 @@ use std::{
     time::Instant,
 };
 
+#[cfg(feature = "bloom")]
+use crate::bloom::BloomFilter;
+
+#[cfg(feature = "bloom")]
+use crate::file::BLOOM_FILTER_FILE;
+
 /// Compaction options
 pub struct Options {
     /// Configuration of tree.
@@ -72,6 +78,7 @@ pub fn do_compaction(opts: &Options) -> crate::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn merge_segments(
     mut levels: RwLockWriteGuard<'_, Levels>,
     opts: &Options,
@@ -159,6 +166,9 @@ fn merge_segments(
             let segment_id = metadata.id.clone();
             let path = metadata.path.clone();
 
+            #[cfg(feature = "bloom")]
+            let bloom_filter = BloomFilter::from_file(path.join(BLOOM_FILTER_FILE))?;
+
             Ok(Segment {
                 descriptor_table: opts.descriptor_table.clone(),
                 metadata,
@@ -171,6 +181,9 @@ fn merge_segments(
                     opts.block_cache.clone(),
                 )?
                 .into(),
+
+                #[cfg(feature = "bloom")]
+                bloom_filter,
             })
         })
         .collect::<crate::Result<Vec<_>>>()?;

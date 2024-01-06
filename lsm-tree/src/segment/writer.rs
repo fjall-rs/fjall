@@ -15,6 +15,12 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(feature = "bloom")]
+use crate::bloom::BloomFilter;
+
+#[cfg(feature = "bloom")]
+use crate::file::BLOOM_FILTER_FILE;
+
 /// Like `Writer` but will rotate to a new segment, once a segment grows larger than `target_size`
 ///
 /// This results in a sorted "run" of segments
@@ -134,6 +140,9 @@ pub struct Writer {
 
     pub key_count: usize,
     current_key: Option<UserKey>,
+
+    #[cfg(feature = "bloom")]
+    bloom_hash_buffer: Vec<u128>,
 }
 
 pub struct Options {
@@ -179,6 +188,9 @@ impl Writer {
 
             current_key: None,
             key_count: 0,
+
+            #[cfg(feature = "bloom")]
+            bloom_hash_buffer: Vec::with_capacity(1_000),
         })
     }
 
@@ -249,6 +261,10 @@ impl Writer {
             self.tombstone_count += 1;
         }
 
+        #[cfg(feature = "bloom")]
+        self.bloom_hash_buffer
+            .push(BloomFilter::get_hash(&item.key));
+
         if Some(&item.key) != self.current_key.as_ref() {
             self.key_count += 1;
             self.current_key = Some(item.key.clone());
@@ -297,13 +313,29 @@ impl Writer {
             return Ok(());
         }
 
+        // First, flush all data blocks
         self.block_writer.flush()?;
 
+        // Append index blocks to file
         self.index_writer.finish(self.file_pos)?;
 
+        // Then fsync the blocks file
         self.block_writer.get_mut().sync_all()?;
 
-        // TODO: write (& sync) bloom filter
+        // NOTE: BloomFilter::write_to_file fsyncs internally
+        #[cfg(feature = "bloom")]
+        {
+            let n = self.bloom_hash_buffer.len();
+            log::debug!("Writing bloom filter with {n} hashes");
+
+            let mut filter = BloomFilter::with_fp_rate(n, 0.01 /* TODO: */);
+
+            for hash in std::mem::take(&mut self.bloom_hash_buffer) {
+                filter.set_with_hash(hash);
+            }
+
+            filter.write_to_file(self.opts.path.join(BLOOM_FILTER_FILE))?;
+        }
 
         #[cfg(not(target_os = "windows"))]
         {

@@ -99,7 +99,7 @@ fn file_descriptor(c: &mut Criterion) {
 
     group.bench_function("descriptor table", |b: &mut criterion::Bencher<'_>| {
         b.iter(|| {
-            let guard = descriptor_table.access(&id).unwrap();
+            let guard = descriptor_table.access(&id).unwrap().unwrap();
             let _fd = guard.file.lock().unwrap();
         });
     });

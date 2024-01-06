@@ -213,7 +213,10 @@ impl BlockIndex {
         } else {
             // Cache miss: load from disk
 
-            let file_guard = self.descriptor_table.access(&self.segment_id)?;
+            let file_guard = self
+                .descriptor_table
+                .access(&self.segment_id)?
+                .expect("should acquire file handle");
 
             let block = BlockHandleBlock::from_file_compressed(
                 &mut *file_guard.file.lock().expect("lock is poisoned"),
@@ -251,6 +254,7 @@ impl BlockIndex {
 
     /// Only used for tests
     #[allow(dead_code, clippy::expect_used)]
+    #[doc(hidden)]
     pub(crate) fn new(segment_id: Arc<str>, block_cache: Arc<BlockCache>) -> Self {
         let index_block_index = BlockHandleBlockIndex(block_cache);
 

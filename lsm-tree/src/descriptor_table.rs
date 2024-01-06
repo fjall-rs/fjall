@@ -103,6 +103,16 @@ impl FileDescriptorTable {
         }
     }
 
+    /// Number of segments
+    pub fn len(&self) -> usize {
+        self.inner.read().expect("lock is poisoned").table.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn size(&self) -> usize {
         self.inner
             .read()
@@ -112,13 +122,12 @@ impl FileDescriptorTable {
     }
 
     // TODO: on access, adjust hotness of ID
-    pub fn access(&self, id: &Arc<str>) -> crate::Result<FileGuard> {
+    pub fn access(&self, id: &Arc<str>) -> crate::Result<Option<FileGuard>> {
         let lock = self.inner.read().expect("lock is poisoned");
 
-        let item = lock
-            .table
-            .get(id)
-            .expect("segment should be referenced in descriptor table");
+        let Some(item) = lock.table.get(id) else {
+            return Ok(None);
+        };
 
         let fd_array = item.descriptors.read().expect("lock is poisoned");
 
@@ -170,7 +179,7 @@ impl FileDescriptorTable {
                 }
             }
 
-            Ok(FileGuard(fd))
+            Ok(Some(FileGuard(fd)))
         } else {
             loop {
                 for shard in &*fd_array {
@@ -181,7 +190,7 @@ impl FileDescriptorTable {
                         std::sync::atomic::Ordering::SeqCst,
                     ) == Ok(false)
                     {
-                        return Ok(FileGuard(shard.clone()));
+                        return Ok(Some(FileGuard(shard.clone())));
                     }
                 }
             }
@@ -200,6 +209,7 @@ impl FileDescriptorTable {
                 path,
             },
         );
+
         lock.lru.refresh(id);
     }
 

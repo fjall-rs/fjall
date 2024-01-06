@@ -1,10 +1,17 @@
 use crate::{
     descriptor_table::FileDescriptorTable,
+    file::BLOCKS_FILE,
     memtable::MemTable,
     segment::{index::BlockIndex, meta::Metadata, writer::Writer, Segment},
     BlockCache,
 };
 use std::{path::PathBuf, sync::Arc};
+
+#[cfg(feature = "bloom")]
+use crate::bloom::BloomFilter;
+
+#[cfg(feature = "bloom")]
+use crate::file::BLOOM_FILTER_FILE;
 
 /// Flush options
 #[doc(hidden)]
@@ -68,7 +75,15 @@ pub fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
         metadata,
         block_index,
         block_cache: opts.block_cache,
+
+        #[cfg(feature = "bloom")]
+        bloom_filter: BloomFilter::from_file(segment_folder.join(BLOOM_FILTER_FILE))?,
     };
+
+    opts.descriptor_table.insert(
+        created_segment.metadata.path.join(BLOCKS_FILE),
+        created_segment.metadata.id.clone(),
+    );
 
     log::debug!("Flushed segment to {}", segment_folder.display());
 

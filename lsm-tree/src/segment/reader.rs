@@ -96,7 +96,10 @@ impl Reader {
         } else if let Some(block_handle) =
             self.block_index.get_lower_bound_block_info(key.as_ref())?
         {
-            let file_guard = self.descriptor_table.access(&self.segment_id)?;
+            let file_guard = self
+                .descriptor_table
+                .access(&self.segment_id)?
+                .expect("should acquire file handle");
 
             let block = ValueBlock::from_file_compressed(
                 &mut *file_guard.file.lock().expect("lock is poisoned"),

@@ -11,6 +11,9 @@ pub const INDEX_BLOCKS_FILE: &str = "index_blocks";
 pub const TOP_LEVEL_INDEX_FILE: &str = "index";
 pub const SEGMENT_METADATA_FILE: &str = "meta.json";
 
+#[cfg(feature = "bloom")]
+pub const BLOOM_FILTER_FILE: &str = "bloom";
+
 /// Atomically rewrites a file
 pub fn rewrite_atomic<P: AsRef<Path>>(path: P, content: &[u8]) -> std::io::Result<()> {
     let path = path.as_ref();

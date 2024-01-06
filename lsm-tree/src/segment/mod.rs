@@ -19,7 +19,13 @@ use crate::{
 };
 use std::{ops::Bound, path::Path, sync::Arc};
 
-/// Disk segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk.
+#[cfg(feature = "bloom")]
+use crate::bloom::BloomFilter;
+
+#[cfg(feature = "bloom")]
+use crate::file::BLOOM_FILTER_FILE;
+
+/// Disk segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk
 ///
 /// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
 /// The block offset and size in the file is saved in the "block index".
@@ -40,6 +46,16 @@ pub struct Segment {
     ///
     /// Stores index and data blocks
     pub(crate) block_cache: Arc<BlockCache>,
+
+    /// Bloom filter
+    #[cfg(feature = "bloom")]
+    pub(crate) bloom_filter: BloomFilter,
+}
+
+impl std::fmt::Debug for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Segment:{}", self.metadata.id)
+    }
 }
 
 impl Segment {
@@ -64,6 +80,9 @@ impl Segment {
             metadata,
             block_index: Arc::new(block_index),
             block_cache,
+
+            #[cfg(feature = "bloom")]
+            bloom_filter: BloomFilter::from_file(folder.join(BLOOM_FILTER_FILE))?,
         })
     }
 
@@ -87,9 +106,14 @@ impl Segment {
             return Ok(None);
         }
 
-        // TODO: bloom filter query here
-
         let key = key.as_ref();
+
+        #[cfg(feature = "bloom")]
+        {
+            if !self.bloom_filter.contains(key) {
+                return Ok(None);
+            }
+        }
 
         match seqno {
             None => {
