@@ -1,4 +1,4 @@
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, PartitionConfig, PartitionHandle};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -15,6 +15,16 @@ struct Song {
 
     /// Release year
     release_year: u16,
+}
+
+impl std::fmt::Display for Song {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} - {} ({})",
+            self.artist, self.title, self.release_year
+        )
+    }
 }
 
 impl Song {
@@ -48,22 +58,43 @@ fn main() -> fjall::Result<()> {
             artist: "Clairo".to_owned(),
             title: "Zinnias".to_owned(),
         },
+        Song {
+            id: "fazerdaze:break".to_owned(),
+            release_year: 2022,
+            artist: "Fazerdaze".to_owned(),
+            title: "Break!".to_owned(),
+        },
+        Song {
+            id: "fazerdaze:winter".to_owned(),
+            release_year: 2022,
+            artist: "Fazerdaze".to_owned(),
+            title: "Winter".to_owned(),
+        },
     ];
 
     let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("songs" /* PartitionConfig {} */)?;
+    let db = keyspace.open_partition("songs", PartitionConfig::default())?;
 
     for item_to_insert in items {
         if let Some(item) = Song::load(&db, &item_to_insert.id)? {
-            eprintln!("Found: {item:#?}");
-
+            eprintln!("Found: {item}");
             assert_eq!(item, item_to_insert);
         } else {
             eprintln!("Inserting...");
             item_to_insert.store(&db)?;
-            db.flush()?; // Tree flushes on drop anyway, but just to be nice
             eprintln!("Inserted, start again and it should be found");
         }
+    }
+
+    eprintln!("\nListing all items:");
+
+    for (idx, item) in db.iter().into_iter().enumerate() {
+        let (key, bytes) = item?;
+
+        let mut item: Song = rmp_serde::from_slice(&bytes).expect("should deserialize");
+        item.id = String::from_utf8_lossy(&key).to_string();
+
+        eprintln!("[{idx}] {item}");
     }
 
     Ok(())
