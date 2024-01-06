@@ -220,10 +220,13 @@ fn merge_segments(
 
     for key in &payload.segment_ids {
         let segment_folder = segments_base_folder.join(&**key);
-
         log::trace!("rm -rf segment folder at {}", segment_folder.display());
-        std::fs::remove_dir_all(segment_folder)?;
 
+        std::fs::remove_dir_all(segment_folder)?;
+    }
+
+    for key in &payload.segment_ids {
+        log::trace!("Closing file handles for segment data file");
         opts.descriptor_table.remove(key);
     }
 
@@ -262,7 +265,10 @@ fn drop_segments(
     for key in segment_ids {
         log::trace!("rm -rf segment folder {}", key);
         std::fs::remove_dir_all(opts.config.path.join(SEGMENTS_FOLDER).join(&**key))?;
+    }
 
+    for key in segment_ids {
+        log::trace!("Closing file handles for segment data file");
         opts.descriptor_table.remove(key);
     }
 
