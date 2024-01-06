@@ -7,7 +7,7 @@ use std::sync::{
     Arc,
 };
 
-/// Thread-safe sequence number generator.
+/// Thread-safe sequence number generator
 ///
 /// # Examples
 ///

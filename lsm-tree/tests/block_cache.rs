@@ -26,8 +26,6 @@ fn block_cache() -> lsm_tree::Result<()> {
     assert_eq!(100_000, block_cache.len());
 
     (0u64..100_000).for_each(|idx| {
-        log::warn!("get {idx}");
-
         block_cache
             .get_disk_block(&seg_id, &idx.to_be_bytes().into())
             .unwrap();

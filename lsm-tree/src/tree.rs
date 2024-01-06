@@ -34,7 +34,7 @@ fn ignore_tombstone_value(item: Value) -> Option<Value> {
     }
 }
 
-/// A log-structured merge tree (LSM-tree/LSMT).
+/// A log-structured merge tree (LSM-tree/LSMT)
 #[derive(Clone)]
 pub struct Tree(pub(crate) Arc<TreeInner>);
 
@@ -153,11 +153,6 @@ impl Tree {
 
         for segment in segments {
             levels.add(segment.clone());
-
-            self.descriptor_table.insert(
-                segment.metadata.path.join(BLOCKS_FILE),
-                segment.metadata.id.clone(),
-            );
         }
 
         log::debug!("flush: acquiring sealed memtables write lock");
@@ -237,7 +232,21 @@ impl Tree {
         self.levels.read().expect("lock is poisoned").len()
     }
 
-    /// Returns the approximate size of the active memtable.
+    /// Approximates the amount of items in the tree.
+    #[must_use]
+    pub fn approximate_len(&self) -> u64 {
+        let memtable = self.active_memtable.read().expect("lock is poisoned");
+        let levels = self.levels.read().expect("lock is poisoned");
+
+        memtable.len() as u64
+            + levels
+                .get_all_segments_flattened()
+                .into_iter()
+                .map(|x| x.metadata.item_count)
+                .sum::<u64>()
+    }
+
+    /// Returns the approximate size of the active memtable in bytes.
     ///
     /// May be used to flush the memtable if it grows too large.
     #[must_use]

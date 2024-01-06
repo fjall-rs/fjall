@@ -63,7 +63,7 @@ impl Weighter<CacheKey, Item> for BlockWeighter {
 }
 
 /// Block cache, in which blocks are cached in-memory
-/// after being retrieved from disk.
+/// after being retrieved from disk
 ///
 /// This speeds up consecutive queries to nearby data, improving
 /// read performance for hot data.

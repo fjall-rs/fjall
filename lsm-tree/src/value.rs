@@ -12,7 +12,7 @@ pub type UserKey = Arc<[u8]>;
 /// User defined data (blob of bytes)
 pub type UserValue = Arc<[u8]>; // TODO: rename UserValue
 
-/// Sequence number, a monotonically increasing counter.
+/// Sequence number, a monotonically increasing counter
 ///
 /// Values with the same seqno are part of the same batch.
 ///
