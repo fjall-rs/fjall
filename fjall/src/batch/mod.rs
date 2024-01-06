@@ -10,7 +10,7 @@ use crate::{Keyspace, PartitionHandle};
 /// Partition key (a.k.a. column family, locality group)
 pub type PartitionKey = Arc<str>;
 
-/// An atomic write batch.
+/// An atomic write batch
 ///
 /// Allows atomically writing across partitions inside the tree.
 pub struct Batch {

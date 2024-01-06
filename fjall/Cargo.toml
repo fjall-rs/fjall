@@ -17,12 +17,16 @@ homepage.workspace = true
 name = "fjall"
 path = "src/lib.rs"
 
+[features]
+default = ["bloom"]
+bloom = ["lsm-tree/bloom"]
+
 [dependencies]
 byteorder = "1.5.0"
 crc32fast = "1.3.2"
 env_logger = "0.10.1"
 # TODO: use cargo version when published
-lsm-tree = { path = "../lsm-tree" }
+lsm-tree = { path = "../lsm-tree", default-features = false }
 log = "0.4.20"
 std-semaphore = "0.1.0"
 tempfile = "3.9.0"

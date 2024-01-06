@@ -8,7 +8,7 @@ pub fn run(compaction_manager: &CompactionManager) {
         return;
     };
 
-    log::info!(
+    log::trace!(
         "compactor: calling compaction strategy for partition {:?}",
         item.0.name
     );

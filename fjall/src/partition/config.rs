@@ -43,7 +43,7 @@ impl Default for Config {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
             level_ratio: default_tree_config.inner.level_ratio,
-            compaction_strategy: Arc::new(crate::lsm_compaction::SizeTiered),
+            compaction_strategy: Arc::new(lsm_tree::compaction::SizeTiered),
             max_memtable_size: 8 * 1_024 * 1_024,
         }
     }

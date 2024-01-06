@@ -1,4 +1,12 @@
-//! An LSM-based embedded key-value storage engine written in Rust.
+//! Fjall is an LSM-based embedded key-value storage engine written in Rust. It features:
+//!
+//! - Thread-safe BTreeMap-like API
+//! - 100% safe & stable Rust
+//! - Range & prefix searching with forward and reverse iteration
+//! - Cross-partition snapshots (MVCC)
+//! - Automatic background maintenance
+//!
+//! Each `Keyspace` is a single physical database and is split into `partitions` (a.k.a. column families), you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single database-level journal, which will be recovered after a crash.
 //!
 //! It is not:
 //!
@@ -6,13 +14,7 @@
 //! - a relational database
 //! - a wide-column database: it has no notion of columns
 //!
-//! This crates exports a `Keyspace`, which is a single logical database, which is split
-//! into `partitions` (a.k.a. column families). Each partition is logically a single
-//! LSM-tree; however, write operations across partitions are atomic as they are persisted
-//! in a single database-level journal, which will be recovered after a crash.
-//!
-//! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any
-//! kind of storage engine, larger keys and values have a bigger performance impact.
+//! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
@@ -75,7 +77,10 @@
 #![allow(clippy::missing_const_for_fn)]
 
 mod batch;
-mod compaction;
+
+/// Contains compaction strategies
+pub mod compaction;
+
 mod config;
 mod error;
 mod file;
@@ -86,7 +91,6 @@ mod partition;
 mod sharded;
 mod version;
 
-pub use lsm_tree::compaction as lsm_compaction; // TODO: fix naming conflict
 pub use lsm_tree::BlockCache;
 
 pub use {
