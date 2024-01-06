@@ -6,7 +6,6 @@ use std::{
     collections::HashMap,
     fs::OpenOptions,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 // TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error

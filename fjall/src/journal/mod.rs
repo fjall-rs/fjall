@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    sync::{RwLock, RwLockWriteGuard},
 };
 
 const SHARD_COUNT: u8 = 4;
