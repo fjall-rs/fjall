@@ -19,14 +19,14 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, Keyspace, PartitionConfig};
+//! use fjall::{Config, Keyspace, PartitionCreateOptions};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
 //! let keyspace = Config::new(folder).open()?;
 //!
 //! // Each partition is its own physical LSM-tree
-//! let items = keyspace.open_partition("my_items", PartitionConfig::default())?;
+//! let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -62,7 +62,7 @@
 //! // Destroy the partition, removing all data in it.
 //! // This may be useful when using temporary tables or indexes,
 //! // as it is essentially an O(1) operation.
-//! items.destroy()?;
+//! keyspace.delete_partition(items)?;
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
@@ -98,5 +98,5 @@ pub use {
     config::Config,
     error::{Error, Result},
     keyspace::Keyspace,
-    partition::{config::Config as PartitionConfig, PartitionHandle},
+    partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };

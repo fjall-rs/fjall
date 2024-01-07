@@ -25,6 +25,10 @@ pub struct LruList {
 }
 
 impl LruList {
+    pub(crate) fn remove_partition(&mut self, name: &str) {
+        self.items.retain(|x| &*x.name != name);
+    }
+
     pub(crate) fn refresh(&mut self, partition: PartitionHandle) {
         self.items.retain(|x| x.name != partition.name);
         self.items.push(partition);
@@ -53,6 +57,11 @@ pub struct FlushManager {
 }
 
 impl FlushManager {
+    pub fn remove_partition(&mut self, name: &str) {
+        self.lru_list.remove_partition(name);
+        self.queues.remove(name);
+    }
+
     pub fn get_least_recently_used_partition(&mut self) -> Option<PartitionHandle> {
         self.lru_list.get_least_recently_used()
     }

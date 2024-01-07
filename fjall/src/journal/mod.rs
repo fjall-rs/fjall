@@ -88,7 +88,7 @@ impl Journal {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // Fsync folder on Unix
+            // fsync folder on Unix
             let folder = File::open(path)?;
             folder.sync_all()?;
         }
@@ -111,7 +111,7 @@ impl Journal {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // Fsync folder on Unix
+            // fsync folder on Unix
             let folder = std::fs::File::open(path)?;
             folder.sync_all()?;
         }

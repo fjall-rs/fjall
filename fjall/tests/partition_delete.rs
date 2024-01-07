@@ -1,17 +1,23 @@
 use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
-const ITEM_COUNT: usize = 10_000;
+const ITEM_COUNT: usize = 100;
 
 #[test]
-fn tree_reload_with_memtable() -> fjall::Result<()> {
+fn tree_reload_with_partitions() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
+
+    let mut path;
 
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
         let keyspace = Config::new(&folder).open()?;
-        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+
+        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
+        path = tree.path();
+
+        assert!(path.try_exists()?);
 
         for x in 0..ITEM_COUNT as u64 {
             let key = x.to_be_bytes();
@@ -38,9 +44,10 @@ fn tree_reload_with_memtable() -> fjall::Result<()> {
         );
     }
 
-    {
+    for _ in 0..100 {
         let keyspace = Config::new(&folder).open()?;
-        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+
+        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(
@@ -51,6 +58,26 @@ fn tree_reload_with_memtable() -> fjall::Result<()> {
             tree.iter().into_iter().rev().filter(Result::is_ok).count(),
             ITEM_COUNT * 2
         );
+
+        assert!(path.try_exists()?);
+    }
+
+    {
+        let keyspace = Config::new(&folder).open()?;
+
+        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
+
+        assert!(path.try_exists()?);
+
+        keyspace.delete_partition(tree)?;
+
+        assert!(!path.try_exists()?);
+    }
+
+    {
+        let keyspace = Config::new(&folder).open()?;
+
+        assert!(!path.try_exists()?);
     }
 
     Ok(())

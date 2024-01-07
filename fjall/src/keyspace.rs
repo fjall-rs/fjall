@@ -10,11 +10,12 @@ use crate::{
     journal::{manager::JournalManager, Journal},
     partition::{name::is_valid_partition_name, PartitionHandleInner},
     version::Version,
-    PartitionConfig, PartitionHandle,
+    PartitionCreateOptions, PartitionHandle,
 };
 use lsm_tree::{id::generate_segment_id, SequenceNumberCounter};
 use std::{
     collections::HashMap,
+    fs::File,
     sync::{atomic::AtomicUsize, Arc, RwLock},
 };
 use std_semaphore::Semaphore;
@@ -85,11 +86,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// let mut batch = keyspace.batch();
     ///
     /// assert_eq!(partition.len()?, 0);
@@ -180,6 +181,41 @@ impl Keyspace {
         }
     }
 
+    /// Destroys the partition, removing all data associated with it.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
+        let partition_path = handle.path();
+
+        let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
+        file.sync_all()?;
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // fsync folder on Unix
+            let folder = File::open(&partition_path)?;
+            folder.sync_all()?;
+        }
+
+        self.flush_manager
+            .write()
+            .expect("lock is poisoned")
+            .remove_partition(&handle.name);
+
+        self.compaction_manager.remove_partition(&handle.name);
+
+        self.partitions
+            .write()
+            .expect("lock is poisoned")
+            .remove(&handle.name);
+
+        std::fs::remove_dir_all(partition_path)?;
+
+        Ok(())
+    }
+
     /// Creates or opens a keyspace partition.
     ///
     /// # Errors
@@ -192,7 +228,7 @@ impl Keyspace {
     pub fn open_partition(
         &self,
         name: &str,
-        config: PartitionConfig,
+        create_options: PartitionCreateOptions,
     ) -> crate::Result<PartitionHandle> {
         assert!(is_valid_partition_name(name));
 
@@ -204,7 +240,7 @@ impl Keyspace {
             let name: PartitionKey = name.into();
 
             log::info!("Creating partition {name}");
-            let handle = PartitionHandle::create_new(self, name.clone(), config)?;
+            let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
 
             self.flush_manager
@@ -330,7 +366,7 @@ impl Keyspace {
 
             let partition_inner = PartitionHandleInner {
                 max_memtable_size: 8 * 1_024 * 1_024, // TODO:
-                compaction_strategy: Arc::new(lsm_tree::compaction::SizeTiered), // TODO:
+                compaction_strategy: Arc::new(lsm_tree::compaction::Levelled::default()), // TODO:
                 name: partition_name.into(),
                 tree,
                 partitions: keyspace.partitions.clone(),

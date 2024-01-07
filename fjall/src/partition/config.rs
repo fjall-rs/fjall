@@ -1,13 +1,13 @@
 use lsm_tree::compaction::CompactionStrategy;
 use std::sync::Arc;
 
-/// Partition config.
+/// Partition create options.
 ///
 /// Partitions are generally pretty inexpensive, so having a bunch of
 /// inactive partitions is definitely valid.
 ///
 /// An inactive partition generally only takes a little bit of memory and disk space.
-pub struct Config {
+pub struct CreateOptions {
     /// Block size of data and index blocks
     ///
     /// Once set for a partition, this property is not considered in the future.
@@ -35,7 +35,7 @@ pub struct Config {
     pub max_memtable_size: u32,
 }
 
-impl Default for Config {
+impl Default for CreateOptions {
     fn default() -> Self {
         let default_tree_config = lsm_tree::Config::default();
 
@@ -43,13 +43,13 @@ impl Default for Config {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
             level_ratio: default_tree_config.inner.level_ratio,
-            compaction_strategy: Arc::new(lsm_tree::compaction::SizeTiered),
+            compaction_strategy: Arc::new(lsm_tree::compaction::Levelled::default()),
             max_memtable_size: 8 * 1_024 * 1_024,
         }
     }
 }
 
-impl Config {
+impl CreateOptions {
     /// Sets the block size.
     ///
     /// Default = 4 KiB

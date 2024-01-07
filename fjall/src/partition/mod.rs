@@ -14,7 +14,7 @@ use crate::{
     keyspace::Partitions,
     Keyspace,
 };
-use config::Config;
+use config::CreateOptions;
 use lsm_tree::{
     compaction::CompactionStrategy, prefix::Prefix, range::Range, SequenceNumberCounter, Snapshot,
     Tree as LsmTree, UserKey, UserValue,
@@ -48,10 +48,7 @@ pub struct PartitionHandleInner {
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: u32, // TODO: make editable
 
-    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
-    // TODO: need a destroyed flag or something, so GC can check the partition is deleted
-    // TODO: handle mid-flush deletes of partition folders... (don't delete folder immediately)
-    // TODO: just attach marker to folder and let GC handle it, when no flushes are running
+    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>, // TODO: make editable
 }
 
 /// Access to a keyspace partition
@@ -88,7 +85,7 @@ impl PartitionHandle {
     pub(crate) fn create_new(
         keyspace: &Keyspace,
         name: PartitionKey,
-        config: Config,
+        config: CreateOptions,
     ) -> crate::Result<Self> {
         log::debug!("Creating partition {name}");
 
@@ -130,14 +127,6 @@ impl PartitionHandle {
         self.tree.disk_space()
     }
 
-    /// Destroys the partition, removing all data associated with it.
-    pub fn destroy(self) -> crate::Result<()> {
-        // TODO: this needs to be atomic...
-        // TODO: remove from partitions
-        // TODO: delete folder...
-        Ok(())
-    }
-
     #[allow(clippy::iter_not_returning_iterator)]
     /// Returns an iterator that scans through the entire partition.
     ///
@@ -146,11 +135,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
@@ -175,11 +164,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
@@ -202,11 +191,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     /// partition.insert("ab", "abc")?;
     /// partition.insert("abc", "abc")?;
@@ -248,11 +237,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert_eq!(partition.len()?, 0);
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
@@ -283,11 +272,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert!(partition.is_empty()?);
     ///
     /// partition.insert("a", "abc")?;
@@ -308,11 +297,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert!(!partition.contains_key("a")?);
     ///
     /// partition.insert("a", "abc")?;
@@ -333,11 +322,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "my_value")?;
     ///
     /// let item = partition.get("a")?;
@@ -359,11 +348,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
     /// partition.insert("5", "abc")?;
@@ -387,11 +376,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
     /// partition.insert("5", "abc")?;
@@ -581,11 +570,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// assert!(!partition.is_empty()?);
@@ -626,11 +615,11 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionConfig};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionConfig::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let item = partition.get("a")?.expect("should have item");

@@ -1,11 +1,5 @@
 use lsm_tree::{id::generate_segment_id, SeqNo};
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::Write,
-    path::PathBuf,
-    sync::{Arc, RwLockWriteGuard},
-};
+use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 use crate::{
     batch::PartitionKey,
@@ -45,6 +39,7 @@ impl std::fmt::Debug for Item {
 }
 
 // TODO: accessing journal manager shouldn't take RwLock... but changing its internals should
+
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different partitions.
@@ -131,7 +126,7 @@ impl JournalManager {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // Fsync folder on Unix
+            // fsync folder on Unix
             let folder = File::open(&old_journal_path)?;
             folder.sync_all()?;
         }

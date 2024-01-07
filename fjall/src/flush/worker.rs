@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 /// Runs flush worker.
 ///
 /// Only spawn one of these, it will internally spawn worker threads as needed.
+#[allow(clippy::too_many_lines)]
 pub fn run(
     flush_manager: &Arc<RwLock<FlushManager>>,
     journal_manager: &Arc<RwLock<JournalManager>>,
@@ -129,6 +130,4 @@ pub fn run(
     };
 
     log::debug!("flush worker: fully done");
-
-    // TODO: check for deleted partitions
 }

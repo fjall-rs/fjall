@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionConfig};
+use fjall::{Config, PartitionCreateOptions};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -51,11 +51,11 @@ pub fn main() -> fjall::Result<()> {
     let keyspace = Config::new(".data").open()?;
 
     /* for x in 0..10 {
-        keyspace.open_partition(&format!("data-{x}"), PartitionConfig::default())?;
+        keyspace.open_partition(&format!("data-{x}"), PartitionCreateOptions::default())?;
         eprintln!("partition {x} opened");
     } */
 
-    let items = keyspace.open_partition("default", PartitionConfig::default())?;
+    let items = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
     for x in 0u64..5_000_000 {
         items.insert(

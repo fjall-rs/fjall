@@ -39,6 +39,11 @@ impl std::ops::Deref for CompactionManager {
 }
 
 impl CompactionManager {
+    pub fn remove_partition(&self, name: &str) {
+        let mut lock = self.partitions.lock().expect("lock is poisoned");
+        lock.retain(|x| &*x.name != name);
+    }
+
     pub fn wait_for(&self) {
         self.semaphore.acquire();
     }
