@@ -307,10 +307,10 @@ impl Tree {
         memtable_lock.remove(id);
     }
 
-    /// ADds a sealed memtables.
+    /// Adds a sealed memtables.
     ///
     /// May be used to restore the LSM-tree's in-memory state from some journals.
-    pub fn add_sealed_memtables(&self, id: Arc<str>, memtable: Arc<MemTable>) {
+    pub fn add_sealed_memtable(&self, id: Arc<str>, memtable: Arc<MemTable>) {
         let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
         memtable_lock.insert(id, memtable);
     }

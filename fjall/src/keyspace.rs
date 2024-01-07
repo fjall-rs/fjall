@@ -555,7 +555,7 @@ impl Keyspace {
 
                     partition
                         .tree
-                        .add_sealed_memtables(memtable_id.clone(), sealed_memtable.clone());
+                        .add_sealed_memtable(memtable_id.clone(), sealed_memtable.clone());
 
                     let maybe_next_seqno =
                         partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
