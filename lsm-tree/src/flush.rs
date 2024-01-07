@@ -47,6 +47,9 @@ pub fn flush_to_segment(opts: Options) -> crate::Result<Segment> {
         path: segment_folder.clone(),
         evict_tombstones: false,
         block_size: opts.block_size,
+
+        #[cfg(feature = "bloom")]
+        bloom_fp_rate: 0.0001,
     })?;
 
     for entry in &opts.memtable.items {

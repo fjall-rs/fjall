@@ -126,7 +126,8 @@ fn merge_segments(
 
     // NOTE: Only evict tombstones when reaching the last level,
     // That way we don't resurrect data beneath the tombstone
-    let should_evict_tombstones = payload.dest_level == last_level;
+    let is_last_level = payload.dest_level == last_level;
+    let should_evict_tombstones = is_last_level;
 
     let start = Instant::now();
 
@@ -136,6 +137,9 @@ fn merge_segments(
             block_size: opts.config.block_size,
             evict_tombstones: should_evict_tombstones,
             path: opts.config.path.join(SEGMENTS_FOLDER),
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: if is_last_level { 0.1 } else { 0.01 }, // TODO: MONKEY
         },
     )?;
 

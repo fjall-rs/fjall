@@ -1,3 +1,5 @@
+use crate::serde::{Deserializable, Serializable};
+use crate::{DeserializeError, SerializeError};
 use bit_vec::BitVec;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use seahash::SeaHasher;
@@ -8,13 +10,10 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::u128;
 
-use crate::serde::{Deserializable, Serializable};
-use crate::{DeserializeError, SerializeError};
-
 /// A basic bloom filter
 #[derive(Debug)]
 pub struct BloomFilter {
-    /// Raw bytes exposed as bitfield
+    /// Raw bytes exposed as bit field
     inner: BitVec,
 
     /// Bit count

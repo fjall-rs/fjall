@@ -48,6 +48,9 @@ impl MultiWriter {
             path: opts.path.join(&*segment_id),
             evict_tombstones: opts.evict_tombstones,
             block_size: opts.block_size,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: opts.bloom_fp_rate,
         })?;
 
         Ok(Self {
@@ -72,6 +75,9 @@ impl MultiWriter {
             path: self.opts.path.join(&*new_segment_id),
             evict_tombstones: self.opts.evict_tombstones,
             block_size: self.opts.block_size,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: self.opts.bloom_fp_rate,
         })?;
 
         let old_writer = std::mem::replace(&mut self.writer, new_writer);
@@ -149,6 +155,9 @@ pub struct Options {
     pub path: PathBuf,
     pub evict_tombstones: bool,
     pub block_size: u32,
+
+    #[cfg(feature = "bloom")]
+    pub bloom_fp_rate: f32,
 }
 
 impl Writer {
@@ -326,7 +335,7 @@ impl Writer {
             let n = self.bloom_hash_buffer.len();
             log::debug!("Writing bloom filter with {n} hashes");
 
-            let mut filter = BloomFilter::with_fp_rate(n, 0.01 /* TODO: */);
+            let mut filter = BloomFilter::with_fp_rate(n, self.opts.bloom_fp_rate);
 
             for hash in std::mem::take(&mut self.bloom_hash_buffer) {
                 filter.set_with_hash(hash);
@@ -376,6 +385,9 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: 0.01,
         })?;
 
         let items = (0u64..ITEM_COUNT).map(|i| {
@@ -433,6 +445,9 @@ mod tests {
             path: folder.clone(),
             evict_tombstones: false,
             block_size: 4096,
+
+            #[cfg(feature = "bloom")]
+            bloom_fp_rate: 0.01,
         })?;
 
         for key in 0u64..ITEM_COUNT {
