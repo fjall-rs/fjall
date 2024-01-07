@@ -233,8 +233,6 @@ impl Writer {
         self.index_writer
             .register_block(first.key.clone(), self.file_pos, bytes_written)?;
 
-        // TODO: add to bloom filter
-
         // Adjust metadata
         log::trace!(
             "Written data block @ {} ({} bytes, uncompressed: {} bytes)",

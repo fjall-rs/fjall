@@ -62,6 +62,8 @@ fn desired_level_size_in_bytes(level_idx: u8, ratio: u8, target_size: u32) -> us
 }
 
 // TODO: test with timeseries workload
+// TODO: time series are disjunct, so it should be possible to just move segments down
+// TODO: instead of rewriting
 
 impl CompactionStrategy for Strategy {
     fn choose(&self, levels: &Levels, config: &PersistedConfig) -> Choice {

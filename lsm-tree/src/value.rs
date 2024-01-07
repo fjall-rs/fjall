@@ -10,7 +10,7 @@ use std::{
 pub type UserKey = Arc<[u8]>;
 
 /// User defined data (blob of bytes)
-pub type UserValue = Arc<[u8]>; // TODO: rename UserValue
+pub type UserValue = Arc<[u8]>;
 
 /// Sequence number, a monotonically increasing counter
 ///
