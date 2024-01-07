@@ -52,8 +52,6 @@
 //!   // ...
 //! }
 //!
-//! // TODO: (cross-partition) snapshot & batches
-//!
 //! // Sync the journal to disk to make sure data is definitely durable
 //! // When the keyspace is dropped, it will try to persist
 //! // Also, by default every second the keyspace will be persisted asynchronously

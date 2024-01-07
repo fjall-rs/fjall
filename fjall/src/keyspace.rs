@@ -12,7 +12,7 @@ use crate::{
     version::Version,
     PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{id::generate_segment_id, SequenceNumberCounter};
+use lsm_tree::{id::generate_segment_id, SeqNo, SequenceNumberCounter};
 use std::{
     collections::HashMap,
     fs::File,
@@ -262,9 +262,48 @@ impl Keyspace {
             .contains_key(name)
     }
 
-    // TODO: cross-partition snapshot
-    //#[doc(hidden)]
-    //pub fn snapshot() {}
+    /// Gets the current sequence number
+    ///
+    /// Can be used to start a cross-partition snapshot, using [`Partition::snapshot_at`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// let partition1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// let partition2 = keyspace.open_partition("another", PartitionCreateOptions::default())?;
+    ///
+    /// partition1.insert("abc1", "abc")?;
+    /// partition2.insert("abc2", "abc")?;
+    ///
+    /// let instant = keyspace.instant();
+    /// let snapshot1 = partition1.snapshot_at(instant);
+    /// let snapshot2 = partition2.snapshot_at(instant);
+    ///
+    /// assert!(partition1.contains_key("abc1")?);
+    /// assert!(partition2.contains_key("abc2")?);
+    ///
+    /// assert!(snapshot1.contains_key("abc1")?);
+    /// assert!(snapshot2.contains_key("abc2")?);
+    ///
+    /// partition1.insert("def1", "def")?;
+    /// partition2.insert("def2", "def")?;
+    ///
+    /// assert!(!snapshot1.contains_key("def1")?);
+    /// assert!(!snapshot2.contains_key("def2")?);
+    ///
+    /// assert!(partition1.contains_key("def1")?);
+    /// assert!(partition2.contains_key("def2")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn instant(&self) -> SeqNo {
+        self.seqno.get()
+    }
 
     /// Recovers existing keyspace from directory
     #[allow(clippy::too_many_lines)]
@@ -365,8 +404,10 @@ impl Keyspace {
                 .open()?;
 
             let partition_inner = PartitionHandleInner {
-                max_memtable_size: 8 * 1_024 * 1_024, // TODO:
-                compaction_strategy: Arc::new(lsm_tree::compaction::Levelled::default()), // TODO:
+                max_memtable_size: (8 * 1_024 * 1_024).into(),
+                compaction_strategy: RwLock::new(Arc::new(
+                    lsm_tree::compaction::Levelled::default(),
+                )),
                 name: partition_name.into(),
                 tree,
                 partitions: keyspace.partitions.clone(),

@@ -16,14 +16,14 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, prefix::Prefix, range::Range, SequenceNumberCounter, Snapshot,
-    Tree as LsmTree, UserKey, UserValue,
+    compaction::CompactionStrategy, prefix::Prefix, range::Range, SeqNo, SequenceNumberCounter,
+    Snapshot, Tree as LsmTree, UserKey, UserValue,
 };
 use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{atomic::AtomicU32, Arc, RwLock},
     time::Duration,
 };
 use std_semaphore::Semaphore;
@@ -46,9 +46,9 @@ pub struct PartitionHandleInner {
     pub(crate) tree: LsmTree,
 
     /// Maximum size of this partition's memtable
-    pub(crate) max_memtable_size: u32, // TODO: make editable
+    pub(crate) max_memtable_size: AtomicU32,
 
-    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>, // TODO: make editable
+    pub(crate) compaction_strategy: RwLock<Arc<dyn CompactionStrategy + Send + Sync>>,
 }
 
 /// Access to a keyspace partition
@@ -81,6 +81,23 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
+    /// Sets the compaction strategy
+    ///
+    /// Default = Levelled
+    pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
+        let mut lock = self.compaction_strategy.write().expect("lock is poisoned");
+        *lock = strategy;
+    }
+
+    /// Sets the maximum memtable size
+    ///
+    /// Default = 8 MiB
+    pub fn set_max_memtable_size(&self, bytes: u32) {
+        use std::sync::atomic::Ordering::Release;
+
+        self.max_memtable_size.store(bytes, Release);
+    }
+
     /// Creates a new partition
     pub(crate) fn create_new(
         keyspace: &Keyspace,
@@ -110,8 +127,8 @@ impl PartitionHandle {
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             tree,
-            compaction_strategy: config.compaction_strategy,
-            max_memtable_size: config.max_memtable_size,
+            compaction_strategy: RwLock::new(config.compaction_strategy),
+            max_memtable_size: config.max_memtable_size.into(),
         })))
     }
 
@@ -525,7 +542,9 @@ impl PartitionHandle {
     }
 
     pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
-        if size > self.max_memtable_size {
+        use std::sync::atomic::Ordering::Acquire;
+
+        if size > self.max_memtable_size.load(Acquire) {
             self.rotate_memtable()?;
             self.check_write_stall();
         }
@@ -552,13 +571,14 @@ impl PartitionHandle {
     /// Opens a snapshot of this partition
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
-        self.tree.snapshot(self.seqno.get())
+        self.snapshot_at(self.seqno.get())
     }
 
-    // TODO: snapshot_at
-    // TODO: let instant = keyspace.instant();
-    // TODO: let snapshot = partition0.snapshot_at(instant);
-    // TODO: let snapshot = partition1.snapshot_at(instant);
+    /// Opens a snapshot of this partition with a given sequence number
+    #[must_use]
+    pub fn snapshot_at(&self, seqno: SeqNo) -> Snapshot {
+        self.tree.snapshot(seqno)
+    }
 
     /// Inserts a key-value pair into the partition.
     ///

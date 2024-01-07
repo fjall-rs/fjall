@@ -2,11 +2,7 @@ use super::{marker::Marker, writer::JournalWriter};
 use crate::batch::{Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
-use std::{
-    collections::HashMap,
-    fs::OpenOptions,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, fs::OpenOptions, path::Path};
 
 // TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error
 /// Errors that can occur during journal recovery
@@ -27,7 +23,6 @@ pub enum RecoveryError {
 
 // TODO: don't require locking for sync check
 pub struct JournalShard {
-    pub(crate) path: PathBuf,
     pub(crate) writer: JournalWriter,
     pub(crate) should_sync: bool,
 }
@@ -40,7 +35,6 @@ impl JournalShard {
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
-            path: path.as_ref().to_path_buf(),
             writer: JournalWriter::create_new(path)?,
             should_sync: bool::default(),
         })
@@ -48,7 +42,6 @@ impl JournalShard {
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
-            path: path.as_ref().to_path_buf(),
             writer: JournalWriter::from_file(path)?,
             should_sync: bool::default(),
         })

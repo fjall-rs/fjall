@@ -24,7 +24,7 @@ pub struct Config {
     ///
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) partitions.
-    pub(crate) max_write_buffer_size_in_bytes: u32, // TODO: use
+    pub(crate) max_write_buffer_size_in_bytes: u32,
 
     /// Fsync every N ms asynchronously
     pub(crate) fsync_ms: Option<u16>,
@@ -94,14 +94,15 @@ impl Config {
         self
     }
 
-    /// Max size of all active memtables in bytes.
+    // TODO: use
+    /* /// Max size of all active memtables in bytes.
     ///
     /// Default = 64 MiB
     #[must_use]
     pub fn max_write_buffer_size(mut self, bytes: u32) -> Self {
         self.max_write_buffer_size_in_bytes = bytes;
         self
-    }
+    } */
 
     /// If Some, starts an fsync thread that asynchronously
     /// persists data.

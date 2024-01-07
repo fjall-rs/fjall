@@ -12,7 +12,11 @@ pub fn run(compaction_manager: &CompactionManager) {
         "compactor: calling compaction strategy for partition {:?}",
         item.0.name
     );
-    let strategy = item.compaction_strategy.clone();
+    let strategy = item
+        .compaction_strategy
+        .read()
+        .expect("lock is poisoned")
+        .clone();
 
     // TODO: loop if there's more work to do
 
