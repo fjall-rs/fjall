@@ -1,6 +1,10 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
 use crate::{config::PersistedConfig, levels::Levels};
 
+fn desired_level_size_in_bytes(level_idx: u8, ratio: u8, target_size: u32) -> usize {
+    (ratio as usize).pow(u32::from(level_idx + 1)) * (target_size as usize)
+}
+
 /// Size-tiered compaction strategy (STCS)
 ///
 /// If a level reaches a threshold, it is merged into a larger segment to the next level
@@ -8,39 +12,75 @@ use crate::{config::PersistedConfig, levels::Levels};
 /// STCS suffers from high read and temporary space amplification, but decent write amplification
 ///
 /// More info here: <https://opensource.docs.scylladb.com/stable/cql/compaction.html#size-tiered-compaction-strategy-stcs>
-#[derive(Default)]
-pub struct Strategy;
+pub struct Strategy {
+    base_size: u32,
+}
+
+impl Default for Strategy {
+    fn default() -> Self {
+        Self {
+            base_size: 8 * 1_024 * 1_024,
+        }
+    }
+}
 
 impl CompactionStrategy for Strategy {
     fn choose(&self, levels: &Levels, config: &PersistedConfig) -> Choice {
         let resolved_view = levels.resolved_view();
 
-        for (level_index, level) in resolved_view
+        for (curr_level_index, level) in resolved_view
             .iter()
             .enumerate()
+            .map(|(idx, lvl)| (idx as u8, lvl))
             .take(resolved_view.len() - 1)
             .rev()
         {
-            if level.len() >= config.level_ratio.into() {
-                // NOTE: There are never that many levels
-                // so it's fine to just truncate it
-                #[allow(clippy::cast_possible_truncation)]
-                let next_level_index = (level_index + 1) as u8;
+            let next_level_index = curr_level_index + 1;
+
+            if level.is_empty() {
+                continue;
+            }
+
+            let curr_level_bytes = level
+                .iter()
+                .fold(0, |bytes, segment| bytes + segment.metadata.file_size);
+
+            let desired_bytes =
+                desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.base_size)
+                    as u64;
+
+            let mut overshoot = curr_level_bytes.saturating_sub(desired_bytes as u64) as usize;
+
+            if overshoot > 0 {
+                let mut segments_to_compact = vec![];
+
+                for segment in level.iter().rev().take(config.level_ratio.into()).cloned() {
+                    if overshoot == 0 {
+                        break;
+                    }
+
+                    overshoot = overshoot.saturating_sub(segment.metadata.file_size as usize);
+                    segments_to_compact.push(segment);
+                }
+
+                let segment_ids: Vec<_> = segments_to_compact
+                    .iter()
+                    .map(|x| &x.metadata.id)
+                    .cloned()
+                    .collect();
 
                 return Choice::DoCompact(CompactionInput {
-                    segment_ids: level
-                        .iter()
-                        .take(config.level_ratio.into())
-                        .map(|x| &x.metadata.id)
-                        .cloned()
-                        .collect(),
+                    segment_ids,
                     dest_level: next_level_index,
                     target_size: u64::MAX,
                 });
             }
         }
 
-        Choice::DoNothing
+        // NOTE: Reduce L0 segments using FIFO (with max limit; this prevents dropping data)
+        // this is probably an edge case if the `base_size` does not line up with
+        // the `max_memtable_size` AT ALL
+        super::Fifo::new(u64::MAX).choose(levels, config)
     }
 }
 
@@ -96,7 +136,9 @@ mod tests {
     #[test]
     fn empty_levels() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -111,7 +153,9 @@ mod tests {
     #[test]
     fn default_l0() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
         let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -141,7 +185,9 @@ mod tests {
     #[test]
     fn more_than_min() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
         let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -170,7 +216,9 @@ mod tests {
     #[test]
     fn many_segments() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -194,7 +242,9 @@ mod tests {
     #[test]
     fn deeper_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
@@ -233,7 +283,9 @@ mod tests {
     #[test]
     fn last_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy;
+        let compactor = Strategy {
+            base_size: 8 * 1_024 * 1_024,
+        };
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;

@@ -2,7 +2,7 @@ use super::{Choice, CompactionStrategy};
 use crate::{config::PersistedConfig, levels::Levels, segment::Segment};
 use std::{ops::Deref, sync::Arc};
 
-const L0_SEGMENT_CAP: usize = 24;
+const L0_SEGMENT_CAP: usize = 16;
 
 /// FIFO-style compaction.
 ///
@@ -37,7 +37,7 @@ impl Strategy {
 ///
 /// This minimizes the compaction time (+ write amp) for a amount of segments we
 /// want to get rid of
-fn choose_least_effort_compaction(segments: &[Arc<Segment>], n: usize) -> Vec<Arc<str>> {
+pub fn choose_least_effort_compaction(segments: &[Arc<Segment>], n: usize) -> Vec<Arc<str>> {
     let num_segments = segments.len();
 
     // Ensure that n is not greater than the number of segments
