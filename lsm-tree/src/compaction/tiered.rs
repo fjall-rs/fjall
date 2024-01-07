@@ -49,12 +49,12 @@ impl CompactionStrategy for Strategy {
                 desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.base_size)
                     as u64;
 
-            let mut overshoot = curr_level_bytes.saturating_sub(desired_bytes as u64) as usize;
+            if curr_level_bytes >= desired_bytes {
+                let mut overshoot = desired_bytes as usize;
 
-            if overshoot > 0 {
                 let mut segments_to_compact = vec![];
 
-                for segment in level.iter().rev().take(config.level_ratio.into()).cloned() {
+                for segment in level.iter().take(config.level_ratio.into()).cloned() {
                     if overshoot == 0 {
                         break;
                     }
@@ -104,7 +104,7 @@ mod tests {
     use crate::bloom::BloomFilter;
 
     #[allow(clippy::expect_used)]
-    fn fixture_segment(id: Arc<str>) -> Arc<Segment> {
+    fn fixture_segment(id: Arc<str>, size_mib: u64) -> Arc<Segment> {
         let block_cache = Arc::new(BlockCache::with_capacity_bytes(u64::MAX));
 
         Arc::new(Segment {
@@ -117,7 +117,7 @@ mod tests {
                 block_size: 0,
                 created_at: 0,
                 id,
-                file_size: 0,
+                file_size: size_mib * 1_024 * 1_024,
                 compression: crate::segment::meta::CompressionType::Lz4,
                 item_count: 0,
                 key_count: 0,
@@ -160,16 +160,16 @@ mod tests {
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
-        levels.add(fixture_segment("1".into()));
+        levels.add(fixture_segment("1".into(), 8));
         assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
-        levels.add(fixture_segment("2".into()));
+        levels.add(fixture_segment("2".into(), 8));
         assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
-        levels.add(fixture_segment("3".into()));
+        levels.add(fixture_segment("3".into(), 8));
         assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
-        levels.add(fixture_segment("4".into()));
+        levels.add(fixture_segment("4".into(), 8));
         assert_eq!(
             compactor.choose(&levels, &config.inner),
             Choice::DoCompact(CompactionInput {
@@ -191,15 +191,15 @@ mod tests {
         let config = Config::default().level_ratio(4);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
-        levels.add(fixture_segment("1".into()));
-        levels.add(fixture_segment("2".into()));
-        levels.add(fixture_segment("3".into()));
-        levels.add(fixture_segment("4".into()));
+        levels.add(fixture_segment("1".into(), 8));
+        levels.add(fixture_segment("2".into(), 8));
+        levels.add(fixture_segment("3".into(), 8));
+        levels.add(fixture_segment("4".into(), 8));
 
-        levels.insert_into_level(1, fixture_segment("5".into()));
-        levels.insert_into_level(1, fixture_segment("6".into()));
-        levels.insert_into_level(1, fixture_segment("7".into()));
-        levels.insert_into_level(1, fixture_segment("8".into()));
+        levels.insert_into_level(1, fixture_segment("5".into(), 8 * 4));
+        levels.insert_into_level(1, fixture_segment("6".into(), 8 * 4));
+        levels.insert_into_level(1, fixture_segment("7".into(), 8 * 4));
+        levels.insert_into_level(1, fixture_segment("8".into(), 8 * 4));
 
         assert_eq!(
             compactor.choose(&levels, &config.inner),
@@ -222,10 +222,10 @@ mod tests {
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
-        levels.add(fixture_segment("1".into()));
-        levels.add(fixture_segment("2".into()));
-        levels.add(fixture_segment("3".into()));
-        levels.add(fixture_segment("4".into()));
+        levels.add(fixture_segment("1".into(), 8));
+        levels.add(fixture_segment("2".into(), 8));
+        levels.add(fixture_segment("3".into(), 8));
+        levels.add(fixture_segment("4".into(), 8));
 
         assert_eq!(
             compactor.choose(&levels, &config.inner),
@@ -248,10 +248,10 @@ mod tests {
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
-        levels.add(fixture_segment("1".into()));
+        levels.add(fixture_segment("1".into(), 8));
 
-        levels.insert_into_level(1, fixture_segment("2".into()));
-        levels.insert_into_level(1, fixture_segment("3".into()));
+        levels.insert_into_level(1, fixture_segment("2".into(), 8 * 2));
+        levels.insert_into_level(1, fixture_segment("3".into(), 8 * 2));
 
         assert_eq!(
             compactor.choose(&levels, &config.inner),
@@ -265,8 +265,8 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
-        levels.insert_into_level(2, fixture_segment("2".into()));
-        levels.insert_into_level(2, fixture_segment("3".into()));
+        levels.insert_into_level(2, fixture_segment("2".into(), 8 * 4));
+        levels.insert_into_level(2, fixture_segment("3".into(), 8 * 4));
 
         assert_eq!(
             compactor.choose(&levels, &config.inner),
@@ -289,8 +289,8 @@ mod tests {
         let config = Config::default().level_ratio(2);
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
-        levels.insert_into_level(3, fixture_segment("2".into()));
-        levels.insert_into_level(3, fixture_segment("3".into()));
+        levels.insert_into_level(3, fixture_segment("2".into(), 8));
+        levels.insert_into_level(3, fixture_segment("3".into(), 8));
 
         assert_eq!(compactor.choose(&levels, &config.inner), Choice::DoNothing);
 
