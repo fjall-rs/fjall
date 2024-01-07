@@ -37,7 +37,46 @@ cargo add fjall
 ```
 
 ```rust
-TODO:
+use fjall::{Config, Keyspace, PartitionCreateOptions};
+
+let keyspace = Config::new(folder).open()?;
+
+// Each partition is its own physical LSM-tree
+let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+
+// Write some data
+items.insert("a", "hello")?;
+
+// And retrieve it
+let bytes = items.get("a")?;
+
+// Or remove it again
+items.remove("a")?;
+
+// Search by prefix
+for item in &items.prefix("prefix") {
+  // ...
+}
+
+// Search by range
+for item in &items.range("a"..="z") {
+  // ...
+}
+
+// Iterators implement DoubleEndedIterator, so you can search backwards, too!
+for item in items.prefix("prefix").into_iter().rev() {
+  // ...
+}
+
+// Sync the journal to disk to make sure data is definitely durable
+// When the keyspace is dropped, it will try to persist
+// Also, by default every second the keyspace will be persisted asynchronously
+keyspace.persist()?;
+
+// Destroy the partition, removing all data in it.
+// This may be useful when using temporary tables or indexes,
+// as it is essentially an O(1) operation.
+keyspace.delete_partition(items)?;
 ```
 
 ## Details
