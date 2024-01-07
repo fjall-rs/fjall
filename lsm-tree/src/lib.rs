@@ -61,8 +61,6 @@
 //!   // ...
 //! }
 //!
-//! // TODO: snapshot
-//!
 //! // Flush to secondary storage, clearing the memtable
 //! // and persisting all in-memory data.
 //! // Note, this flushes synchronously, which may not be desired
@@ -84,11 +82,9 @@
 //! # Ok::<(), lsm_tree::Error>(())
 //! ```
 
+#![doc(html_logo_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/lsm-tree/logo.png")]
 #![doc(
-    html_logo_url = "https://raw.githubusercontent.com/marvin-j97/lsm-tree/main/lsm-tree/logo.png"
-)]
-#![doc(
-    html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/lsm-tree/main/lsm-tree/logo.png"
+    html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/lsm-tree/logo.png"
 )]
 #![forbid(unsafe_code)]
 #![deny(clippy::all, missing_docs, clippy::cargo)]
