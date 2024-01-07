@@ -62,17 +62,24 @@ impl Batch {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(mut self) -> crate::Result<()> {
+        log::debug!("batch: Acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
         // NOTE: Fully (write) lock, so the batch can be committed atomically
+        log::debug!("batch: Acquiring partitions lock");
         let partitions = self.keyspace.partitions.write().expect("lock is poisoned");
 
         // IMPORTANT: Need to WRITE lock all affected partition's memtables
         // Otherwise, there may be read skew
+        log::debug!("batch: Acquiring memtable locks");
         let locked_memtables = {
             let mut lock_map = HashMap::new();
 
             for item in &self.data {
+                if lock_map.contains_key(&item.partition) {
+                    continue;
+                }
+
                 let Some(partition) = partitions.get(&item.partition) else {
                     continue;
                 };
