@@ -63,6 +63,11 @@ impl JournalManager {
         self.items.push(item);
     }
 
+    /// Returns the amount of sealed journals
+    pub fn sealed_journal_count(&self) -> usize {
+        self.items.len()
+    }
+
     /// Returns the amount of bytes used on disk by journals
     pub fn disk_space_used(&self) -> u64 {
         self.disk_space_in_bytes

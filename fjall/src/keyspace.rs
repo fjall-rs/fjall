@@ -110,6 +110,16 @@ impl Keyspace {
         Batch::new(self.clone())
     }
 
+    /**
+     * Amount of journals on disk
+     */
+    #[must_use]
+    pub fn journal_count(&self) -> usize {
+        let journal_manager = self.journal_manager.read().expect("lock is poisoned");
+        // TODO: + 1 = active journal
+        journal_manager.sealed_journal_count() + 1
+    }
+
     /// Returns the disk space usage of the entire keyspace
     pub fn disk_space(&self) -> crate::Result<u64> {
         let journal_size = fs_extra::dir::get_size(&self.journal.path)
