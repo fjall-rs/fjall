@@ -1,6 +1,9 @@
 pub mod item;
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 pub use item::Item;
 use lsm_tree::{Value, ValueType};
@@ -61,19 +64,42 @@ impl Batch {
     pub fn commit(mut self) -> crate::Result<()> {
         let mut shard = self.keyspace.journal.get_writer();
 
+        // NOTE: Fully (write) lock, so the batch can be committed atomically
+        let partitions = self.keyspace.partitions.write().expect("lock is poisoned");
+
+        // IMPORTANT: Need to WRITE lock all affected partition's memtables
+        // Otherwise, there may be read skew
+        let locked_memtables = {
+            let mut lock_map = HashMap::new();
+
+            for item in &self.data {
+                let Some(partition) = partitions.get(&item.partition) else {
+                    continue;
+                };
+
+                lock_map.insert(
+                    item.partition.clone(),
+                    partition.tree.lock_active_memtable(),
+                );
+            }
+
+            lock_map
+        };
+
         let batch_seqno = self.keyspace.seqno.next();
 
         let items = self.data.iter().collect::<Vec<_>>();
         let _ = shard.writer.write_batch(&items, batch_seqno)?;
 
-        // NOTE: Fully (write) lock, so the batch can be committed atomically
-        let partition_lock = self.keyspace.partitions.write().expect("lock is poisoned");
-
         let mut partitions_with_possible_overflow = HashSet::new();
 
         log::trace!("Applying {} batched items to memtable(s)", self.data.len());
         for item in std::mem::take(&mut self.data) {
-            let Some(partition) = partition_lock.get(&item.partition) else {
+            let Some(partition) = partitions.get(&item.partition) else {
+                continue;
+            };
+
+            let Some(lock) = locked_memtables.get(&item.partition) else {
                 continue;
             };
 
@@ -84,14 +110,15 @@ impl Batch {
                 value_type: item.value_type,
             };
 
-            partition.tree.append_entry(value);
+            lock.insert(value);
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
             partitions_with_possible_overflow.insert(partition.clone());
         }
 
+        drop(locked_memtables);
+        drop(partitions);
         drop(shard);
-        drop(partition_lock);
 
         for partition in partitions_with_possible_overflow {
             let memtable_size = partition.tree.active_memtable_size();
