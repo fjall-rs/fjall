@@ -127,8 +127,8 @@ impl PartitionHandle {
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             tree,
-            compaction_strategy: RwLock::new(config.compaction_strategy),
-            max_memtable_size: config.max_memtable_size.into(),
+            compaction_strategy: RwLock::new(Arc::new(super::compaction::Levelled::default())),
+            max_memtable_size: (8 * 1_024 * 1_024).into(),
         })))
     }
 
