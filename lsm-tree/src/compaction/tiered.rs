@@ -41,9 +41,9 @@ impl CompactionStrategy for Strategy {
                 continue;
             }
 
-            let curr_level_bytes = level
-                .iter()
-                .fold(0, |bytes, segment| bytes + segment.metadata.file_size);
+            let curr_level_bytes = level.iter().fold(0, |bytes, segment| {
+                bytes + segment.metadata.uncompressed_size
+            });
 
             let desired_bytes =
                 desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.base_size)
@@ -123,7 +123,7 @@ mod tests {
                 key_count: 0,
                 key_range: (vec![].into(), vec![].into()),
                 tombstone_count: 0,
-                uncompressed_size: 0,
+                uncompressed_size: size_mib * 1_024 * 1_024,
                 seqnos: (0, 0),
             },
             block_cache,

@@ -261,7 +261,7 @@ impl Tree {
     }
 
     /// Write-locks the active memtable for exclusive access
-    fn lock_active_memtable(&self) -> RwLockWriteGuard<'_, MemTable> {
+    pub fn lock_active_memtable(&self) -> RwLockWriteGuard<'_, MemTable> {
         self.active_memtable.write().expect("lock is poisoned")
     }
 
