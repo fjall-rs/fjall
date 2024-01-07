@@ -6,7 +6,7 @@
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
 //!
-//! Each `Keyspace` is a single physical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application.
+//! Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application.
 //! Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a
 //! single database-level journal, which will be recovered after a crash.
 //!
