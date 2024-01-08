@@ -27,7 +27,7 @@ use crate::file::BLOOM_FILTER_FILE;
 
 /// Disk segment (a.k.a. `SSTable`, `sorted string table`) that is located on disk
 ///
-/// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::SegmentBlock`]).
+/// A segment is an immutable list of key-value pairs, split into compressed blocks (see [`block::ValueBlock`]).
 /// The block offset and size in the file is saved in the "block index".
 ///
 /// Deleted entries are represented by tombstones.

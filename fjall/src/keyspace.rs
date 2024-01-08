@@ -251,7 +251,6 @@ impl Keyspace {
         } else {
             let name: PartitionKey = name.into();
 
-            log::info!("Creating partition {name}");
             let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
 
@@ -274,9 +273,9 @@ impl Keyspace {
             .contains_key(name)
     }
 
-    /// Gets the current sequence number
+    /// Gets the current sequence number.
     ///
-    /// Can be used to start a cross-partition snapshot, using [`Partition::snapshot_at`].
+    /// Can be used to start a cross-partition snapshot, using [`PartitionHandle::snapshot_at`].
     ///
     /// # Examples
     ///

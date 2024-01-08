@@ -2,7 +2,7 @@ use super::index::{block_handle::BlockHandle, BlockIndex};
 use crate::{descriptor_table::FileDescriptorTable, disk_block::DiskBlock, BlockCache, Value};
 use std::sync::Arc;
 
-/// Value blocks are the building blocks of a [`Segment`]. Each block is a sorted list of [`Value`]s,
+/// Value blocks are the building blocks of a [`crate::segment::Segment`]. Each block is a sorted list of [`Value`]s,
 /// and stored in compressed form on disk, in sorted order.
 ///
 /// The integrity of a block can be checked using the CRC value that is saved in it.
