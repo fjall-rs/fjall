@@ -7,7 +7,7 @@ const ITEM_COUNT: usize = 100;
 fn tree_reload_with_partitions() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let mut path;
+    let path;
 
     // NOTE: clippy bug
     #[allow(unused_assignments)]
@@ -75,7 +75,7 @@ fn tree_reload_with_partitions() -> fjall::Result<()> {
     }
 
     {
-        let keyspace = Config::new(&folder).open()?;
+        let _keyspace = Config::new(&folder).open()?;
 
         assert!(!path.try_exists()?);
     }
