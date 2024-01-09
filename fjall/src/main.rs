@@ -48,25 +48,32 @@ pub fn main() -> fjall::Result<()> {
 
     eprintln!("hello");
 
+    let start = Instant::now();
+
     let keyspace = Config::new(".data").open()?;
 
-    /* for x in 0..10 {
-        keyspace.open_partition(&format!("data-{x}"), PartitionCreateOptions::default())?;
+    let item_count = 10_000_000;
+    let partition_count = 1_000;
+    let item_count_per_partition = item_count / partition_count;
+
+    for x in 0..partition_count {
+        let items =
+            keyspace.open_partition(&format!("data-{x}"), PartitionCreateOptions::default())?;
         eprintln!("partition {x} opened");
-    } */
 
-    let items = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-
-    for x in 0u64..5_000_000 {
-        items.insert(
-            x.to_be_bytes(),
-            "321awwararwabrwarwarbyxyccxyxcyxycycxyxcxc",
-        )?;
+        for x in 0u64..item_count_per_partition {
+            items.insert(
+                x.to_be_bytes(),
+                "asddasasdadsadsdsadsadsdasasdasdasdasdasdasdasdasdassaasasdasdsadsaasdsasaasdassad",
+            )?;
+        }
     }
 
+    /* let items = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+     */
     keyspace.persist()?;
 
-    eprintln!("hello partitions");
+    eprintln!("done in {}s", start.elapsed().as_secs_f32());
 
     // loop {}
 

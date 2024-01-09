@@ -8,6 +8,7 @@ use crate::{
     },
     flush::manager::FlushManager,
     journal::{manager::JournalManager, Journal},
+    monitor::Monitor,
     partition::{name::is_valid_partition_name, PartitionHandleInner},
     version::Version,
     PartitionCreateOptions, PartitionHandle,
@@ -16,7 +17,10 @@ use lsm_tree::{id::generate_segment_id, SeqNo, SequenceNumberCounter};
 use std::{
     collections::HashMap,
     fs::File,
-    sync::{atomic::AtomicUsize, Arc, RwLock},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc, RwLock,
+    },
 };
 use std_semaphore::Semaphore;
 
@@ -34,6 +38,7 @@ pub struct KeyspaceInner {
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
     pub(crate) active_background_threads: Arc<AtomicUsize>,
+    pub(crate) approximate_write_buffer_size: Arc<AtomicU64>,
 }
 
 impl Drop for KeyspaceInner {
@@ -191,6 +196,27 @@ impl Keyspace {
         if let Some(ms) = self.config.fsync_ms {
             self.spawn_fsync_thread(ms.into());
         }
+
+        let monitor = Monitor::new(self);
+        let stop_signal = self.stop_signal.clone();
+        let thread_counter = self.active_background_threads.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        std::thread::spawn(move || loop {
+            if stop_signal.is_stopped() {
+                log::trace!("monitor: exiting because tree is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
+
+            let idle = monitor.run();
+
+            if idle {
+                log::trace!("monitor: sleeping a bit");
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        });
     }
 
     /// Destroys the partition, removing all data associated with it.
@@ -376,6 +402,7 @@ impl Keyspace {
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
+            approximate_write_buffer_size: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -429,6 +456,7 @@ impl Keyspace {
                 journal: keyspace.journal.clone(),
                 compaction_manager: keyspace.compaction_manager.clone(),
                 seqno: keyspace.seqno.clone(),
+                write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
             };
             let partition_inner = Arc::new(partition_inner);
 
@@ -620,6 +648,7 @@ impl Keyspace {
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
+            approximate_write_buffer_size: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -691,6 +720,7 @@ impl Keyspace {
         let journal_manager = self.journal_manager.clone();
         let compaction_manager = self.compaction_manager.clone();
         let flush_semaphore = self.flush_semaphore.clone();
+        let write_buffer_size = self.approximate_write_buffer_size.clone();
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
@@ -698,16 +728,21 @@ impl Keyspace {
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::spawn(move || loop {
-            log::debug!("flush worker: acquiring flush semaphore");
+            log::trace!("flush worker: acquiring flush semaphore");
             flush_semaphore.acquire();
 
             if stop_signal.is_stopped() {
-                log::debug!("flush worker: exiting because tree is dropping");
+                log::trace!("flush worker: exiting because tree is dropping");
                 thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             }
 
-            crate::flush::worker::run(&flush_manager, &journal_manager, &compaction_manager);
+            crate::flush::worker::run(
+                &flush_manager,
+                &journal_manager,
+                &compaction_manager,
+                &write_buffer_size,
+            );
         });
     }
 }

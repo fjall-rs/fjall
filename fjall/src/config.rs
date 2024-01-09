@@ -18,13 +18,13 @@ pub struct Config {
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Max size of all journals in bytes
-    pub(crate) max_journaling_size_in_bytes: u32,
+    pub(crate) max_journaling_size_in_bytes: u64,
 
     /// Max size of all active memtables
     ///
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) partitions.
-    pub(crate) max_write_buffer_size_in_bytes: u32,
+    pub(crate) max_write_buffer_size_in_bytes: u64,
 
     /// Amount of compaction workers
     pub(crate) compaction_works_count: usize,
@@ -104,22 +104,21 @@ impl Config {
     /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
     /// anything less will immediately stall the system. Otherwise it will panic.
     #[must_use]
-    pub fn max_journaling_size(mut self, bytes: u32) -> Self {
+    pub fn max_journaling_size(mut self, bytes: u64) -> Self {
         assert!(bytes >= 24 * 1_024 * 1_024);
 
         self.max_journaling_size_in_bytes = bytes;
         self
     }
 
-    // TODO: use
-    /* /// Max size of all active memtables in bytes.
+    /// Max size of all active memtables in bytes.
     ///
     /// Default = 64 MiB
     #[must_use]
-    pub fn max_write_buffer_size(mut self, bytes: u32) -> Self {
+    pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
         self.max_write_buffer_size_in_bytes = bytes;
         self
-    } */
+    }
 
     /// If Some, starts an fsync thread that asynchronously
     /// persists data.

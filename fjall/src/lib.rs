@@ -87,6 +87,7 @@ mod file;
 mod flush;
 mod journal;
 mod keyspace;
+mod monitor;
 mod partition;
 mod sharded;
 mod version;

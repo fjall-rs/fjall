@@ -73,6 +73,26 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
+    /// Enqueues partitions to be flushed so that the oldest journal can be safely evicted
+    pub fn get_partitions_to_flush_for_oldest_journal_eviction(&self) -> Vec<PartitionHandle> {
+        let mut items = vec![];
+
+        if let Some(item) = self.items.first() {
+            for item in item.partition_seqnos.values() {
+                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                    items.push(item.partition.clone());
+                    continue;
+                };
+
+                if partition_seqno < item.lsn {
+                    items.push(item.partition.clone());
+                }
+            }
+        }
+
+        items
+    }
+
     /// Performs maintenance, maybe deleting some old journals
     pub fn maintenance(&mut self) -> crate::Result<()> {
         // NOTE: Walk backwards because of shifting indices
@@ -141,7 +161,7 @@ impl JournalManager {
             .expect("should have parent")
             .join(&*generate_segment_id());
 
-        log::debug!("journal manager: acquiring journal full lock");
+        log::trace!("journal manager: acquiring journal full lock");
         Journal::rotate(&new_journal_path, journal_lock)?;
 
         self.active_path = new_journal_path;

@@ -2,7 +2,7 @@ use super::manager::FlushManager;
 use crate::{
     compaction::manager::CompactionManager, file::SEGMENTS_FOLDER, journal::manager::JournalManager,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Runs flush worker.
 ///
@@ -12,6 +12,7 @@ pub fn run(
     flush_manager: &Arc<RwLock<FlushManager>>,
     journal_manager: &Arc<RwLock<JournalManager>>,
     compaction_manager: &CompactionManager,
+    write_buffer_size: &Arc<AtomicU64>,
 ) {
     log::debug!("flush worker: write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
@@ -50,6 +51,9 @@ pub fn run(
                     .partition
                     .clone();
 
+                let memtables_size: u64 =
+                    tasks.iter().map(|t| t.sealed_memtable.size() as u64).sum();
+
                 // NOTE: Don't trust clippy
                 #[allow(clippy::needless_collect)]
                 let flush_workers = tasks
@@ -78,7 +82,7 @@ pub fn run(
                     .map(|t| t.join().expect("should join"))
                     .collect::<crate::Result<Vec<_>>>()?;
 
-                Ok::<_, crate::Error>((partition, results))
+                Ok::<_, crate::Error>((partition, results, memtables_size))
             })
         })
         .collect::<Vec<_>>();
@@ -91,7 +95,7 @@ pub fn run(
     // TODO: handle flush fail
     for result in results {
         match result {
-            Ok((partition, segments)) => {
+            Ok((partition, segments, memtables_size)) => {
                 // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
 
@@ -100,6 +104,9 @@ pub fn run(
                         for segment in &segments {
                             partition.tree.free_sealed_memtable(&segment.metadata.id);
                         }
+
+                        write_buffer_size
+                            .fetch_sub(memtables_size, std::sync::atomic::Ordering::Relaxed);
 
                         // NOTE: We can safely partially remove tasks
                         // as there is only one flush thread

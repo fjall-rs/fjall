@@ -23,7 +23,10 @@ use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::PathBuf,
-    sync::{atomic::AtomicU32, Arc, RwLock},
+    sync::{
+        atomic::{AtomicU32, AtomicU64},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 use std_semaphore::Semaphore;
@@ -41,6 +44,7 @@ pub struct PartitionHandleInner {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) seqno: SequenceNumberCounter,
+    pub(crate) write_buffer_size: Arc<AtomicU64>,
 
     /// TEMP pub
     pub(crate) tree: LsmTree,
@@ -129,6 +133,7 @@ impl PartitionHandle {
             tree,
             compaction_strategy: RwLock::new(Arc::new(super::compaction::Levelled::default())),
             max_memtable_size: (8 * 1_024 * 1_024).into(),
+            write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
         })))
     }
 
@@ -419,7 +424,7 @@ impl PartitionHandle {
     pub fn rotate_memtable(&self) -> crate::Result<()> {
         log::debug!("Rotating memtable {:?}", self.name);
 
-        log::debug!("partition: acquiring full write lock");
+        log::trace!("partition: acquiring full write lock");
         let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
 
         // Rotate memtable
@@ -428,7 +433,7 @@ impl PartitionHandle {
             return Ok(());
         };
 
-        log::debug!("partition: acquiring journal manager lock");
+        log::trace!("partition: acquiring journal manager lock");
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = {
@@ -436,7 +441,7 @@ impl PartitionHandle {
 
             let mut map = HashMap::new();
 
-            for (name, partition) in partitions.iter() {
+            for (name, partition) in &*partitions {
                 if let Some(lsn) = partition.tree.get_memtable_lsn() {
                     map.insert(
                         name.clone(),
@@ -463,7 +468,7 @@ impl PartitionHandle {
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
 
-        log::debug!("partition: acquiring flush manager lock");
+        log::trace!("partition: acquiring flush manager lock");
         let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
 
         flush_manager.enqueue_task(
@@ -475,7 +480,7 @@ impl PartitionHandle {
             },
         );
 
-        let journal_size = journal_manager.disk_space_used();
+        journal_manager.disk_space_used();
         drop(journal_manager);
         drop(flush_manager);
         drop(journal);
@@ -483,57 +488,34 @@ impl PartitionHandle {
         // Notify flush worker that new work has arrived
         self.flush_semaphore.release();
 
-        if journal_size > ((self.keyspace_config.max_journaling_size_in_bytes as f32) * 0.66) as u64
-        {
-            log::debug!(
-                "Amassing quite a bit of journals, starting to flush some inactive partitions"
-            );
-
-            let least_recently_flush_partition = self
-                .flush_manager
-                .write()
-                .expect("lock is poisoned")
-                .get_least_recently_used_partition();
-
-            if let Some(least_recently_flush_partition) = least_recently_flush_partition {
-                least_recently_flush_partition.rotate_memtable()?;
-            };
-        }
-
-        if journal_size > self.keyspace_config.max_journaling_size_in_bytes.into() {
-            // TODO: maybe exponential backoff
-
-            loop {
-                log::warn!("Too many journals amassed, halting writes...");
-                std::thread::sleep(Duration::from_millis(500));
-
-                let bytes = self
-                    .journal_manager
-                    .write()
-                    .expect("lock is poisoned")
-                    .disk_space_used();
-
-                if bytes <= self.keyspace_config.max_journaling_size_in_bytes.into() {
-                    log::debug!("Ending write halt");
-                    break;
-                }
-
-                let least_recently_flush_partition = self
-                    .flush_manager
-                    .write()
-                    .expect("lock is poisoned")
-                    .get_least_recently_used_partition();
-
-                if let Some(least_recently_flush_partition) = least_recently_flush_partition {
-                    least_recently_flush_partition.rotate_memtable()?;
-                };
-            }
-        }
-
         Ok(())
     }
 
-    fn check_write_stall(&self) {
+    fn check_journal_size(&self) {
+        loop {
+            let bytes = self
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .disk_space_used();
+
+            if bytes <= self.keyspace_config.max_journaling_size_in_bytes {
+                if bytes as f64 > self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.9 {
+                    log::info!(
+                        "partition: write stall because 90% journal threshold has been reached"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+
+                break;
+            }
+
+            log::warn!("partition: write halt because of too many journals");
+            std::thread::sleep(std::time::Duration::from_millis(500)); // TODO: maybe exponential backoff
+        }
+    }
+
+    fn check_write_halt(&self) {
         while self.tree.first_level_segment_count() > 20 {
             log::warn!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
@@ -541,14 +523,7 @@ impl PartitionHandle {
         }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
-        use std::sync::atomic::Ordering::Acquire;
-
-        if size > self.max_memtable_size.load(Acquire) {
-            self.rotate_memtable()?;
-            self.check_write_stall();
-        }
-
+    fn check_write_stall(&self) {
         let seg_count = self.tree.first_level_segment_count();
 
         if seg_count > 16 {
@@ -558,8 +533,45 @@ impl PartitionHandle {
             let ms = if seg_count > 18 { 500 } else { 100 };
             std::thread::sleep(Duration::from_millis(ms));
         }
+    }
+
+    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
+        use std::sync::atomic::Ordering::Acquire;
+
+        if size > self.max_memtable_size.load(Acquire) {
+            self.rotate_memtable()?;
+            self.check_journal_size();
+            self.check_write_halt();
+        }
+
+        self.check_write_stall();
 
         Ok(())
+    }
+
+    fn check_write_buffer_size(&self, initial_size: u64) {
+        if initial_size > self.keyspace_config.max_write_buffer_size_in_bytes {
+            loop {
+                let bytes = self
+                    .write_buffer_size
+                    .load(std::sync::atomic::Ordering::Relaxed);
+
+                if bytes <= self.keyspace_config.max_write_buffer_size_in_bytes {
+                    if bytes as f64
+                        > self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.9
+                    {
+                        log::info!(
+                            "partition: write stall because 90% write buffer threshold has been reached"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    break;
+                }
+
+                log::warn!("partition: write halt because of write buffer saturation");
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
     }
 
     #[doc(hidden)]
@@ -621,8 +633,15 @@ impl PartitionHandle {
         )?;
         drop(shard);
 
-        let memtable_size = self.tree.insert(key, value, seqno);
+        let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
         self.check_memtable_overflow(memtable_size)?;
+
+        let write_buffer_size = self
+            .write_buffer_size
+            .fetch_add(item_size as u64, std::sync::atomic::Ordering::Relaxed)
+            + item_size as u64;
+
+        self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
     }
@@ -661,6 +680,7 @@ impl PartitionHandle {
 
         let seqno = self.seqno.next();
 
+        /* let bytes_written = */
         shard.writer.write(
             &crate::batch::Item {
                 key: key.as_ref().into(),
@@ -672,8 +692,15 @@ impl PartitionHandle {
         )?;
         drop(shard);
 
-        let memtable_size = self.tree.remove(key, seqno);
+        let (item_size, memtable_size) = self.tree.remove(key, seqno);
         self.check_memtable_overflow(memtable_size)?;
+
+        let write_buffer_size = self
+            .write_buffer_size
+            .fetch_add(item_size as u64, std::sync::atomic::Ordering::Relaxed)
+            + item_size as u64;
+
+        self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
     }
