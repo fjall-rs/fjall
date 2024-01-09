@@ -50,6 +50,7 @@ impl JournalShard {
     /// Recovers a journal shard and writes the items into the given memtable
     ///
     /// Will truncate the file to the position of the last valid batch
+    #[allow(clippy::too_many_lines)]
     pub fn recover_and_repair<P: AsRef<Path>>(
         path: P,
         memtables: &mut HashMap<PartitionKey, MemTable>,

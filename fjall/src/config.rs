@@ -63,6 +63,7 @@ impl Config {
     /// # Panics
     ///
     /// Panics if n is equal to 0.
+    #[must_use]
     pub fn compaction_workers(mut self, n: usize) -> Self {
         assert!(n > 0);
         self.compaction_works_count = n;

@@ -43,6 +43,7 @@ impl CreateOptions {
     ///
     /// Default = 4 KiB
     ///
+    #[must_use]
     pub fn block_size(mut self, n: u32) -> Self {
         self.block_size = n;
         self
@@ -52,6 +53,7 @@ impl CreateOptions {
     ///
     /// Default = 8
     ///
+    #[must_use]
     pub fn level_ratio(mut self, n: u8) -> Self {
         self.level_ratio = n;
         self
@@ -60,6 +62,7 @@ impl CreateOptions {
     /// Sets the level count (depth of the tree).
     ///
     /// Default = 7
+    #[must_use]
     pub fn level_count(mut self, n: u8) -> Self {
         self.level_count = n;
         self

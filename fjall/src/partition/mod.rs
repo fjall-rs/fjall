@@ -638,8 +638,8 @@ impl PartitionHandle {
 
         let write_buffer_size = self
             .write_buffer_size
-            .fetch_add(item_size as u64, std::sync::atomic::Ordering::Relaxed)
-            + item_size as u64;
+            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::Relaxed)
+            + u64::from(item_size);
 
         self.check_write_buffer_size(write_buffer_size);
 
@@ -697,8 +697,8 @@ impl PartitionHandle {
 
         let write_buffer_size = self
             .write_buffer_size
-            .fetch_add(item_size as u64, std::sync::atomic::Ordering::Relaxed)
-            + item_size as u64;
+            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::Relaxed)
+            + u64::from(item_size);
 
         self.check_write_buffer_size(write_buffer_size);
 
