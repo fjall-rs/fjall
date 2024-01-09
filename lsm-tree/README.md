@@ -39,20 +39,11 @@ engine, larger keys and values have a bigger performance impact.
 The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that
 will result in a major bump.
 
-## Contributing
-
-How can you help?
-
-- [Ask a question](https://github.com/marvin-j97/fjall/discussions/new?category=q-a)
-- [Post benchmarks and things you created](https://github.com/marvin-j97/fjall/discussions/new?category=show-and-tell)
-- [Open an issue](https://github.com/marvin-j97/fjall/issues/new) (bug report, weirdness)
-- [Open a PR](https://github.com/marvin-j97/fjall/compare)
-
-All contributions are to be licensed as MIT OR Apache-2.0.
-
 ## License
 
 All source code is licensed under MIT OR Apache-2.0.
+
+All contributions are to be licensed as MIT OR Apache-2.0.
 
 ## Footnotes
 
