@@ -109,7 +109,7 @@ impl BloomFilter {
 
         let mut hash = h1;
         for _ in 0..self.k {
-            hash = hash.wrapping_add(self.k * h2);
+            hash = hash.wrapping_add(self.k.wrapping_mul(h2));
             let idx = hash % self.m;
 
             if !self.inner.get(idx).expect("should be in bounds") {
@@ -126,7 +126,7 @@ impl BloomFilter {
 
         let mut hash = h1;
         for _ in 0..self.k {
-            hash = hash.wrapping_add(self.k * h2);
+            hash = hash.wrapping_add(self.k.wrapping_mul(h2));
             let idx = hash % self.m;
 
             self.set_pos(idx);
