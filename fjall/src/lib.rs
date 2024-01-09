@@ -69,10 +69,9 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/fjall/logo.png")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/fjall/logo.png")]
 #![forbid(unsafe_code)]
-#![deny(clippy::all, missing_docs, clippy::cargo)]
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::indexing_slicing)]
-#![warn(clippy::pedantic, clippy::nursery)]
+#![deny(clippy::all, missing_docs)]
+#![deny(clippy::unwrap_used, clippy::indexing_slicing)]
+#![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
 
