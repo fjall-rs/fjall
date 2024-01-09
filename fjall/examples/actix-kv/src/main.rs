@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::MyResult;
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -38,17 +38,21 @@ async fn insert_batch(
 
     let before = std::time::Instant::now();
 
-    let mut batch = data.db.batch();
+    let mut batch = data.keyspace.batch();
 
     if let Some(remove) = &body.remove {
         for key in remove {
-            batch.remove(key.clone());
+            batch.remove(&data.db, key.clone());
         }
     }
 
     if let Some(upsert) = &body.upsert {
         for item in upsert {
-            batch.insert(item.0.clone(), serde_json::to_string(&item.1).unwrap());
+            batch.insert(
+                &data.db,
+                item.0.clone(),
+                serde_json::to_string(&item.1).unwrap(),
+            );
         }
     }
 
@@ -139,7 +143,7 @@ async fn main() -> fjall::Result<()> {
     log::info!("Opening database");
 
     let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("data" /* PartitionConfig {} */)?;
+    let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
 
     log::info!("Starting on port {port}");
 
@@ -179,7 +183,7 @@ mod tests {
         let data_folder = tempfile::tempdir()?;
 
         let keyspace = Config::new(data_folder).open()?;
-        let db = keyspace.open_partition("data" /* PartitionConfig {} */)?;
+        let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
 
         let app = App::new()
             .app_data(web::Data::new(AppState {

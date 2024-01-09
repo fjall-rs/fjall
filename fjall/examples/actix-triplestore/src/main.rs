@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::MyResult;
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -169,7 +169,7 @@ async fn list_by_verb(
     let mut edges = vec![];
 
     for item in all {
-        let (key, value) = item?;
+        let (key, value) = item.map_err(fjall::Error::Storage)?;
 
         let composite_key = std::str::from_utf8(&key).unwrap();
         let verb_key = composite_key.split(':').nth(4).unwrap();
@@ -208,7 +208,7 @@ async fn list_by_verb(
 }
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> fjall::Result<()> {
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Info)
         .init();
@@ -219,8 +219,8 @@ async fn main() -> std::io::Result<()> {
     log::info!("Opening database");
 
     let keyspace = Config::default().open()?;
-    /// TODO: maybe use multiple partitions for subjects vs verbs
-    let db = keyspace.open_partition("data" /* PartitionConfig {} */)?;
+    // TODO: maybe use multiple partitions for subjects vs verbs
+    let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
 
     log::info!("Starting on port {port}");
 
