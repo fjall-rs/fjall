@@ -47,7 +47,7 @@ impl KvStore {
                 loop {
                     eprintln!("Maybe compact");
                     let strategy = lsm_tree::compaction::Levelled::default();
-                    tree.compact(Box::new(strategy))?;
+                    tree.compact(Arc::new(strategy))?;
                     std::thread::sleep(Duration::from_secs(1));
                 }
                 Ok::<_, lsm_tree::Error>(())
@@ -88,7 +88,7 @@ impl KvStore {
             value_type: lsm_tree::ValueType::Value,
         })?;
 
-        let memtable_size = self.tree.insert(key, value, seqno);
+        let (_, memtable_size) = self.tree.insert(key, value, seqno);
         self.maintenance(memtable_size)?;
 
         Ok(())
@@ -105,7 +105,7 @@ impl KvStore {
             value_type: lsm_tree::ValueType::Tombstone,
         })?;
 
-        let memtable_size = self.tree.remove(key, seqno);
+        let (_, memtable_size) = self.tree.remove(key, seqno);
         self.maintenance(memtable_size)?;
 
         Ok(())

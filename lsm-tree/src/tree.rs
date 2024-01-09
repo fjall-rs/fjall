@@ -455,7 +455,7 @@ impl Tree {
     ///
     /// If the key already exists, the item will be overwritten.
     ///
-    /// Returns the active memtable's size.
+    /// Returns the added item's size and new size of the memtable.
     ///
     /// # Examples
     ///
@@ -484,7 +484,7 @@ impl Tree {
 
     /// Removes an item from the tree.
     ///
-    /// Returns the active memtable's size.
+    /// Returns the added item's size and new size of the memtable.
     ///
     /// # Examples
     ///
