@@ -29,6 +29,7 @@ This is the most feature-rich LSM-tree implementation in Rust! It features:
 - Multi-threaded flushing (immutable/sealed memtables)
 - Partitioned block index to reduce memory footprint and keep startup time tiny [1]
 - Block caching to keep hot data in memory
+- Bloom filters to increase point lookup performance (`bloom` feature, enabled by default)
 - Snapshots (MVCC)
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage
