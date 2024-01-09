@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
 use lsm_tree::segment::block::ValueBlock;
-use lsm_tree::{generate_segment_id, Value};
+use lsm_tree::{id::generate_segment_id, Value};
 use rand::Rng;
 use std::sync::Arc;
 

@@ -19,32 +19,6 @@ impl std::fmt::Debug for Task {
     }
 }
 
-#[derive(Default)]
-pub struct LruList {
-    items: Vec<PartitionHandle>,
-}
-
-impl LruList {
-    pub(crate) fn remove_partition(&mut self, name: &str) {
-        self.items.retain(|x| &*x.name != name);
-    }
-
-    pub(crate) fn refresh(&mut self, partition: PartitionHandle) {
-        self.items.retain(|x| x.name != partition.name);
-        self.items.push(partition);
-    }
-
-    fn get_least_recently_used(&mut self) -> Option<PartitionHandle> {
-        if self.items.is_empty() {
-            None
-        } else {
-            let front = self.items.remove(0);
-            self.refresh(front.clone());
-            Some(front)
-        }
-    }
-}
-
 /// The [`FlushManager`] stores a dictionary of queues, each queue
 /// containing a list of flush tasks.
 ///
@@ -53,12 +27,12 @@ impl LruList {
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
     pub queues: HashMap<PartitionKey, Vec<Arc<Task>>>,
-    pub(crate) lru_list: LruList,
+    pub(crate) lru_list: lsm_tree::lru_list::LruList<PartitionHandle>,
 }
 
 impl FlushManager {
     pub fn remove_partition(&mut self, name: &str) {
-        self.lru_list.remove_partition(name);
+        self.lru_list.remove_by(|p| &*p.name != name);
         self.queues.remove(name);
     }
 
