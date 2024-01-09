@@ -1,5 +1,6 @@
+use crate::lru_list::LruList;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     fs::File,
     path::PathBuf,
     sync::{
@@ -7,41 +8,6 @@ use std::{
         Arc, Mutex, RwLock, RwLockWriteGuard,
     },
 };
-
-// TODO: use this list in Fjall
-
-pub struct LruList<T: Clone + Eq + PartialEq> {
-    items: VecDeque<T>,
-}
-
-impl<T: Clone + Eq + PartialEq> Default for LruList<T> {
-    fn default() -> Self {
-        Self {
-            items: VecDeque::with_capacity(100),
-        }
-    }
-}
-
-impl<T: Clone + Eq + PartialEq> LruList<T> {
-    pub fn remove(&mut self, item: &T) {
-        self.items.retain(|x| x != item);
-    }
-
-    pub fn refresh(&mut self, item: T) {
-        self.remove(&item);
-        self.items.push_back(item);
-    }
-
-    pub fn get_least_recently_used(&mut self) -> Option<T> {
-        if self.items.is_empty() {
-            None
-        } else {
-            let front = self.items.pop_front()?;
-            self.refresh(front.clone());
-            Some(front)
-        }
-    }
-}
 
 pub struct FileGuard(Arc<FileDescriptorWrapper>);
 
@@ -71,9 +37,11 @@ pub struct FileHandle {
     path: PathBuf,
 }
 
+// TODO: benchmark with many threads
+
 pub struct FileDescriptorTableInner {
     table: HashMap<Arc<str>, FileHandle>,
-    lru: LruList<Arc<str>>,
+    lru: Mutex<LruList<Arc<str>>>,
     size: AtomicUsize,
 }
 
@@ -95,7 +63,7 @@ impl FileDescriptorTable {
         Self {
             inner: RwLock::new(FileDescriptorTableInner {
                 table: HashMap::with_capacity(100),
-                lru: LruList::default(),
+                lru: Mutex::new(LruList::with_capacity(100)),
                 size: AtomicUsize::default(),
             }),
             concurrency,
@@ -121,7 +89,7 @@ impl FileDescriptorTable {
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    // TODO: on access, adjust hotness of ID
+    // TODO: on access, adjust hotness of ID -> lock contention though
     pub fn access(&self, id: &Arc<str>) -> crate::Result<Option<FileGuard>> {
         let lock = self.inner.read().expect("lock is poisoned");
 
@@ -135,7 +103,9 @@ impl FileDescriptorTable {
             drop(fd_array);
             drop(lock);
 
-            let mut lock = self.inner.write().expect("lock is poisoned");
+            let lock = self.inner.write().expect("lock is poisoned");
+            let mut lru = lock.lru.lock().expect("lock is poisoned");
+            lru.refresh(id.clone());
 
             let fd = {
                 let item = lock.table.get(id).expect("should exist");
@@ -164,7 +134,7 @@ impl FileDescriptorTable {
                 + 1;
 
             if size_now > self.limit {
-                if let Some(oldest) = lock.lru.get_least_recently_used() {
+                if let Some(oldest) = lru.get_least_recently_used() {
                     if &oldest != id {
                         if let Some(item) = lock.table.get(&oldest) {
                             let mut oldest_lock =
@@ -210,7 +180,7 @@ impl FileDescriptorTable {
             },
         );
 
-        lock.lru.refresh(id);
+        lock.lru.lock().expect("lock is poisoned").refresh(id);
     }
 
     pub fn insert<P: Into<PathBuf>>(&self, path: P, id: Arc<str>) {
@@ -228,7 +198,7 @@ impl FileDescriptorTable {
             );
         }
 
-        lock.lru.remove(id);
+        lock.lru.lock().expect("lock is poisoned").remove(id);
     }
 }
 

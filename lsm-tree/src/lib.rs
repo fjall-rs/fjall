@@ -96,8 +96,9 @@
 
 mod block_cache;
 
+#[doc(hidden)]
 #[cfg(feature = "bloom")]
-mod bloom;
+pub mod bloom;
 
 pub mod compaction;
 mod config;
@@ -119,6 +120,10 @@ pub mod flush;
 pub mod id;
 
 mod levels;
+
+#[doc(hidden)]
+pub mod lru_list;
+
 mod memtable;
 mod merge;
 
