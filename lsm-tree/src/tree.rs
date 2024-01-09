@@ -148,14 +148,14 @@ impl Tree {
 
     /// Atomically registers flushed disk segments into the tree, removing their associated sealed memtables
     pub fn register_segments(&self, segments: &[Arc<Segment>]) -> crate::Result<()> {
-        log::debug!("flush: acquiring levels manifest write lock");
+        log::trace!("flush: acquiring levels manifest write lock");
         let mut levels = self.levels.write().expect("lock is poisoned");
 
         for segment in segments {
             levels.add(segment.clone());
         }
 
-        log::debug!("flush: acquiring sealed memtables write lock");
+        log::trace!("flush: acquiring sealed memtables write lock");
         let mut memtable_lock = self.sealed_memtables.write().expect("lock is poisoned");
 
         for segment in segments {
@@ -273,14 +273,14 @@ impl Tree {
     /// Seals the active memtable, and returns a reference to it
     #[must_use]
     pub fn rotate_memtable(&self) -> Option<(Arc<str>, Arc<MemTable>)> {
-        log::debug!("rotate: acquiring active memtable write lock");
+        log::trace!("rotate: acquiring active memtable write lock");
         let mut active_memtable = self.lock_active_memtable();
 
         if active_memtable.items.is_empty() {
             return None;
         }
 
-        log::debug!("rotate: acquiring sealed memtables write lock");
+        log::trace!("rotate: acquiring sealed memtables write lock");
         let mut sealed_memtables = self.lock_sealed_memtables();
 
         let yanked_memtable = std::mem::take(&mut *active_memtable);
@@ -472,7 +472,12 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V, seqno: SeqNo) -> u32 {
+    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+        &self,
+        key: K,
+        value: V,
+        seqno: SeqNo,
+    ) -> (u32, u32) {
         let value = Value::new(key.as_ref(), value.as_ref(), seqno, ValueType::Value);
         self.append_entry(value)
     }
@@ -504,7 +509,7 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: AsRef<[u8]>>(&self, key: K, seqno: SeqNo) -> u32 {
+    pub fn remove<K: AsRef<[u8]>>(&self, key: K, seqno: SeqNo) -> (u32, u32) {
         let value = Value::new(key.as_ref(), vec![], seqno, ValueType::Tombstone);
         self.append_entry(value)
     }
@@ -752,9 +757,9 @@ impl Tree {
 
     /// Adds an item to the active memtable.
     ///
-    /// Returns the new size of the memtable.
+    /// Returns the added item's size and new size of the memtable.
     #[doc(hidden)]
-    pub fn append_entry(&self, value: Value) -> u32 {
+    pub fn append_entry(&self, value: Value) -> (u32, u32) {
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value)
     }

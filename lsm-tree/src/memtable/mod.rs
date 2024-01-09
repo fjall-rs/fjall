@@ -9,6 +9,7 @@ pub struct MemTable {
     pub(crate) items: SkipMap<ParsedInternalKey, UserValue>,
 
     /// Approximate active memtable size
+    ///
     /// If this grows too large, a flush is triggered
     pub(crate) approximate_size: AtomicU32,
 }
@@ -78,15 +79,17 @@ impl MemTable {
     }
 
     /// Inserts an item into the memtable
-    pub fn insert(&self, item: Value) -> u32 {
-        let size_now = self
+    pub fn insert(&self, item: Value) -> (u32, u32) {
+        let item_size = item.size() as u32;
+
+        let size_before = self
             .approximate_size
-            .fetch_add(item.size() as u32, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(item_size, std::sync::atomic::Ordering::Relaxed);
 
         let key = ParsedInternalKey::new(item.key, item.seqno, item.value_type);
         self.items.insert(key, item.value);
 
-        size_now
+        (item_size, size_before + item_size)
     }
 
     /// Returns the highest sequence number in the memtable

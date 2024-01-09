@@ -102,11 +102,6 @@ impl Writer {
             size: bytes_written as u32,
         });
 
-        log::trace!(
-            "Written index block @ {} ({bytes_written} bytes)",
-            self.file_pos,
-        );
-
         self.block_counter = 0;
         self.block_chunk.items.clear();
         self.file_pos += bytes_written as u64;
@@ -149,7 +144,7 @@ impl Writer {
             self.path.join(BLOCKS_FILE),
         )?;
 
-        log::debug!("Concatted index blocks onto blocks file");
+        log::trace!("Concatted index blocks onto blocks file");
 
         for item in &mut self.index_chunk.items {
             item.offset += block_file_size;
@@ -169,7 +164,7 @@ impl Writer {
         self.index_writer.write_all(&bytes)?;
         self.index_writer.flush()?;
 
-        log::debug!(
+        log::trace!(
             "Written top level index to {}, with {} pointers ({} bytes)",
             self.path.join(TOP_LEVEL_INDEX_FILE).display(),
             self.index_chunk.items.len(),

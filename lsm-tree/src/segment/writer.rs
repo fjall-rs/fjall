@@ -243,13 +243,6 @@ impl Writer {
             .register_block(first.key.clone(), self.file_pos, bytes_written)?;
 
         // Adjust metadata
-        log::trace!(
-            "Written data block @ {} ({} bytes, uncompressed: {} bytes)",
-            self.file_pos,
-            bytes_written,
-            uncompressed_chunk_size
-        );
-
         self.file_pos += u64::from(bytes_written);
         self.item_count += self.chunk.items.len();
         self.block_count += 1;

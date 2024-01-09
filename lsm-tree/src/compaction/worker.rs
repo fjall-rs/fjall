@@ -57,7 +57,7 @@ pub struct Options {
 ///
 /// This will block until the compactor is fully finished.
 pub fn do_compaction(opts: &Options) -> crate::Result<()> {
-    log::debug!("compactor: acquiring levels manifest lock");
+    log::trace!("compactor: acquiring levels manifest lock");
     let levels = opts.levels.write().expect("lock is poisoned");
 
     log::trace!("compactor: consulting compaction strategy");
@@ -192,7 +192,7 @@ fn merge_segments(
         })
         .collect::<crate::Result<Vec<_>>>()?;
 
-    log::debug!("compactor: acquiring levels manifest write lock");
+    log::trace!("compactor: acquiring levels manifest write lock");
     let mut levels = opts.levels.write().expect("lock is poisoned");
 
     for segment in created_segments {
@@ -207,7 +207,7 @@ fn merge_segments(
     }
 
     // IMPORTANT: Write lock memtable(s), otherwise segments may get deleted while a range read is happening
-    log::debug!("compactor: acquiring sealed memtables write lock");
+    log::trace!("compactor: acquiring sealed memtables write lock");
     let sealed_memtables_guard = opts.sealed_memtables.write().expect("lock is poisoned");
 
     for key in &payload.segment_ids {
@@ -251,7 +251,7 @@ fn drop_segments(
     log::debug!("compactor: Chosen {} segments to drop", segment_ids.len(),);
 
     // IMPORTANT: Write lock memtable, otherwise segments may get deleted while a range read is happening
-    log::debug!("compaction: acquiring sealed memtables write lock");
+    log::trace!("compaction: acquiring sealed memtables write lock");
     let memtable_lock = opts.sealed_memtables.write().expect("lock is poisoned");
 
     for key in segment_ids {
