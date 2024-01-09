@@ -100,3 +100,8 @@ pub use {
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };
+
+/// A snapshot moment
+///
+/// See [`Keyspace::instant`].
+pub type Instant = lsm_tree::SeqNo;

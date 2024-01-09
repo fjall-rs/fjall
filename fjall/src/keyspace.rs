@@ -13,7 +13,7 @@ use crate::{
     version::Version,
     PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{id::generate_segment_id, SeqNo, SequenceNumberCounter};
+use lsm_tree::{id::generate_segment_id, SequenceNumberCounter};
 use std::{
     collections::HashMap,
     fs::File,
@@ -338,7 +338,7 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn instant(&self) -> SeqNo {
+    pub fn instant(&self) -> crate::Instant {
         self.seqno.get()
     }
 
