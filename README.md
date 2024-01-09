@@ -113,8 +113,8 @@ How can you help?
 - [Open an issue](https://github.com/marvin-j97/fjall/issues/new) (bug report, weirdness)
 - [Open a PR](https://github.com/marvin-j97/fjall/compare)
 
-All contributions are to be licensed as MIT OR Apache-2.0.
-
 ## License
 
 All source code is licensed under MIT OR Apache-2.0.
+
+All contributions are to be licensed as MIT OR Apache-2.0.
