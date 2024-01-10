@@ -1,6 +1,9 @@
 use crate::{batch::PartitionKey, PartitionHandle};
 use lsm_tree::MemTable;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 pub struct Task {
     /// ID of memtable
@@ -30,6 +33,16 @@ pub struct FlushManager {
 }
 
 impl FlushManager {
+    /// Gets the names of partitions that have queued tasks
+    pub fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
+        self.queues
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, _)| k)
+            .cloned()
+            .collect()
+    }
+
     /// Returns the amount of bytes that are queued to be flushed
     pub fn queued_size(&self) -> u64 {
         self.queues

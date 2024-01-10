@@ -40,7 +40,19 @@ impl Monitor {
             let partitions = journal_manager.get_partitions_to_flush_for_oldest_journal_eviction();
             drop(journal_manager);
 
+            let partitions_names_with_queued_tasks = self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .get_partitions_with_tasks();
+
+            let partitions = partitions
+                .into_iter()
+                .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+
             for partition in partitions {
+                log::warn!("monitor: JM rotating {:?}", partition.name);
+
                 if let Err(e) = partition.rotate_memtable() {
                     log::error!(
                         "monitor: memtable rotation failed for {:?}: {e:?}",
@@ -83,8 +95,18 @@ impl Monitor {
                     .cmp(&a.tree.active_memtable_size())
             });
 
+            let partitions_names_with_queued_tasks = self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .get_partitions_with_tasks();
+
+            let partitions = partitions
+                .into_iter()
+                .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+
             for partition in partitions {
-                log::warn!("monitor: rotating {:?}", partition.name);
+                log::warn!("monitor: WB rotating {:?}", partition.name);
 
                 match partition.rotate_memtable() {
                     Ok(rotated) => {
