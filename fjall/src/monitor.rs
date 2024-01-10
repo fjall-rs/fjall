@@ -51,7 +51,7 @@ impl Monitor {
                 .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
 
             for partition in partitions {
-                log::warn!("monitor: JM rotating {:?}", partition.name);
+                log::debug!("monitor: JM rotating {:?}", partition.name);
 
                 if let Err(e) = partition.rotate_memtable() {
                     log::error!(
@@ -106,7 +106,7 @@ impl Monitor {
                 .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
 
             for partition in partitions {
-                log::warn!("monitor: WB rotating {:?}", partition.name);
+                log::debug!("monitor: WB rotating {:?}", partition.name);
 
                 match partition.rotate_memtable() {
                     Ok(rotated) => {
