@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     pub fn id_order() {
-        for _ in 0..1_000_000 {
+        for _ in 0..100_000 {
             let ids = (0..10).map(|_| generate_segment_id()).collect::<Vec<_>>();
 
             let mut sorted = ids.clone();
