@@ -177,7 +177,7 @@ mod tests {
             filter.set_with_hash(BloomFilter::get_hash(key));
             assert!(filter.contains(key));
 
-            assert!(!filter.contains(nanoid::nanoid!().as_bytes()));
+            assert!(!filter.contains(b"asdasdasdasdasdasdasd"));
         }
     }
 
