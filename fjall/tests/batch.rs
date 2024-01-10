@@ -13,7 +13,6 @@ fn batch_simple() -> fjall::Result<()> {
     batch.insert(&partition, "1", "abc");
     batch.insert(&partition, "3", "abc");
     batch.insert(&partition, "5", "abc");
-
     assert_eq!(partition.len()?, 0);
 
     batch.commit()?;
