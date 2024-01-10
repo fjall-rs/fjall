@@ -41,7 +41,8 @@ impl BlockHandleBlockIndex {
         self.0.insert_block_handle_block(segment_id, key, value);
     }
 
-    #[must_use] pub fn get(&self, segment_id: &str, key: &UserKey) -> Option<Arc<BlockHandleBlock>> {
+    #[must_use]
+    pub fn get(&self, segment_id: &str, key: &UserKey) -> Option<Arc<BlockHandleBlock>> {
         self.0.get_block_handle_block(segment_id, key)
     }
 }

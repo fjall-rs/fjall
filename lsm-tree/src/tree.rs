@@ -759,7 +759,8 @@ impl Tree {
     ///
     /// Returns the added item's size and new size of the memtable.
     #[doc(hidden)]
-    #[must_use] pub fn append_entry(&self, value: Value) -> (u32, u32) {
+    #[must_use]
+    pub fn append_entry(&self, value: Value) -> (u32, u32) {
         let memtable_lock = self.active_memtable.read().expect("lock is poisoned");
         memtable_lock.insert(value)
     }

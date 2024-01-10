@@ -79,7 +79,8 @@ impl BloomFilter {
 
     /// Constructs a bloom filter that can hold `item_count` items
     /// while maintaining a certain false positive rate.
-    #[must_use] pub fn with_fp_rate(item_count: usize, fp_rate: f32) -> Self {
+    #[must_use]
+    pub fn with_fp_rate(item_count: usize, fp_rate: f32) -> Self {
         // NOTE: Some sensible minimum
         let fp_rate = fp_rate.max(0.000_001);
 
@@ -102,7 +103,8 @@ impl BloomFilter {
     /// Returns `true` if the item may be contained.
     ///
     /// Will never have a false negative.
-    #[must_use] pub fn contains(&self, key: &[u8]) -> bool {
+    #[must_use]
+    pub fn contains(&self, key: &[u8]) -> bool {
         let hash = Self::get_hash(key);
 
         let (h1, h2) = Self::split_hash(hash);
@@ -138,7 +140,8 @@ impl BloomFilter {
     }
 
     /// Gets the hash of a key
-    #[must_use] pub fn get_hash(key: &[u8]) -> u128 {
+    #[must_use]
+    pub fn get_hash(key: &[u8]) -> u128 {
         let mut hasher = SeaHasher::default();
         hasher.write(key);
         let h1 = hasher.finish();
