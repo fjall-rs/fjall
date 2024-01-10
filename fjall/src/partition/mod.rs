@@ -505,14 +505,14 @@ impl PartitionHandle {
                     log::info!(
                         "partition: write stall because 90% journal threshold has been reached"
                     );
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                 }
 
                 break;
             }
 
             log::warn!("partition: write halt because of too many journals");
-            std::thread::sleep(std::time::Duration::from_millis(500)); // TODO: maybe exponential backoff
+            std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
         }
     }
 

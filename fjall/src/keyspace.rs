@@ -211,9 +211,7 @@ impl Keyspace {
             }
 
             let idle = monitor.run();
-
             if idle {
-                log::trace!("monitor: sleeping a bit");
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         });
@@ -279,12 +277,6 @@ impl Keyspace {
 
             let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
-
-            self.flush_manager
-                .write()
-                .expect("lock is poisoned")
-                .lru_list
-                .refresh(handle.clone());
 
             handle
         })
@@ -488,13 +480,6 @@ impl Keyspace {
                 .write()
                 .expect("lock is poisoned")
                 .insert(partition_name.into(), partition.clone());
-
-            keyspace
-                .flush_manager
-                .write()
-                .expect("lock is poisoned")
-                .lru_list
-                .refresh(partition);
 
             log::trace!("Recovered partition {:?}", partition_name);
         }

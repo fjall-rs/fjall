@@ -27,17 +27,24 @@ impl std::fmt::Debug for Task {
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
     pub queues: HashMap<PartitionKey, Vec<Arc<Task>>>,
-    pub(crate) lru_list: lsm_tree::lru_list::LruList<PartitionHandle>,
 }
 
 impl FlushManager {
-    pub fn remove_partition(&mut self, name: &str) {
-        self.lru_list.remove_by(|p| &*p.name != name);
-        self.queues.remove(name);
+    /// Returns the amount of bytes that are queued to be flushed
+    pub fn queued_size(&self) -> u64 {
+        self.queues
+            .values()
+            .map(|x| {
+                x.iter()
+                    .map(|x| x.sealed_memtable.size())
+                    .map(u64::from)
+                    .sum::<u64>()
+            })
+            .sum::<u64>()
     }
 
-    pub fn get_least_recently_used_partition(&mut self) -> Option<PartitionHandle> {
-        self.lru_list.get_least_recently_used()
+    pub fn remove_partition(&mut self, name: &str) {
+        self.queues.remove(name);
     }
 
     pub fn enqueue_task(&mut self, partition_name: PartitionKey, task: Task) {
@@ -86,10 +93,6 @@ impl FlushManager {
             .queues
             .entry(partition_name)
             .or_insert_with(|| Vec::with_capacity(10));
-
-        if let Some(task) = queue.first() {
-            self.lru_list.refresh(task.partition.clone());
-        }
 
         for _ in 0..cnt {
             queue.remove(0);

@@ -107,7 +107,7 @@ pub fn run(
                             partition.tree.free_sealed_memtable(&segment.metadata.id);
                         }
 
-                        let size_now = write_buffer_size
+                        write_buffer_size
                             .fetch_sub(memtables_size, std::sync::atomic::Ordering::AcqRel);
 
                         // NOTE: We can safely partially remove tasks

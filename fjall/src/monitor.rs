@@ -6,6 +6,7 @@ use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
+    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     pub(crate) keyspace_config: KeyspaceConfig,
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_size: Arc<AtomicU64>,
@@ -15,6 +16,7 @@ pub struct Monitor {
 impl Monitor {
     pub fn new(keyspace: &Keyspace) -> Self {
         Self {
+            flush_manager: keyspace.flush_manager.clone(),
             journal_manager: keyspace.journal_manager.clone(),
             keyspace_config: keyspace.config.clone(),
             write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
@@ -29,10 +31,11 @@ impl Monitor {
         let size = journal_manager.disk_space_used();
 
         if size as f64 > (self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.5) {
+            idle = false;
+
             log::debug!(
                 "monitor: try flushing affected partitions because journals have passed 50% of threshold"
             );
-            idle = false;
 
             let partitions = journal_manager.get_partitions_to_flush_for_oldest_journal_eviction();
             drop(journal_manager);
@@ -53,11 +56,18 @@ impl Monitor {
             .write_buffer_size
             .load(std::sync::atomic::Ordering::Relaxed);
 
-        if write_buffer_size as f64
+        let queued_size = self
+            .flush_manager
+            .read()
+            .expect("lock is poisoned")
+            .queued_size();
+
+        let buffer_size_without_queued_size = write_buffer_size - queued_size;
+
+        if buffer_size_without_queued_size as f64
             > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
         {
             log::trace!("monitor: flush inactive partition because write buffer has passed 50% of threshold");
-            idle = false;
 
             let mut partitions = self
                 .partitions
@@ -74,6 +84,8 @@ impl Monitor {
             });
 
             for partition in partitions {
+                log::warn!("monitor: rotating {:?}", partition.name);
+
                 match partition.rotate_memtable() {
                     Ok(rotated) => {
                         if rotated {
@@ -88,6 +100,8 @@ impl Monitor {
                     }
                 };
             }
+
+            idle = false;
         }
 
         idle
