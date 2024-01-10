@@ -1,14 +1,13 @@
 pub mod item;
 
+use crate::{Keyspace, PartitionHandle};
+use lsm_tree::{Value, ValueType};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 
 pub use item::Item;
-use lsm_tree::{Value, ValueType};
-
-use crate::{Keyspace, PartitionHandle};
 
 /// Partition key (a.k.a. column family, locality group)
 pub type PartitionKey = Arc<str>;

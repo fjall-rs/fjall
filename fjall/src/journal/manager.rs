@@ -1,14 +1,12 @@
-use lsm_tree::{id::generate_segment_id, SeqNo};
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
-
+use super::shard::JournalShard;
 use crate::{
     batch::PartitionKey,
     file::{FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
     PartitionHandle,
 };
-
-use super::shard::JournalShard;
+use lsm_tree::{id::generate_segment_id, SeqNo};
+use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
