@@ -41,7 +41,11 @@ impl FlushManager {
     }
 
     pub fn enqueue_task(&mut self, partition_name: PartitionKey, task: Task) {
-        log::debug!("Enqueuing {partition_name}:{} for flushing", task.id);
+        log::debug!(
+            "Enqueuing {partition_name}:{} for flushing ({} B)",
+            task.id,
+            task.sealed_memtable.size()
+        );
 
         self.queues
             .entry(partition_name)

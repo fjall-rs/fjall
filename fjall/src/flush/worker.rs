@@ -51,8 +51,10 @@ pub fn run(
                     .partition
                     .clone();
 
-                let memtables_size: u64 =
-                    tasks.iter().map(|t| t.sealed_memtable.size() as u64).sum();
+                let memtables_size: u64 = tasks
+                    .iter()
+                    .map(|t| u64::from(t.sealed_memtable.size()))
+                    .sum();
 
                 // NOTE: Don't trust clippy
                 #[allow(clippy::needless_collect)]
@@ -105,8 +107,8 @@ pub fn run(
                             partition.tree.free_sealed_memtable(&segment.metadata.id);
                         }
 
-                        write_buffer_size
-                            .fetch_sub(memtables_size, std::sync::atomic::Ordering::Relaxed);
+                        let size_now = write_buffer_size
+                            .fetch_sub(memtables_size, std::sync::atomic::Ordering::AcqRel);
 
                         // NOTE: We can safely partially remove tasks
                         // as there is only one flush thread

@@ -1,24 +1,24 @@
 use crate::{
     config::Config as KeyspaceConfig, flush::manager::FlushManager,
-    journal::manager::JournalManager, Keyspace,
+    journal::manager::JournalManager, keyspace::Partitions, Keyspace,
 };
 use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
     pub(crate) keyspace_config: KeyspaceConfig,
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_size: Arc<AtomicU64>,
+    pub(crate) partitions: Arc<RwLock<Partitions>>,
 }
 
 impl Monitor {
     pub fn new(keyspace: &Keyspace) -> Self {
         Self {
-            flush_manager: keyspace.flush_manager.clone(),
             journal_manager: keyspace.journal_manager.clone(),
             keyspace_config: keyspace.config.clone(),
             write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
+            partitions: keyspace.partitions.clone(),
         }
     }
 
@@ -57,25 +57,37 @@ impl Monitor {
             > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
         {
             log::trace!("monitor: flush inactive partition because write buffer has passed 50% of threshold");
-
             idle = false;
 
-            // TODO: should flush biggest partition
-
-            let least_recently_flush_partition = self
-                .flush_manager
-                .write()
+            let mut partitions = self
+                .partitions
+                .read()
                 .expect("lock is poisoned")
-                .get_least_recently_used_partition();
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
 
-            if let Some(least_recently_flush_partition) = least_recently_flush_partition {
-                if let Err(e) = least_recently_flush_partition.rotate_memtable() {
-                    log::error!(
-                        "monitor: memtable rotation failed for {:?}: {e:?}",
-                        least_recently_flush_partition.name
-                    );
+            partitions.sort_by(|a, b| {
+                b.tree
+                    .active_memtable_size()
+                    .cmp(&a.tree.active_memtable_size())
+            });
+
+            for partition in partitions {
+                match partition.rotate_memtable() {
+                    Ok(rotated) => {
+                        if rotated {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "monitor: memtable rotation failed for {:?}: {e:?}",
+                            partition.name
+                        );
+                    }
                 };
-            };
+            }
         }
 
         idle

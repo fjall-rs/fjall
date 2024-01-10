@@ -206,7 +206,7 @@ impl Keyspace {
         std::thread::spawn(move || loop {
             if stop_signal.is_stopped() {
                 log::trace!("monitor: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
                 return;
             }
 
@@ -468,6 +468,12 @@ impl Keyspace {
                     partition_name,
                     recovered_memtable.size()
                 );
+
+                keyspace.approximate_write_buffer_size.fetch_add(
+                    recovered_memtable.size().into(),
+                    std::sync::atomic::Ordering::AcqRel,
+                );
+
                 partition.tree.set_active_memtable(recovered_memtable);
             }
 
@@ -707,7 +713,7 @@ impl Keyspace {
 
             if stop_signal.is_stopped() {
                 log::debug!("compaction thread: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
                 return;
             }
 
@@ -733,7 +739,7 @@ impl Keyspace {
 
             if stop_signal.is_stopped() {
                 log::trace!("flush worker: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
                 return;
             }
 

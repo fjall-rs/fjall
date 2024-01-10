@@ -420,8 +420,9 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
+    /// Returns `true` if the memtable was indeed rotated.
     #[doc(hidden)]
-    pub fn rotate_memtable(&self) -> crate::Result<()> {
+    pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::debug!("Rotating memtable {:?}", self.name);
 
         log::trace!("partition: acquiring full write lock");
@@ -430,7 +431,7 @@ impl PartitionHandle {
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
             log::debug!("Got no sealed memtable, someone beat us to it");
-            return Ok(());
+            return Ok(false);
         };
 
         log::trace!("partition: acquiring journal manager lock");
@@ -488,7 +489,7 @@ impl PartitionHandle {
         // Notify flush worker that new work has arrived
         self.flush_semaphore.release();
 
-        Ok(())
+        Ok(true)
     }
 
     fn check_journal_size(&self) {
@@ -634,13 +635,13 @@ impl PartitionHandle {
         drop(shard);
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
-        self.check_memtable_overflow(memtable_size)?;
 
         let write_buffer_size = self
             .write_buffer_size
-            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::AcqRel)
             + u64::from(item_size);
 
+        self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
@@ -693,13 +694,13 @@ impl PartitionHandle {
         drop(shard);
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
-        self.check_memtable_overflow(memtable_size)?;
 
         let write_buffer_size = self
             .write_buffer_size
-            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::AcqRel)
             + u64::from(item_size);
 
+        self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
 
         Ok(())

@@ -117,7 +117,11 @@ impl Batch {
                 value_type: item.value_type,
             };
 
-            lock.insert(value);
+            let (item_size, _) = lock.insert(value);
+
+            self.keyspace
+                .approximate_write_buffer_size
+                .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::AcqRel);
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
             partitions_with_possible_overflow.insert(partition.clone());
@@ -129,6 +133,7 @@ impl Batch {
 
         for partition in partitions_with_possible_overflow {
             let memtable_size = partition.tree.active_memtable_size();
+
             if let Err(e) = partition.check_memtable_overflow(memtable_size) {
                 log::error!("Failed memtable rotate check: {e:?}");
             };
