@@ -45,13 +45,15 @@ pub fn generate_segment_id() -> Arc<str> {
     format!(
         "{:0>4}_{}{}{:0>2}{:0>2}_{:0>2}{:0>8}_{:0>4}",
         to_base36(year),
+        //
         to_base36(u32::from(month)),
         to_base36(u32::from(day)),
         to_base36(u32::from(hour)),
         to_base36(u32::from(min)),
+        //
         to_base36(u32::from(sec)),
-        // Need to pad start
         to_base36(nano),
+        //
         to_base36(u32::from(random)),
     )
     .into()
