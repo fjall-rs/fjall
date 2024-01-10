@@ -64,7 +64,7 @@ impl MemTable {
     /// Get approximate size of memtable in bytes
     pub fn size(&self) -> u32 {
         self.approximate_size
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Count the amount of items in the memtable
@@ -84,7 +84,7 @@ impl MemTable {
 
         let size_before = self
             .approximate_size
-            .fetch_add(item_size, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(item_size, std::sync::atomic::Ordering::AcqRel);
 
         let key = ParsedInternalKey::new(item.key, item.seqno, item.value_type);
         self.items.insert(key, item.value);
