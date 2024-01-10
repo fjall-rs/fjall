@@ -14,11 +14,6 @@ impl<T: Clone + Eq + PartialEq> Default for LruList<T> {
 
 impl<T: Clone + Eq + PartialEq> LruList<T> {
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
     pub fn with_capacity(n: usize) -> Self {
         Self {
             items: VecDeque::with_capacity(n),

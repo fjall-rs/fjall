@@ -121,8 +121,7 @@ pub mod id;
 
 mod levels;
 
-#[doc(hidden)]
-pub mod lru_list;
+mod lru_list;
 
 mod memtable;
 mod merge;

@@ -7,9 +7,9 @@ fn desired_level_size_in_bytes(level_idx: u8, ratio: u8, target_size: u32) -> us
 
 /// Size-tiered compaction strategy (STCS)
 ///
-/// If a level reaches a threshold, it is merged into a larger segment to the next level
+/// If a level reaches a threshold, it is merged into a larger segment to the next level.
 ///
-/// STCS suffers from high read and temporary space amplification, but decent write amplification
+/// STCS suffers from high read and temporary space amplification, but decent write amplification.
 ///
 /// More info here: <https://opensource.docs.scylladb.com/stable/cql/compaction.html#size-tiered-compaction-strategy-stcs>
 pub struct Strategy {
@@ -77,7 +77,8 @@ impl CompactionStrategy for Strategy {
             }
         }
 
-        // NOTE: Reduce L0 segments using FIFO (with max limit; this prevents dropping data)
+        // NOTE: Reduce L0 segments if needed
+        // using FIFO (with max limit; this prevents dropping data)
         // this is probably an edge case if the `base_size` does not line up with
         // the `max_memtable_size` AT ALL
         super::Fifo::new(u64::MAX).choose(levels, config)

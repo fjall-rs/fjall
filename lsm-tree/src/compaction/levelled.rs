@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 /// Levelled compaction strategy (LCS)
 ///
-/// If a level reaches a threshold, parts of it are merged into overlapping segments in the next level
+/// If a level reaches a threshold, parts of it are merged into overlapping segments in the next level.
 ///
-/// Each level Ln for n >= 1 can have up to ratio^n segments
+/// Each level Ln for n >= 1 can have up to ratio^n segments.
 ///
-/// LCS suffers from high write amplification, but decent read & space amplification
+/// LCS suffers from high write amplification, but decent read & space amplification.
 ///
 /// More info here: <https://opensource.docs.scylladb.com/stable/cql/compaction.html#leveled-compaction-strategy-lcs>
 pub struct Strategy {
