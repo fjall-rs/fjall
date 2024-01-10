@@ -15,7 +15,7 @@ pub struct Prefix {
 }
 
 impl Prefix {
-    pub fn new(
+    #[must_use] pub fn new(
         guard: MemTableGuard,
         prefix: UserKey,
         segments: Vec<Arc<Segment>>,

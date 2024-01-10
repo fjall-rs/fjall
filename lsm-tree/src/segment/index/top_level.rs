@@ -75,7 +75,7 @@ pub struct TopLevelIndex {
 
 impl TopLevelIndex {
     /// Creates a new block index
-    pub fn new(data: BTreeMap<UserKey, BlockHandleBlockHandle>) -> Self {
+    #[must_use] pub fn new(data: BTreeMap<UserKey, BlockHandleBlockHandle>) -> Self {
         Self { data }
     }
 
@@ -107,14 +107,14 @@ impl TopLevelIndex {
     }
 
     /// Returns a handle to the first block
-    pub fn get_first_block_handle(&self) -> (&UserKey, &BlockHandleBlockHandle) {
+    #[must_use] pub fn get_first_block_handle(&self) -> (&UserKey, &BlockHandleBlockHandle) {
         // NOTE: Index is never empty
         #[allow(clippy::expect_used)]
         self.data.iter().next().expect("index should not be empty")
     }
 
     /// Returns a handle to the last block
-    pub fn get_last_block_handle(&self) -> (&UserKey, &BlockHandleBlockHandle) {
+    #[must_use] pub fn get_last_block_handle(&self) -> (&UserKey, &BlockHandleBlockHandle) {
         // NOTE: Index is never empty
         #[allow(clippy::expect_used)]
         self.data
@@ -124,7 +124,7 @@ impl TopLevelIndex {
     }
 
     /// Returns a handle to the block before the one containing the input key, if it exists, or None
-    pub fn get_previous_block_handle(
+    #[must_use] pub fn get_previous_block_handle(
         &self,
         key: &[u8],
     ) -> Option<(&UserKey, &BlockHandleBlockHandle)> {
@@ -133,7 +133,7 @@ impl TopLevelIndex {
     }
 
     /// Returns a handle to the block after the one containing the input key, if it exists, or None
-    pub fn get_next_block_handle(&self, key: &[u8]) -> Option<(&UserKey, &BlockHandleBlockHandle)> {
+    #[must_use] pub fn get_next_block_handle(&self, key: &[u8]) -> Option<(&UserKey, &BlockHandleBlockHandle)> {
         let key: Arc<[u8]> = key.into();
         self.data.range((Excluded(key), Unbounded)).next()
     }
