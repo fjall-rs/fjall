@@ -1,0 +1,49 @@
+[package]
+name = "lsm-tree"
+description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
+version = "0.3.0"
+repository = "https://github.com/marvin-j97/fjall"
+include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "lsm_tree"
+path = "src/lib.rs"
+
+[features]
+default = ["bloom"]
+bloom = ["dep:bit-vec", "dep:seahash"]
+segment_history = []
+
+[dependencies]
+bit-vec = { version = "0.6.3", optional = true }
+byteorder = "1.5.0"
+chrono = "0.4.31"
+crc32fast = "1.3.2"
+crossbeam-skiplist = "0.1.3"
+fs_extra = "1.3.0"
+guardian = "1.1.0"
+log = "0.4.20"
+lz4_flex = "0.11.2"
+min-max-heap = "1.3.0"
+quick_cache = { version = "0.4.0", default-features = false, features = [] }
+rand = "0.8.5"
+seahash = { version = "4.1.0", optional = true }
+serde = { version = "1.0.195", features = ["derive", "rc"] }
+serde_json = "1.0.111"
+tempfile = "3.9.0"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+nanoid = "0.4.0"
+test-log = "0.2.14"
+
+[[bench]]
+name = "lsmt"
+harness = false
+path = "benches/lsmt.rs"
