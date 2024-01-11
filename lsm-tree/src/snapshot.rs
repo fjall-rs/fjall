@@ -334,6 +334,7 @@ impl Snapshot {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn len(&self) -> crate::Result<usize> {
+        // TODO: shouldn't use block cache
         Ok(self.iter().into_iter().filter(Result::is_ok).count())
     }
 }
