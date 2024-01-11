@@ -39,6 +39,9 @@ pub struct FileHandle {
 
 // TODO: benchmark with many threads
 
+// TODO: FileDescriptorTable should wrap Arc<Inner>
+// TODO: table should probably use a concurrent hashmap
+
 pub struct FileDescriptorTableInner {
     table: HashMap<Arc<str>, FileHandle>,
     lru: Mutex<LruList<Arc<str>>>,
