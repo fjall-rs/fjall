@@ -24,7 +24,7 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
-pub(crate) type Partitions = HashMap<PartitionKey, PartitionHandle>;
+pub type Partitions = HashMap<PartitionKey, PartitionHandle>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
