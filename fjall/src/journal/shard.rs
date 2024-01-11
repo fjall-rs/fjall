@@ -4,9 +4,32 @@ use crate::journal::reader::JournalShardReader;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
 use std::{collections::HashMap, fs::OpenOptions, path::Path};
 
+/// Recovery mode to use
+///
+/// Based on `RocksDB`'s WAL Recovery Modes: <https://github.com/facebook/rocksdb/wiki/WAL-Recovery-Modes>
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RecoveryMode {
+    /// The last batch in the journal may be corrupt on crash,
+    /// and will be discarded without error.
+    ///
+    /// This mode will error on any other IO or consistency error, so
+    /// any data up to the tail will be consistent.
+    ///
+    /// This is the default mode.
+    #[default]
+    TolerateCorruptTail,
+
+    // TODO: + unit tests
+    // /// Skips corrupt (invalid CRC) batches. This may violate
+    // /// consistency.
+    // SkipCorruptBatches,
+    /// Errors on any kind of invalid batch.
+    AbsoluteConsistency,
+}
+
 // TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error
 /// Errors that can occur during journal recovery
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecoveryError {
     /// Batch had less items than expected, so it's incomplete
     InsufficientLength,
@@ -55,7 +78,10 @@ impl JournalShard {
         path: P,
         memtables: &mut HashMap<PartitionKey, MemTable>,
         whitelist: Option<&[PartitionKey]>,
+        recovery_mode: RecoveryMode,
     ) -> crate::Result<()> {
+        use crate::Error::JournalRecovery;
+
         let path = path.as_ref();
         let recoverer = JournalShardReader::new(path)?;
 
@@ -91,9 +117,7 @@ impl JournalShard {
                 Marker::End(checksum) => {
                     if batch_counter > 0 {
                         log::error!("Invalid batch: insufficient length");
-                        return Err(crate::Error::JournalRecovery(
-                            RecoveryError::InsufficientLength,
-                        ));
+                        return Err(JournalRecovery(RecoveryError::InsufficientLength));
                     }
 
                     if !is_in_batch {
@@ -111,7 +135,7 @@ impl JournalShard {
                     let crc = hasher.finalize();
                     if crc != checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {checksum}, got: {crc}");
-                        return Err(crate::Error::JournalRecovery(RecoveryError::CrcCheck));
+                        return Err(JournalRecovery(RecoveryError::CrcCheck));
                     }
 
                     // Reset all variables
@@ -174,7 +198,7 @@ impl JournalShard {
 
                     if batch_counter == 0 {
                         log::error!("Invalid batch: Expected end marker (too many items in batch)");
-                        return Err(crate::Error::JournalRecovery(RecoveryError::TooManyItems));
+                        return Err(JournalRecovery(RecoveryError::TooManyItems));
                     }
 
                     batch_counter -= 1;
@@ -190,6 +214,10 @@ impl JournalShard {
         }
 
         if is_in_batch {
+            if recovery_mode == RecoveryMode::AbsoluteConsistency {
+                return Err(JournalRecovery(RecoveryError::MissingTerminator));
+            }
+
             log::warn!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 
             // Discard batch

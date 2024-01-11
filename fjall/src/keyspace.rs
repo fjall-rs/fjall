@@ -339,6 +339,7 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
         log::debug!("Recovering keyspace at {}", config.path.display());
+        let recovery_mode = config.journal_recovery_mode;
 
         {
             let bytes = std::fs::read(config.path.join(FJALL_MARKER))?;
@@ -361,7 +362,7 @@ impl Keyspace {
                 let dirent = dirent?;
 
                 if !dirent.path().join(FLUSH_MARKER).try_exists()? {
-                    journal = Some(Journal::recover(dirent.path())?);
+                    journal = Some(Journal::recover(dirent.path(), recovery_mode)?);
                 }
             }
 
@@ -561,8 +562,11 @@ impl Keyspace {
 
                 log::trace!("Recovering memtables for partitions: {partition_names_to_recover:#?}");
 
-                let memtables =
-                    Journal::recover_memtables(&journal_path, Some(&partition_names_to_recover))?;
+                let memtables = Journal::recover_memtables(
+                    &journal_path,
+                    Some(&partition_names_to_recover),
+                    recovery_mode,
+                )?;
 
                 log::trace!("Recovered {} sealed memtables", memtables.len());
 

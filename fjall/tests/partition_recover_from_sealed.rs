@@ -4,7 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
-fn tree_recover_sealed_journal() -> fjall::Result<()> {
+fn recover_sealed_journal() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     // NOTE: clippy bug
@@ -25,8 +25,6 @@ fn tree_recover_sealed_journal() -> fjall::Result<()> {
                 tree.insert(key, value.as_bytes())?;
             }
         }
-
-        keyspace.persist()?;
 
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT);
@@ -61,8 +59,6 @@ fn tree_recover_sealed_journal() -> fjall::Result<()> {
                 ITEM_COUNT * 2
             );
         }
-
-        keyspace.persist()?;
     }
 
     for _ in 0..100 {

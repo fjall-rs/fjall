@@ -6,21 +6,25 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
+const TRAILER_MAGIC: u64 = 0xCC_23_8A_72_D0_7E_9A_17;
+
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
-/// The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
+/// - The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
 ///
-/// The end marker contains a CRC value. If the CRC of the items doesn't match that, the batch is broken.
+/// - The end marker contains a CRC value. If the CRC of the items doesn't match that, the batch is broken.
 ///
-/// If a start marker is detected, while inside a batch, the batch is broken.
+/// - The end marker terminates each batch with the magic u64 value: [`TRAILER_MAGIC`].
+///
+/// - If a start marker is detected, while inside a batch, the batch is broken.
 ///
 /// # Disk representation
 ///
 /// start: \[tag (0x0); 1 byte] \[item count; 4 bytes] \[seqno; 8 bytes]
 ///
-/// item: \[tag (0x1); 1 byte] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
+/// item: \[tag (0x1); 1 byte] \[partition key length; 1 byte] \[partition key; N bytes] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
 ///
-/// end: \[tag (0x2): 1 byte] \[crc value; 4 bytes]
+/// end: \[tag (0x2): 1 byte] \[crc value; 4 bytes] \[magic; 8 bytes]
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
     Start {
@@ -105,7 +109,7 @@ impl Serializable for Marker {
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the CRC value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
-                writer.write_all(b"END")?;
+                writer.write_u64::<BigEndian>(TRAILER_MAGIC)?;
             }
         }
         Ok(())
@@ -150,14 +154,9 @@ impl Deserializable for Marker {
                 let crc = reader.read_u32::<BigEndian>()?;
 
                 // Check trailer
-                {
-                    let e = reader.read_u8()?;
-                    let n = reader.read_u8()?;
-                    let d = reader.read_u8()?;
-
-                    if e != b'E' || n != b'N' || d != b'D' {
-                        return Err(DeserializeError::InvalidTrailer);
-                    }
+                let magic = reader.read_u64::<BigEndian>()?;
+                if magic != TRAILER_MAGIC {
+                    return Err(DeserializeError::InvalidTrailer);
                 }
 
                 Ok(Self::End(crc))

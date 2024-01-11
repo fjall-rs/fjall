@@ -4,7 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
-fn tree_reload_with_partitions() -> fjall::Result<()> {
+fn reload_with_partitions() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let path;
@@ -30,8 +30,6 @@ fn tree_reload_with_partitions() -> fjall::Result<()> {
             let value = nanoid::nanoid!();
             tree.insert(key, value.as_bytes())?;
         }
-
-        keyspace.persist()?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(

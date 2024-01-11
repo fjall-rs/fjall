@@ -1,4 +1,4 @@
-use crate::Keyspace;
+use crate::{journal::shard::RecoveryMode, Keyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
 use std::{
     path::{Path, PathBuf},
@@ -31,6 +31,8 @@ pub struct Config {
 
     /// Fsync every N ms asynchronously
     pub(crate) fsync_ms: Option<u16>,
+
+    pub(crate) journal_recovery_mode: RecoveryMode,
 }
 
 impl Default for Config {
@@ -43,6 +45,7 @@ impl Default for Config {
             max_journaling_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
             compaction_works_count: 4, // TODO: use num_cpu - 1?
+            journal_recovery_mode: RecoveryMode::default()
         }
     }
 }

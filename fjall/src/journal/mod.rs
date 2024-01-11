@@ -4,7 +4,7 @@ mod reader;
 pub mod shard;
 pub mod writer;
 
-use self::shard::JournalShard;
+use self::shard::{JournalShard, RecoveryMode};
 use crate::{batch::PartitionKey, sharded::Sharded};
 use lsm_tree::MemTable;
 use std::{
@@ -29,6 +29,7 @@ impl Journal {
     pub fn recover_memtables<P: AsRef<Path>>(
         path: P,
         whitelist: Option<&[PartitionKey]>,
+        recovery_mode: RecoveryMode,
     ) -> crate::Result<HashMap<PartitionKey, MemTable>> {
         let path = path.as_ref();
         let mut memtables = HashMap::new();
@@ -37,7 +38,12 @@ impl Journal {
             let shard_path = get_shard_path(path, idx);
 
             if shard_path.exists() {
-                JournalShard::recover_and_repair(shard_path, &mut memtables, whitelist)?;
+                JournalShard::recover_and_repair(
+                    shard_path,
+                    &mut memtables,
+                    whitelist,
+                    recovery_mode,
+                )?;
                 log::trace!("Recovered journal shard");
             } else {
                 log::trace!("Journal shard file does not exist (yet)");
@@ -49,11 +55,12 @@ impl Journal {
 
     pub fn recover<P: AsRef<Path>>(
         path: P,
+        recovery_mode: RecoveryMode,
     ) -> crate::Result<(Self, HashMap<PartitionKey, MemTable>)> {
         let path = path.as_ref();
         log::info!("Recovering journal from {}", path.display());
 
-        let memtables = Self::recover_memtables(path, None)?;
+        let memtables = Self::recover_memtables(path, None, recovery_mode)?;
 
         let shards = (0..SHARD_COUNT)
             .map(|idx| {
@@ -165,7 +172,7 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
             assert_eq!(memtable.len(), values.len());
         }
@@ -178,7 +185,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -193,7 +200,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -219,7 +226,7 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             assert_eq!(memtable.len(), values.len());
@@ -237,7 +244,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -256,7 +263,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -282,7 +289,7 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             assert_eq!(memtable.len(), values.len());
@@ -296,7 +303,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -311,7 +318,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -337,7 +344,7 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             assert_eq!(memtable.len(), values.len());
@@ -358,7 +365,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items
@@ -380,7 +387,7 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir)?;
+            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
             let memtable = memtables.get("default").expect("should exist");
 
             // Should recover all items

@@ -4,7 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 10_000;
 
 #[test]
-fn tree_reload_with_memtable() -> fjall::Result<()> {
+fn reload_with_memtable() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     // NOTE: clippy bug
@@ -24,8 +24,6 @@ fn tree_reload_with_memtable() -> fjall::Result<()> {
             let value = nanoid::nanoid!();
             tree.insert(key, value.as_bytes())?;
         }
-
-        keyspace.persist()?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(

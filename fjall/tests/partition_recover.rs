@@ -4,7 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
-fn tree_reload_with_partitions() -> fjall::Result<()> {
+fn reload_with_partitions() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     // NOTE: clippy bug
@@ -31,8 +31,6 @@ fn tree_reload_with_partitions() -> fjall::Result<()> {
                 tree.insert(key, value.as_bytes())?;
             }
         }
-
-        keyspace.persist()?;
 
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
