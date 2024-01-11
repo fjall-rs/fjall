@@ -121,7 +121,7 @@ impl Keyspace {
     #[must_use]
     pub fn journal_count(&self) -> usize {
         let journal_manager = self.journal_manager.read().expect("lock is poisoned");
-        // TODO: + 1 = active journal
+        // NOTE: + 1 = active journal
         journal_manager.sealed_journal_count() + 1
     }
 
