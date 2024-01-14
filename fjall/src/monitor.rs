@@ -88,7 +88,10 @@ impl Monitor {
             }
         }
 
-        // NOTE: As a fail safe, use saturating_sub so it doesn't overflow
+        // NOTE: Take the queued size of unflushed memtables into account, so
+        // the system isn't performing a flush storm once the threshold is reached
+        //
+        // Also, As a fail safe, use saturating_sub so it doesn't overflow
         let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
 
         if buffer_size_without_queued_size as f64
