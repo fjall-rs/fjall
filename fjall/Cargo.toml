@@ -1,7 +1,7 @@
 [package]
 name = "fjall"
 description = "LSM-based key-value storage engine"
-version = "0.3.0"
+version = "0.3.1"
 repository = "https://github.com/marvin-j97/fjall"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 edition.workspace = true
@@ -25,7 +25,7 @@ bloom = ["lsm-tree/bloom"]
 byteorder = "1.5.0"
 crc32fast = "1.3.2"
 env_logger = "0.10.1"
-lsm-tree = { version = "0.3.0", default-features = false }
+lsm-tree = { version = "0.3.1", default-features = false }
 log = "0.4.20"
 std-semaphore = "0.1.0"
 tempfile = "3.9.0"
