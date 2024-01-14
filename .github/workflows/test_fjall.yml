@@ -42,8 +42,8 @@ jobs:
           workspaces: >
             fjall -> target
             fjall/examples/actix-kv -> target
-            fjall/examples/actix-triplestore -> target
             fjall/examples/structured -> target
+            fjall/examples/triplestore -> target
       - name: Build
         run: cargo build -v
         working-directory: fjall

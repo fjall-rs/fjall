@@ -37,8 +37,7 @@ engine, larger keys and values have a bigger performance impact.
 
 ## Stable disk format
 
-The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that
-will result in a major bump.
+The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that will result in a major bump.
 
 ## License
 
