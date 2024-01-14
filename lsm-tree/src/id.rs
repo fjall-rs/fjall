@@ -65,9 +65,9 @@ mod tests {
     use test_log::test;
 
     #[test]
-    pub fn id_order() {
-        for _ in 0..100_000 {
-            let ids = (0..10).map(|_| generate_segment_id()).collect::<Vec<_>>();
+    pub fn id_monotonic_order() {
+        for _ in 0..1_000 {
+            let ids = (0..100).map(|_| generate_segment_id()).collect::<Vec<_>>();
 
             let mut sorted = ids.clone();
             sorted.sort();

@@ -103,6 +103,14 @@ impl BlockCache {
         }
     }
 
+    /// Returns the cache capacity in blocks
+    ///
+    /// Multiply n by the block size to get the approximate byte count
+    #[must_use]
+    pub fn capacity(&self) -> u64 {
+        self.capacity
+    }
+
     /// Returns the number of cached blocks
     ///
     /// Multiply n by the block size to get the approximate byte count
