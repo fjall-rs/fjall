@@ -18,13 +18,13 @@ pub struct Config {
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Max size of all journals in bytes
-    pub(crate) max_journaling_size_in_bytes: u64,
+    pub(crate) max_journaling_size_in_bytes: u64, // TODO: should be configurable during runtime
 
     /// Max size of all active memtables
     ///
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) partitions.
-    pub(crate) max_write_buffer_size_in_bytes: u64,
+    pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime
 
     /// Amount of compaction workers
     pub(crate) compaction_works_count: usize,
@@ -42,7 +42,7 @@ impl Default for Config {
             block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(960, 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
-            max_journaling_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
+            max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
             compaction_works_count: 4, // TODO: use num_cpu - 1?
             journal_recovery_mode: RecoveryMode::default()
@@ -101,12 +101,14 @@ impl Config {
 
     /// Max size of all journals in bytes.
     ///
-    /// Default = 128 MiB
+    /// Default = 512 MiB
     ///
     /// # Panics
     ///
     /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
     /// anything less will immediately stall the system. Otherwise it will panic.
+    ///
+    /// Same as `max_total_wal_size` in `RocksDB`.
     #[must_use]
     pub fn max_journaling_size(mut self, bytes: u64) -> Self {
         assert!(bytes >= 24 * 1_024 * 1_024);
@@ -115,7 +117,9 @@ impl Config {
         self
     }
 
-    /// Max size of all active memtables in bytes.
+    /// Max size of all memtables in bytes.
+    ///
+    /// Similar to `db_write_buffer_size` in `RocksDB`.
     ///
     /// Default = 64 MiB
     #[must_use]
