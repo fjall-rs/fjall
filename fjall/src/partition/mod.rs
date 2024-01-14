@@ -519,7 +519,7 @@ impl PartitionHandle {
     }
 
     fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() > 20 {
+        while self.tree.first_level_segment_count() > 24 {
             log::warn!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
@@ -529,11 +529,11 @@ impl PartitionHandle {
     fn check_write_stall(&self) {
         let seg_count = self.tree.first_level_segment_count();
 
-        if seg_count > 16 {
+        if seg_count > 20 {
             log::info!("Stalling writes...");
             self.compaction_manager.notify(self.clone());
 
-            let ms = if seg_count > 18 { 500 } else { 100 };
+            let ms = if seg_count > 22 { 500 } else { 100 };
             std::thread::sleep(Duration::from_millis(ms));
         }
     }
