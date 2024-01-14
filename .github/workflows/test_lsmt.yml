@@ -14,7 +14,7 @@ env:
 
 jobs:
   test:
-    cancel-timeout-minutes: 20
+    timeout-minutes: 20
     strategy:
       matrix:
         rust_version:
