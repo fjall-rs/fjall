@@ -114,7 +114,7 @@ impl Keyspace {
         Batch::new(self.clone())
     }
 
-    /// Returns the write buffer size (active + sealed memtables)
+    /// Returns the current write buffer size (active + sealed memtables)
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {
         self.write_buffer_manager.get()
