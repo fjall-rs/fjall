@@ -1,8 +1,9 @@
 use super::manager::FlushManager;
 use crate::{
-    compaction::manager::CompactionManager, file::SEGMENTS_FOLDER, journal::manager::JournalManager,
+    compaction::manager::CompactionManager, file::SEGMENTS_FOLDER,
+    journal::manager::JournalManager, write_buffer_manager::WriteBufferManager,
 };
-use std::sync::{atomic::AtomicU64, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 
 /// Runs flush worker.
 ///
@@ -12,7 +13,7 @@ pub fn run(
     flush_manager: &Arc<RwLock<FlushManager>>,
     journal_manager: &Arc<RwLock<JournalManager>>,
     compaction_manager: &CompactionManager,
-    write_buffer_size: &Arc<AtomicU64>,
+    write_buffer_manager: &WriteBufferManager,
 ) {
     log::debug!("flush worker: write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
@@ -107,8 +108,7 @@ pub fn run(
                             partition.tree.free_sealed_memtable(&segment.metadata.id);
                         }
 
-                        write_buffer_size
-                            .fetch_sub(memtables_size, std::sync::atomic::Ordering::AcqRel);
+                        write_buffer_manager.free(memtables_size);
 
                         // NOTE: We can safely partially remove tasks
                         // as there is only one flush thread

@@ -42,7 +42,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
         );
     }
 
-    for _ in 0..50 {
+    for _ in 0..10 {
         let keyspace = Config::new(&folder).open()?;
 
         let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;

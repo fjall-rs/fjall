@@ -1,15 +1,16 @@
 use crate::{
     config::Config as KeyspaceConfig, flush::manager::FlushManager,
-    journal::manager::JournalManager, keyspace::Partitions, Keyspace,
+    journal::manager::JournalManager, keyspace::Partitions,
+    write_buffer_manager::WriteBufferManager, Keyspace,
 };
-use std::sync::{atomic::AtomicU64, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     pub(crate) keyspace_config: KeyspaceConfig,
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) write_buffer_size: Arc<AtomicU64>,
+    pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) partitions: Arc<RwLock<Partitions>>,
 }
 
@@ -19,7 +20,7 @@ impl Monitor {
             flush_manager: keyspace.flush_manager.clone(),
             journal_manager: keyspace.journal_manager.clone(),
             keyspace_config: keyspace.config.clone(),
-            write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
+            write_buffer_manager: keyspace.write_buffer_manager.clone(),
             partitions: keyspace.partitions.clone(),
         }
     }
@@ -64,9 +65,7 @@ impl Monitor {
             drop(journal_manager);
         }
 
-        let write_buffer_size = self
-            .write_buffer_size
-            .load(std::sync::atomic::Ordering::Relaxed);
+        let write_buffer_size = self.write_buffer_manager.get();
 
         let queued_size = self
             .flush_manager

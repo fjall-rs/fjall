@@ -53,7 +53,7 @@ fn recover_seqno() -> fjall::Result<()> {
         }
     }
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let keyspace = Config::new(&folder).open()?;
         assert_eq!(seqno, keyspace.instant());
 

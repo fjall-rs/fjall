@@ -3,24 +3,23 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        FJALL_MARKER, FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, PARTITIONS_FOLDER,
-        PARTITION_DELETED_MARKER,
+        FJALL_MARKER, FLUSH_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, Journal},
+    journal::{manager::JournalManager, shard::RecoveryMode, Journal},
     monitor::Monitor,
-    partition::{name::is_valid_partition_name, PartitionHandleInner},
+    partition::name::is_valid_partition_name,
+    recovery::{recover_partitions, recover_sealed_memtables},
     version::Version,
+    write_buffer_manager::WriteBufferManager,
     PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{id::generate_segment_id, SequenceNumberCounter};
+use lsm_tree::{id::generate_segment_id, MemTable, SequenceNumberCounter};
 use std::{
     collections::HashMap,
     fs::File,
-    sync::{
-        atomic::{AtomicU64, AtomicUsize},
-        Arc, RwLock,
-    },
+    path::Path,
+    sync::{atomic::AtomicUsize, Arc, RwLock},
 };
 use std_semaphore::Semaphore;
 
@@ -38,7 +37,7 @@ pub struct KeyspaceInner {
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
     pub(crate) active_background_threads: Arc<AtomicUsize>,
-    pub(crate) approximate_write_buffer_size: Arc<AtomicU64>,
+    pub(crate) write_buffer_manager: WriteBufferManager,
 }
 
 impl Drop for KeyspaceInner {
@@ -115,9 +114,7 @@ impl Keyspace {
         Batch::new(self.clone())
     }
 
-    /**
-     * Amount of journals on disk
-     */
+    /// Gets the amount of journals on disk
     #[must_use]
     pub fn journal_count(&self) -> usize {
         let journal_manager = self.journal_manager.read().expect("lock is poisoned");
@@ -334,6 +331,37 @@ impl Keyspace {
         self.seqno.get()
     }
 
+    fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
+        let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
+
+        if let Some(version) = Version::parse_file_header(&bytes) {
+            if version != Version::V0 {
+                return Err(crate::Error::InvalidVersion(Some(version)));
+            }
+        } else {
+            return Err(crate::Error::InvalidVersion(None));
+        }
+
+        Ok(())
+    }
+
+    fn find_active_journal<P: AsRef<Path>>(
+        path: P,
+        recovery_mode: RecoveryMode,
+    ) -> crate::Result<Option<(Journal, HashMap<PartitionKey, MemTable>)>> {
+        let mut journal = None;
+
+        for dirent in std::fs::read_dir(path)? {
+            let dirent = dirent?;
+
+            if !dirent.path().join(FLUSH_MARKER).try_exists()? {
+                journal = Some(Journal::recover(dirent.path(), recovery_mode)?);
+            }
+        }
+
+        Ok(journal)
+    }
+
     /// Recovers existing keyspace from directory
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
@@ -341,33 +369,12 @@ impl Keyspace {
         log::debug!("Recovering keyspace at {}", config.path.display());
         let recovery_mode = config.journal_recovery_mode;
 
-        {
-            let bytes = std::fs::read(config.path.join(FJALL_MARKER))?;
+        // Check version
+        Self::check_version(&config.path)?;
 
-            if let Some(version) = Version::parse_file_header(&bytes) {
-                if version != Version::V0 {
-                    return Err(crate::Error::InvalidVersion(Some(version)));
-                }
-            } else {
-                return Err(crate::Error::InvalidVersion(None));
-            }
-        }
-
+        // Get active journal if it exists
         let journals_folder = config.path.join(JOURNALS_FOLDER);
-
-        let active_journal = {
-            let mut journal = None;
-
-            for dirent in std::fs::read_dir(&journals_folder)? {
-                let dirent = dirent?;
-
-                if !dirent.path().join(FLUSH_MARKER).try_exists()? {
-                    journal = Some(Journal::recover(dirent.path(), recovery_mode)?);
-                }
-            }
-
-            journal
-        };
+        let active_journal = Self::find_active_journal(&journals_folder, recovery_mode)?;
 
         let (journal, mut memtables) = if let Some((journal, memtables)) = active_journal {
             log::debug!("Recovered active journal at {}", journal.path.display());
@@ -377,13 +384,13 @@ impl Keyspace {
             let memtables = HashMap::default();
             (journal, memtables)
         };
+
         let journal = Arc::new(journal);
         let journal_path = journal.path.clone();
 
-        let partitions_folder = config.path.join(PARTITIONS_FOLDER);
-
         let journal_manager = JournalManager::new(journal_path);
 
+        // Construct (empty) keyspace, then fill back with partition data
         let inner = KeyspaceInner {
             config,
             journal,
@@ -395,228 +402,16 @@ impl Keyspace {
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
-            approximate_write_buffer_size: Arc::default(),
+            write_buffer_manager: WriteBufferManager::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
 
-        for dirent in std::fs::read_dir(partitions_folder)? {
-            let dirent = dirent?;
-            let partition_name = dirent.file_name();
-            let partition_path = dirent.path();
+        // Recover partitions
+        recover_partitions(&keyspace, &mut memtables)?;
 
-            log::trace!("Recovering partition {:?}", partition_name);
-
-            if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
-                log::debug!("Deleting deleted partition {:?}", partition_name);
-                std::fs::remove_dir_all(partition_path)?;
-                continue;
-            }
-
-            if !partition_path.join(".lsm").try_exists()? {
-                log::debug!("Deleting uninitialized partition {:?}", partition_name);
-                std::fs::remove_dir_all(partition_path)?;
-                continue;
-            }
-
-            let partition_name = partition_name
-                .to_str()
-                .expect("should be valid partition name");
-
-            let path = keyspace
-                .config
-                .path
-                .join(PARTITIONS_FOLDER)
-                .join(partition_name);
-
-            let tree = lsm_tree::Config::new(path)
-                .descriptor_table(keyspace.config.descriptor_table.clone())
-                .block_cache(keyspace.config.block_cache.clone())
-                .open()?;
-
-            let partition_inner = PartitionHandleInner {
-                max_memtable_size: (8 * 1_024 * 1_024).into(),
-                compaction_strategy: RwLock::new(Arc::new(
-                    lsm_tree::compaction::Levelled::default(),
-                )),
-                name: partition_name.into(),
-                tree,
-                partitions: keyspace.partitions.clone(),
-                keyspace_config: keyspace.config.clone(),
-                flush_manager: keyspace.flush_manager.clone(),
-                flush_semaphore: keyspace.flush_semaphore.clone(),
-                journal_manager: keyspace.journal_manager.clone(),
-                journal: keyspace.journal.clone(),
-                compaction_manager: keyspace.compaction_manager.clone(),
-                seqno: keyspace.seqno.clone(),
-                write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
-            };
-            let partition_inner = Arc::new(partition_inner);
-
-            let partition = PartitionHandle(partition_inner);
-
-            if let Some(recovered_memtable) = memtables.remove(partition_name) {
-                log::trace!(
-                    "Recovered previously active memtable for {:?}, with size: {} B",
-                    partition_name,
-                    recovered_memtable.size()
-                );
-
-                keyspace.approximate_write_buffer_size.fetch_add(
-                    recovered_memtable.size().into(),
-                    std::sync::atomic::Ordering::AcqRel,
-                );
-
-                partition.tree.set_active_memtable(recovered_memtable);
-            }
-
-            let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
-            keyspace
-                .seqno
-                .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
-            log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
-
-            keyspace
-                .partitions
-                .write()
-                .expect("lock is poisoned")
-                .insert(partition_name.into(), partition.clone());
-
-            log::trace!("Recovered partition {:?}", partition_name);
-        }
-
-        let mut dirents =
-            std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
-        dirents.sort_by_key(std::fs::DirEntry::file_name);
-
-        log::debug!("Recovering journals: {dirents:#?}");
-
-        for dirent in dirents {
-            let journal_path = dirent.path();
-
-            if dirent.path().join(FLUSH_MARKER).try_exists()? {
-                log::trace!("Requeueing sealed journal at {:?}", journal_path);
-
-                let partitions_to_consider =
-                    std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
-
-                let partitions_to_consider = partitions_to_consider
-                    .split('\n')
-                    .filter(|x| !x.is_empty())
-                    .map(|x| {
-                        let mut splits = x.split(':');
-                        let name = splits.next().expect("partition name should exist");
-                        let lsn = splits.next().expect("lsn should exist");
-                        let lsn = lsn
-                            .parse::<lsm_tree::SeqNo>()
-                            .expect("should be valid seqno");
-
-                        (name, lsn)
-                    })
-                    .collect::<Vec<_>>();
-
-                log::trace!(
-                    "Journal contains data of {} partitions",
-                    partitions_to_consider.len()
-                );
-
-                let mut partition_seqno_map = HashMap::default();
-                let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
-
-                for (partition_name, lsn) in partitions_to_consider {
-                    let Some(partition) = partitions_lock.get(partition_name) else {
-                        // Partition was probably deleted
-                        log::trace!("Partition {partition_name:?} does not exist");
-                        continue;
-                    };
-
-                    let partition_lsn = partition.tree.get_segment_lsn();
-                    let has_lower_lsn =
-                        partition_lsn.map_or(true, |partition_lsn| lsn > partition_lsn);
-
-                    if has_lower_lsn {
-                        partition_seqno_map.insert(
-                            partition_name.into(),
-                            crate::journal::manager::PartitionSeqNo {
-                                lsn,
-                                partition: partition.clone(),
-                            },
-                        );
-                    } else {
-                        log::trace!("Partition {partition_name:?} has higher seqno, skipping");
-                    }
-                }
-
-                let mut journal_manager_lock =
-                    keyspace.journal_manager.write().expect("lock is poisoned");
-
-                let mut flush_manager_lock =
-                    keyspace.flush_manager.write().expect("lock is poisoned");
-
-                let journal_size = fs_extra::dir::get_size(&journal_path).map_err(|e| {
-                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind))
-                })?;
-
-                let partition_names_to_recover =
-                    partition_seqno_map.keys().cloned().collect::<Vec<_>>();
-
-                log::trace!("Recovering memtables for partitions: {partition_names_to_recover:#?}");
-
-                let memtables = Journal::recover_memtables(
-                    &journal_path,
-                    Some(&partition_names_to_recover),
-                    recovery_mode,
-                )?;
-
-                log::trace!("Recovered {} sealed memtables", memtables.len());
-
-                journal_manager_lock.enqueue(crate::journal::manager::Item {
-                    partition_seqnos: partition_seqno_map,
-                    path: journal_path.clone(),
-                    size_in_bytes: journal_size,
-                });
-
-                for (partition_name, sealed_memtable) in memtables {
-                    let Some(partition) = partitions_lock.get(&partition_name) else {
-                        // Should not happen
-                        continue;
-                    };
-
-                    let memtable_id = generate_segment_id();
-                    let sealed_memtable = Arc::new(sealed_memtable);
-
-                    partition
-                        .tree
-                        .add_sealed_memtable(memtable_id.clone(), sealed_memtable.clone());
-
-                    let maybe_next_seqno =
-                        partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
-
-                    keyspace
-                        .seqno
-                        .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
-
-                    log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
-
-                    // TODO: unit test write buffer size after recovery
-                    keyspace.approximate_write_buffer_size.fetch_add(
-                        sealed_memtable.size().into(),
-                        std::sync::atomic::Ordering::AcqRel,
-                    );
-
-                    flush_manager_lock.enqueue_task(
-                        partition_name,
-                        crate::flush::manager::Task {
-                            id: memtable_id,
-                            sealed_memtable,
-                            partition: partition.clone(),
-                        },
-                    );
-                }
-
-                log::trace!("Requeued sealed journal at {:?}", journal_path);
-            }
-        }
+        // Recover sealed memtables by walking through old journals
+        recover_sealed_memtables(&keyspace)?;
 
         Ok(keyspace)
     }
@@ -649,7 +444,7 @@ impl Keyspace {
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
-            approximate_write_buffer_size: Arc::default(),
+            write_buffer_manager: WriteBufferManager::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -721,7 +516,7 @@ impl Keyspace {
         let journal_manager = self.journal_manager.clone();
         let compaction_manager = self.compaction_manager.clone();
         let flush_semaphore = self.flush_semaphore.clone();
-        let write_buffer_size = self.approximate_write_buffer_size.clone();
+        let write_buffer_manager = self.write_buffer_manager.clone();
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
@@ -742,7 +537,7 @@ impl Keyspace {
                 &flush_manager,
                 &journal_manager,
                 &compaction_manager,
-                &write_buffer_size,
+                &write_buffer_manager,
             );
         });
     }

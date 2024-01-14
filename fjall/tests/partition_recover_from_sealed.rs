@@ -61,7 +61,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         }
     }
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[

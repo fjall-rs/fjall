@@ -88,8 +88,10 @@ mod journal;
 mod keyspace;
 mod monitor;
 mod partition;
+mod recovery;
 mod sharded;
 mod version;
+mod write_buffer_manager;
 
 pub use lsm_tree::{BlockCache, Snapshot};
 

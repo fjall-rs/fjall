@@ -12,6 +12,7 @@ use crate::{
         Journal,
     },
     keyspace::Partitions,
+    write_buffer_manager::WriteBufferManager,
     Keyspace,
 };
 use config::CreateOptions;
@@ -23,10 +24,7 @@ use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicU32, AtomicU64},
-        Arc, RwLock,
-    },
+    sync::{atomic::AtomicU32, Arc, RwLock},
     time::Duration,
 };
 use std_semaphore::Semaphore;
@@ -44,7 +42,7 @@ pub struct PartitionHandleInner {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) seqno: SequenceNumberCounter,
-    pub(crate) write_buffer_size: Arc<AtomicU64>,
+    pub(crate) write_buffer_manager: WriteBufferManager,
 
     /// TEMP pub
     pub(crate) tree: LsmTree,
@@ -135,7 +133,7 @@ impl PartitionHandle {
             tree,
             compaction_strategy: RwLock::new(Arc::new(super::compaction::Levelled::default())),
             max_memtable_size: (8 * 1_024 * 1_024).into(),
-            write_buffer_size: keyspace.approximate_write_buffer_size.clone(),
+            write_buffer_manager: keyspace.write_buffer_manager.clone(),
         })))
     }
 
@@ -552,12 +550,10 @@ impl PartitionHandle {
         Ok(())
     }
 
-    fn check_write_buffer_size(&self, initial_size: u64) {
+    pub(crate) fn check_write_buffer_size(&self, initial_size: u64) {
         if initial_size > self.keyspace_config.max_write_buffer_size_in_bytes {
             loop {
-                let bytes = self
-                    .write_buffer_size
-                    .load(std::sync::atomic::Ordering::Relaxed);
+                let bytes = self.write_buffer_manager.get();
 
                 if bytes <= self.keyspace_config.max_write_buffer_size_in_bytes {
                     if bytes as f64
@@ -638,10 +634,7 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
-        let write_buffer_size = self
-            .write_buffer_size
-            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::AcqRel)
-            + u64::from(item_size);
+        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
@@ -697,10 +690,7 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        let write_buffer_size = self
-            .write_buffer_size
-            .fetch_add(u64::from(item_size), std::sync::atomic::Ordering::AcqRel)
-            + u64::from(item_size);
+        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
