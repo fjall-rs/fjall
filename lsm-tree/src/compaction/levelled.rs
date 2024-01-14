@@ -239,7 +239,10 @@ mod tests {
     #[test]
     fn empty_levels() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
+            ..Default::default()
+        };
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -254,7 +257,10 @@ mod tests {
     #[test]
     fn default_l0() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
+            ..Default::default()
+        };
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -315,7 +321,10 @@ mod tests {
     #[test]
     fn more_than_min_no_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
+            ..Default::default()
+        };
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment(
@@ -387,7 +396,10 @@ mod tests {
     #[test]
     fn more_than_min_with_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::default();
+        let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
+            ..Default::default()
+        };
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
         levels.add(fixture_segment(
@@ -473,6 +485,7 @@ mod tests {
     fn deeper_level_with_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
             ..Default::default()
         };
         let config = Config::default().level_ratio(2);
@@ -533,6 +546,7 @@ mod tests {
     fn last_level_with_overlap() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let compactor = Strategy {
+            target_size: 128 * 1_024 * 1_024,
             ..Default::default()
         };
         let config = Config::default().level_ratio(2);
