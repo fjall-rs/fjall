@@ -598,6 +598,12 @@ impl Keyspace {
 
                     log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
 
+                    // TODO: unit test write buffer size after recovery
+                    keyspace.approximate_write_buffer_size.fetch_add(
+                        sealed_memtable.size().into(),
+                        std::sync::atomic::Ordering::AcqRel,
+                    );
+
                     flush_manager_lock.enqueue_task(
                         partition_name,
                         crate::flush::manager::Task {
