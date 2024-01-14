@@ -41,7 +41,7 @@ impl Monitor {
             let partitions = journal_manager.get_partitions_to_flush_for_oldest_journal_eviction();
             drop(journal_manager);
 
-            let partitions_names_with_queued_tasks = self
+            let partition_names_with_queued_tasks = self
                 .flush_manager
                 .read()
                 .expect("lock is poisoned")
@@ -49,7 +49,7 @@ impl Monitor {
 
             let partitions = partitions
                 .into_iter()
-                .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+                .filter(|x| !partition_names_with_queued_tasks.contains(&x.name));
 
             for partition in partitions {
                 log::debug!("monitor: JM rotating {:?}", partition.name);
