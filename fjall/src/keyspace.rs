@@ -114,7 +114,13 @@ impl Keyspace {
         Batch::new(self.clone())
     }
 
-    /// Gets the amount of journals on disk
+    /// Returns the write buffer size (active + sealed memtables)
+    #[must_use]
+    pub fn write_buffer_size(&self) -> u64 {
+        self.write_buffer_manager.get()
+    }
+
+    /// Returns the amount of journals on disk
     #[must_use]
     pub fn journal_count(&self) -> usize {
         let journal_manager = self.journal_manager.read().expect("lock is poisoned");
