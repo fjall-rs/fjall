@@ -74,7 +74,13 @@ impl Monitor {
             .expect("lock is poisoned")
             .queued_size();
 
-        let buffer_size_without_queued_size = write_buffer_size - queued_size;
+        // TODO: This should never ever overflow
+        // TODO: because that is definitely a logic error
+        // TODO: need to make sure it's impossible this can happen
+        debug_assert!(queued_size < write_buffer_size);
+
+        // NOTE: As a fail safe, use saturating_sub so it doesn't overflow
+        let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
 
         if buffer_size_without_queued_size as f64
             > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
