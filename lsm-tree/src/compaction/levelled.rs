@@ -22,9 +22,9 @@ pub struct Strategy {
 
     /// Target segment size (compressed)
     ///
-    /// Default = 128 MiB
+    /// Default = 64 MiB
     ///
-    /// Same as `sstable_size_in_mb` in Cassandra
+    /// Same as `target_file_size_base` in RocksDB
     pub target_size: u32,
 }
 
@@ -32,7 +32,7 @@ impl Default for Strategy {
     fn default() -> Self {
         Self {
             l0_threshold: 4,
-            target_size: 128 * 1_024 * 1_024,
+            target_size: 64 * 1_024 * 1_024,
         }
     }
 }
