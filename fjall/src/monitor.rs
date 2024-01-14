@@ -76,7 +76,17 @@ impl Monitor {
         // TODO: This should never ever overflow
         // TODO: because that is definitely a logic error
         // TODO: need to make sure it's impossible this can happen
-        debug_assert!(queued_size < write_buffer_size);
+        #[cfg(debug_assertions)]
+        {
+            // NOTE: Cannot use panic because we are in a thread that should not
+            // crash
+            if queued_size > write_buffer_size {
+                log::error!(
+                    "Queued size should not be able to be greater than entire write buffer size"
+                );
+                return idle;
+            }
+        }
 
         // NOTE: As a fail safe, use saturating_sub so it doesn't overflow
         let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
