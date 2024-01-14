@@ -41,6 +41,8 @@ impl Monitor {
             let partitions = journal_manager.get_partitions_to_flush_for_oldest_journal_eviction();
             drop(journal_manager);
 
+            // NOTE: Don't try to flush partitions that are already enqueued in the flush manager
+            // to prevent a flush storm once the threshold is reached
             let partition_names_with_queued_tasks = self
                 .flush_manager
                 .read()
