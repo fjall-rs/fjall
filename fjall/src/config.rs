@@ -27,7 +27,7 @@ pub struct Config {
     pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime
 
     /// Amount of compaction workers
-    pub(crate) compaction_works_count: usize,
+    pub(crate) compaction_workers_count: usize,
 
     /// Fsync every N ms asynchronously
     pub(crate) fsync_ms: Option<u16>,
@@ -44,7 +44,7 @@ impl Default for Config {
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
-            compaction_works_count: 4, // TODO: use num_cpu - 1?
+            compaction_workers_count: 4, // TODO: use num_cpu - 1?
             journal_recovery_mode: RecoveryMode::default()
         }
     }
@@ -69,7 +69,7 @@ impl Config {
     #[must_use]
     pub fn compaction_workers(mut self, n: usize) -> Self {
         assert!(n > 0);
-        self.compaction_works_count = n;
+        self.compaction_workers_count = n;
         self
     }
 

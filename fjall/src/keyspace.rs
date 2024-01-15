@@ -166,7 +166,7 @@ impl Keyspace {
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!("Opening keyspace at {}", config.path.display());
 
-        let compaction_works_count = config.compaction_works_count;
+        let compaction_workers_count = config.compaction_workers_count;
 
         let keyspace = if config.path.join(FJALL_MARKER).try_exists()? {
             Self::recover(config)
@@ -174,7 +174,7 @@ impl Keyspace {
             Self::create_new(config)
         }?;
 
-        keyspace.start_background_threads(compaction_works_count);
+        keyspace.start_background_threads(compaction_workers_count);
 
         Ok(keyspace)
     }

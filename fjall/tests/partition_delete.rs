@@ -14,7 +14,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
         path = tree.path();
 
         assert!(path.try_exists()?);
@@ -45,7 +45,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
     for _ in 0..10 {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(
@@ -63,7 +63,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default1", PartitionCreateOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert!(path.try_exists()?);
 
