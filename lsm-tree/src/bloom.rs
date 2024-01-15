@@ -159,6 +159,14 @@ mod tests {
     use test_log::test;
 
     #[test]
+    fn split_hash() {
+        let hash = BloomFilter::get_hash(b"abc");
+        let (a, b) = BloomFilter::split_hash(hash);
+        let rebuilt_hash = u128::from(a) << 64 | u128::from(b);
+        assert_eq!(rebuilt_hash, hash);
+    }
+
+    #[test]
     fn bloom_calculate_m() {
         assert_eq!(9_592, BloomFilter::calculate_m(1_000, 0.01));
         assert_eq!(4_800, BloomFilter::calculate_m(1_000, 0.1));
