@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 /// Levelled compaction strategy (LCS)
 ///
-/// If a level reaches a threshold, parts of it are merged into overlapping segments in the next level.
+/// If a level reaches some threshold, parts of it are merged into overlapping segments in the next level.
 ///
 /// Each level Ln for n >= 1 can have up to ratio^n segments.
 ///
