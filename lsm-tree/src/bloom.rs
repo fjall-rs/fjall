@@ -84,7 +84,20 @@ impl BloomFilter {
         // NOTE: Some sensible minimum
         let fp_rate = fp_rate.max(0.000_001);
 
-        let k = 7;
+        let k = match item_count {
+            _ if fp_rate > 0.4 => 1,
+            _ if fp_rate > 0.2 => 2,
+            _ if fp_rate > 0.1 => 3,
+            _ if fp_rate > 0.05 => 4,
+            _ if fp_rate > 0.03 => 5,
+            _ if fp_rate > 0.02 => 5,
+            _ if fp_rate > 0.01 => 7,
+            _ if fp_rate > 0.001 => 10,
+            _ if fp_rate > 0.0001 => 13,
+            _ if fp_rate > 0.00001 => 17,
+            _ => 20,
+        };
+
         let m = Self::calculate_m(item_count, fp_rate);
 
         Self {
@@ -107,16 +120,17 @@ impl BloomFilter {
     pub fn contains(&self, key: &[u8]) -> bool {
         let hash = Self::get_hash(key);
 
-        let (h1, h2) = Self::split_hash(hash);
+        let (mut h1, mut h2) = Self::split_hash(hash);
 
-        let mut hash = h1;
         for i in 0..(self.k as u64) {
-            hash = hash.wrapping_add(i.wrapping_mul(h2));
-            let idx = hash % (self.m as u64);
+            let idx = h1 % (self.m as u64);
 
             if !self.inner.get(idx as usize).expect("should be in bounds") {
                 return false;
             }
+
+            h1 = h1.wrapping_add(h2);
+            h2 = h2.wrapping_add(i);
         }
 
         true
@@ -124,14 +138,15 @@ impl BloomFilter {
 
     /// Adds the key to the filter
     pub fn set_with_hash(&mut self, hash: u128) {
-        let (h1, h2) = Self::split_hash(hash);
+        let (mut h1, mut h2) = Self::split_hash(hash);
 
-        let mut hash = h1;
         for i in 0..(self.k as u64) {
-            hash = hash.wrapping_add(i.wrapping_mul(h2));
-            let idx = hash % (self.m as u64);
+            let idx = h1 % (self.m as u64);
 
             self.set_pos(idx as usize);
+
+            h1 = h1.wrapping_add(h2);
+            h2 = h2.wrapping_add(i);
         }
     }
 
