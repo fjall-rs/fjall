@@ -94,9 +94,9 @@ impl BloomFilter {
         }
     }
 
-    fn split_hash(hash: u128) -> (usize, usize) {
-        let h1 = ((hash >> 64) & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
-        let h2 = (hash & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
+    pub(crate) fn split_hash(hash: u128) -> (u64, u64) {
+        let h1 = ((hash >> 64) & 0xFF_FF_FF_FF_FF_FF_FF_FF) as u64;
+        let h2 = (hash & 0xFF_FF_FF_FF_FF_FF_FF_FF) as u64;
         (h1, h2)
     }
 
@@ -110,11 +110,11 @@ impl BloomFilter {
         let (h1, h2) = Self::split_hash(hash);
 
         let mut hash = h1;
-        for _ in 0..self.k {
-            hash = hash.wrapping_add(self.k.wrapping_mul(h2));
-            let idx = hash % self.m;
+        for i in 0..(self.k as u64) {
+            hash = hash.wrapping_add(i.wrapping_mul(h2));
+            let idx = hash % (self.m as u64);
 
-            if !self.inner.get(idx).expect("should be in bounds") {
+            if !self.inner.get(idx as usize).expect("should be in bounds") {
                 return false;
             }
         }
@@ -127,11 +127,11 @@ impl BloomFilter {
         let (h1, h2) = Self::split_hash(hash);
 
         let mut hash = h1;
-        for _ in 0..self.k {
-            hash = hash.wrapping_add(self.k.wrapping_mul(h2));
-            let idx = hash % self.m;
+        for i in 0..(self.k as u64) {
+            hash = hash.wrapping_add(i.wrapping_mul(h2));
+            let idx = hash % (self.m as u64);
 
-            self.set_pos(idx);
+            self.set_pos(idx as usize);
         }
     }
 
