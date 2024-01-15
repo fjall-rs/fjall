@@ -40,3 +40,32 @@ impl WriteBufferManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    fn write_buffer_manager_increment() {
+        let m = WriteBufferManager::default();
+        m.allocate(5);
+        assert_eq!(m.get(), 5);
+
+        m.allocate(15);
+        assert_eq!(m.get(), 20);
+    }
+
+    #[test]
+    fn write_buffer_manager_decrement() {
+        let m = WriteBufferManager::default();
+        m.allocate(20);
+        assert_eq!(m.get(), 20);
+
+        m.free(5);
+        assert_eq!(m.get(), 15);
+
+        m.free(20);
+        assert_eq!(m.get(), 0);
+    }
+}
