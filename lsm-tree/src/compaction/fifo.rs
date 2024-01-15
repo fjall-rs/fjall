@@ -2,7 +2,7 @@ use super::{Choice, CompactionStrategy};
 use crate::{config::PersistedConfig, levels::Levels, segment::Segment};
 use std::{ops::Deref, sync::Arc};
 
-const L0_SEGMENT_CAP: usize = 16;
+const L0_SEGMENT_CAP: usize = 20;
 
 /// FIFO-style compaction.
 ///
