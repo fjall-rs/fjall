@@ -5,7 +5,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 1_000;
 
 #[test]
-fn tree_memtable_count() -> lsm_tree::Result<()> {
+fn tree_block_size_after_recovery() -> lsm_tree::Result<()> {
     let folder = tempdir()?.into_path();
 
     {
