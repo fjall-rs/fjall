@@ -99,7 +99,7 @@ The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. An
 
 ## Examples
 
-[See here](https://github.com/marvin-j97/fjall/tree/main/examples) for practical examples.
+[See here](https://github.com/marvin-j97/fjall/tree/main/fjall/examples) for practical examples.
 
 And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired mini wide-column database using `fjall` as its storage engine.
 
