@@ -78,10 +78,9 @@ impl CompactionStrategy for Strategy {
         }
 
         // NOTE: Reduce L0 segments if needed
-        // using FIFO (with max limit; this prevents dropping data)
         // this is probably an edge case if the `base_size` does not line up with
         // the `max_memtable_size` AT ALL
-        super::Fifo::new(u64::MAX).choose(levels, config)
+        super::maintenance::Strategy.choose(levels, config)
     }
 }
 

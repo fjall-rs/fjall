@@ -2,6 +2,7 @@
 
 pub(crate) mod fifo;
 pub(crate) mod levelled;
+pub(crate) mod maintenance;
 pub(crate) mod major;
 pub(crate) mod tiered;
 pub(crate) mod worker;

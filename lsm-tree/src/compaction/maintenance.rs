@@ -1,38 +1,43 @@
 use super::{Choice, CompactionStrategy};
-use crate::{config::PersistedConfig, levels::Levels};
-use std::ops::Deref;
+use crate::{config::PersistedConfig, levels::Levels, segment::Segment};
+use std::{ops::Deref, sync::Arc};
 
-/// FIFO-style compaction.
-///
-/// Limits the tree size to roughly `limit` bytes, deleting the oldest segment(s)
-/// when the threshold is reached.
-///
-/// Will also merge segments if the amount of segments in level 0 grows too much, which
-/// could cause write stalls.
-///
-/// ###### Caution
-///
-/// Only use it for specific workloads where:
-///
-/// 1) You only want to store recent data (unimportant logs, ...)
-/// 2) Your keyspace grows monotonically (time series)
-/// 3) You only insert new data
-///
-/// More info here: <https://github.com/facebook/rocksdb/wiki/FIFO-compaction-style>
-pub struct Strategy {
-    limit: u64,
-}
+const L0_SEGMENT_CAP: usize = 20;
 
-impl Strategy {
-    /// Configures a new `Fifo` compaction strategy
-    #[must_use]
-    pub fn new(limit: u64) -> Self {
-        Self { limit }
-    }
+/// Maintenance compactor
+///
+/// This is a hidden compaction strategy that may be called by other strategies.
+///
+/// It cleans up L0 if it grows too large.
+#[derive(Default)]
+pub struct Strategy;
+
+// TODO: add test case
+
+/// Choose a run of segments that has the least file size sum.
+///
+/// This minimizes the compaction time (+ write amp) for a amount of segments we
+/// want to get rid of.
+pub fn choose_least_effort_compaction(segments: &[Arc<Segment>], n: usize) -> Vec<Arc<str>> {
+    let num_segments = segments.len();
+
+    // Ensure that n is not greater than the number of segments
+    assert!(
+        n <= num_segments,
+        "N must be less than or equal to the number of segments"
+    );
+
+    let windows = segments.windows(n);
+
+    let window = windows
+        .min_by_key(|window| window.iter().map(|s| s.metadata.file_size).sum::<u64>())
+        .expect("should have at least one window");
+
+    window.iter().map(|x| x.metadata.id.clone()).collect()
 }
 
 impl CompactionStrategy for Strategy {
-    fn choose(&self, levels: &Levels, config: &PersistedConfig) -> Choice {
+    fn choose(&self, levels: &Levels, _: &PersistedConfig) -> Choice {
         let resolved_view = levels.resolved_view();
 
         let mut first_level = resolved_view
@@ -41,36 +46,30 @@ impl CompactionStrategy for Strategy {
             .deref()
             .clone();
 
-        let db_size = levels.size();
-
-        if db_size > self.limit {
-            let mut bytes_to_delete = db_size - self.limit;
+        if first_level.len() > L0_SEGMENT_CAP {
+            // NOTE: +1 because two will merge into one
+            // So if we have 18 segments, and merge two, we'll have 17, not 16
+            let segments_to_merge = first_level.len() - L0_SEGMENT_CAP + 1;
 
             // Sort the level by creation date
             first_level.sort_by(|a, b| a.metadata.created_at.cmp(&b.metadata.created_at));
 
-            let mut ids = vec![];
+            let segment_ids = choose_least_effort_compaction(&first_level, segments_to_merge);
 
-            for segment in first_level {
-                if bytes_to_delete == 0 {
-                    break;
-                }
-
-                bytes_to_delete = bytes_to_delete.saturating_sub(segment.metadata.file_size);
-
-                ids.push(segment.metadata.id.clone());
-            }
-
-            Choice::DeleteSegments(ids)
+            Choice::DoCompact(super::Input {
+                dest_level: 0,
+                segment_ids,
+                target_size: u64::MAX,
+            })
         } else {
-            super::maintenance::Strategy.choose(levels, config)
+            Choice::DoNothing
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Strategy;
+    use super::*;
     use crate::{
         block_cache::BlockCache,
         compaction::{Choice, CompactionStrategy},
@@ -117,9 +116,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_levels() -> crate::Result<()> {
+    fn empty_level() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(1);
+        let compactor = Strategy;
 
         let levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
 
@@ -134,29 +133,13 @@ mod tests {
     #[test]
     fn below_limit() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(4);
+        let compactor = Strategy;
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
+        for id in 0..5 {
+            levels.add(fixture_segment(id.to_string().into(), id));
+        }
 
-        levels.add(fixture_segment("1".into(), 1));
-        assert_eq!(
-            compactor.choose(&levels, &PersistedConfig::default()),
-            Choice::DoNothing
-        );
-
-        levels.add(fixture_segment("2".into(), 2));
-        assert_eq!(
-            compactor.choose(&levels, &PersistedConfig::default()),
-            Choice::DoNothing
-        );
-
-        levels.add(fixture_segment("3".into(), 3));
-        assert_eq!(
-            compactor.choose(&levels, &PersistedConfig::default()),
-            Choice::DoNothing
-        );
-
-        levels.add(fixture_segment("4".into(), 4));
         assert_eq!(
             compactor.choose(&levels, &PersistedConfig::default()),
             Choice::DoNothing
@@ -166,19 +149,22 @@ mod tests {
     }
 
     #[test]
-    fn more_than_limit() -> crate::Result<()> {
+    fn l0_too_large() -> crate::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let compactor = Strategy::new(2);
+        let compactor = Strategy;
 
         let mut levels = Levels::create_new(4, tempdir.path().join(LEVELS_MANIFEST_FILE))?;
-        levels.add(fixture_segment("1".into(), 1));
-        levels.add(fixture_segment("2".into(), 2));
-        levels.add(fixture_segment("3".into(), 3));
-        levels.add(fixture_segment("4".into(), 4));
+        for id in 0..(L0_SEGMENT_CAP + 2) {
+            levels.add(fixture_segment(id.to_string().into(), id as u128));
+        }
 
         assert_eq!(
             compactor.choose(&levels, &PersistedConfig::default()),
-            Choice::DeleteSegments(vec!["1".into(), "2".into()])
+            Choice::DoCompact(crate::compaction::Input {
+                dest_level: 0,
+                segment_ids: vec!["0".into(), "1".into(), "2".into()],
+                target_size: u64::MAX
+            })
         );
 
         Ok(())
