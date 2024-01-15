@@ -1,7 +1,7 @@
 [package]
 name = "lsm-tree"
 description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
-version = "0.3.2"
+version = "0.4.0"
 repository = "https://github.com/marvin-j97/fjall"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 edition.workspace = true
