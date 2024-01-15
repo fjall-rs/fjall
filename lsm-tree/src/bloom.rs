@@ -95,8 +95,8 @@ impl BloomFilter {
     }
 
     fn split_hash(hash: u128) -> (usize, usize) {
-        let h1 = (hash & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
-        let h2 = ((hash >> 64) & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
+        let h1 = ((hash >> 64) & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
+        let h2 = (hash & 0xFF_FF_FF_FF_FF_FF_FF_FF) as usize;
         (h1, h2)
     }
 
