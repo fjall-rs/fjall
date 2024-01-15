@@ -100,9 +100,7 @@ impl CompactionStrategy for Strategy {
                 continue;
             }
 
-            let curr_level_bytes = level
-                .iter()
-                .fold(0, |bytes, segment| bytes + segment.metadata.file_size);
+            let curr_level_bytes = level.size();
 
             let desired_bytes =
                 desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.target_size);

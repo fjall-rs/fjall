@@ -41,15 +41,15 @@ impl CompactionStrategy for Strategy {
                 continue;
             }
 
-            let curr_level_bytes = level.iter().fold(0, |bytes, segment| {
-                bytes + segment.metadata.uncompressed_size
-            });
+            let curr_level_bytes = level.size();
 
             let desired_bytes =
                 desired_level_size_in_bytes(curr_level_index, config.level_ratio, self.base_size)
                     as u64;
 
             if curr_level_bytes >= desired_bytes {
+                // NOTE: Take desired_bytes because we are in tiered mode
+                // We want to take N segments, not just the overshoot (like in levelled)
                 let mut overshoot = desired_bytes as usize;
 
                 let mut segments_to_compact = vec![];

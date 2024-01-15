@@ -65,6 +65,11 @@ impl ResolvedLevel {
         Self(new_level)
     }
 
+    /// Gets the level (compressed) size in bytes
+    pub fn size(&self) -> u64 {
+        self.iter().map(|x| x.metadata.file_size).sum()
+    }
+
     pub fn get_overlapping_segments(&self, start: UserKey, end: UserKey) -> Vec<Arc<str>> {
         use std::ops::Bound::Included;
 

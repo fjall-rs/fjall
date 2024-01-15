@@ -215,7 +215,16 @@ impl Levels {
     /// Returns the amount of segments, summed over all levels
     #[must_use]
     pub fn len(&self) -> usize {
-        self.levels.iter().fold(0, |sum, level| sum + level.len())
+        self.levels.iter().map(|level| level.len()).sum()
+    }
+
+    /// Returns the (compressed) size of all segments
+    #[must_use]
+    pub fn size(&self) -> u64 {
+        self.get_all_segments_flattened()
+            .iter()
+            .map(|s| s.metadata.file_size)
+            .sum()
     }
 
     pub fn busy_levels(&self) -> HashSet<u8> {

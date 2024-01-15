@@ -65,11 +65,7 @@ impl CompactionStrategy for Strategy {
             .deref()
             .clone();
 
-        let db_size = levels
-            .get_all_segments()
-            .values()
-            .map(|x| x.metadata.file_size)
-            .sum::<u64>();
+        let db_size = levels.size();
 
         if db_size > self.limit {
             let mut bytes_to_delete = db_size - self.limit;
