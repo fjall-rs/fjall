@@ -147,8 +147,11 @@ pub struct Writer {
     pub key_count: usize,
     current_key: Option<UserKey>,
 
+    /// Hashes for bloom filter
+    ///
+    /// using enhanced double hashing, so we got two u64s
     #[cfg(feature = "bloom")]
-    bloom_hash_buffer: Vec<u128>,
+    bloom_hash_buffer: Vec<(u64, u64)>,
 }
 
 pub struct Options {

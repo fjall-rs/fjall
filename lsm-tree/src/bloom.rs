@@ -7,7 +7,6 @@ use std::fs::File;
 use std::hash::Hasher;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::u128;
 
 /// A basic bloom filter
 #[derive(Debug)]
@@ -77,14 +76,9 @@ impl BloomFilter {
         ((m / 8.0).ceil() * 8.0) as usize
     }
 
-    /// Constructs a bloom filter that can hold `item_count` items
-    /// while maintaining a certain false positive rate.
-    #[must_use]
-    pub fn with_fp_rate(item_count: usize, fp_rate: f32) -> Self {
-        // NOTE: Some sensible minimum
-        let fp_rate = fp_rate.max(0.000_001);
-
-        let k = match item_count {
+    /// Heuristically get the somewhat-optimal k value for a given desired FPR
+    fn get_k_heuristic(fp_rate: f32) -> usize {
+        match fp_rate {
             _ if fp_rate > 0.4 => 1,
             _ if fp_rate > 0.2 => 2,
             _ if fp_rate > 0.1 => 3,
@@ -96,8 +90,17 @@ impl BloomFilter {
             _ if fp_rate > 0.0001 => 13,
             _ if fp_rate > 0.00001 => 17,
             _ => 20,
-        };
+        }
+    }
 
+    /// Constructs a bloom filter that can hold `item_count` items
+    /// while maintaining a certain false positive rate.
+    #[must_use]
+    pub fn with_fp_rate(item_count: usize, fp_rate: f32) -> Self {
+        // NOTE: Some sensible minimum
+        let fp_rate = fp_rate.max(0.000_001);
+
+        let k = Self::get_k_heuristic(fp_rate);
         let m = Self::calculate_m(item_count, fp_rate);
 
         Self {
@@ -107,20 +110,12 @@ impl BloomFilter {
         }
     }
 
-    pub(crate) fn split_hash(hash: u128) -> (u64, u64) {
-        let h1 = ((hash >> 64) & 0xFF_FF_FF_FF_FF_FF_FF_FF) as u64;
-        let h2 = (hash & 0xFF_FF_FF_FF_FF_FF_FF_FF) as u64;
-        (h1, h2)
-    }
-
     /// Returns `true` if the item may be contained.
     ///
     /// Will never have a false negative.
     #[must_use]
     pub fn contains(&self, key: &[u8]) -> bool {
-        let hash = Self::get_hash(key);
-
-        let (mut h1, mut h2) = Self::split_hash(hash);
+        let (mut h1, mut h2) = Self::get_hash(key);
 
         for i in 0..(self.k as u64) {
             let idx = h1 % (self.m as u64);
@@ -137,26 +132,25 @@ impl BloomFilter {
     }
 
     /// Adds the key to the filter
-    pub fn set_with_hash(&mut self, hash: u128) {
-        let (mut h1, mut h2) = Self::split_hash(hash);
-
+    pub fn set_with_hash(&mut self, (mut h1, mut h2): (u64, u64)) {
         for i in 0..(self.k as u64) {
             let idx = h1 % (self.m as u64);
 
-            self.set_pos(idx as usize);
+            self.enable_bit(idx as usize);
 
             h1 = h1.wrapping_add(h2);
             h2 = h2.wrapping_add(i);
         }
     }
 
-    fn set_pos(&mut self, idx: usize) {
+    /// Sets the bit at the given index to `true`
+    fn enable_bit(&mut self, idx: usize) {
         self.inner.set(idx, true);
     }
 
     /// Gets the hash of a key
     #[must_use]
-    pub fn get_hash(key: &[u8]) -> u128 {
+    pub fn get_hash(key: &[u8]) -> (u64, u64) {
         let mut hasher = SeaHasher::default();
         hasher.write(key);
         let h1 = hasher.finish();
@@ -164,7 +158,7 @@ impl BloomFilter {
         hasher.write(key);
         let h2 = hasher.finish();
 
-        u128::from(h1) << 64 | u128::from(h2)
+        (h1, h2)
     }
 }
 
@@ -172,14 +166,6 @@ impl BloomFilter {
 mod tests {
     use super::*;
     use test_log::test;
-
-    #[test]
-    fn split_hash() {
-        let hash = BloomFilter::get_hash(b"abc");
-        let (a, b) = BloomFilter::split_hash(hash);
-        let rebuilt_hash = u128::from(a) << 64 | u128::from(b);
-        assert_eq!(rebuilt_hash, hash);
-    }
 
     #[test]
     fn bloom_calculate_m() {
