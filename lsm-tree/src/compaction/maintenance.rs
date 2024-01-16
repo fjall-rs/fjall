@@ -51,8 +51,8 @@ impl CompactionStrategy for Strategy {
             // So if we have 18 segments, and merge two, we'll have 17, not 16
             let segments_to_merge = first_level.len() - L0_SEGMENT_CAP + 1;
 
-            // Sort the level by creation date
-            first_level.sort_by(|a, b| a.metadata.created_at.cmp(&b.metadata.created_at));
+            // Sort the level by oldest to newest
+            first_level.sort_by(|a, b| a.metadata.seqnos.0.cmp(&b.metadata.seqnos.0));
 
             let segment_ids = choose_least_effort_compaction(&first_level, segments_to_merge);
 

@@ -152,12 +152,21 @@ impl Levels {
         self.insert_into_level(0, segment);
     }
 
+    /// Sorts all levels from newest to oldest
+    ///
+    /// This will make segments with highest seqno get checked first,
+    /// so if there are two versions of an item, the fresher one is seen first:
+    ///
+    /// segment a   segment b
+    /// [key:asd:2] [key:asd:1]
+    ///
+    /// point read ----------->
     pub(crate) fn sort_levels(&mut self) {
         for level in &mut self.levels {
             level.sort_by(|a, b| {
                 let seg_a = self.segments.get(a).expect("where's the segment at");
                 let seg_b = self.segments.get(b).expect("where's the segment at");
-                seg_b.metadata.created_at.cmp(&seg_a.metadata.created_at)
+                seg_b.metadata.seqnos.1.cmp(&seg_a.metadata.seqnos.1)
             });
         }
     }
