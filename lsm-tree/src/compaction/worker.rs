@@ -13,7 +13,7 @@ use crate::{
     BlockCache,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     sync::{Arc, RwLock, RwLockWriteGuard},
     time::Instant,
 };
@@ -99,9 +99,13 @@ fn merge_segments(
     let merge_iter = {
         let to_merge: Vec<Arc<Segment>> = {
             let segments = levels.get_all_segments();
+
             payload
                 .segment_ids
                 .iter()
+                // NOTE: Throw away duplicate segment IDs
+                .collect::<HashSet<_>>()
+                .into_iter()
                 .filter_map(|x| segments.get(x))
                 .cloned()
                 .collect()
