@@ -77,6 +77,13 @@ impl CompactionStrategy for Strategy {
             }
         }
 
+        // TODO: if level.size >= base_size and there are enough
+        // segments with size < base_size, compact them together
+        // no matter the amount of segments in L0 -> should reduce
+        // write stall chance
+        //
+        // TODO: however: force compaction if L0 becomes way too large
+
         // NOTE: Reduce L0 segments if needed
         // this is probably an edge case if the `base_size` does not line up with
         // the `max_memtable_size` AT ALL
