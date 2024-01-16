@@ -302,6 +302,7 @@ impl Segment {
         self.metadata.check_prefix_overlap(prefix)
     }
 
+    // TODO: unit tests
     /// Checks if a key range is (partially or fully) contained in this segment.
     pub(crate) fn check_key_range_overlap(
         &self,
