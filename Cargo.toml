@@ -1,3 +1,5 @@
+# TODO: remove, split repos
+
 [workspace]
 resolver = "2"
 members = ["lsm-tree", "fjall"]
@@ -9,4 +11,3 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
-homepage = "https://github.com/marvin-j97/fjall"

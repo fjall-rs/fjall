@@ -1,15 +1,15 @@
 [package]
 name = "fjall"
 description = "LSM-based key-value storage engine"
-version = "0.4.0"
-repository = "https://github.com/marvin-j97/fjall"
+version = "0.5.0"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+repository = "https://github.com/fjall-rs/fjall"
+homepage = "https://github.com/fjall-rs/fjall"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-homepage.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,6 +20,7 @@ path = "src/lib.rs"
 [features]
 default = ["bloom"]
 bloom = ["lsm-tree/bloom"]
+segment_history = ["lsm-tree/segment_history"]
 
 [dependencies]
 byteorder = "1.5.0"

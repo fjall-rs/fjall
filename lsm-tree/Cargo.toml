@@ -1,15 +1,15 @@
 [package]
 name = "lsm-tree"
 description = "A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs)"
-version = "0.4.0"
-repository = "https://github.com/marvin-j97/fjall"
+version = "0.5.0"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+repository = "https://github.com/fjall-rs/lsm-tree"
+homepage = "https://github.com/fjall-rs/lsm-tree"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-homepage.workspace = true
 
 [lib]
 name = "lsm_tree"
