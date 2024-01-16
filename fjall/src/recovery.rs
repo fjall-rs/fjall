@@ -115,13 +115,13 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     let mut dirents = std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
     dirents.sort_by_key(std::fs::DirEntry::file_name);
 
-    log::debug!("Recovering sealed journals: {dirents:#?}");
-
     for dirent in dirents {
         let journal_path = dirent.path();
 
         // Check if journal is sealed
         if dirent.path().join(FLUSH_MARKER).try_exists()? {
+            log::debug!("Recovering sealed journal: {}", journal_path.display());
+
             let journal_size = fs_extra::dir::get_size(&journal_path).map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind))
             })?;
@@ -176,7 +176,9 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                         },
                     );
                 } else {
-                    log::trace!("Partition {partition_name:?} has higher seqno, skipping");
+                    log::trace!(
+                        "Partition {partition_name:?} has higher seqno ({partition_lsn:?}), skipping"
+                    );
                 }
             }
 
