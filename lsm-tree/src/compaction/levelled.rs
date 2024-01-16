@@ -1,6 +1,6 @@
 use super::{Choice, CompactionStrategy, Input as CompactionInput};
 use crate::{config::PersistedConfig, levels::Levels, segment::Segment, value::UserKey};
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 /// Levelled compaction strategy (LCS)
 ///
@@ -110,7 +110,10 @@ impl CompactionStrategy for Strategy {
             if overshoot > 0 {
                 let mut segments_to_compact = vec![];
 
-                for segment in level.iter().rev().take(config.level_ratio.into()).cloned() {
+                let mut level = level.deref().clone();
+                level.sort_by(|a, b| a.metadata.key_range.0.cmp(&b.metadata.key_range.0));
+
+                for segment in level.iter().take(config.level_ratio.into()).cloned() {
                     if overshoot == 0 {
                         break;
                     }
@@ -144,7 +147,7 @@ impl CompactionStrategy for Strategy {
         }
 
         {
-            let Some(first_level) = &resolved_view.first() else {
+            let Some(first_level) = resolved_view.first() else {
                 return Choice::DoNothing;
             };
 
@@ -152,7 +155,7 @@ impl CompactionStrategy for Strategy {
                 && !busy_levels.contains(&0)
                 && !busy_levels.contains(&1)
             {
-                let mut first_level_segments: Vec<_> = first_level.iter().cloned().collect();
+                let mut first_level_segments = first_level.deref().clone();
                 first_level_segments
                     .sort_by(|a, b| a.metadata.key_range.0.cmp(&b.metadata.key_range.0));
 
@@ -164,11 +167,11 @@ impl CompactionStrategy for Strategy {
 
                 let overlapping_segment_ids = next_level.get_overlapping_segments(min, max);
 
-                let mut segment_ids: Vec<_> = first_level_segments
+                let mut segment_ids = first_level_segments
                     .iter()
                     .map(|x| &x.metadata.id)
                     .cloned()
-                    .collect();
+                    .collect::<Vec<_>>();
 
                 segment_ids.extend(overlapping_segment_ids);
 
@@ -302,7 +305,7 @@ mod tests {
             compactor.choose(&levels, &Config::default().inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
-                segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
+                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
                 target_size: 128 * 1024 * 1024
             })
         );
@@ -383,7 +386,7 @@ mod tests {
             compactor.choose(&levels, &Config::default().inner),
             Choice::DoCompact(CompactionInput {
                 dest_level: 1,
-                segment_ids: vec!["4".into(), "3".into(), "2".into(), "1".into()],
+                segment_ids: vec!["1".into(), "2".into(), "3".into(), "4".into()],
                 target_size: 128 * 1024 * 1024
             })
         );
@@ -463,8 +466,8 @@ mod tests {
                     "2".into(),
                     "3".into(),
                     "4".into(),
-                    "6".into(),
-                    "5".into()
+                    "5".into(),
+                    "6".into()
                 ],
                 target_size: 128 * 1024 * 1024
             })
