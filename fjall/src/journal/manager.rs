@@ -133,9 +133,9 @@ impl JournalManager {
         journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
         seqnos: HashMap<PartitionKey, PartitionSeqNo>,
     ) -> crate::Result<()> {
-        log::debug!("Sealing journal");
-
         let old_journal_path = self.active_path.clone();
+
+        log::debug!("Sealing journal at {}", old_journal_path.display());
 
         let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
 
