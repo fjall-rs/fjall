@@ -200,24 +200,7 @@ impl Keyspace {
             self.spawn_fsync_thread(ms.into());
         }
 
-        let monitor = Monitor::new(self);
-        let stop_signal = self.stop_signal.clone();
-        let thread_counter = self.active_background_threads.clone();
-
-        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        std::thread::spawn(move || loop {
-            if stop_signal.is_stopped() {
-                log::trace!("monitor: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                return;
-            }
-
-            let idle = monitor.run();
-            if idle {
-                std::thread::sleep(std::time::Duration::from_millis(250));
-            }
-        });
+        self.spawn_monitor_thread();
     }
 
     /// Destroys the partition, removing all data associated with it.
@@ -476,23 +459,43 @@ impl Keyspace {
         Ok(Self(Arc::new(inner)))
     }
 
+    fn spawn_monitor_thread(&self) {
+        let monitor = Monitor::new(self);
+        let stop_signal = self.stop_signal.clone();
+        let thread_counter = self.active_background_threads.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        std::thread::spawn(move || {
+            while !stop_signal.is_stopped() {
+                let idle = monitor.run();
+
+                if idle {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }
+
+            log::trace!("monitor: exiting because tree is dropping");
+            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        });
+    }
+
     fn spawn_fsync_thread(&self, ms: usize) {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
 
-        std::thread::spawn(move || loop {
-            log::trace!("fsync thread: sleeping {ms}ms");
-            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+        std::thread::spawn(move || {
+            while !stop_signal.is_stopped() {
+                log::trace!("fsync thread: sleeping {ms}ms");
+                std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
-            if stop_signal.is_stopped() {
-                log::debug!("fsync thread: exiting because tree is dropping");
-                return;
+                log::trace!("fsync thread: fsycing journal");
+                if let Err(e) = journal.flush(false) {
+                    log::error!("Fsync failed: {e:?}");
+                }
             }
 
-            log::trace!("fsync thread: fsycing journal");
-            if let Err(e) = journal.flush(false) {
-                log::error!("Fsync failed: {e:?}");
-            }
+            log::debug!("fsync thread: exiting because tree is dropping");
         });
     }
 
@@ -503,17 +506,16 @@ impl Keyspace {
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || loop {
-            log::debug!("compaction: waiting for work");
-            compaction_manager.wait_for();
+        std::thread::spawn(move || {
+            while !stop_signal.is_stopped() {
+                log::debug!("compaction: waiting for work");
+                compaction_manager.wait_for();
 
-            if stop_signal.is_stopped() {
-                log::debug!("compaction thread: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                return;
+                crate::compaction::worker::run(&compaction_manager);
             }
 
-            crate::compaction::worker::run(&compaction_manager);
+            log::debug!("compaction thread: exiting because tree is dropping");
+            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
 
@@ -529,22 +531,21 @@ impl Keyspace {
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || loop {
-            log::trace!("flush worker: acquiring flush semaphore");
-            flush_semaphore.acquire();
+        std::thread::spawn(move || {
+            while !stop_signal.is_stopped() {
+                log::trace!("flush worker: acquiring flush semaphore");
+                flush_semaphore.acquire();
 
-            if stop_signal.is_stopped() {
-                log::trace!("flush worker: exiting because tree is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                return;
+                crate::flush::worker::run(
+                    &flush_manager,
+                    &journal_manager,
+                    &compaction_manager,
+                    &write_buffer_manager,
+                );
             }
 
-            crate::flush::worker::run(
-                &flush_manager,
-                &journal_manager,
-                &compaction_manager,
-                &write_buffer_manager,
-            );
+            log::trace!("flush worker: exiting because tree is dropping");
+            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
 }

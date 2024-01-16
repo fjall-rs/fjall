@@ -18,13 +18,13 @@ pub struct Config {
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
 
     /// Max size of all journals in bytes
-    pub(crate) max_journaling_size_in_bytes: u64, // TODO: should be configurable during runtime
+    pub(crate) max_journaling_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
 
     /// Max size of all active memtables
     ///
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) partitions.
-    pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime
+    pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
 
     /// Amount of compaction workers
     pub(crate) compaction_workers_count: usize,
@@ -35,8 +35,16 @@ pub struct Config {
     pub(crate) journal_recovery_mode: RecoveryMode,
 }
 
+const DEFAULT_CPU_CORES: usize = 4;
+
 impl Default for Config {
     fn default() -> Self {
+        let queried_cores = std::thread::available_parallelism().map(usize::from);
+
+        let cpus = (queried_cores.unwrap_or(DEFAULT_CPU_CORES) - 1/* Reserve 1 CPU core */)
+            // Should never be 0
+            .max(1);
+
         Self {
             path: ".fjall_data".into(),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
@@ -44,7 +52,7 @@ impl Default for Config {
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
-            compaction_workers_count: 4, // TODO: use num_cpu - 1?
+            compaction_workers_count:cpus,
             journal_recovery_mode: RecoveryMode::default()
         }
     }
