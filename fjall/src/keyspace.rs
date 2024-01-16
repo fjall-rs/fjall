@@ -192,6 +192,7 @@ impl Keyspace {
             self.flush_semaphore.release();
         }
 
+        log::info!("Spawning {compaction_works_count} compaction threads");
         for _ in 0..compaction_works_count {
             self.spawn_compaction_worker();
         }

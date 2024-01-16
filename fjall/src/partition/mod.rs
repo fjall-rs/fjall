@@ -528,7 +528,7 @@ impl PartitionHandle {
         let seg_count = self.tree.first_level_segment_count();
 
         if seg_count > 20 {
-            log::info!("Stalling writes...");
+            log::info!("Stalling writes, many segments in L0...");
             self.compaction_manager.notify(self.clone());
 
             let ms = if seg_count > 22 { 500 } else { 100 };
