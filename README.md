@@ -5,7 +5,7 @@
   (temporary logo)
 </p>
 
-[![CI](https://github.com/marvin-j97/fjall/actions/workflows/test_fjall.yml/badge.svg)](https://github.com/marvin-j97/fjall/actions/workflows/test_fjall.yml)
+[![CI](https://github.com/fjall-rs/fjall/actions/workflows/test_fjall.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test_fjall.yml)
 [![docs.rs](https://img.shields.io/docsrs/fjall?color=green)](https://docs.rs/fjall)
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
@@ -91,7 +91,7 @@ keyspace.delete_partition(items)?;
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
 - Sharded journal for concurrent writes
 - Cross-partition snapshots (MVCC)
-- anything else implemented in [`lsm-tree`](https://github.com/marvin-j97/fjall/tree/main/lsm-tree)
+- anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/fjall/tree/main/lsm-tree)
 
 ## Stable disk format
 
@@ -99,7 +99,7 @@ The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. An
 
 ## Examples
 
-[See here](https://github.com/marvin-j97/fjall/tree/main/fjall/examples) for practical examples.
+[See here](https://github.com/fjall-rs/fjall/tree/main/fjall/examples) for practical examples.
 
 And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired mini wide-column database using `fjall` as its storage engine.
 
@@ -107,10 +107,10 @@ And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalon
 
 How can you help?
 
-- [Ask a question](https://github.com/marvin-j97/fjall/discussions/new?category=q-a)
-- [Post benchmarks and things you created](https://github.com/marvin-j97/fjall/discussions/new?category=show-and-tell)
-- [Open an issue](https://github.com/marvin-j97/fjall/issues/new) (bug report, weirdness)
-- [Open a PR](https://github.com/marvin-j97/fjall/compare)
+- [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
+- [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
+- [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
+- [Open a PR](https://github.com/fjall-rs/fjall/compare)
 
 ## License
 

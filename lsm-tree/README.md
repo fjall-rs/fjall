@@ -2,7 +2,7 @@
   <img src="/lsm-tree/logo.png" height="128">
 </p>
 
-[![CI](https://github.com/marvin-j97/fjall/actions/workflows/test_lsmt.yml/badge.svg)](https://github.com/marvin-j97/fjall/actions/workflows/test_lsmt.yml)
+[![CI](https://github.com/fjall-rs/fjall/actions/workflows/test_lsmt.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test_lsmt.yml)
 [![docs.rs](https://img.shields.io/docsrs/lsm-tree?color=green)](https://docs.rs/lsm-tree)
 [![Crates.io](https://img.shields.io/crates/v/lsm-tree?color=blue)](https://crates.io/crates/lsm-tree)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
@@ -11,7 +11,7 @@ A K.I.S.S. implementation of log-structured merge trees (LSM-trees/LSMTs) in Rus
 
 > This crate only provides a primitive LSM-tree, not a full storage engine.
 > For example, it does not ship with a write-ahead log.
-> You probably want to use https://github.com/marvin-j97/fjall instead.
+> You probably want to use https://github.com/fjall-rs/fjall instead.
 
 ```bash
 cargo add lsm-tree

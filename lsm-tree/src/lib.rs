@@ -82,9 +82,9 @@
 //! # Ok::<(), lsm_tree::Error>(())
 //! ```
 
-#![doc(html_logo_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/lsm-tree/logo.png")]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/lsm-tree/logo.png")]
 #![doc(
-    html_favicon_url = "https://raw.githubusercontent.com/marvin-j97/fjall/main/lsm-tree/logo.png"
+    html_favicon_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/lsm-tree/logo.png"
 )]
 #![forbid(unsafe_code)]
 #![deny(clippy::all, missing_docs, clippy::cargo)]
