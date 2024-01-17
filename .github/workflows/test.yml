@@ -40,25 +40,22 @@ jobs:
         with:
           prefix-key: ${{ runner.os }}-cargo
           workspaces: >
-            lsm-tree -> target
-            lsm-tree/examples/kv -> target
+            . -> target
+            examples/actix-kv -> target
+            examples/structured -> target
+            examples/triplestore -> target
       - name: Build
         run: cargo build -v
-        working-directory: lsm-tree
       - name: Format
         run: cargo fmt --all -- --check
-        working-directory: lsm-tree
       - name: Clippy
         run: cargo clippy
-        working-directory: lsm-tree
       - name: Run tests
         run: cargo test -v -- --nocapture
-        working-directory: lsm-tree
         env:
           RUST_LOG: debug
-      - name: Build & test LSM examples
+      - name: Build & test examples
         run: node compile_examples.mjs
-        working-directory: lsm-tree
   cross:
     cancel-timeout-minutes: 20
     name: cross
@@ -83,3 +80,4 @@ jobs:
         run: |
           cargo install cross
           cross build --target ${{ matrix.target }}
+

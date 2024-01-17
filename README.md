@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="/fjall/logo.png" height="128">
+  <img src="/logo.png" height="128">
 </p>
-<p align="center">
+<p align="center>
   (temporary logo)
 </p>
 
