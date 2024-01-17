@@ -91,7 +91,7 @@ keyspace.delete_partition(items)?;
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
 - Sharded journal for concurrent writes
 - Cross-partition snapshots (MVCC)
-- anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/fjall/tree/main/lsm-tree)
+- anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
 ## Stable disk format
 
@@ -99,7 +99,7 @@ The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. An
 
 ## Examples
 
-[See here](https://github.com/fjall-rs/fjall/tree/main/fjall/examples) for practical examples.
+[See here](https://github.com/fjall-rs/fjall/tree/main/examples) for practical examples.
 
 And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired mini wide-column database using `fjall` as its storage engine.
 
