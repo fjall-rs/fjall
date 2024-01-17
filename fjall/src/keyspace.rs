@@ -164,21 +164,31 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        log::debug!("Opening keyspace at {}", config.path.display());
-
         let compaction_workers_count = config.compaction_workers_count;
-
-        let keyspace = if config.path.join(FJALL_MARKER).try_exists()? {
-            Self::recover(config)
-        } else {
-            Self::create_new(config)
-        }?;
-
+        let keyspace = Self::create_or_recover(config)?;
         keyspace.start_background_threads(compaction_workers_count);
-
         Ok(keyspace)
     }
 
+    /// Same as [`Keyspace::open`], but does not start background threads.
+    ///
+    /// Needed to open a keyspace without threads for testing.
+    ///
+    /// Should not be user-facing.
+    fn create_or_recover(config: Config) -> crate::Result<Self> {
+        log::debug!("Opening keyspace at {}", config.path.display());
+
+        if config.path.join(FJALL_MARKER).try_exists()? {
+            Self::recover(config)
+        } else {
+            Self::create_new(config)
+        }
+    }
+
+    /// Starts background threads that maintain the keyspace.
+    ///
+    /// Should not be called, unless in [`Keyspace::open`]
+    /// and should definitely not be user-facing.
     fn start_background_threads(&self, compaction_works_count: usize) {
         self.spawn_flush_worker();
 
