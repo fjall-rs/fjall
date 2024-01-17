@@ -5,7 +5,7 @@
   (temporary logo)
 </p>
 
-[![CI](https://github.com/fjall-rs/fjall/actions/workflows/test_fjall.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test_fjall.yml)
+[![CI](https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test.yml)
 [![docs.rs](https://img.shields.io/docsrs/fjall?color=green)](https://docs.rs/fjall)
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
