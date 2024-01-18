@@ -1,32 +1,47 @@
-use super::manager::FlushManager;
+use super::manager::{FlushManager, Task};
 use crate::{
-    compaction::manager::CompactionManager, file::SEGMENTS_FOLDER,
-    journal::manager::JournalManager, write_buffer_manager::WriteBufferManager,
+    batch::PartitionKey, compaction::manager::CompactionManager, file::SEGMENTS_FOLDER,
+    journal::manager::JournalManager, write_buffer_manager::WriteBufferManager, PartitionHandle,
 };
-use std::sync::{Arc, RwLock};
+use lsm_tree::Segment;
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
-/// Runs flush worker.
+/// Flushes a single segment.
+fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
+    use lsm_tree::flush::Options;
+
+    let segment = lsm_tree::flush::flush_to_segment(Options {
+        // IMPORTANT: Segment has to get the task ID
+        // otherwise segment ID and memtable ID will not line up
+        segment_id: task.id.clone(),
+
+        memtable: task.sealed_memtable.clone(),
+        folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
+        block_size: task.partition.tree.config.block_size,
+        block_cache: task.partition.tree.block_cache.clone(),
+        descriptor_table: task.partition.tree.descriptor_table.clone(),
+    })?;
+
+    Ok(Arc::new(segment))
+}
+
+struct MultiFlushResultItem {
+    partition: PartitionHandle,
+    created_segments: Vec<Arc<Segment>>,
+
+    /// Size sum of sealed memtables that have been flushed
+    size: u64,
+}
+
+type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
+
+/// Distributes tasks of multiple partitions over multiple worker threads.
 ///
-/// Only spawn one of these, it will internally spawn worker threads as needed.
-#[allow(clippy::too_many_lines)]
-pub fn run(
-    flush_manager: &Arc<RwLock<FlushManager>>,
-    journal_manager: &Arc<RwLock<JournalManager>>,
-    compaction_manager: &CompactionManager,
-    write_buffer_manager: &WriteBufferManager,
-) {
-    log::debug!("flush worker: write locking flush manager");
-    let mut fm = flush_manager.write().expect("lock is poisoned");
-    let partitioned_tasks = fm.collect_tasks(4 /* TODO: parallelism, CPU cores probably */);
-    drop(fm);
-
-    let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
-
-    if task_count == 0 {
-        log::debug!("flush worker: No tasks collected");
-        return;
-    }
-
+/// Each thread is responsible for the tasks of one partition.
+fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) -> MultiFlushResults {
     log::debug!(
         "flush worker: spawning {} worker threads",
         partitioned_tasks.len()
@@ -61,66 +76,67 @@ pub fn run(
                 #[allow(clippy::needless_collect)]
                 let flush_workers = tasks
                     .into_iter()
-                    .map(|task| {
-                        std::thread::spawn(move || {
-                            use lsm_tree::flush::Options;
-
-                            let segment = lsm_tree::flush::flush_to_segment(Options {
-                                memtable: task.sealed_memtable.clone(),
-                                segment_id: task.id.clone(),
-                                folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
-                                block_size: task.partition.tree.config.block_size,
-                                block_cache: task.partition.tree.block_cache.clone(),
-                                descriptor_table: task.partition.tree.descriptor_table.clone(),
-                            })?;
-                            let segment = Arc::new(segment);
-
-                            Ok::<_, crate::Error>(segment)
-                        })
-                    })
+                    .map(|task| std::thread::spawn(move || run_flush_worker(&task)))
                     .collect::<Vec<_>>();
 
-                let results = flush_workers
+                let created_segments = flush_workers
                     .into_iter()
                     .map(|t| t.join().expect("should join"))
                     .collect::<crate::Result<Vec<_>>>()?;
 
-                Ok::<_, crate::Error>((partition, results, memtables_size))
+                Ok(MultiFlushResultItem {
+                    partition,
+                    created_segments,
+                    size: memtables_size,
+                })
             })
         })
         .collect::<Vec<_>>();
 
-    let results = threads
+    threads
         .into_iter()
         .map(|t| t.join().expect("should join"))
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
 
-    // TODO: handle flush fail
-    for result in results {
+/// Runs flush logic.
+#[allow(clippy::too_many_lines)]
+pub fn run(
+    flush_manager: &Arc<RwLock<FlushManager>>,
+    journal_manager: &Arc<RwLock<JournalManager>>,
+    compaction_manager: &CompactionManager,
+    write_buffer_manager: &WriteBufferManager,
+) {
+    log::debug!("flush worker: write locking flush manager");
+    let mut fm = flush_manager.write().expect("lock is poisoned");
+    let partitioned_tasks = fm.collect_tasks(4 /* TODO: parallelism, CPU cores probably */);
+    drop(fm);
+
+    let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
+
+    if task_count == 0 {
+        log::debug!("flush worker: No tasks collected");
+        return;
+    }
+
+    for result in run_multi_flush(&partitioned_tasks) {
         match result {
-            Ok((partition, segments, memtables_size)) => {
+            Ok(MultiFlushResultItem {
+                partition,
+                created_segments,
+                size: memtables_size,
+            }) => {
                 // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
+                if let Err(e) = partition.tree.register_segments(&created_segments) {
+                    log::error!("Failed to register segments: {e:?}");
+                } else {
+                    log::debug!("flush worker: write locking flush manager to submit results");
+                    let mut flush_manager = flush_manager.write().expect("lock is poisoned");
+                    flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
 
-                match partition.tree.register_segments(&segments) {
-                    Ok(()) => {
-                        for segment in &segments {
-                            partition.tree.free_sealed_memtable(&segment.metadata.id);
-                        }
-
-                        write_buffer_manager.free(memtables_size);
-
-                        // NOTE: We can safely partially remove tasks
-                        // as there is only one flush thread
-                        log::debug!("flush worker: write locking flush manager to submit results");
-                        let mut flush_manager = flush_manager.write().expect("lock is poisoned");
-                        flush_manager.dequeue_tasks(partition.name.clone(), segments.len());
-
-                        compaction_manager.notify(partition);
-                    }
-                    Err(e) => {
-                        log::error!("Failed to register segments: {e:?}");
-                    }
+                    write_buffer_manager.free(memtables_size);
+                    compaction_manager.notify(partition);
                 }
             }
             Err(e) => {
