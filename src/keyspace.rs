@@ -280,7 +280,7 @@ impl Keyspace {
         })
     }
 
-    /// Gets the list of all partitions in the keyspace
+    /// Gets a list of all partition names in the keyspace
     #[must_use]
     pub fn list_partitions(&self) -> Vec<PartitionKey> {
         self.partitions
