@@ -26,7 +26,6 @@ segment_history = ["lsm-tree/segment_history"]
 [dependencies]
 byteorder = "1.5.0"
 crc32fast = "1.3.2"
-env_logger = "0.10.1"
 lsm-tree = { version = "0.4.0", default-features = false }
 log = "0.4.20"
 std-semaphore = "0.1.0"
