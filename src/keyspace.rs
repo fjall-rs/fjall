@@ -282,6 +282,17 @@ impl Keyspace {
 
     /// Returns `true` if the partition with the given name exists
     #[must_use]
+    pub fn list_partitions(&self) -> Vec<PartitionKey> {
+        self.partitions
+            .read()
+            .expect("lock is poisoned")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// Returns `true` if the partition with the given name exists
+    #[must_use]
     pub fn partition_exists(&self, name: &str) -> bool {
         self.partitions
             .read()
