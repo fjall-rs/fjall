@@ -49,7 +49,7 @@ pub struct JournalManager {
 }
 
 impl JournalManager {
-    pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+    pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
         Self {
             active_path: path.into(),
             items: Vec::with_capacity(10),
@@ -57,29 +57,31 @@ impl JournalManager {
         }
     }
 
-    pub fn enqueue(&mut self, item: Item) {
+    pub(crate) fn enqueue(&mut self, item: Item) {
         self.disk_space_in_bytes += item.size_in_bytes;
         self.items.push(item);
     }
 
     /// Returns the amount of journals
-    pub fn journal_count(&self) -> usize {
+    pub(crate) fn journal_count(&self) -> usize {
         // NOTE: + 1 = active journal
         self.sealed_journal_count() + 1
     }
 
     /// Returns the amount of sealed journals
-    pub fn sealed_journal_count(&self) -> usize {
+    pub(crate) fn sealed_journal_count(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the amount of bytes used on disk by journals
-    pub fn disk_space_used(&self) -> u64 {
+    pub(crate) fn disk_space_used(&self) -> u64 {
         self.disk_space_in_bytes
     }
 
     /// Enqueues partitions to be flushed so that the oldest journal can be safely evicted
-    pub fn get_partitions_to_flush_for_oldest_journal_eviction(&self) -> Vec<PartitionHandle> {
+    pub(crate) fn get_partitions_to_flush_for_oldest_journal_eviction(
+        &self,
+    ) -> Vec<PartitionHandle> {
         let mut items = vec![];
 
         if let Some(item) = self.items.first() {
@@ -99,20 +101,28 @@ impl JournalManager {
     }
 
     /// Performs maintenance, maybe deleting some old journals
-    pub fn maintenance(&mut self) -> crate::Result<()> {
+    pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
         // NOTE: Walk backwards because of shifting indices
         'outer: for idx in (0..self.items.len()).rev() {
             let Some(item) = &self.items.get(idx) else {
                 continue 'outer;
             };
 
+            // TODO: unit test: check deleted partition does not prevent journal eviction
             for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
-                    continue 'outer;
-                };
+                // Only check partition seqno if not deleted
+                if !item
+                    .partition
+                    .is_deleted
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                        continue 'outer;
+                    };
 
-                if partition_seqno < item.lsn {
-                    continue 'outer;
+                    if partition_seqno < item.lsn {
+                        continue 'outer;
+                    }
                 }
             }
 
@@ -135,7 +145,7 @@ impl JournalManager {
         Ok(())
     }
 
-    pub fn rotate_journal(
+    pub(crate) fn rotate_journal(
         &mut self,
         journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
         seqnos: HashMap<PartitionKey, PartitionSeqNo>,

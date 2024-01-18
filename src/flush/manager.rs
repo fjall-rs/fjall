@@ -32,12 +32,12 @@ impl std::fmt::Debug for Task {
 #[derive(Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
-    pub queues: HashMap<PartitionKey, FlushQueue>,
+    pub(crate) queues: HashMap<PartitionKey, FlushQueue>,
 }
 
 impl FlushManager {
     /// Gets the names of partitions that have queued tasks
-    pub fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
+    pub(crate) fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
         self.queues
             .iter()
             .filter(|(_, v)| !v.is_empty())
@@ -47,15 +47,15 @@ impl FlushManager {
     }
 
     /// Returns the amount of bytes that are queued to be flushed
-    pub fn queued_size(&self) -> u64 {
+    pub(crate) fn queued_size(&self) -> u64 {
         self.queues.values().map(FlushQueue::size).sum::<u64>()
     }
 
-    pub fn remove_partition(&mut self, name: &str) {
+    pub(crate) fn remove_partition(&mut self, name: &str) {
         self.queues.remove(name);
     }
 
-    pub fn enqueue_task(&mut self, partition_name: PartitionKey, task: Task) {
+    pub(crate) fn enqueue_task(&mut self, partition_name: PartitionKey, task: Task) {
         log::debug!(
             "Enqueuing {partition_name}:{} for flushing ({} B)",
             task.id,
@@ -69,7 +69,7 @@ impl FlushManager {
     }
 
     /// Returns a list of tasks per partition.
-    pub fn collect_tasks(&mut self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
+    pub(crate) fn collect_tasks(&mut self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
         let mut collected: HashMap<_, Vec<_>> = HashMap::default();
         let mut cnt = 0;
 
@@ -96,7 +96,7 @@ impl FlushManager {
         collected
     }
 
-    pub fn dequeue_tasks(&mut self, partition_name: PartitionKey, cnt: usize) {
+    pub(crate) fn dequeue_tasks(&mut self, partition_name: PartitionKey, cnt: usize) {
         self.queues.entry(partition_name).or_default().dequeue(cnt);
     }
 }
