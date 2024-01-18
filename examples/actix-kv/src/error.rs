@@ -21,4 +21,4 @@ impl From<fjall::Error> for MyError {
     }
 }
 
-pub type MyResult<T> = Result<T, MyError>;
+pub type RouteResult<T> = Result<T, MyError>;

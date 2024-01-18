@@ -7,7 +7,7 @@ use actix_web::{
     web::{self},
     App, HttpResponse, HttpServer,
 };
-use error::MyResult;
+use error::RouteResult;
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -32,7 +32,7 @@ struct BulkBody {
 async fn insert_batch(
     state: web::Data<AppState>,
     body: web::Json<BulkBody>,
-) -> MyResult<HttpResponse> {
+) -> RouteResult<HttpResponse> {
     log::debug!("BATCH");
 
     let before = std::time::Instant::now();
@@ -67,7 +67,7 @@ async fn insert_batch(
 async fn delete_item(
     path: web::Path<String>,
     state: web::Data<AppState>,
-) -> MyResult<HttpResponse> {
+) -> RouteResult<HttpResponse> {
     let key = path.into_inner();
     log::debug!("DEL {key}");
 
@@ -86,7 +86,7 @@ async fn insert_item(
     path: web::Path<String>,
     state: web::Data<AppState>,
     body: web::Json<InsertBody>,
-) -> MyResult<HttpResponse> {
+) -> RouteResult<HttpResponse> {
     let key = path.into_inner();
     log::debug!(
         "SET {key} {:?}",
@@ -106,7 +106,10 @@ async fn insert_item(
 }
 
 #[get("/{key}")]
-async fn get_item(path: web::Path<String>, state: web::Data<AppState>) -> MyResult<HttpResponse> {
+async fn get_item(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> RouteResult<HttpResponse> {
     let key = path.into_inner();
     log::debug!("GET {key}");
 
