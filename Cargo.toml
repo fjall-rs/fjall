@@ -9,7 +9,7 @@ readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 repository = "https://github.com/fjall-rs/fjall"
 homepage = "https://github.com/fjall-rs/fjall"
-keywords = ["database", "lsmt", "lsm", "lsm-tree", "rocksdb", "leveldb"]
+keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
