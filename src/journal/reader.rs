@@ -1,5 +1,4 @@
 use super::marker::Marker;
-use crate::journal::writer::PRE_ALLOCATED_BYTES;
 use lsm_tree::{serde::Deserializable, DeserializeError};
 use std::{
     fs::{File, OpenOptions},
