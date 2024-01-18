@@ -1,8 +1,6 @@
 use super::manager::CompactionManager;
 
-/// Runs compaction worker.
-///
-/// Spawn N of these.
+/// Runs a single run of compaction.
 pub fn run(compaction_manager: &CompactionManager) {
     let Some(item) = compaction_manager.pop() else {
         return;
