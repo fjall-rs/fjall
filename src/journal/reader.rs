@@ -31,13 +31,7 @@ impl JournalShardReader {
     fn truncate_file(&mut self, pos: u64) -> crate::Result<()> {
         log::debug!("truncating log to {pos}");
         self.reader.get_mut().set_len(pos)?;
-
-        if pos < PRE_ALLOCATED_BYTES {
-            self.reader.get_mut().set_len(PRE_ALLOCATED_BYTES)?;
-        }
-
         self.reader.get_mut().sync_all()?;
-
         Ok(())
     }
 
