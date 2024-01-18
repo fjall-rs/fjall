@@ -280,7 +280,7 @@ impl Keyspace {
         })
     }
 
-    /// Returns `true` if the partition with the given name exists
+    /// Gets the list of all partitions in the keyspace
     #[must_use]
     pub fn list_partitions(&self) -> Vec<PartitionKey> {
         self.partitions
