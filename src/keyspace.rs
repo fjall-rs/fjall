@@ -121,6 +121,19 @@ impl Keyspace {
     }
 
     /// Returns the amount of journals on disk
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert_eq!(1, keyspace.journal_count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn journal_count(&self) -> usize {
         self.journal_manager
@@ -130,6 +143,19 @@ impl Keyspace {
     }
 
     /// Returns the disk space usage of the entire keyspace
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert!(keyspace.disk_space()? > 0);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     pub fn disk_space(&self) -> crate::Result<u64> {
         let journal_size = fs_extra::dir::get_size(&self.journal.path)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
