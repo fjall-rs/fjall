@@ -170,17 +170,35 @@ impl Keyspace {
         Ok(journal_size + partitions_size)
     }
 
-    /// Flushes the active journal using fsyncdata, making sure recently written data is durable
+    /// Flushes the active journal using `fsyncdata`, making sure recently written data is durable.
     ///
-    /// This has a dramatic, negative performance impact on writes by 100-1000x.
+    /// This has a dramatic performance impact on writes by 100-1000x.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is (or should be) crash-safe.
+    /// data is crash-safe.
     ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
     pub fn persist(&self) -> crate::Result<()> {
+        self.journal.flush(false)?;
+        Ok(())
+    }
+
+    /// Flushes the active journal using `fsync`, making sure recently written data is durable.
+    ///
+    /// This has a dramatic performance impact on writes by 100-1000x, and is about 2x slower
+    /// than [`Keyspace::persist`]. Only use if you know if `fdatasync` is not sufficient for
+    /// your file system and/or operating system.
+    ///
+    /// Persisting only affects durability, NOT consistency! Even without flushing
+    /// data is crash-safe.
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occured.
+    #[doc(hidden)]
+    pub fn persist_paranoid(&self) -> crate::Result<()> {
         self.journal.flush(false)?;
         Ok(())
     }
