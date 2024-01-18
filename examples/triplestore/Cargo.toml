@@ -9,5 +9,3 @@ edition = "2021"
 fjall = { path = "../../" }
 serde_json = "1.0.99"
 serde = "1.0.193"
-
-[workspace]

@@ -12,7 +12,6 @@ use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-// This struct represents state
 struct AppState {
     keyspace: Keyspace,
     db: PartitionHandle,
@@ -31,25 +30,25 @@ struct BulkBody {
 
 #[post("/batch")]
 async fn insert_batch(
-    data: web::Data<AppState>,
+    state: web::Data<AppState>,
     body: web::Json<BulkBody>,
 ) -> MyResult<HttpResponse> {
     log::debug!("BATCH");
 
     let before = std::time::Instant::now();
 
-    let mut batch = data.keyspace.batch();
+    let mut batch = state.keyspace.batch();
 
     if let Some(remove) = &body.remove {
         for key in remove {
-            batch.remove(&data.db, key.clone());
+            batch.remove(&state.db, key.clone());
         }
     }
 
     if let Some(upsert) = &body.upsert {
         for item in upsert {
             batch.insert(
-                &data.db,
+                &state.db,
                 item.0.clone(),
                 serde_json::to_string(&item.1).unwrap(),
             );
@@ -57,7 +56,7 @@ async fn insert_batch(
     }
 
     batch.commit()?;
-    data.keyspace.persist()?;
+    state.keyspace.persist()?;
 
     Ok(HttpResponse::Ok()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -65,14 +64,17 @@ async fn insert_batch(
 }
 
 #[delete("/{key}")]
-async fn delete_item(path: web::Path<String>, data: web::Data<AppState>) -> MyResult<HttpResponse> {
+async fn delete_item(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> MyResult<HttpResponse> {
     let key = path.into_inner();
     log::debug!("DEL {key}");
 
     let before = std::time::Instant::now();
 
-    data.db.remove(key)?;
-    data.keyspace.persist()?;
+    state.db.remove(key)?;
+    state.keyspace.persist()?;
 
     Ok(HttpResponse::Ok()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -82,7 +84,7 @@ async fn delete_item(path: web::Path<String>, data: web::Data<AppState>) -> MyRe
 #[put("/{key}")]
 async fn insert_item(
     path: web::Path<String>,
-    data: web::Data<AppState>,
+    state: web::Data<AppState>,
     body: web::Json<InsertBody>,
 ) -> MyResult<HttpResponse> {
     let key = path.into_inner();
@@ -93,9 +95,10 @@ async fn insert_item(
 
     let before = std::time::Instant::now();
 
-    data.db
+    state
+        .db
         .insert(key, serde_json::to_string(&body.item).unwrap())?;
-    data.keyspace.persist()?;
+    state.keyspace.persist()?;
 
     Ok(HttpResponse::Created()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -103,7 +106,7 @@ async fn insert_item(
 }
 
 #[get("/{key}")]
-async fn get_item(path: web::Path<String>, data: web::Data<AppState>) -> MyResult<HttpResponse> {
+async fn get_item(path: web::Path<String>, state: web::Data<AppState>) -> MyResult<HttpResponse> {
     let key = path.into_inner();
     log::debug!("GET {key}");
 
@@ -113,7 +116,7 @@ async fn get_item(path: web::Path<String>, data: web::Data<AppState>) -> MyResul
         return Ok(HttpResponse::BadRequest().body("Bad Request"));
     }
 
-    let item = data.db.get(key)?;
+    let item = state.db.get(key)?;
 
     match item {
         Some(item) => Ok(HttpResponse::Ok()

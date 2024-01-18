@@ -1,7 +1,6 @@
 name: Tests
 
 on:
-  #  TODO: remove
   push:
     branches:
       - main
@@ -42,6 +41,7 @@ jobs:
           workspaces: >
             . -> target
             examples/actix-kv -> target
+            examples/axum-kv -> target
             examples/structured -> target
             examples/triplestore -> target
       - name: Build
