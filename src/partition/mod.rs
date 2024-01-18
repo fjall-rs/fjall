@@ -240,6 +240,26 @@ impl PartitionHandle {
     ///
     /// For insert-only workloads (e.g. logs, time series)
     /// this value is reliable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert_eq!(partition.len()?, 0);
+    ///
+    /// partition.insert("1", "abc")?;
+    /// assert_eq!(partition.approximate_len(), 1);
+    ///
+    /// partition.remove("1")?;
+    /// // Oops! approximate_len will not be reliable here
+    /// assert_eq!(partition.approximate_len(), 2);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn approximate_len(&self) -> u64 {
         self.tree.approximate_len()
