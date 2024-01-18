@@ -123,9 +123,10 @@ impl Keyspace {
     /// Returns the amount of journals on disk
     #[must_use]
     pub fn journal_count(&self) -> usize {
-        let journal_manager = self.journal_manager.read().expect("lock is poisoned");
-        // NOTE: + 1 = active journal
-        journal_manager.sealed_journal_count() + 1
+        self.journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .journal_count()
     }
 
     /// Returns the disk space usage of the entire keyspace
@@ -176,7 +177,7 @@ impl Keyspace {
     ///
     /// Should not be user-facing.
     fn create_or_recover(config: Config) -> crate::Result<Self> {
-        log::debug!("Opening keyspace at {}", config.path.display());
+        log::info!("Opening keyspace at {}", config.path.display());
 
         if config.path.join(FJALL_MARKER).try_exists()? {
             Self::recover(config)
@@ -366,7 +367,7 @@ impl Keyspace {
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
-        log::debug!("Recovering keyspace at {}", config.path.display());
+        log::info!("Recovering keyspace at {}", config.path.display());
         let recovery_mode = config.journal_recovery_mode;
 
         // Check version

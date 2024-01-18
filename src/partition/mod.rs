@@ -2,7 +2,7 @@ pub mod config;
 pub mod name;
 
 use crate::{
-    batch::PartitionKey,
+    batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
     file::PARTITIONS_FOLDER,
@@ -622,7 +622,7 @@ impl PartitionHandle {
         let seqno = self.seqno.next();
 
         shard.writer.write(
-            &crate::batch::Item {
+            &BatchItem {
                 key: key.as_ref().into(),
                 value: value.as_ref().into(),
                 partition: self.name.clone(),
@@ -678,7 +678,7 @@ impl PartitionHandle {
 
         /* let bytes_written = */
         shard.writer.write(
-            &crate::batch::Item {
+            &BatchItem {
                 key: key.as_ref().into(),
                 value: [].into(),
                 partition: self.name.clone(),

@@ -1,5 +1,5 @@
-use super::{marker::Marker, writer::JournalWriter};
-use crate::batch::{Item as BatchItem, PartitionKey};
+use super::{marker::Marker, writer::Writer as JournalWriter};
+use crate::batch::{item::Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
 use std::{collections::HashMap, fs::OpenOptions, path::Path};

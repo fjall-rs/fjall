@@ -1,5 +1,5 @@
 use super::marker::Marker;
-use crate::batch::Item as BatchItem;
+use crate::batch::item::Item as BatchItem;
 use lsm_tree::{serde::Serializable, SeqNo, SerializeError};
 use std::{
     fs::{File, OpenOptions},
@@ -9,7 +9,7 @@ use std::{
 
 pub const PRE_ALLOCATED_BYTES: u64 = 8 * 1_024 * 1_024;
 
-pub struct JournalWriter {
+pub struct Writer {
     file: BufWriter<File>,
 }
 
@@ -35,7 +35,7 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
     Ok(bytes.len())
 }
 
-impl JournalWriter {
+impl Writer {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
         let file = File::create(&path)?;
         file.set_len(PRE_ALLOCATED_BYTES)?;

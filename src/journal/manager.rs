@@ -41,6 +41,7 @@ impl std::fmt::Debug for Item {
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different partitions.
+#[allow(clippy::module_name_repetitions)]
 pub struct JournalManager {
     active_path: PathBuf,
     items: Vec<Item>,
@@ -59,6 +60,12 @@ impl JournalManager {
     pub fn enqueue(&mut self, item: Item) {
         self.disk_space_in_bytes += item.size_in_bytes;
         self.items.push(item);
+    }
+
+    /// Returns the amount of journals
+    pub fn journal_count(&self) -> usize {
+        // NOTE: + 1 = active journal
+        self.sealed_journal_count() + 1
     }
 
     /// Returns the amount of sealed journals
