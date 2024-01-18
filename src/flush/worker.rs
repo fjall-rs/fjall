@@ -106,10 +106,11 @@ pub fn run(
     journal_manager: &Arc<RwLock<JournalManager>>,
     compaction_manager: &CompactionManager,
     write_buffer_manager: &WriteBufferManager,
+    parallelism: usize,
 ) {
     log::debug!("flush worker: write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
-    let partitioned_tasks = fm.collect_tasks(4 /* TODO: parallelism, CPU cores probably */);
+    let partitioned_tasks = fm.collect_tasks(parallelism);
     drop(fm);
 
     let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();

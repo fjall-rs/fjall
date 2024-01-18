@@ -26,6 +26,9 @@ pub struct Config {
     /// many (possibly inactive) partitions.
     pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
 
+    /// Amount of concurrent flush workers
+    pub(crate) flush_workers_count: usize,
+
     /// Amount of compaction workers
     pub(crate) compaction_workers_count: usize,
 
@@ -41,7 +44,8 @@ impl Default for Config {
     fn default() -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
 
-        let cpus = (queried_cores.unwrap_or(DEFAULT_CPU_CORES) - 1/* Reserve 1 CPU core */)
+        // Reserve 1 CPU core if possible
+        let cpus = (queried_cores.unwrap_or(DEFAULT_CPU_CORES) - 1)
             // Should never be 0
             .max(1);
 
@@ -52,8 +56,9 @@ impl Default for Config {
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
-            compaction_workers_count:cpus,
-            journal_recovery_mode: RecoveryMode::default()
+            flush_workers_count: cpus,
+            compaction_workers_count: cpus,
+            journal_recovery_mode: RecoveryMode::default(),
         }
     }
 }
@@ -67,9 +72,23 @@ impl Config {
         }
     }
 
+    /// Sets the amount of flush workers
+    ///
+    /// Default = # CPU cores
+    ///
+    /// # Panics
+    ///
+    /// Panics if n is equal to 0.
+    #[must_use]
+    pub fn flush_workers(mut self, n: usize) -> Self {
+        assert!(n > 0);
+        self.flush_workers_count = n;
+        self
+    }
+
     /// Sets the amount of compaction workers
     ///
-    /// Default = 4
+    /// Default = # CPU cores
     ///
     /// # Panics
     ///

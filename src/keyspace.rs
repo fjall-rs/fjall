@@ -609,11 +609,14 @@ impl Keyspace {
     /// Should NOT be called when there is a flush worker active already!!!
     #[doc(hidden)]
     pub fn force_flush(&self) {
+        let parallelism = self.config.flush_workers_count;
+
         crate::flush::worker::run(
             &self.flush_manager,
             &self.journal_manager,
             &self.compaction_manager,
             &self.write_buffer_manager,
+            parallelism,
         );
     }
 
@@ -627,6 +630,8 @@ impl Keyspace {
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
 
+        let parallelism = self.config.flush_workers_count;
+
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::spawn(move || {
@@ -639,6 +644,7 @@ impl Keyspace {
                     &journal_manager,
                     &compaction_manager,
                     &write_buffer_manager,
+                    parallelism,
                 );
             }
 

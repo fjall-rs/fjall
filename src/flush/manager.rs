@@ -88,6 +88,8 @@ impl FlushManager {
         //
         // Because we are flushing them atomically inside one batch,
         // we will never cover up a lower seqno of some other segment.
+        // For this to work, all tasks need to be successful and atomically
+        // applied (all-or-nothing).
         'outer: for (partition_name, queue) in &self.queues {
             for item in queue.iter() {
                 if cnt == limit {
