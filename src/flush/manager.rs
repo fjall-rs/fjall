@@ -1,3 +1,4 @@
+use super::queue::FlushQueue;
 use crate::{batch::PartitionKey, PartitionHandle};
 use lsm_tree::MemTable;
 use std::{
@@ -22,14 +23,16 @@ impl std::fmt::Debug for Task {
     }
 }
 
+// TODO: accessing flush manager shouldn't take RwLock... but changing its internals should
+
 /// The [`FlushManager`] stores a dictionary of queues, each queue
-/// containing a list of flush tasks.
+/// containing some flush tasks.
 ///
 /// Each flush task references a sealed memtable and the given partition.
 #[derive(Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
-    pub queues: HashMap<PartitionKey, Vec<Arc<Task>>>,
+    pub queues: HashMap<PartitionKey, FlushQueue>,
 }
 
 impl FlushManager {
@@ -45,15 +48,7 @@ impl FlushManager {
 
     /// Returns the amount of bytes that are queued to be flushed
     pub fn queued_size(&self) -> u64 {
-        self.queues
-            .values()
-            .map(|x| {
-                x.iter()
-                    .map(|x| x.sealed_memtable.size())
-                    .map(u64::from)
-                    .sum::<u64>()
-            })
-            .sum::<u64>()
+        self.queues.values().map(FlushQueue::size).sum::<u64>()
     }
 
     pub fn remove_partition(&mut self, name: &str) {
@@ -69,8 +64,8 @@ impl FlushManager {
 
         self.queues
             .entry(partition_name)
-            .or_insert_with(|| Vec::with_capacity(10))
-            .push(Arc::new(task));
+            .or_default()
+            .enqueue(Arc::new(task));
     }
 
     /// Returns a list of tasks per partition.
@@ -84,7 +79,7 @@ impl FlushManager {
         // Because we are flushing them atomically inside one batch,
         // we will never cover up a lower seqno of some other segment.
         'outer: for (partition_name, queue) in &self.queues {
-            for item in queue {
+            for item in queue.iter() {
                 if cnt == limit {
                     break 'outer;
                 }
@@ -102,13 +97,6 @@ impl FlushManager {
     }
 
     pub fn dequeue_tasks(&mut self, partition_name: PartitionKey, cnt: usize) {
-        let queue = self
-            .queues
-            .entry(partition_name)
-            .or_insert_with(|| Vec::with_capacity(10));
-
-        for _ in 0..cnt {
-            queue.remove(0);
-        }
+        self.queues.entry(partition_name).or_default().dequeue(cnt);
     }
 }
