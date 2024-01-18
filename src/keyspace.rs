@@ -292,6 +292,20 @@ impl Keyspace {
     }
 
     /// Returns `true` if the partition with the given name exists
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// assert!(!keyspace.partition_exists("default"));
+    /// keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert!(keyspace.partition_exists("default"));
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn partition_exists(&self, name: &str) -> bool {
         self.partitions
