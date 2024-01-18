@@ -24,7 +24,10 @@ use std::{
     collections::HashMap,
     ops::RangeBounds,
     path::PathBuf,
-    sync::{atomic::AtomicU32, Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 use std_semaphore::Semaphore;
@@ -43,6 +46,7 @@ pub struct PartitionHandleInner {
     pub(crate) compaction_manager: CompactionManager,
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) write_buffer_manager: WriteBufferManager,
+    pub(crate) is_deleted: AtomicBool,
 
     /// TEMP pub
     pub(crate) tree: LsmTree,
@@ -134,6 +138,7 @@ impl PartitionHandle {
             compaction_strategy: RwLock::new(Arc::new(super::compaction::Levelled::default())),
             max_memtable_size: (8 * 1_024 * 1_024).into(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            is_deleted: AtomicBool::default(),
         })))
     }
 

@@ -46,9 +46,19 @@ impl FlushManager {
             .collect()
     }
 
-    /// Returns the amount of bytes that are queued to be flushed
+    /// Returns the amount of tasks queued
     pub(crate) fn queued_size(&self) -> u64 {
         self.queues.values().map(FlushQueue::size).sum::<u64>()
+    }
+
+    /// Returns the amount of bytes that are queued to be flushed
+    pub fn len(&self) -> usize {
+        self.queues.values().map(FlushQueue::len).sum::<usize>()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub(crate) fn remove_partition(&mut self, name: &str) {

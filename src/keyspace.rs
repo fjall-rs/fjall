@@ -267,6 +267,10 @@ impl Keyspace {
     pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
         let partition_path = handle.path();
 
+        handle
+            .is_deleted
+            .store(true, std::sync::atomic::Ordering::Release);
+
         let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
         file.sync_all()?;
 
@@ -600,6 +604,19 @@ impl Keyspace {
         });
     }
 
+    /// Only used for internal testing.
+    ///
+    /// Should NOT be called when there is a flush worker active already!!!
+    #[doc(hidden)]
+    pub fn force_flush(&self) {
+        crate::flush::worker::run(
+            &self.flush_manager,
+            &self.journal_manager,
+            &self.compaction_manager,
+            &self.write_buffer_manager,
+        );
+    }
+
     fn spawn_flush_worker(&self) {
         let flush_manager = self.flush_manager.clone();
         let journal_manager = self.journal_manager.clone();
@@ -628,5 +645,240 @@ impl Keyspace {
             log::trace!("flush worker: exiting because tree is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    pub fn force_flush_multiple_partitions() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        let config = Config::new(folder);
+        let keyspace = Keyspace::create_or_recover(config)?;
+        let db = keyspace.open_partition("default", Default::default())?;
+        let db2 = keyspace.open_partition("default2", Default::default())?;
+
+        assert_eq!(0, keyspace.write_buffer_size());
+
+        assert_eq!(0, db.segment_count());
+        assert_eq!(0, db2.segment_count());
+
+        assert_eq!(
+            0,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queued_size()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        for _ in 0..100 {
+            db.insert(nanoid::nanoid!(), "abc")?;
+            db2.insert(nanoid::nanoid!(), "abc")?;
+        }
+
+        db.rotate_memtable()?;
+
+        assert_eq!(
+            1,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        assert_eq!(
+            1,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        for _ in 0..100 {
+            db2.insert(nanoid::nanoid!(), "abc")?;
+        }
+
+        db2.rotate_memtable()?;
+
+        assert_eq!(
+            2,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        assert_eq!(
+            2,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(0, db.segment_count());
+        assert_eq!(0, db2.segment_count());
+
+        keyspace.force_flush();
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queued_size()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(0, keyspace.write_buffer_size());
+        assert_eq!(1, db.segment_count());
+        assert_eq!(1, db2.segment_count());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn force_flush() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        let config = Config::new(folder);
+        let keyspace = Keyspace::create_or_recover(config)?;
+        let db = keyspace.open_partition("default", Default::default())?;
+
+        assert_eq!(0, keyspace.write_buffer_size());
+
+        assert_eq!(0, db.segment_count());
+
+        assert_eq!(
+            0,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queued_size()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        for _ in 0..100 {
+            db.insert(nanoid::nanoid!(), "abc")?;
+        }
+
+        db.rotate_memtable()?;
+
+        assert_eq!(
+            1,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        assert_eq!(
+            1,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(0, db.segment_count());
+
+        keyspace.force_flush();
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queued_size()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .len()
+        );
+
+        assert_eq!(
+            0,
+            keyspace
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(0, keyspace.write_buffer_size());
+        assert_eq!(1, db.segment_count());
+
+        Ok(())
     }
 }

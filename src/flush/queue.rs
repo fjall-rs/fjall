@@ -35,6 +35,10 @@ impl FlushQueue {
         self.items.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
     pub fn size(&self) -> u64 {
         self.items
             .iter()

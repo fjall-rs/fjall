@@ -11,7 +11,7 @@ use crate::{
 use lsm_tree::MemTable;
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{atomic::AtomicBool, Arc, RwLock},
 };
 
 /// Recovers partitions
@@ -67,6 +67,7 @@ pub fn recover_partitions(
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            is_deleted: AtomicBool::default(),
         };
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);
