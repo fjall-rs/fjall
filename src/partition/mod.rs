@@ -144,6 +144,19 @@ impl PartitionHandle {
     }
 
     /// Returns the disk space usage of this partition
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert_eq!(0, partition.disk_space());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn disk_space(&self) -> u64 {
         self.tree.disk_space()
@@ -285,6 +298,7 @@ impl PartitionHandle {
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert_eq!(partition.len()?, 0);
+    ///
     /// partition.insert("1", "abc")?;
     /// partition.insert("3", "abc")?;
     /// partition.insert("5", "abc")?;
