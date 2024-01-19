@@ -27,7 +27,7 @@ Upserts an item.
 }
 ```
 
-### `GET /{key}
+### `GET /{key}`
 
 Returns a single item.
 
