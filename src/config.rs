@@ -51,7 +51,7 @@ impl Default for Config {
 
         Self {
             path: ".fjall_data".into(),
-            block_cache: Arc::new(BlockCache::with_capacity_bytes(16 * 1_024)),
+            block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(960, 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
