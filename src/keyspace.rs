@@ -220,7 +220,8 @@ impl Keyspace {
     /// Needed to open a keyspace without threads for testing.
     ///
     /// Should not be user-facing.
-    fn create_or_recover(config: Config) -> crate::Result<Self> {
+    #[doc(hidden)]
+    pub fn create_or_recover(config: Config) -> crate::Result<Self> {
         log::info!("Opening keyspace at {}", config.path.display());
 
         if config.path.join(FJALL_MARKER).try_exists()? {
