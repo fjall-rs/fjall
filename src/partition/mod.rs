@@ -289,7 +289,7 @@ impl PartitionHandle {
     ///
     /// This operation scans the entire partition: O(n) complexity!
     ///
-    /// Never, under any circumstances, use .len() == 0 to check
+    /// Never, under any circumstances, use .`len()` == 0 to check
     /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
     ///
     /// If you want an estimate, use [`PartitionHandle::approximate_len`] instead.
