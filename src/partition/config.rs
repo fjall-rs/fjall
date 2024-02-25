@@ -42,7 +42,6 @@ impl CreateOptions {
     /// Sets the block size.
     ///
     /// Default = 4 KiB
-    ///
     #[must_use]
     pub fn block_size(mut self, n: u32) -> Self {
         self.block_size = n;
@@ -52,7 +51,6 @@ impl CreateOptions {
     /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
     ///
     /// Default = 8
-    ///
     #[must_use]
     pub fn level_ratio(mut self, n: u8) -> Self {
         self.level_ratio = n;
