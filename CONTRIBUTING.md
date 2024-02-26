@@ -8,4 +8,4 @@ Thank you for your contribution!
 
 ## Looking for issues?
 
-https://github.com/fjall-rs/lsm-tree/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22
+https://github.com/fjall-rs/fjall/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22
