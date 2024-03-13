@@ -57,7 +57,7 @@ jobs:
       - name: Build & test examples
         run: node compile_examples.mjs
   cross:
-    cancel-timeout-minutes: 20
+    timeout-minutes: 20
     name: cross
     strategy:
       matrix:
@@ -80,4 +80,3 @@ jobs:
         run: |
           cargo install cross
           cross build --target ${{ matrix.target }}
-
