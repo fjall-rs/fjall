@@ -124,9 +124,6 @@ impl Config {
 
     /// Sets the block cache.
     ///
-    /// You can create a global [`BlockCache`] and share it between multiple
-    /// keyspaces to cap global cache memory usage.
-    ///
     /// Defaults to a block cache 16 MiB of capacity shared
     /// between all partitions inside this keyspace.
     #[must_use]
