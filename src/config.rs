@@ -124,8 +124,8 @@ impl Config {
 
     /// Sets the block cache.
     ///
-    /// Defaults to a block cache 16 MiB of capacity shared
-    /// between all partitions inside this keyspace.
+    /// Defaults to a block cache with 16 MiB of capacity
+    /// shared between all partitions inside this keyspace.
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
