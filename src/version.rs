@@ -4,6 +4,7 @@ use std::io::Cursor;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Version {
     V0,
+    // V1,
 }
 
 impl std::fmt::Display for Version {
@@ -38,14 +39,10 @@ impl Version {
     }
 
     pub fn parse_file_header(bytes: &[u8]) -> Option<Self> {
-        let Some(first_three) = bytes.get(0..3) else {
-            return None;
-        };
+        let first_three = bytes.get(0..3)?;
 
         if first_three == MAGIC_BYTES {
-            let Some(next_two) = bytes.get(3..5) else {
-                return None;
-            };
+            let next_two = bytes.get(3..5)?;
 
             let mut bytes = [0; 2];
             bytes.copy_from_slice(next_two);
