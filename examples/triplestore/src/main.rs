@@ -48,11 +48,9 @@ impl Triplestore {
         let Some(bytes) = self.verbs.get(format!("{subject}#{verb}#{object}"))? else {
             return Ok(None);
         };
-
-        Ok(Some(
-            serde_json::from_str(std::str::from_utf8(&bytes).expect("should be utf-8"))
-                .expect("should be json"),
-        ))
+        let value = std::str::from_utf8(&bytes).expect("should be utf-8");
+        let value = serde_json::from_str(value).expect("should be json");
+        Ok(Some(value))
     }
 
     pub fn out(
@@ -64,14 +62,14 @@ impl Triplestore {
 
         for item in self.verbs.prefix(format!("{subject}#{verb}#")).into_iter() {
             let (key, value) = item?;
+            
             let key = std::str::from_utf8(&key).expect("should be utf-8");
-            let value = std::str::from_utf8(&value).expect("should be utf-8");
-
             let mut splits = key.split('#');
             let s = splits.next().unwrap().to_string();
             let v = splits.next().unwrap().to_string();
             let o = splits.next().unwrap().to_string();
 
+            let value = std::str::from_utf8(&value).expect("should be utf-8");
             let value: Value = serde_json::from_str(&value).expect("should be json");
 
             result.push((s, v, o, value));
