@@ -1,5 +1,4 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::io::Cursor;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Version {
@@ -46,9 +45,9 @@ impl Version {
 
             let mut bytes = [0; 2];
             bytes.copy_from_slice(next_two);
-            let mut cursor = Cursor::new(&bytes);
+            let mut bytes: &[u8] = &bytes;
 
-            let value = cursor.read_u16::<BigEndian>().ok()?;
+            let value = bytes.read_u16::<BigEndian>().ok()?;
             let version = Self::try_from(value).ok()?;
 
             Some(version)
