@@ -17,6 +17,12 @@ struct Song {
     release_year: u16,
 }
 
+impl From<&Song> for Vec<u8> {
+    fn from(val: &Song) -> Self {
+        rmp_serde::to_vec(&val).expect("should serialize")
+    }
+}
+
 impl std::fmt::Display for Song {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -29,17 +35,18 @@ impl std::fmt::Display for Song {
 
 impl Song {
     pub fn store(&self, tree: &PartitionHandle) -> fjall::Result<()> {
-        let serialized = rmp_serde::to_vec(self).expect("should serialize");
-        tree.insert(&self.id, serialized)?;
-        Ok(())
+        let serialized: Vec<u8> = self.into();
+        tree.insert(&self.id, serialized)
     }
 
     pub fn load(tree: &PartitionHandle, key: &str) -> fjall::Result<Option<Song>> {
         let Some(item) = tree.get(key)? else {
             return Ok(None);
         };
+
         let mut item: Song = rmp_serde::from_slice(&item).expect("should deserialize");
         item.id = key.to_owned();
+
         Ok(Some(item))
     }
 }
