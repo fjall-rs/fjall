@@ -2,7 +2,7 @@
 name = "fjall"
 description = "LSM-based key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2021"
 rust-version = "1.74.0"
 readme = "README.md"
@@ -26,7 +26,7 @@ segment_history = ["lsm-tree/segment_history"]
 [dependencies]
 byteorder = "1.5.0"
 crc32fast = "1.4.0"
-lsm-tree = { version = "0.6.3", default-features = false }
+lsm-tree = { version = "0.7.0", default-features = false }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"
