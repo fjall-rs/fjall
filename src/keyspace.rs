@@ -3,7 +3,8 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        FJALL_MARKER, FLUSH_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, FLUSH_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER,
+        PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
     journal::{manager::JournalManager, shard::RecoveryMode, Journal},
@@ -275,12 +276,8 @@ impl Keyspace {
         let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
         file.sync_all()?;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // fsync folder on Unix
-            let folder = File::open(&partition_path)?;
-            folder.sync_all()?;
-        }
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(&partition_path)?;
 
         self.flush_manager
             .write()
@@ -501,10 +498,13 @@ impl Keyspace {
         let marker_path = path.join(FJALL_MARKER);
         assert!(!marker_path.try_exists()?);
 
-        std::fs::create_dir_all(path.join(JOURNALS_FOLDER))?;
-        std::fs::create_dir_all(path.join(PARTITIONS_FOLDER))?;
+        let journal_folder_path = path.join(JOURNALS_FOLDER);
+        let partition_folder_path = path.join(PARTITIONS_FOLDER);
 
-        let active_journal_path = path.join(JOURNALS_FOLDER).join(&*generate_segment_id());
+        std::fs::create_dir_all(&journal_folder_path)?;
+        std::fs::create_dir_all(&partition_folder_path)?;
+
+        let active_journal_path = journal_folder_path.join(&*generate_segment_id());
         let journal = Journal::create_new(&active_journal_path)?;
         let journal = Arc::new(journal);
 
@@ -528,19 +528,10 @@ impl Keyspace {
         Version::V0.write_file_header(&mut file)?;
         file.sync_all()?;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // fsync folders on Unix
-
-            let folder = std::fs::File::open(path.join(JOURNALS_FOLDER))?;
-            folder.sync_all()?;
-
-            let folder = std::fs::File::open(path.join(PARTITIONS_FOLDER))?;
-            folder.sync_all()?;
-
-            let folder = std::fs::File::open(&path)?;
-            folder.sync_all()?;
-        }
+        // IMPORTANT: fsync folders on Unix
+        fsync_directory(&journal_folder_path)?;
+        fsync_directory(&partition_folder_path)?;
+        fsync_directory(&path)?;
 
         Ok(Self(Arc::new(inner)))
     }

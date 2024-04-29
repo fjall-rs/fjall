@@ -1,7 +1,7 @@
 use super::shard::JournalShard;
 use crate::{
     batch::PartitionKey,
-    file::{FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
+    file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
     PartitionHandle,
 };
@@ -164,12 +164,8 @@ impl JournalManager {
         let marker = File::create(old_journal_path.join(FLUSH_MARKER))?;
         marker.sync_all()?;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // fsync folder on Unix
-            let folder = File::open(&old_journal_path)?;
-            folder.sync_all()?;
-        }
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(&old_journal_path)?;
 
         let new_journal_path = old_journal_path
             .parent()

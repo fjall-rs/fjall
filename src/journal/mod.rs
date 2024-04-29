@@ -5,7 +5,7 @@ pub mod shard;
 pub mod writer;
 
 use self::shard::{JournalShard, RecoveryMode};
-use crate::{batch::PartitionKey, sharded::Sharded};
+use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded};
 use lsm_tree::MemTable;
 use std::{
     collections::HashMap,
@@ -93,12 +93,8 @@ impl Journal {
             shard.rotate(path.join(idx.to_string()))?;
         }
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // fsync folder on Unix
-            let folder = File::open(path)?;
-            folder.sync_all()?;
-        }
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(path)?;
 
         Ok(())
     }
@@ -116,12 +112,8 @@ impl Journal {
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // fsync folder on Unix
-            let folder = std::fs::File::open(path)?;
-            folder.sync_all()?;
-        }
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(path)?;
 
         Ok(Self {
             shards: Sharded::new(shards),
