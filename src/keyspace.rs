@@ -86,7 +86,7 @@ impl Keyspace {
     /// Initializes a new atomic write batch.
     ///
     /// Items may be written to multiple partitions, which
-    /// will be be updated atomically if the batch is committed.
+    /// will be be updated atomically when the batch is committed.
     ///
     /// # Examples
     ///
@@ -115,13 +115,13 @@ impl Keyspace {
         Batch::new(self.clone())
     }
 
-    /// Returns the current write buffer size (active + sealed memtables)
+    /// Returns the current write buffer size (active + sealed memtables).
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {
         self.write_buffer_manager.get()
     }
 
-    /// Returns the amount of journals on disk
+    /// Returns the amount of journals on disk.
     ///
     /// # Examples
     ///
@@ -143,7 +143,7 @@ impl Keyspace {
             .journal_count()
     }
 
-    /// Returns the disk space usage of the entire keyspace
+    /// Returns the disk space usage of the entire keyspace.
     ///
     /// # Examples
     ///
@@ -337,7 +337,7 @@ impl Keyspace {
             .collect()
     }
 
-    /// Returns `true` if the partition with the given name exists
+    /// Returns `true` if the partition with the given name exists.
     ///
     /// # Examples
     ///
@@ -434,7 +434,7 @@ impl Keyspace {
         Ok(journal)
     }
 
-    /// Recovers existing keyspace from directory
+    /// Recovers existing keyspace from directory.
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
