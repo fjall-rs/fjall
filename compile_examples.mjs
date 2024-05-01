@@ -5,9 +5,12 @@ import { resolve } from "node:path";
 const examplesFolder = "examples";
 
 for (const exampleName of await readdir(examplesFolder)) {
+
   const folder = resolve(examplesFolder, exampleName);
 
   {
+    console.error(`Compiling ${exampleName}`);
+
     const proc = spawn("cargo build", {
       cwd: folder,
       shell: true,
@@ -30,6 +33,8 @@ for (const exampleName of await readdir(examplesFolder)) {
   }
 
   {
+    console.error(`Testing ${exampleName}`);
+
     const proc = spawn("cargo test", {
       cwd: folder,
       shell: true,
@@ -51,5 +56,5 @@ for (const exampleName of await readdir(examplesFolder)) {
     });
   }
 
-  console.error(`${folder} OK`);
+  console.error(`${exampleName} OK`);
 }
