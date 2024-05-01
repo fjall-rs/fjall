@@ -22,7 +22,7 @@ for (const exampleName of await readdir(examplesFolder)) {
     await new Promise((resolve, _) => {
       proc.on("exit", () => {
         if (proc.exitCode > 0) {
-          console.error(`${folder} FAILED`);
+          console.error(`${exampleName} FAILED`);
           process.exit(1);
         }
         else {
@@ -46,7 +46,7 @@ for (const exampleName of await readdir(examplesFolder)) {
     await new Promise((resolve, _) => {
       proc.on("exit", () => {
         if (proc.exitCode > 0) {
-          console.error(`${folder} FAILED`);
+          console.error(`${exampleName} FAILED`);
           process.exit(1);
         }
         else {
