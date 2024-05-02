@@ -214,12 +214,12 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     continue;
                 };
 
-                let memtable_id = lsm_tree::id::generate_segment_id();
+                let memtable_id = partition.tree.get_next_segment_id();
                 let sealed_memtable = Arc::new(sealed_memtable);
 
                 partition
                     .tree
-                    .add_sealed_memtable(memtable_id.clone(), sealed_memtable.clone());
+                    .add_sealed_memtable(memtable_id, sealed_memtable.clone());
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();

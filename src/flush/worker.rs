@@ -14,9 +14,11 @@ fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
     use lsm_tree::flush::Options;
 
     let segment = lsm_tree::flush::flush_to_segment(Options {
+        tree_id: task.partition.tree.id,
+
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
-        segment_id: task.id.clone(),
+        segment_id: task.id,
 
         memtable: task.sealed_memtable.clone(),
         folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),

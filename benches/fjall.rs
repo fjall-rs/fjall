@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
 use lsm_tree::segment::block::ValueBlock;
-use lsm_tree::{id::generate_segment_id, Value};
+use lsm_tree::Value;
 use rand::Rng;
 use std::sync::Arc;
 
@@ -21,13 +21,16 @@ fn block_cache_insert(c: &mut Criterion) {
 
     let block = Arc::new(ValueBlock { items, crc: 0 });
 
+    let mut id = 0;
+
     c.bench_function("BlockCache::insert_disk_block", |b| {
         b.iter(|| {
             block_cache.insert_disk_block(
-                generate_segment_id(),
+                (0, id).into(),
                 "asdasdasdasd".as_bytes().into(),
                 block.clone(),
             );
+            id += 1;
         });
     });
 }
@@ -46,11 +49,11 @@ fn block_cache_get(c: &mut Criterion) {
         })
         .collect();
 
-    let seg_id = generate_segment_id();
+    let seg_id = (0, 0).into();
     let block = Arc::new(ValueBlock { items, crc: 0 });
 
     (0u64..100_000).for_each(|idx| {
-        block_cache.insert_disk_block(seg_id.clone(), idx.to_be_bytes().into(), block.clone())
+        block_cache.insert_disk_block(seg_id, idx.to_be_bytes().into(), block.clone())
     });
     assert_eq!(100_000, block_cache.len());
 
@@ -60,7 +63,7 @@ fn block_cache_get(c: &mut Criterion) {
         b.iter(|| {
             let key = rng.gen_range(0u64..100_000).to_be_bytes();
             let key: Arc<[u8]> = key.into();
-            block_cache.get_disk_block(&seg_id, &key).unwrap();
+            block_cache.get_disk_block(seg_id, &key).unwrap();
         });
     });
 }

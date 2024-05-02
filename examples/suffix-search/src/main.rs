@@ -1,11 +1,10 @@
+use fjall::{BlockCache, Config, PartitionCreateOptions};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
     time::Instant,
 };
-
-use fjall::{BlockCache, Config, PartitionCreateOptions};
 
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
@@ -86,7 +85,7 @@ fn main() -> fjall::Result<()> {
         }
 
         // Uses prefix, so generally faster than table scan
-        // `-----------------------------------------------------v
+        // `------------------v
         for item in &items_rev.prefix(suffix.chars().rev().collect::<String>()) {
             let (_, value) = item?;
 

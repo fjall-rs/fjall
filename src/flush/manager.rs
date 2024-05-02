@@ -1,6 +1,6 @@
 use super::queue::FlushQueue;
 use crate::{batch::PartitionKey, PartitionHandle};
-use lsm_tree::MemTable;
+use lsm_tree::{MemTable, SegmentId};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -8,7 +8,7 @@ use std::{
 
 pub struct Task {
     /// ID of memtable
-    pub(crate) id: Arc<str>,
+    pub(crate) id: SegmentId,
 
     /// Memtable to flush
     pub(crate) sealed_memtable: Arc<MemTable>,
@@ -51,11 +51,15 @@ impl FlushManager {
         self.queues.values().map(FlushQueue::size).sum::<u64>()
     }
 
+    // NOTE: is actually used in tests
+    #[allow(dead_code)]
     /// Returns the amount of bytes that are queued to be flushed
     pub fn len(&self) -> usize {
         self.queues.values().map(FlushQueue::len).sum::<usize>()
     }
 
+    // NOTE: is actually used in tests
+    #[allow(dead_code)]
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
