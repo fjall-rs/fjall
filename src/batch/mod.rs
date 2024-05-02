@@ -13,7 +13,7 @@ pub type PartitionKey = Arc<str>;
 
 /// An atomic write batch
 ///
-/// Allows atomically writing across partitions inside the tree.
+/// Allows atomically writing across partitions inside the [Keyspace].
 pub struct Batch {
     data: Vec<Item>,
     keyspace: Keyspace,
@@ -21,7 +21,8 @@ pub struct Batch {
 
 impl Batch {
     /// Initializes a new write batch
-    /// This function is called by [`Keyspace::batch`]
+    ///
+    /// This function is called by [`Keyspace::batch`].
     pub(crate) fn new(keyspace: Keyspace) -> Self {
         Self {
             data: Vec::with_capacity(100),
@@ -54,7 +55,7 @@ impl Batch {
         ));
     }
 
-    /// Commits the batch to the LSM-tree atomically.
+    /// Commits the batch to the [Keyspace] atomically
     ///
     /// # Errors
     ///
