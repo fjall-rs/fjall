@@ -13,7 +13,7 @@ pub type PartitionKey = Arc<str>;
 
 /// An atomic write batch
 ///
-/// Allows atomically writing across partitions inside the [Keyspace].
+/// Allows atomically writing across partitions inside the [`Keyspace`].
 pub struct Batch {
     data: Vec<Item>,
     keyspace: Keyspace,
@@ -55,7 +55,7 @@ impl Batch {
         ));
     }
 
-    /// Commits the batch to the [Keyspace] atomically
+    /// Commits the batch to the [`Keyspace`] atomically
     ///
     /// # Errors
     ///
