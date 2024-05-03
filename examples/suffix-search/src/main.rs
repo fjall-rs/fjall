@@ -1,11 +1,10 @@
+use fjall::{BlockCache, Config, PartitionCreateOptions};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
     time::Instant,
 };
-
-use fjall::{BlockCache, Config, PartitionCreateOptions};
 
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
