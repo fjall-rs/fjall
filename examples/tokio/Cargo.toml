@@ -1,9 +1,10 @@
 [package]
-name = "suffix-search"
-version = "0.0.1"
+name = "fjall-tokio"
+version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 fjall = { path = "../../" }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }

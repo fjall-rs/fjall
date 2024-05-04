@@ -57,7 +57,7 @@ impl Journal {
         recovery_mode: RecoveryMode,
     ) -> crate::Result<(Self, HashMap<PartitionKey, MemTable>)> {
         let path = path.as_ref();
-        log::info!("Recovering journal from {}", path.display());
+        log::info!("Recovering journal from {path:?}");
 
         let memtables = Self::recover_memtables(path, None, recovery_mode)?;
 
@@ -82,9 +82,9 @@ impl Journal {
         path: P,
         shards: &mut [RwLockWriteGuard<'_, JournalShard>],
     ) -> crate::Result<()> {
-        log::debug!("Rotating active journal to {}", path.as_ref().display());
-
         let path = path.as_ref();
+
+        log::debug!("Rotating active journal to {path:?}");
 
         std::fs::create_dir_all(path)?;
 
