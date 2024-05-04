@@ -29,9 +29,8 @@ impl std::fmt::Debug for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "JournalManagerItem {} => {:#?}",
-            self.path.display(),
-            self.partition_seqnos
+            "JournalManagerItem {:?} => {:#?}",
+            self.path, self.partition_seqnos
         )
     }
 }
@@ -135,7 +134,7 @@ impl JournalManager {
             // [2] Checking the seqno is safe because the queues inside the flush manager are FIFO.
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
-            log::trace!("Removing fully flushed journal at {}", item.path.display());
+            log::trace!("Removing fully flushed journal at {:?}", item.path);
             std::fs::remove_dir_all(&item.path)?;
 
             self.disk_space_in_bytes -= item.size_in_bytes;
@@ -152,7 +151,7 @@ impl JournalManager {
     ) -> crate::Result<()> {
         let old_journal_path = self.active_path.clone();
 
-        log::debug!("Sealing journal at {}", old_journal_path.display());
+        log::debug!("Sealing journal at {old_journal_path:?}");
 
         let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
 

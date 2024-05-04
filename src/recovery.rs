@@ -121,7 +121,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
 
         // Check if journal is sealed
         if dirent.path().join(FLUSH_MARKER).try_exists()? {
-            log::debug!("Recovering sealed journal: {}", journal_path.display());
+            log::debug!("Recovering sealed journal: {journal_path:?}");
 
             let journal_size = fs_extra::dir::get_size(&journal_path).map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind))

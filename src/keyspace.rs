@@ -223,7 +223,7 @@ impl Keyspace {
     /// Should not be user-facing.
     #[doc(hidden)]
     pub fn create_or_recover(config: Config) -> crate::Result<Self> {
-        log::info!("Opening keyspace at {}", config.path.display());
+        log::info!("Opening keyspace at {:?}", config.path);
 
         if config.path.join(FJALL_MARKER).try_exists()? {
             Self::recover(config)
@@ -438,7 +438,7 @@ impl Keyspace {
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering keyspace at {}", config.path.display());
+        log::info!("Recovering keyspace at {:?}", config.path);
         let recovery_mode = config.journal_recovery_mode;
 
         // Check version
@@ -449,7 +449,7 @@ impl Keyspace {
         let active_journal = Self::find_active_journal(&journals_folder, recovery_mode)?;
 
         let (journal, mut memtables) = if let Some((journal, memtables)) = active_journal {
-            log::debug!("Recovered active journal at {}", journal.path.display());
+            log::debug!("Recovered active journal at {:?}", journal.path);
             (journal, memtables)
         } else {
             let journal = Journal::create_new(journals_folder.join(&*generate_segment_id()))?;
@@ -491,7 +491,7 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
         let path = config.path.clone();
-        log::info!("Creating keyspace at {}", path.display());
+        log::info!("Creating keyspace at {path:?}");
 
         std::fs::create_dir_all(&path)?;
 
