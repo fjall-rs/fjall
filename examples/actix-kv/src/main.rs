@@ -37,26 +37,30 @@ async fn insert_batch(
 
     let before = std::time::Instant::now();
 
-    let mut batch = state.keyspace.batch();
+    web::block(move || {
+        let mut batch = state.keyspace.batch();
 
-    if let Some(remove) = &body.remove {
-        for key in remove {
-            batch.remove(&state.db, key.clone());
+        if let Some(remove) = &body.remove {
+            for key in remove {
+                batch.remove(&state.db, key.clone());
+            }
         }
-    }
 
-    if let Some(upsert) = &body.upsert {
-        for item in upsert {
-            batch.insert(
-                &state.db,
-                item.0.clone(),
-                serde_json::to_string(&item.1).unwrap(),
-            );
+        if let Some(upsert) = &body.upsert {
+            for item in upsert {
+                batch.insert(
+                    &state.db,
+                    item.0.clone(),
+                    serde_json::to_string(&item.1).unwrap(),
+                );
+            }
         }
-    }
 
-    batch.commit()?;
-    state.keyspace.persist()?;
+        batch.commit()?;
+        state.keyspace.persist()
+    })
+    .await
+    .unwrap()?;
 
     Ok(HttpResponse::Ok()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -73,8 +77,12 @@ async fn delete_item(
 
     let before = std::time::Instant::now();
 
-    state.db.remove(key)?;
-    state.keyspace.persist()?;
+    web::block(move || {
+        state.db.remove(key)?;
+        state.keyspace.persist()
+    })
+    .await
+    .unwrap()?;
 
     Ok(HttpResponse::Ok()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -95,10 +103,14 @@ async fn insert_item(
 
     let before = std::time::Instant::now();
 
-    state
-        .db
-        .insert(key, serde_json::to_string(&body.item).unwrap())?;
-    state.keyspace.persist()?;
+    web::block(move || {
+        state
+            .db
+            .insert(key, serde_json::to_string(&body.item).unwrap())?;
+        state.keyspace.persist()
+    })
+    .await
+    .unwrap()?;
 
     Ok(HttpResponse::Created()
         .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
@@ -119,7 +131,7 @@ async fn get_item(
         return Ok(HttpResponse::BadRequest().body("Bad Request"));
     }
 
-    let item = state.db.get(key)?;
+    let item = web::block(move || state.db.get(key)).await.unwrap()?;
 
     match item {
         Some(item) => Ok(HttpResponse::Ok()
