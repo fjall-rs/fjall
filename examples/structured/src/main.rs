@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions, PartitionHandle};
+use fjall::{Config, PartitionHandle};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -80,7 +80,7 @@ fn main() -> fjall::Result<()> {
     ];
 
     let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("songs", PartitionCreateOptions::default())?;
+    let db = keyspace.open_partition("songs", Default::default())?;
 
     for item_to_insert in items {
         if let Some(item) = Song::load(&db, &item_to_insert.id)? {

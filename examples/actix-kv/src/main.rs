@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::RouteResult;
-use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -161,7 +161,7 @@ async fn main() -> fjall::Result<()> {
     log::info!("Opening database");
 
     let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
+    let db = keyspace.open_partition("data", Default::default())?;
 
     log::info!("Starting on port {port}");
 
@@ -201,7 +201,7 @@ mod tests {
         let data_folder = tempfile::tempdir()?;
 
         let keyspace = Config::new(data_folder).open()?;
-        let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
+        let db = keyspace.open_partition("data", Default::default())?;
 
         let app = App::new()
             .app_data(web::Data::new(AppState {
