@@ -1,5 +1,6 @@
 pub mod manager;
 mod marker;
+pub mod partition_manifest;
 mod reader;
 pub mod shard;
 pub mod writer;

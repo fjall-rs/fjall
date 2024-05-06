@@ -21,7 +21,7 @@ fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
         segment_id: task.id,
 
         memtable: task.sealed_memtable.clone(),
-        folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
+        folder: task.partition.tree.path.join(SEGMENTS_FOLDER),
         block_size: task.partition.tree.config.block_size,
         block_cache: task.partition.tree.block_cache.clone(),
         descriptor_table: task.partition.tree.descriptor_table.clone(),

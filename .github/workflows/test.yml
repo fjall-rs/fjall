@@ -43,6 +43,8 @@ jobs:
             examples/actix-kv -> target
             examples/axum-kv -> target
             examples/structured -> target
+            examples/suffix-search -> target
+            examples/tokio -> target
             examples/triplestore -> target
       - name: Build
         run: cargo build -v
