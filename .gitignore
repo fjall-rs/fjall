@@ -22,3 +22,5 @@ Cargo.lock
 
 /old_*
 .test
+
+segment_history.jsonl
