@@ -20,12 +20,17 @@ pub struct Batch {
 }
 
 impl Batch {
-    /// Initializes a new write batch
+    /// Initializes a new write batch.
     ///
     /// This function is called by [`Keyspace::batch`].
     pub(crate) fn new(keyspace: Keyspace) -> Self {
+        Self::with_capacity(keyspace, 0)
+    }
+
+    /// Initializes a new write batch with at least 'N' items capacity.
+    pub(crate) fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
         Self {
-            data: Vec::with_capacity(100),
+            data: Vec::with_capacity(capacity),
             keyspace,
         }
     }
