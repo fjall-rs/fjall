@@ -145,7 +145,7 @@ impl PartitionHandle {
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
-        self.tree.config.path.clone()
+        self.tree.path.clone()
     }
 
     /// Returns the disk space usage of this partition
@@ -167,7 +167,6 @@ impl PartitionHandle {
         self.tree.disk_space()
     }
 
-    #[allow(clippy::iter_not_returning_iterator)]
     /// Returns an iterator that scans through the entire partition.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
@@ -192,6 +191,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     #[must_use]
+    #[allow(clippy::iter_not_returning_iterator)]
     pub fn iter(&self) -> Range {
         self.tree.iter()
     }

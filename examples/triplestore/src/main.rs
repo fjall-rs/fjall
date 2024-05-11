@@ -1,4 +1,4 @@
-use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle};
 use serde_json::Value;
 use std::path::Path;
 
@@ -13,8 +13,8 @@ struct Triplestore {
 impl Triplestore {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
         let keyspace = Config::new(path).open()?;
-        let subjects = keyspace.open_partition("subjects", PartitionCreateOptions::default())?;
-        let verbs = keyspace.open_partition("verbs", PartitionCreateOptions::default())?;
+        let subjects = keyspace.open_partition("subjects", Default::default())?;
+        let verbs = keyspace.open_partition("verbs", Default::default())?;
 
         Ok(Self {
             keyspace,
@@ -62,7 +62,7 @@ impl Triplestore {
 
         for item in self.verbs.prefix(format!("{subject}#{verb}#")).into_iter() {
             let (key, value) = item?;
-            
+
             let key = std::str::from_utf8(&key).expect("should be utf-8");
             let mut splits = key.split('#');
             let s = splits.next().unwrap().to_string();

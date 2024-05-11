@@ -1,5 +1,6 @@
 pub mod manager;
 mod marker;
+pub mod partition_manifest;
 mod reader;
 pub mod shard;
 pub mod writer;
@@ -9,7 +10,6 @@ use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded};
 use lsm_tree::MemTable;
 use std::{
     collections::HashMap,
-    fs::File,
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };

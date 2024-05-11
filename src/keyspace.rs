@@ -15,7 +15,7 @@ use crate::{
     write_buffer_manager::WriteBufferManager,
     PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{id::generate_segment_id, MemTable, SequenceNumberCounter};
+use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{
     collections::HashMap,
     fs::File,
@@ -112,7 +112,8 @@ impl Keyspace {
     /// ```
     #[must_use]
     pub fn batch(&self) -> Batch {
-        Batch::new(self.clone())
+        // TODO: maybe allow setting a custom capacity
+        Batch::with_capacity(self.clone(), 10)
     }
 
     /// Returns the current write buffer size (active + sealed memtables).
@@ -417,21 +418,36 @@ impl Keyspace {
         Ok(())
     }
 
+    // TODO: create struct for return type :!
+    #[allow(clippy::type_complexity)]
     fn find_active_journal<P: AsRef<Path>>(
         path: P,
         recovery_mode: RecoveryMode,
-    ) -> crate::Result<Option<(Journal, HashMap<PartitionKey, MemTable>)>> {
+    ) -> crate::Result<(
+        lsm_tree::SegmentId,
+        Option<(Journal, HashMap<PartitionKey, MemTable>)>,
+    )> {
         let mut journal = None;
+        let mut max_journal_id = 0;
 
         for dirent in std::fs::read_dir(path)? {
             let dirent = dirent?;
+
+            let journal_id = dirent
+                .file_name()
+                .to_str()
+                .expect("should be utf-8")
+                .parse::<lsm_tree::SegmentId>()
+                .expect("should be valid journal ID");
+
+            max_journal_id = max_journal_id.max(journal_id);
 
             if !dirent.path().join(FLUSH_MARKER).try_exists()? {
                 journal = Some(Journal::recover(dirent.path(), recovery_mode)?);
             }
         }
 
-        Ok(journal)
+        Ok((max_journal_id, journal))
     }
 
     /// Recovers existing keyspace from directory.
@@ -446,13 +462,16 @@ impl Keyspace {
 
         // Get active journal if it exists
         let journals_folder = config.path.join(JOURNALS_FOLDER);
-        let active_journal = Self::find_active_journal(&journals_folder, recovery_mode)?;
+        let (max_journal_id, active_journal) =
+            Self::find_active_journal(&journals_folder, recovery_mode)?;
 
         let (journal, mut memtables) = if let Some((journal, memtables)) = active_journal {
             log::debug!("Recovered active journal at {:?}", journal.path);
             (journal, memtables)
         } else {
-            let journal = Journal::create_new(journals_folder.join(&*generate_segment_id()))?;
+            let journal =
+                Journal::create_new(journals_folder.join((max_journal_id + 1).to_string()))?;
+
             let memtables = HashMap::default();
             (journal, memtables)
         };
@@ -504,7 +523,7 @@ impl Keyspace {
         std::fs::create_dir_all(&journal_folder_path)?;
         std::fs::create_dir_all(&partition_folder_path)?;
 
-        let active_journal_path = journal_folder_path.join(&*generate_segment_id());
+        let active_journal_path = journal_folder_path.join("0");
         let journal = Journal::create_new(&active_journal_path)?;
         let journal = Arc::new(journal);
 

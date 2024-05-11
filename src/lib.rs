@@ -1,4 +1,4 @@
-//! Fjall is an LSM-based embedded key-value storage engine written in Rust. It features:
+//! Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
 //!
 //! - Thread-safe BTreeMap-like API
 //! - 100% safe & stable Rust
@@ -66,6 +66,7 @@
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
+
 #![doc(html_logo_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/logo.png")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/logo.png")]
 #![forbid(unsafe_code)]

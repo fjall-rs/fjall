@@ -42,16 +42,19 @@ jobs:
             . -> target
             examples/actix-kv -> target
             examples/axum-kv -> target
+            examples/rolling-log -> target
             examples/structured -> target
+            examples/suffix-search -> target
+            examples/tokio -> target
             examples/triplestore -> target
-      - name: Build
-        run: cargo build -v
+      - name: Install cargo-all-features
+        run: cargo install cargo-all-features
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy
       - name: Run tests
-        run: cargo test -v -- --nocapture
+        run: cargo test-all-features -v -- --nocapture
         env:
           RUST_LOG: debug
       - name: Build & test examples

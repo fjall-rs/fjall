@@ -111,8 +111,15 @@ pub fn recover_partitions(
 }
 
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
-    let journals_folder = keyspace.config.path.join(JOURNALS_FOLDER);
+    use crate::journal::partition_manifest::{
+        parse as parse_partition_manifest, ParseError as PartitionManifestParseError,
+    };
 
+    let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
+    let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
+    let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
+
+    let journals_folder = keyspace.config.path.join(JOURNALS_FOLDER);
     let mut dirents = std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
     dirents.sort_by_key(std::fs::DirEntry::file_name);
 
@@ -130,23 +137,16 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             log::trace!("Reading sealed journal at {:?}", journal_path);
 
             // Only consider partitions that are registered in the journal
-            let partitions_to_consider =
-                std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
-
-            let partitions_to_consider = partitions_to_consider
-                .split('\n')
-                .filter(|x| !x.is_empty())
-                .map(|x| {
-                    let mut splits = x.split(':');
-                    let name = splits.next().expect("partition name should exist");
-                    let lsn = splits.next().expect("lsn should exist");
-                    let lsn = lsn
-                        .parse::<lsm_tree::SeqNo>()
-                        .expect("should be valid seqno");
-
-                    (name, lsn)
-                })
-                .collect::<Vec<_>>();
+            let file_content = std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
+            let partitions_to_consider = match parse_partition_manifest(&file_content) {
+                Ok(v) => Ok(v),
+                Err(e) => match e {
+                    PartitionManifestParseError::Io(e) => Err(crate::Error::from(e)),
+                    e => {
+                        panic!("invalid partition reference file: {e:?}")
+                    }
+                },
+            }?;
 
             log::trace!(
                 "Journal contains data of {} partitions",
@@ -154,39 +154,35 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             );
 
             let mut partition_seqno_map = HashMap::default();
-            let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
 
             // Only get the partitions that have a lower seqno than the journal
             // which means there's still some unflushed data in this sealed journal
-            for (partition_name, lsn) in partitions_to_consider {
-                let Some(partition) = partitions_lock.get(partition_name) else {
+            for entry in partitions_to_consider {
+                let Some(partition) = partitions_lock.get(entry.partition_name) else {
                     // Partition was probably deleted
-                    log::trace!("Partition {partition_name:?} does not exist");
+                    log::trace!("Partition {} does not exist", entry.partition_name);
                     continue;
                 };
 
                 let partition_lsn = partition.tree.get_segment_lsn();
-                let has_lower_lsn = partition_lsn.map_or(true, |partition_lsn| lsn > partition_lsn);
+                let has_lower_lsn =
+                    partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
 
                 if has_lower_lsn {
                     partition_seqno_map.insert(
-                        partition_name.into(),
+                        entry.partition_name.into(),
                         crate::journal::manager::PartitionSeqNo {
-                            lsn,
+                            lsn: entry.seqno,
                             partition: partition.clone(),
                         },
                     );
                 } else {
                     log::trace!(
-                        "Partition {partition_name:?} has higher seqno ({partition_lsn:?}), skipping"
+                        "Partition {} has higher seqno ({partition_lsn:?}), skipping",
+                        entry.partition_name
                     );
                 }
             }
-
-            let mut journal_manager_lock =
-                keyspace.journal_manager.write().expect("lock is poisoned");
-
-            let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
 
             // Recover sealed memtables for affected partitions
             let partition_names_to_recover =
@@ -214,12 +210,12 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     continue;
                 };
 
-                let memtable_id = lsm_tree::id::generate_segment_id();
+                let memtable_id = partition.tree.get_next_segment_id();
                 let sealed_memtable = Arc::new(sealed_memtable);
 
                 partition
                     .tree
-                    .add_sealed_memtable(memtable_id.clone(), sealed_memtable.clone());
+                    .add_sealed_memtable(memtable_id, sealed_memtable.clone());
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();

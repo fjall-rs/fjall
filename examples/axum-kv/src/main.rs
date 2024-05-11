@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -119,7 +119,7 @@ async fn main() -> fjall::Result<()> {
     log::info!("Opening database");
 
     let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("data", PartitionCreateOptions::default())?;
+    let db = keyspace.open_partition("data", Default::default())?;
 
     let state: SharedState = Arc::new(AppState {
         keyspace: keyspace.clone(),

@@ -5,7 +5,7 @@ use crate::{
     journal::Journal,
     PartitionHandle,
 };
-use lsm_tree::{id::generate_segment_id, SeqNo};
+use lsm_tree::SeqNo;
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {
@@ -166,10 +166,18 @@ impl JournalManager {
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&old_journal_path)?;
 
+        let old_journal_id = old_journal_path
+            .file_name()
+            .expect("should have filename")
+            .to_str()
+            .expect("should be valid utf-8")
+            .parse::<lsm_tree::SegmentId>()
+            .expect("should be valid journal ID");
+
         let new_journal_path = old_journal_path
             .parent()
             .expect("should have parent")
-            .join(&*generate_segment_id());
+            .join((old_journal_id + 1).to_string());
 
         log::trace!("journal manager: acquiring journal full lock");
         Journal::rotate(&new_journal_path, journal_lock)?;
