@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 fjall = { path = "../../" }
 rmp-serde = "1.1.2"
-serde = "1.0.193"
+serde = { version = "1.0.193", features = ["derive"] }
