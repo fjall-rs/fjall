@@ -17,8 +17,8 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, prefix::Prefix, range::Range, SequenceNumberCounter, Snapshot,
-    Tree as LsmTree, UserKey, UserValue,
+    compaction::CompactionStrategy, prefix::Prefix, range::Range, AbstractTree,
+    SequenceNumberCounter, /* Snapshot, */ Tree as LsmTree, UserKey, UserValue,
 };
 use std::{
     collections::HashMap,
@@ -618,7 +618,7 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /// Opens a snapshot of this partition
+    /*  /// Opens a snapshot of this partition
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot_at(self.seqno.get())
@@ -628,7 +628,7 @@ impl PartitionHandle {
     #[must_use]
     pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
         self.tree.snapshot(seqno)
-    }
+    } */
 
     /// Inserts a key-value pair into the partition.
     ///

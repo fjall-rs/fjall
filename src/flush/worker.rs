@@ -1,7 +1,7 @@
 use super::manager::{FlushManager, Task};
 use crate::{
-    batch::PartitionKey, compaction::manager::CompactionManager, file::SEGMENTS_FOLDER,
-    journal::manager::JournalManager, write_buffer_manager::WriteBufferManager, PartitionHandle,
+    batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
+    write_buffer_manager::WriteBufferManager, PartitionHandle,
 };
 use lsm_tree::Segment;
 use std::{
@@ -11,21 +11,14 @@ use std::{
 
 /// Flushes a single segment.
 fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
-    use lsm_tree::flush::Options;
-
-    let segment = lsm_tree::flush::flush_to_segment(Options {
-        tree_id: task.partition.tree.id,
-
+    #[rustfmt::skip]
+    let segment = task.partition.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
-        segment_id: task.id,
-
-        memtable: task.sealed_memtable.clone(),
-        folder: task.partition.tree.path.join(SEGMENTS_FOLDER),
-        block_size: task.partition.tree.config.block_size,
-        block_cache: task.partition.tree.block_cache.clone(),
-        descriptor_table: task.partition.tree.descriptor_table.clone(),
-    })?;
+        task.id,
+        
+        &task.sealed_memtable,
+    )?;
 
     Ok(Arc::new(segment))
 }
