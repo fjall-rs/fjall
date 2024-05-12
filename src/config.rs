@@ -1,4 +1,4 @@
-use crate::{journal::shard::RecoveryMode, Keyspace};
+use crate::{journal::shard::RecoveryMode, Keyspace, TxKeyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
 use path_absolutize::Absolutize;
 use std::{
@@ -186,5 +186,14 @@ impl Config {
     /// Will return `Err` if an IO error occurs.
     pub fn open(self) -> crate::Result<Keyspace> {
         Keyspace::open(self)
+    }
+
+    /// Opens a transactional keyspace using the config.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn open_tx(self) -> crate::Result<TxKeyspace> {
+        TxKeyspace::open(self)
     }
 }

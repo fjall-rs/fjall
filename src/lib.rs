@@ -91,6 +91,7 @@ mod monitor;
 mod partition;
 mod recovery;
 mod sharded;
+mod tx;
 mod version;
 mod write_buffer_manager;
 
@@ -102,6 +103,11 @@ pub use {
     error::{Error, Result},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    tx::{
+        keyspace::{TransactionalKeyspace, TxKeyspace},
+        partition::{TransactionalPartitionHandle, TxPartitionHandle},
+        Transaction,
+    },
 };
 
 /// A snapshot moment

@@ -237,7 +237,7 @@ impl Keyspace {
     ///
     /// Should not be called, unless in [`Keyspace::open`]
     /// and should definitely not be user-facing.
-    fn start_background_threads(&self, compaction_works_count: usize) {
+    pub(crate) fn start_background_threads(&self, compaction_works_count: usize) {
         self.spawn_flush_worker();
 
         for _ in 0..self
