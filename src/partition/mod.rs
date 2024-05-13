@@ -91,8 +91,6 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    // TODO: allow setting block cache
-
     /// Sets the compaction strategy
     ///
     /// Default = Levelled
@@ -199,7 +197,6 @@ impl PartitionHandle {
     pub fn iter(&self) -> Range {
         self.tree.iter()
     }
-    // TODO: how to handle error...? wrap iterator?
 
     /// Returns an iterator over a range of items.
     ///
