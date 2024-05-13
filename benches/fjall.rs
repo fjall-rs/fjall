@@ -25,11 +25,7 @@ fn block_cache_insert(c: &mut Criterion) {
 
     c.bench_function("BlockCache::insert_disk_block", |b| {
         b.iter(|| {
-            block_cache.insert_disk_block(
-                (0, id).into(),
-                "asdasdasdasd".as_bytes().into(),
-                block.clone(),
-            );
+            block_cache.insert_disk_block((0, id).into(), 40, block.clone());
             id += 1;
         });
     });
@@ -52,18 +48,15 @@ fn block_cache_get(c: &mut Criterion) {
     let seg_id = (0, 0).into();
     let block = Arc::new(ValueBlock { items, crc: 0 });
 
-    (0u64..100_000).for_each(|idx| {
-        block_cache.insert_disk_block(seg_id, idx.to_be_bytes().into(), block.clone())
-    });
+    (0u64..100_000).for_each(|idx| block_cache.insert_disk_block(seg_id, idx, block.clone()));
     assert_eq!(100_000, block_cache.len());
 
     let mut rng = rand::thread_rng();
 
     c.bench_function("BlockCache::get_disk_block", |b| {
         b.iter(|| {
-            let key = rng.gen_range(0u64..100_000).to_be_bytes();
-            let key: Arc<[u8]> = key.into();
-            block_cache.get_disk_block(seg_id, &key).unwrap();
+            let key = rng.gen_range(0u64..100_000);
+            block_cache.get_disk_block(seg_id, key).unwrap();
         });
     });
 }
