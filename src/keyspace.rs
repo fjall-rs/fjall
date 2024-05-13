@@ -432,7 +432,7 @@ impl Keyspace {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
         if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V0 {
+            if version != Version::V1 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -568,7 +568,7 @@ impl Keyspace {
         // NOTE: Lastly, fsync .fjall marker, which contains the version
         // -> the keyspace is fully initialized
         let mut file = std::fs::File::create(marker_path)?;
-        Version::V0.write_file_header(&mut file)?;
+        Version::V1.write_file_header(&mut file)?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
