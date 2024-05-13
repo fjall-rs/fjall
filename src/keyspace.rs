@@ -68,7 +68,11 @@ impl Drop for KeyspaceInner {
 }
 
 /// A keyspace is a single logical database
-/// which houses multiple partitions
+/// which can house multiple partitions
+///
+/// In your application, you should create a single keyspace
+/// and keep it around for as long as needed
+/// (as long as you are using its partitions).
 #[derive(Clone)]
 #[doc(alias = "database")]
 #[doc(alias = "collection")]

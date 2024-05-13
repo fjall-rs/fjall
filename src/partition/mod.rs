@@ -58,10 +58,14 @@ pub struct PartitionHandleInner {
 }
 
 /// Access to a keyspace partition
+///
+/// Each partition is backed by an LSM-tree to provide a
+/// disk-backed search tree, and be configured individually.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
+#[doc(alias = "table")]
 pub struct PartitionHandle(pub(crate) Arc<PartitionHandleInner>);
 
 impl std::ops::Deref for PartitionHandle {
