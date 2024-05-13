@@ -145,7 +145,7 @@ impl PartitionHandle {
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
-        self.tree.path.clone()
+        self.tree.config.path.clone()
     }
 
     /// Returns the disk space usage of this partition

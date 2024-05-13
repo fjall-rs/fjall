@@ -31,7 +31,7 @@ impl Default for CreateOptions {
         Self {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
-            level_ratio: default_tree_config.inner.level_ratio,
+            level_ratio: default_tree_config.level_ratio,
         }
     }
 }
