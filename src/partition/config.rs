@@ -20,9 +20,7 @@ pub struct CreateOptions {
     /// This is the exponential growth of the from one
     /// level to the next
     ///
-    /// A level target size is: max_memtable_size * level_ratio.pow(#level + 1)
-    ///
-    /// Once set for a partition, this property is not considered in the future.
+    /// A level target size is: `max_memtable_size * level_ratio.pow(#level + 1)`
     pub level_ratio: u8,
 }
 
