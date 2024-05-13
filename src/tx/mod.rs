@@ -184,7 +184,7 @@ impl<'a> Transaction<'a> {
     }
 
     /// Commits the transaction
-    pub fn commit(self) -> crate::Result<()> {
+    pub fn commit(self) -> crate::Result<Result<(), TransactionConflict>> {
         todo!();
 
         // TODO: rewrite seqnos
