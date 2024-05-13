@@ -7,7 +7,7 @@ use crate::{
         PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, shard::RecoveryMode, Journal},
+    journal::{manager::JournalManager, shard::RecoveryMode, writer::FlushMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
@@ -47,7 +47,7 @@ impl Drop for KeyspaceInner {
 
         self.stop_signal.send();
 
-        if let Err(e) = self.journal.flush(true) {
+        if let Err(e) = self.journal.flush(FlushMode::SyncAll) {
             log::error!("Flush error on drop: {e:?}");
         }
 
@@ -172,9 +172,9 @@ impl Keyspace {
         Ok(journal_size + partitions_size)
     }
 
-    /// Flushes the active journal using `fsyncdata`, making sure recently written data is durable.
-    ///
-    /// This has a dramatic performance impact on writes by 100-1000x.
+    /// Flushes the active journal to OS buffers, making sure data can be written durably even on
+    /// application crash. When this function returns, data is **not** guaranteed to be written in case
+    /// of a power loss event.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
     /// data is crash-safe.
@@ -182,26 +182,46 @@ impl Keyspace {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
+    pub fn persist_lax(&self) -> crate::Result<()> {
+        self.journal.flush(FlushMode::Buffer)?;
+        Ok(())
+    }
+
+    /// Flushes the active journal using `fsyncdata`, making sure recently written data is durable.
+    ///
+    /// This operation is about 2x faster than [`Keyspace::persist_paranoid`]. Only use if you know
+    /// that `fdatasync` is sufficient for your file system and/or operating system.
+    ///
+    /// Persisting only affects durability, NOT consistency! Even without flushing
+    /// data is crash-safe.
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occured.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fsync failed.
     pub fn persist(&self) -> crate::Result<()> {
-        self.journal.flush(false)?;
+        self.journal.flush(FlushMode::SyncData)?;
         Ok(())
     }
 
     /// Flushes the active journal using `fsync`, making sure recently written data is durable.
     ///
-    /// This has a dramatic performance impact on writes by 100-1000x, and is about 2x slower
-    /// than [`Keyspace::persist`]. Only use if you know if `fdatasync` is not sufficient for
-    /// your file system and/or operating system.
-    ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
     /// data is crash-safe.
     ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fsync failed.
     #[doc(hidden)]
     pub fn persist_paranoid(&self) -> crate::Result<()> {
-        self.journal.flush(false)?;
+        self.journal.flush(FlushMode::SyncAll)?;
         Ok(())
     }
 
@@ -586,7 +606,9 @@ impl Keyspace {
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
                 log::trace!("fsync thread: fsycing journal");
-                if let Err(e) = journal.flush(false) {
+                if let Err(e) = journal.flush(FlushMode::SyncAll) {
+                    // TODO: what to do?? if fsync fails, it's game over
+                    // TODO: (need to keyspace/journal by poisoning it)
                     log::error!("Fsync failed: {e:?}");
                 }
             }

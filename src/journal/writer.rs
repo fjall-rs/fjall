@@ -35,6 +35,18 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
     Ok(bytes.len())
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum FlushMode {
+    /// Flushes data to OS buffers
+    Buffer,
+
+    /// Flushes data using fdatasync
+    SyncData,
+
+    /// Flushes data + metadata using fsync
+    SyncAll,
+}
+
 impl Writer {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
         let file = File::create(&path)?;
@@ -75,14 +87,28 @@ impl Writer {
     }
 
     /// Flushes the journal file
-    pub(crate) fn flush(&mut self, sync_metadata: bool) -> crate::Result<()> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if fsync failed.
+    pub(crate) fn flush(&mut self, mode: FlushMode) -> crate::Result<()> {
         self.file.flush()?;
 
-        if sync_metadata {
-            self.file.get_mut().sync_all()
-        } else {
-            self.file.get_mut().sync_data()
-        }?;
+        match mode {
+            FlushMode::SyncAll => {
+                self.file
+                    .get_mut()
+                    .sync_all()
+                    .expect("FATAL: fsyncing all failed");
+            }
+            FlushMode::SyncData => {
+                self.file
+                    .get_mut()
+                    .sync_data()
+                    .expect("FATAL: fsyncing data failed");
+            }
+            FlushMode::Buffer => {}
+        }
 
         Ok(())
     }
