@@ -6,7 +6,7 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
-const TRAILER_MAGIC: &[u8] = &0xCC_23_8A_72_D0_7E_9A_17_u64.to_be_bytes();
+const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'A', b'L', b'L', b'T', b'R', b'L'];
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
