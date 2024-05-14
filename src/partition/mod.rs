@@ -597,7 +597,7 @@ impl PartitionHandle {
             loop {
                 let bytes = self.write_buffer_manager.get();
 
-                if bytes <= self.keyspace_config.max_write_buffer_size_in_bytes {
+                if bytes < self.keyspace_config.max_write_buffer_size_in_bytes {
                     if bytes as f64
                         > self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.9
                     {
