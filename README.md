@@ -93,6 +93,14 @@ keyspace.delete_partition(items)?;
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
+## Features
+
+#### bloom
+
+Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
+
+*Enabled by default.*
+
 ## Stable disk format
 
 The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that will result in a major bump.
