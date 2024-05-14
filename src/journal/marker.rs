@@ -6,6 +6,7 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
+// TODO: change trailer to header
 const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'A', b'L', b'L', b'T', b'R', b'L'];
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
