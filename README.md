@@ -93,6 +93,10 @@ keyspace.delete_partition(items)?;
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
+## Durability
+
+Fjall is agnostic about which type of durability needs your application needs to support different workloads. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a `FlushMode` parameter.
+
 ## Features
 
 #### bloom
