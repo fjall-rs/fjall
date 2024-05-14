@@ -133,7 +133,7 @@ impl Journal {
     pub fn flush(&self, mode: FlushMode) -> crate::Result<()> {
         for mut shard in self.shards.full_lock().expect("lock is poisoned") {
             if shard.should_sync {
-                shard.writer.flush(mode);
+                shard.writer.flush(mode)?;
                 shard.should_sync = false;
             }
         }

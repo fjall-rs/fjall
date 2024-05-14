@@ -68,6 +68,7 @@ pub fn recover_partitions(
             seqno: keyspace.seqno.clone(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
+            is_poisoned: keyspace.is_poisoned.clone(),
         };
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);

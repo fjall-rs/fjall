@@ -47,6 +47,7 @@ pub struct PartitionHandleInner {
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) is_deleted: AtomicBool,
+    pub(crate) is_poisoned: Arc<AtomicBool>,
 
     /// TEMP pub
     pub(crate) tree: LsmTree,
@@ -141,6 +142,7 @@ impl PartitionHandle {
             max_memtable_size: (8 * 1_024 * 1_024).into(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
+            is_poisoned: keyspace.is_poisoned.clone(),
         })))
     }
 
@@ -657,6 +659,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
         let mut shard = self.journal.get_writer();
 
         let seqno = self.seqno.next();
@@ -712,6 +718,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
         let mut shard = self.journal.get_writer();
 
         let seqno = self.seqno.next();
