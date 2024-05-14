@@ -48,7 +48,7 @@ impl TryFrom<u8> for Tag {
             0 => Ok(Start),
             1 => Ok(Item),
             2 => Ok(End),
-            _ => Err(DeserializeError::InvalidTag(value)),
+            _ => Err(DeserializeError::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -217,7 +217,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::InvalidTag(3) => {}
+                DeserializeError::InvalidTag(("JournalMarkerTag", 3)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }

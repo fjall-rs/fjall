@@ -40,6 +40,7 @@ pub enum RecoveryError {
 }
 
 // TODO: don't require locking for sync check
+#[allow(clippy::module_name_repetitions)]
 pub struct JournalShard {
     pub(crate) writer: JournalWriter,
     pub(crate) should_sync: bool,
@@ -81,7 +82,7 @@ impl JournalShard {
         path: P,
         memtables: &mut HashMap<PartitionKey, MemTable>,
         whitelist: Option<&[PartitionKey]>,
-        recovery_mode: RecoveryMode,
+        _recovery_mode: RecoveryMode, // TODO:
     ) -> crate::Result<()> {
         use crate::Error::JournalRecovery;
 
