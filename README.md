@@ -95,7 +95,7 @@ keyspace.delete_partition(items)?;
 
 ## Stable disk format
 
-The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that will result in a major bump.
+The disk format is stable as of 1.0.0. Future breaking changes will result in a major version bump and a migration path.
 
 ## Examples
 
