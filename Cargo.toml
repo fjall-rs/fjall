@@ -19,7 +19,7 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["bloom"]
+default = []
 bloom = ["lsm-tree/bloom"]
 segment_history = ["lsm-tree/segment_history"]
 

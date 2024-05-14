@@ -103,7 +103,7 @@ Fjall is agnostic about which type of durability needs your application needs to
 
 Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
 
-*Enabled by default.*
+*Disabled by default.*
 
 ## Stable disk format
 
