@@ -186,47 +186,8 @@ impl Keyspace {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    pub fn persist_lax(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::Buffer)?;
-        Ok(())
-    }
-
-    /// Flushes the active journal using `fsyncdata`, making sure recently written data is durable.
-    ///
-    /// This operation is about 2x faster than [`Keyspace::persist_paranoid`]. Only use if you know
-    /// that `fdatasync` is sufficient for your file system and/or operating system.
-    ///
-    /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is crash-safe.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occured.
-    ///
-    /// # Panics
-    ///
-    /// Panics if fsync failed.
-    pub fn persist(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::SyncData)?;
-        Ok(())
-    }
-
-    /// Flushes the active journal using `fsync`, making sure recently written data is durable.
-    ///
-    /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is crash-safe.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occured.
-    ///
-    /// # Panics
-    ///
-    /// Panics if fsync failed.
-    #[doc(hidden)]
-    pub fn persist_paranoid(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::SyncAll)?;
-        Ok(())
+    pub fn persist(&self, mode: FlushMode) -> crate::Result<()> {
+        self.journal.flush(mode)
     }
 
     /// Opens a keyspace in the given directory.
@@ -294,22 +255,23 @@ impl Keyspace {
     pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
         let partition_path = handle.path();
 
-        handle
-            .is_deleted
-            .store(true, std::sync::atomic::Ordering::Release);
-
         let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&partition_path)?;
 
+        handle
+            .is_deleted
+            .store(true, std::sync::atomic::Ordering::Release);
+
+        // IMPORTANT: Care, locks partitions map
+        self.compaction_manager.remove_partition(&handle.name);
+
         self.flush_manager
             .write()
             .expect("lock is poisoned")
             .remove_partition(&handle.name);
-
-        self.compaction_manager.remove_partition(&handle.name);
 
         self.partitions
             .write()

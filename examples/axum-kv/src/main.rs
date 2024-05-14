@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, FlushMode, Keyspace, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -92,7 +92,7 @@ async fn kv_batch(
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
-    if state.keyspace.persist().is_err() {
+    if state.keyspace.persist(FlushMode::SyncAll).is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 

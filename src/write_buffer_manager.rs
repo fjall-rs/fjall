@@ -1,5 +1,6 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
+/// Keeps track of the size of the keyspace's write buffer
 #[derive(Clone, Default, Debug)]
 pub struct WriteBufferManager(Arc<AtomicU64>);
 
@@ -16,17 +17,17 @@ impl WriteBufferManager {
         self.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    // Adds some bytes to the write buffer counter
+    // Adds some bytes to the write buffer counter.
     //
-    // Returns the counter *after* incrementing
+    // Returns the counter *after* incrementing.
     pub fn allocate(&self, n: u64) -> u64 {
         let before = self.fetch_add(n, std::sync::atomic::Ordering::AcqRel);
         before + n
     }
 
-    // Frees some bytes from the write buffer counter
+    // Frees some bytes from the write buffer counter.
     //
-    // Returns the counter *after* decrementing
+    // Returns the counter *after* decrementing.
     pub fn free(&self, n: u64) -> u64 {
         use std::sync::atomic::Ordering::{Acquire, SeqCst};
 
