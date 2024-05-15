@@ -28,7 +28,7 @@ It is not:
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
-For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the `big endian` form to adhere to locality.
 
 ## Basic usage
 
@@ -86,6 +86,7 @@ keyspace.persist(FlushMode::SyncAll)?;
 keyspace.delete_partition(items)?;
 ```
 
+
 ## Details
 
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
@@ -93,12 +94,22 @@ keyspace.delete_partition(items)?;
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
-your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter.
+your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*.
 
-## Features
+## Multithreading, Async and Multiprocess
+
+Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing lock yourself. Common operations like inserting and reading are generally lock free.
+
+For an async example, see the `tokio` example in the `examples/` folder.
+
+A single keyspace may **not** be loaded in parallel from separate *processes* however.
+
+## Feature flags
 
 #### bloom
 
