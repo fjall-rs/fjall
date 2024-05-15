@@ -26,14 +26,8 @@ fn reload_with_memtable() -> fjall::Result<()> {
         }
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(
-            tree.iter().into_iter().filter(Result::is_ok).count(),
-            ITEM_COUNT * 2
-        );
-        assert_eq!(
-            tree.iter().into_iter().rev().filter(Result::is_ok).count(),
-            ITEM_COUNT * 2
-        );
+        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
     }
 
     for _ in 0..10 {
@@ -41,14 +35,8 @@ fn reload_with_memtable() -> fjall::Result<()> {
         let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(
-            tree.iter().into_iter().filter(Result::is_ok).count(),
-            ITEM_COUNT * 2
-        );
-        assert_eq!(
-            tree.iter().into_iter().rev().filter(Result::is_ok).count(),
-            ITEM_COUNT * 2
-        );
+        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
     }
 
     Ok(())

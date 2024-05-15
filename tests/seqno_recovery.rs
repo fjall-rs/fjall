@@ -43,11 +43,11 @@ fn recover_seqno() -> fjall::Result<()> {
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(
-                tree.iter().into_iter().filter(Result::is_ok).count(),
+                tree.iter().flatten().count(),
                 ITEM_COUNT * 2
             );
             assert_eq!(
-                tree.iter().into_iter().rev().filter(Result::is_ok).count(),
+                tree.iter().rev().flatten().count(),
                 ITEM_COUNT * 2
             );
         }
@@ -66,11 +66,11 @@ fn recover_seqno() -> fjall::Result<()> {
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(
-                tree.iter().into_iter().filter(Result::is_ok).count(),
+                tree.iter().flatten().count(),
                 ITEM_COUNT * 2
             );
             assert_eq!(
-                tree.iter().into_iter().rev().filter(Result::is_ok).count(),
+                tree.iter().rev().flatten().count(),
                 ITEM_COUNT * 2
             );
         }

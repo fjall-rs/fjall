@@ -28,14 +28,8 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT);
-            assert_eq!(
-                tree.iter().into_iter().filter(Result::is_ok).count(),
-                ITEM_COUNT
-            );
-            assert_eq!(
-                tree.iter().into_iter().rev().filter(Result::is_ok).count(),
-                ITEM_COUNT
-            );
+            assert_eq!(tree.iter().flatten().count(), ITEM_COUNT);
+            assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT);
         }
 
         partitions.first().unwrap().rotate_memtable()?;
@@ -50,14 +44,8 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(
-                tree.iter().into_iter().filter(Result::is_ok).count(),
-                ITEM_COUNT * 2
-            );
-            assert_eq!(
-                tree.iter().into_iter().rev().filter(Result::is_ok).count(),
-                ITEM_COUNT * 2
-            );
+            assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
         }
     }
 
@@ -72,14 +60,8 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 
         for tree in partitions {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(
-                tree.iter().into_iter().filter(Result::is_ok).count(),
-                ITEM_COUNT * 2
-            );
-            assert_eq!(
-                tree.iter().into_iter().rev().filter(Result::is_ok).count(),
-                ITEM_COUNT * 2
-            );
+            assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
         }
     }
 

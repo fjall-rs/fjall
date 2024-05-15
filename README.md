@@ -54,17 +54,17 @@ let bytes = items.get("a")?;
 items.remove("a")?;
 
 // Search by prefix
-for item in &items.prefix("prefix") {
+for item in items.prefix("prefix") {
   // ...
 }
 
 // Search by range
-for item in &items.range("a"..="z") {
+for item in items.range("a"..="z") {
   // ...
 }
 
 // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for item in items.prefix("prefix").into_iter().rev() {
+for item in items.prefix("prefix").rev() {
   // ...
 }
 

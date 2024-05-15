@@ -57,7 +57,7 @@ fn main() -> fjall::Result<()> {
 
     eprintln!("Searching for [{lo} - {hi}]");
 
-    for item in &sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
+    for item in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
         let (k, _) = item?;
 
         let primary_key = k.split(|&c| c == b'#').nth(1).unwrap();
