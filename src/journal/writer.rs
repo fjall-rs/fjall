@@ -45,13 +45,15 @@ pub enum FlushMode {
     /// of a power loss event or OS crash.
     Buffer,
 
-    /// Flushes data using fdatasync.
+    /// Flushes data using `fdatasync`.
     ///
-    /// This operation is about 2x faster than [`FlushMode::SyncAll`]. Only use if you know
-    /// that `fdatasync` is sufficient for your file system and/or operating system.
+    /// Depending on your operating system of choice, this operation
+    /// may be about 2x faster than [`FlushMode::SyncAll`].
+    ///
+    /// Only use if you know that `fdatasync` is sufficient for your file system and/or operating system.
     SyncData,
 
-    /// Flushes data + metadata using fsync.
+    /// Flushes data + metadata using `fsync`.
     SyncAll,
 }
 

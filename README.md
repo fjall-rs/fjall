@@ -95,7 +95,8 @@ keyspace.delete_partition(items)?;
 
 ## Durability
 
-Fjall is agnostic about which type of durability needs your application needs to support different workloads. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a `FlushMode` parameter.
+To support different kinds of workloads, Fjall is agnostic about the type of durability
+your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter.
 
 ## Features
 
