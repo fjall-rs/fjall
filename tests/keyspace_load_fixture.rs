@@ -23,6 +23,23 @@ fn keyspace_load_v1() -> fjall::Result<()> {
     assert_eq!(4, c.len()?);
 
     // TODO: call Keyspace::verify
+    // needs to call Tree::verify on every partition and verify *all* journals
+
+    Ok(())
+}
+
+#[test]
+fn keyspace_load_v1_corrupt_journal() -> fjall::Result<()> {
+    let folder = "test_fixture/v1_keyspace_corrupt_journal";
+
+    let result = Config::new(folder).open();
+
+    matches!(
+        result,
+        Err(fjall::Error::JournalRecovery(
+            fjall::RecoveryError::CrcCheck
+        ))
+    );
 
     Ok(())
 }

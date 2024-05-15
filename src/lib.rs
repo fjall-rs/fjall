@@ -100,7 +100,7 @@ pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
-    journal::writer::FlushMode,
+    journal::{shard::RecoveryError, writer::FlushMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };
