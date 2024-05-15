@@ -8,12 +8,12 @@ pub struct CreateOptions {
     /// Block size of data and index blocks
     ///
     /// Once set for a partition, this property is not considered in the future.
-    pub block_size: u32,
+    pub(crate) block_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree)
     ///
     /// Once set for a partition, this property is not considered in the future.
-    pub level_count: u8,
+    pub(crate) level_count: u8,
 
     /// Size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
     ///
@@ -21,7 +21,7 @@ pub struct CreateOptions {
     /// level to the next
     ///
     /// A level target size is: `max_memtable_size * level_ratio.pow(#level + 1)`
-    pub level_ratio: u8,
+    pub(crate) level_ratio: u8,
 }
 
 impl Default for CreateOptions {
