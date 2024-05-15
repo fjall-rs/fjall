@@ -1,9 +1,4 @@
-/// Partition create options.
-///
-/// Partitions are generally pretty inexpensive, so having a bunch of
-/// inactive partitions is definitely valid.
-///
-/// An inactive partition generally only takes a little bit of memory and disk space.
+/// Options to configure a partition
 pub struct CreateOptions {
     /// Block size of data and index blocks
     ///

@@ -105,6 +105,9 @@ pub use {
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };
 
+/// Alias for [`PartitionHandle`]
+pub type Partition = partition::PartitionHandle;
+
 /// A snapshot moment
 ///
 /// See [`Keyspace::instant`].

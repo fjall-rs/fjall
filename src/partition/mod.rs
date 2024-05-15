@@ -62,6 +62,9 @@ pub struct PartitionHandleInner {
 ///
 /// Each partition is backed by an LSM-tree to provide a
 /// disk-backed search tree, and be configured individually.
+///
+/// A partition generally only takes a little bit of memory and disk space,
+/// but does not spawn its own background threads.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
