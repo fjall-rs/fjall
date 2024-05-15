@@ -105,7 +105,7 @@ your application needs. After writing data (be it, `insert`, `remove` or committ
 
 Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself. Common operations like inserting and reading are generally lock free.
 
-For an async example, see the `tokio` example in the `examples/` folder.
+For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio).
 
 A single keyspace may **not** be loaded in parallel from separate *processes* however.
 
