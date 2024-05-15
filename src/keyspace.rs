@@ -327,13 +327,16 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// Partition names can be up to 255 characters long, can not be empty and
+    /// can only contain alphanumerics, underscore (`_`) and dash (`-`).
+    ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
     ///
     /// # Panics
     ///
-    /// Panics if the partition name includes characters other than: a-z A-Z 0-9 _ -
+    /// Panics if the partition name is invalid.
     pub fn open_partition(
         &self,
         name: &str,
