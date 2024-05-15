@@ -84,14 +84,8 @@ impl Config {
     /// Sets the amount of flush workers
     ///
     /// Default = # CPU cores
-    ///
-    /// # Panics
-    ///
-    /// Panics if n is equal to 0.
     #[must_use]
     pub fn flush_workers(mut self, n: usize) -> Self {
-        assert!(n > 0);
-
         self.flush_workers_count = n;
         self
     }
@@ -99,14 +93,8 @@ impl Config {
     /// Sets the amount of compaction workers
     ///
     /// Default = # CPU cores
-    ///
-    /// # Panics
-    ///
-    /// Panics if n is equal to 0.
     #[must_use]
     pub fn compaction_workers(mut self, n: usize) -> Self {
-        assert!(n > 0);
-
         self.compaction_workers_count = n;
         self
     }

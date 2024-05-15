@@ -238,9 +238,8 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        let compaction_workers_count = config.compaction_workers_count;
         let keyspace = Self::create_or_recover(config)?;
-        keyspace.start_background_threads(compaction_workers_count);
+        keyspace.start_background_threads();
         Ok(keyspace)
     }
 
@@ -264,21 +263,26 @@ impl Keyspace {
     ///
     /// Should not be called, unless in [`Keyspace::open`]
     /// and should definitely not be user-facing.
-    fn start_background_threads(&self, compaction_works_count: usize) {
-        self.spawn_flush_worker();
+    fn start_background_threads(&self) {
+        if self.config.flush_workers_count > 0 {
+            self.spawn_flush_worker();
 
-        for _ in 0..self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .queues
-            .len()
-        {
-            self.flush_semaphore.release();
+            for _ in 0..self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queues
+                .len()
+            {
+                self.flush_semaphore.release();
+            }
         }
 
-        log::info!("Spawning {compaction_works_count} compaction threads");
-        for _ in 0..compaction_works_count {
+        log::info!(
+            "Spawning {} compaction threads",
+            self.config.compaction_workers_count
+        );
+        for _ in 0..self.config.compaction_workers_count {
             self.spawn_compaction_worker();
         }
 

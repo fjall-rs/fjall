@@ -30,7 +30,7 @@ fn recover_from_different_folder() -> fjall::Result<()> {
 
     for _ in 0..10 {
         let _keyspace = Config::new(&absolute_folder)
-            .max_write_buffer_size(1)
+            .max_write_buffer_size(1_024 * 1_024)
             .open()?;
         std::thread::sleep(Duration::from_secs(1));
     }
