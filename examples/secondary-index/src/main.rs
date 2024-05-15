@@ -64,7 +64,7 @@ fn main() -> fjall::Result<()> {
 
         let item = items.get(primary_key)?.unwrap();
 
-        eprintln!("found {}", std::str::from_utf8(&item).unwrap());
+        eprintln!("found: {}", std::str::from_utf8(&item).unwrap());
     }
 
     keyspace.persist(fjall::FlushMode::SyncAll)?;
