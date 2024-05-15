@@ -40,17 +40,29 @@ impl CreateOptions {
     /// Sets the block size.
     ///
     /// Default = 4 KiB
+    ///
+    /// # Panics
+    ///
+    /// Panics if the block size is smaller than 1 KiB (1024 bytes).
     #[must_use]
-    pub fn block_size(mut self, n: u32) -> Self {
-        self.block_size = n;
+    pub fn block_size(mut self, block_size: u32) -> Self {
+        assert!(block_size >= 1_024);
+
+        self.block_size = block_size;
         self
     }
 
     /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
     ///
     /// Default = 8
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is 0.
     #[must_use]
     pub fn level_ratio(mut self, n: u8) -> Self {
+        assert!(n > 0);
+
         self.level_ratio = n;
         self
     }
@@ -58,8 +70,14 @@ impl CreateOptions {
     /// Sets the level count (depth of the tree).
     ///
     /// Default = 7
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is less than 2.
     #[must_use]
     pub fn level_count(mut self, n: u8) -> Self {
+        assert!(n > 1);
+
         self.level_count = n;
         self
     }

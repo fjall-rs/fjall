@@ -37,7 +37,7 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, Keyspace, PartitionCreateOptions};
+use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
 
 let keyspace = Config::new(folder).open()?;
 
@@ -78,7 +78,7 @@ batch.commit()?;
 // Sync the journal to disk to make sure data is definitely durable
 // When the keyspace is dropped, it will try to persist
 // Also, by default every second the keyspace will be persisted asynchronously
-keyspace.persist_paranoid()?;
+keyspace.persist(FlushMode::SyncAll)?;
 
 // Destroy the partition, removing all data in it.
 // This may be useful when using temporary tables or indexes,
@@ -92,6 +92,18 @@ keyspace.delete_partition(items)?;
 - Sharded journal for concurrent writes
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
+
+## Durability
+
+Fjall is agnostic about which type of durability needs your application needs to support different workloads. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a `FlushMode` parameter.
+
+## Features
+
+#### bloom
+
+Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
+
+*Disabled by default.*
 
 ## Stable disk format
 

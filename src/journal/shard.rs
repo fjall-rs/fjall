@@ -18,25 +18,20 @@ pub enum RecoveryMode {
     /// This is the default mode.
     #[default]
     TolerateCorruptTail,
-
-    // TODO: + unit tests
-    // /// Skips corrupt (invalid CRC) batches. This may violate
-    // /// consistency.
-    // SkipCorruptBatches,
-    /// Errors on any kind of invalid batch.
-    AbsoluteConsistency,
+    // TODO: in the future?
+    /*  /// Skips corrupt (invalid CRC) batches. This may violate
+    /// consistency, but will recover as much data as possible.
+    SkipInvalidBatches, */
 }
 
-// TODO: strategy, skip invalid batches (CRC or invalid item length) or throw error
 /// Errors that can occur during journal recovery
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecoveryError {
     /// Batch had less items than expected, so it's incomplete
     InsufficientLength,
 
-    /// Batch was not terminated, so it's possibly incomplete
-    MissingTerminator,
-
+    /* /// Batch was not terminated, so it's possibly incomplete
+    MissingTerminator, */
     /// Too many items in batch
     TooManyItems,
 
@@ -45,6 +40,7 @@ pub enum RecoveryError {
 }
 
 // TODO: don't require locking for sync check
+#[allow(clippy::module_name_repetitions)]
 pub struct JournalShard {
     pub(crate) writer: JournalWriter,
     pub(crate) should_sync: bool,
@@ -70,6 +66,14 @@ impl JournalShard {
         })
     }
 
+    fn truncate_to<P: AsRef<Path>>(path: P, last_valid_pos: u64) -> crate::Result<()> {
+        log::warn!("Truncating shard to {last_valid_pos}");
+        let file = OpenOptions::new().write(true).open(path)?;
+        file.set_len(last_valid_pos)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
     /// Recovers a journal shard and writes the items into the given memtable
     ///
     /// Will truncate the file to the position of the last valid batch
@@ -78,7 +82,7 @@ impl JournalShard {
         path: P,
         memtables: &mut HashMap<PartitionKey, MemTable>,
         whitelist: Option<&[PartitionKey]>,
-        recovery_mode: RecoveryMode,
+        _recovery_mode: RecoveryMode, // TODO:
     ) -> crate::Result<()> {
         use crate::Error::JournalRecovery;
 
@@ -102,10 +106,7 @@ impl JournalShard {
                         log::warn!("Invalid batch: found batch start inside batch");
 
                         // Discard batch
-                        log::warn!("Truncating shard to {last_valid_pos}");
-                        let file = OpenOptions::new().write(true).open(path)?;
-                        file.set_len(last_valid_pos)?;
-                        file.sync_all()?;
+                        Self::truncate_to(path, last_valid_pos)?;
 
                         break 'a;
                     }
@@ -124,22 +125,20 @@ impl JournalShard {
                         log::error!("Invalid batch: found end marker without start marker");
 
                         // Discard batch
-                        log::warn!("Truncating shard to {last_valid_pos}");
-                        let file = OpenOptions::new().write(true).open(path)?;
-                        file.set_len(last_valid_pos)?;
-                        file.sync_all()?;
+                        Self::truncate_to(path, last_valid_pos)?;
 
                         break 'a;
                     }
 
                     let crc = hasher.finalize();
+                    hasher = crc32fast::Hasher::new();
+
                     if crc != checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {checksum}, got: {crc}");
                         return Err(JournalRecovery(RecoveryError::CrcCheck));
                     }
 
                     // Reset all variables
-                    hasher = crc32fast::Hasher::new();
                     is_in_batch = false;
                     batch_counter = 0;
 
@@ -188,10 +187,7 @@ impl JournalShard {
                         log::warn!("Invalid batch: found end marker without start marker");
 
                         // Discard batch
-                        log::warn!("Truncating shard to {last_valid_pos}");
-                        let file = OpenOptions::new().write(true).open(path)?;
-                        file.set_len(last_valid_pos)?;
-                        file.sync_all()?;
+                        Self::truncate_to(path, last_valid_pos)?;
 
                         break 'a;
                     }
@@ -214,17 +210,10 @@ impl JournalShard {
         }
 
         if is_in_batch {
-            if recovery_mode == RecoveryMode::AbsoluteConsistency {
-                return Err(JournalRecovery(RecoveryError::MissingTerminator));
-            }
-
             log::warn!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 
             // Discard batch
-            log::warn!("Truncating shard to {last_valid_pos}");
-            let file = OpenOptions::new().write(true).open(path)?;
-            file.set_len(last_valid_pos)?;
-            file.sync_all()?;
+            Self::truncate_to(path, last_valid_pos)?;
         }
 
         Ok(())

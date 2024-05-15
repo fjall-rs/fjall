@@ -6,7 +6,7 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
-const TRAILER_MAGIC: u64 = 0xCC_23_8A_72_D0_7E_9A_17;
+const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'A', b'L', b'L', b'T', b'R', b'L'];
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
@@ -17,14 +17,6 @@ const TRAILER_MAGIC: u64 = 0xCC_23_8A_72_D0_7E_9A_17;
 /// - The end marker terminates each batch with the magic u64 value: [`TRAILER_MAGIC`].
 ///
 /// - If a start marker is detected, while inside a batch, the batch is broken.
-///
-/// # Disk representation
-///
-/// start: \[tag (0x0); 1 byte] \[item count; 4 bytes] \[seqno; 8 bytes]
-///
-/// item: \[tag (0x1); 1 byte] \[partition key length; 1 byte] \[partition key; N bytes] \[tombstone; 1 byte] \[key length; 2 bytes] \[key; N bytes] \[value length; 2 bytes] \[value: N bytes]
-///
-/// end: \[tag (0x2): 1 byte] \[crc value; 4 bytes] \[magic; 8 bytes]
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker {
     Start {
@@ -56,7 +48,7 @@ impl TryFrom<u8> for Tag {
             0 => Ok(Start),
             1 => Ok(Item),
             2 => Ok(End),
-            _ => Err(DeserializeError::InvalidTag(value)),
+            _ => Err(DeserializeError::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -109,7 +101,7 @@ impl Serializable for Marker {
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the CRC value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
-                writer.write_u64::<BigEndian>(TRAILER_MAGIC)?;
+                writer.write_all(TRAILER_MAGIC)?;
             }
         }
         Ok(())
@@ -154,7 +146,9 @@ impl Deserializable for Marker {
                 let crc = reader.read_u32::<BigEndian>()?;
 
                 // Check trailer
-                let magic = reader.read_u64::<BigEndian>()?;
+                let mut magic = [0u8; TRAILER_MAGIC.len()];
+
+                reader.read_exact(&mut magic)?;
                 if magic != TRAILER_MAGIC {
                     return Err(DeserializeError::InvalidTrailer);
                 }
@@ -223,7 +217,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::InvalidTag(3) => {}
+                DeserializeError::InvalidTag(("JournalMarkerTag", 3)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }
