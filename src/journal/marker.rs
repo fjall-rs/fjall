@@ -147,8 +147,8 @@ impl Deserializable for Marker {
 
                 // Check trailer
                 let mut magic = [0u8; TRAILER_MAGIC.len()];
-
                 reader.read_exact(&mut magic)?;
+
                 if magic != TRAILER_MAGIC {
                     return Err(DeserializeError::InvalidTrailer);
                 }
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_invalid_tag() {
-        let invalid_data = [3u8; 1]; // Invalid tag
+        let invalid_data = [4u8; 1]; // Invalid tag
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
@@ -217,7 +217,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::InvalidTag(("JournalMarkerTag", 3)) => {}
+                DeserializeError::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }
