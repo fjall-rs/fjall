@@ -43,6 +43,7 @@ jobs:
             examples/actix-kv -> target
             examples/axum-kv -> target
             examples/rolling-log -> target
+            examples/secondary-index -> target
             examples/structured -> target
             examples/suffix-search -> target
             examples/tokio -> target
