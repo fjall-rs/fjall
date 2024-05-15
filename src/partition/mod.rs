@@ -49,8 +49,8 @@ pub struct PartitionHandleInner {
     pub(crate) is_deleted: AtomicBool,
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    /// TEMP pub
-    pub(crate) tree: LsmTree,
+    #[doc(hidden)]
+    pub tree: LsmTree,
 
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: AtomicU32,
