@@ -119,12 +119,7 @@ fn main() -> fjall::Result<()> {
     eprintln!("\nListing all items:");
 
     for (idx, song) in song_db.iter().enumerate() {
-        // let (key, bytes) = item?;
         let song = song?;
-
-        /*    let mut item: Song = rmp_serde::from_slice(&bytes).expect("should deserialize");
-        item.id = String::from_utf8_lossy(&key).to_string(); */
-
         eprintln!("[{idx}] {song}");
     }
 

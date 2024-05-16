@@ -15,7 +15,7 @@ fn create_item(
     batch.insert(table, &id, format!("{name} [{year}]"));
 
     let ts_bytes = year.to_be_bytes();
-    let key = format_bytes!(b"{}#{}", ts_bytes, id.as_bytes());
+    let key = format_bytes!(b"{}#{}", ts_bytes, "");
 
     batch.insert(index, &key, "");
 
@@ -37,7 +37,14 @@ fn main() -> fjall::Result<()> {
 
     let batch = keyspace.batch();
     create_item(&keyspace, &batch, &items, &sec, "Remain in Light", 1_980)?;
-    create_item(&keyspace, &batch, &items, &sec, "Power, Corruption & Lies", 1_983)?;
+    create_item(
+        &keyspace,
+        &batch,
+        &items,
+        &sec,
+        "Power, Corruption & Lies",
+        1_983,
+    )?;
     create_item(&keyspace, &batch, &items, &sec, "Hounds of Love", 1_985)?;
     create_item(&keyspace, &batch, &items, &sec, "Black Celebration", 1_986)?;
     create_item(&keyspace, &batch, &items, &sec, "Disintegration", 1_989)?;
@@ -47,7 +54,14 @@ fn main() -> fjall::Result<()> {
     create_item(&keyspace, &batch, &items, &sec, "Dummy", 1_994)?;
     create_item(&keyspace, &batch, &items, &sec, "When The Pawn...", 1_999)?;
     create_item(&keyspace, &batch, &items, &sec, "Kid A", 2_000)?;
-    create_item(&keyspace, &batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
+    create_item(
+        &keyspace,
+        &batch,
+        &items,
+        &sec,
+        "Have You In My Wilderness",
+        2_015,
+    )?;
 
     batch.commit()?;
     keyspace.persist(fjall::FlushMode::SyncAll)?;
@@ -61,8 +75,10 @@ fn main() -> fjall::Result<()> {
     for item in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
         let (k, _) = item?;
 
+        // Get ID
         let primary_key = k.split(|&c| c == b'#').nth(1).unwrap();
 
+        // Get from primary index
         let item = items.get(primary_key)?.unwrap();
 
         eprintln!("found: {}", std::str::from_utf8(&item).unwrap());
