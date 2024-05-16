@@ -192,18 +192,22 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn disk_space(&self) -> crate::Result<u64> {
-        let journal_size = fs_extra::dir::get_size(&self.journal.path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+    pub fn disk_space(&self) -> u64 {
+        let journal_size = self
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used();
 
-        let partitions_lock = self.partitions.read().expect("lock is poisoned");
-
-        let partitions_size = partitions_lock
+        let partitions_size = self
+            .partitions
+            .read()
+            .expect("lock is poisoned")
             .values()
             .map(PartitionHandle::disk_space)
             .sum::<u64>();
 
-        Ok(journal_size + partitions_size)
+        journal_size + partitions_size
     }
 
     /// Flushes the active journal to OS buffers, making sure data can be written durably even on
