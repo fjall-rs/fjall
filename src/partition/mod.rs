@@ -61,7 +61,7 @@ pub struct PartitionHandleInner {
 /// Access to a keyspace partition
 ///
 /// Each partition is backed by an LSM-tree to provide a
-/// disk-backed search tree, and be configured individually.
+/// disk-backed search tree, and can be configured individually.
 ///
 /// A partition generally only takes a little bit of memory and disk space,
 /// but does not spawn its own background threads.
