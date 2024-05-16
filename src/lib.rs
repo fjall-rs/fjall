@@ -40,17 +40,17 @@
 //! items.remove("a")?;
 //!
 //! // Search by prefix
-//! for item in &items.prefix("prefix") {
+//! for item in items.prefix("prefix") {
 //!   // ...
 //! }
 //!
 //! // Search by range
-//! for item in &items.range("a"..="z") {
+//! for item in items.range("a"..="z") {
 //!   // ...
 //! }
 //!
 //! // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-//! for item in items.prefix("prefix").into_iter().rev() {
+//! for item in items.prefix("prefix").rev() {
 //!   // ...
 //! }
 //!
@@ -100,10 +100,13 @@ pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
-    journal::writer::FlushMode,
+    journal::{shard::RecoveryError, writer::FlushMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };
+
+/// Alias for [`PartitionHandle`]
+pub type Partition = partition::PartitionHandle;
 
 /// A snapshot moment
 ///

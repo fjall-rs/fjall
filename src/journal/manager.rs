@@ -44,6 +44,8 @@ impl std::fmt::Debug for Item {
 pub struct JournalManager {
     active_path: PathBuf,
     items: Vec<Item>,
+
+    // TODO: should be taking into account active journal, which is preallocated...
     disk_space_in_bytes: u64,
 }
 
@@ -57,7 +59,7 @@ impl JournalManager {
     }
 
     pub(crate) fn enqueue(&mut self, item: Item) {
-        self.disk_space_in_bytes += item.size_in_bytes;
+        self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_add(item.size_in_bytes);
         self.items.push(item);
     }
 
@@ -137,7 +139,7 @@ impl JournalManager {
             log::trace!("Removing fully flushed journal at {:?}", item.path);
             std::fs::remove_dir_all(&item.path)?;
 
-            self.disk_space_in_bytes -= item.size_in_bytes;
+            self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
             self.items.remove(idx);
         }
 

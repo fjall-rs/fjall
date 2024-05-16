@@ -17,8 +17,8 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, prefix::Prefix, range::Range, SequenceNumberCounter, Snapshot,
-    Tree as LsmTree, UserKey, UserValue,
+    compaction::CompactionStrategy, SequenceNumberCounter, Snapshot, Tree as LsmTree, UserKey,
+    UserValue,
 };
 use std::{
     collections::HashMap,
@@ -49,8 +49,8 @@ pub struct PartitionHandleInner {
     pub(crate) is_deleted: AtomicBool,
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    /// TEMP pub
-    pub(crate) tree: LsmTree,
+    #[doc(hidden)]
+    pub tree: LsmTree,
 
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: AtomicU32,
@@ -61,7 +61,10 @@ pub struct PartitionHandleInner {
 /// Access to a keyspace partition
 ///
 /// Each partition is backed by an LSM-tree to provide a
-/// disk-backed search tree, and be configured individually.
+/// disk-backed search tree, and can be configured individually.
+///
+/// A partition generally only takes a little bit of memory and disk space,
+/// but does not spawn its own background threads.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
@@ -186,7 +189,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
-    /// assert_eq!(3, partition.iter().into_iter().count());
+    /// assert_eq!(3, partition.iter().count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -196,8 +199,10 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(&self) -> Range {
-        self.tree.iter()
+    pub fn iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.iter().map(|item| Ok(item?))
     }
 
     /// Returns an iterator over a range of items.
@@ -215,7 +220,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
-    /// assert_eq!(2, partition.range("a"..="f").into_iter().count());
+    /// assert_eq!(2, partition.range("a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -223,8 +228,11 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Range {
-        self.tree.range(range)
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.range(range).map(|item| Ok(item?))
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -242,7 +250,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("ab", "abc")?;
     /// partition.insert("abc", "abc")?;
-    /// assert_eq!(2, partition.prefix("ab").into_iter().count());
+    /// assert_eq!(2, partition.prefix("ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -250,8 +258,11 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Prefix {
-        self.tree.prefix(prefix)
+    pub fn prefix<K: AsRef<[u8]>>(
+        &self,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
     /// Approximates the amount of items in the partition.
@@ -321,7 +332,7 @@ impl PartitionHandle {
     pub fn len(&self) -> crate::Result<usize> {
         let mut count = 0;
 
-        for item in &self.iter() {
+        for item in self.iter() {
             let _ = item?;
             count += 1;
         }

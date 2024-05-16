@@ -28,7 +28,7 @@ It is not:
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
-For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
 ## Basic usage
 
@@ -54,17 +54,17 @@ let bytes = items.get("a")?;
 items.remove("a")?;
 
 // Search by prefix
-for item in &items.prefix("prefix") {
+for item in items.prefix("prefix") {
   // ...
 }
 
 // Search by range
-for item in &items.range("a"..="z") {
+for item in items.range("a"..="z") {
   // ...
 }
 
 // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for item in items.prefix("prefix").into_iter().rev() {
+for item in items.prefix("prefix").rev() {
   // ...
 }
 
@@ -86,6 +86,7 @@ keyspace.persist(FlushMode::SyncAll)?;
 keyspace.delete_partition(items)?;
 ```
 
+
 ## Details
 
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
@@ -93,11 +94,22 @@ keyspace.delete_partition(items)?;
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+
 ## Durability
 
-Fjall is agnostic about which type of durability needs your application needs to support different workloads. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a `FlushMode` parameter.
+To support different kinds of workloads, Fjall is agnostic about the type of durability
+your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*.
 
-## Features
+## Multithreading, Async and Multiprocess
+
+Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself. Common operations like inserting and reading are generally lock free.
+
+For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio).
+
+A single keyspace may **not** be loaded in parallel from separate *processes* however.
+
+## Feature flags
 
 #### bloom
 
@@ -107,7 +119,7 @@ Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read
 
 ## Stable disk format
 
-The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that will result in a major bump.
+The disk format is stable as of 1.0.0. Future breaking changes will result in a major version bump and a migration path.
 
 ## Examples
 

@@ -192,18 +192,22 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn disk_space(&self) -> crate::Result<u64> {
-        let journal_size = fs_extra::dir::get_size(&self.journal.path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+    pub fn disk_space(&self) -> u64 {
+        let journal_size = self
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used();
 
-        let partitions_lock = self.partitions.read().expect("lock is poisoned");
-
-        let partitions_size = partitions_lock
+        let partitions_size = self
+            .partitions
+            .read()
+            .expect("lock is poisoned")
             .values()
             .map(PartitionHandle::disk_space)
             .sum::<u64>();
 
-        Ok(journal_size + partitions_size)
+        journal_size + partitions_size
     }
 
     /// Flushes the active journal to OS buffers, making sure data can be written durably even on
@@ -238,9 +242,8 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        let compaction_workers_count = config.compaction_workers_count;
         let keyspace = Self::create_or_recover(config)?;
-        keyspace.start_background_threads(compaction_workers_count);
+        keyspace.start_background_threads();
         Ok(keyspace)
     }
 
@@ -264,21 +267,26 @@ impl Keyspace {
     ///
     /// Should not be called, unless in [`Keyspace::open`]
     /// and should definitely not be user-facing.
-    fn start_background_threads(&self, compaction_works_count: usize) {
-        self.spawn_flush_worker();
+    fn start_background_threads(&self) {
+        if self.config.flush_workers_count > 0 {
+            self.spawn_flush_worker();
 
-        for _ in 0..self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .queues
-            .len()
-        {
-            self.flush_semaphore.release();
+            for _ in 0..self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queues
+                .len()
+            {
+                self.flush_semaphore.release();
+            }
         }
 
-        log::info!("Spawning {compaction_works_count} compaction threads");
-        for _ in 0..compaction_works_count {
+        log::info!(
+            "Spawning {} compaction threads",
+            self.config.compaction_workers_count
+        );
+        for _ in 0..self.config.compaction_workers_count {
             self.spawn_compaction_worker();
         }
 
@@ -327,13 +335,16 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// Partition names can be up to 255 characters long, can not be empty and
+    /// can only contain alphanumerics, underscore (`_`) and dash (`-`).
+    ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
     ///
     /// # Panics
     ///
-    /// Panics if the partition name includes characters other than: a-z A-Z 0-9 _ -
+    /// Panics if the partition name is invalid.
     pub fn open_partition(
         &self,
         name: &str,
@@ -353,6 +364,12 @@ impl Keyspace {
 
             handle
         })
+    }
+
+    /// Returns the amount of partitions
+    #[must_use]
+    pub fn partition_count(&self) -> usize {
+        self.partitions.read().expect("lock is poisoned").len()
     }
 
     /// Gets a list of all partition names in the keyspace
@@ -436,7 +453,7 @@ impl Keyspace {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
         if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V0 {
+            if version != Version::V1 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -574,7 +591,7 @@ impl Keyspace {
         // NOTE: Lastly, fsync .fjall marker, which contains the version
         // -> the keyspace is fully initialized
         let mut file = std::fs::File::create(marker_path)?;
-        Version::V0.write_file_header(&mut file)?;
+        Version::V1.write_file_header(&mut file)?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
