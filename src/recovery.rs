@@ -14,6 +14,8 @@ use std::{
     sync::{atomic::AtomicBool, Arc, RwLock},
 };
 
+const LSM_VERSION_MARKER_FILE: &str = "version";
+
 /// Recovers partitions
 pub fn recover_partitions(
     keyspace: &Keyspace,
@@ -36,7 +38,7 @@ pub fn recover_partitions(
         }
 
         // Check for marker, maybe the partition is not fully initialized
-        if !partition_path.join(".lsm").try_exists()? {
+        if !partition_path.join(LSM_VERSION_MARKER_FILE).try_exists()? {
             log::debug!("Deleting uninitialized partition {:?}", partition_name);
             std::fs::remove_dir_all(partition_path)?;
             continue;
