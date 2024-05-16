@@ -187,7 +187,6 @@ impl JournalManager {
         self.active_path = new_journal_path;
 
         // TODO: Journal::disk_space
-
         let journal_size = fs_extra::dir::get_size(&old_journal_path)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
 
