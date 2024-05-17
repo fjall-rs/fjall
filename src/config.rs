@@ -61,7 +61,7 @@ impl Default for Config {
         Self {
             path: absolute_path (".fjall_data"),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
-            descriptor_table: Arc::new(FileDescriptorTable::new(960, 4)),
+            descriptor_table: Arc::new(FileDescriptorTable::new(960, 2)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
@@ -84,13 +84,8 @@ impl Config {
     /// Sets the amount of flush workers
     ///
     /// Default = # CPU cores
-    ///
-    /// # Panics
-    ///
-    /// Panics if n is equal to 0.
     #[must_use]
     pub fn flush_workers(mut self, n: usize) -> Self {
-        assert!(n > 0);
         self.flush_workers_count = n;
         self
     }
@@ -98,13 +93,8 @@ impl Config {
     /// Sets the amount of compaction workers
     ///
     /// Default = # CPU cores
-    ///
-    /// # Panics
-    ///
-    /// Panics if n is equal to 0.
     #[must_use]
     pub fn compaction_workers(mut self, n: usize) -> Self {
-        assert!(n > 0);
         self.compaction_workers_count = n;
         self
     }
@@ -115,10 +105,12 @@ impl Config {
     ///
     /// # Panics
     ///
-    /// Panics if n is equal to 0.
+    /// Panics if n < 2.
     #[must_use]
     pub fn max_open_files(mut self, n: usize) -> Self {
-        self.descriptor_table = Arc::new(FileDescriptorTable::new(n, 4));
+        assert!(n >= 2);
+
+        self.descriptor_table = Arc::new(FileDescriptorTable::new(n, 2));
         self
     }
 
@@ -138,8 +130,10 @@ impl Config {
     ///
     /// # Panics
     ///
+    /// Panics if bytes < 24 MiB.
+    ///
     /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
-    /// anything less will immediately stall the system. Otherwise it will panic.
+    /// anything less will immediately stall the system.
     ///
     /// Same as `max_total_wal_size` in `RocksDB`.
     #[must_use]
@@ -155,8 +149,14 @@ impl Config {
     /// Similar to `db_write_buffer_size` in `RocksDB`.
     ///
     /// Default = 64 MiB
+    ///
+    /// # Panics
+    ///
+    /// Panics if bytes < 1 MiB.
     #[must_use]
     pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
+        assert!(bytes >= 1_024 * 1_024);
+
         self.max_write_buffer_size_in_bytes = bytes;
         self
     }

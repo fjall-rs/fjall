@@ -20,7 +20,10 @@ use std::{
     collections::HashMap,
     fs::File,
     path::Path,
-    sync::{atomic::AtomicUsize, Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, RwLock,
+    },
 };
 use std_semaphore::Semaphore;
 
@@ -28,17 +31,44 @@ pub type Partitions = HashMap<PartitionKey, PartitionHandle>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
+    /// Dictionary of all partitions
     pub(crate) partitions: Arc<RwLock<Partitions>>,
+
+    /// Journal (write-ahead-log/WAL)
     pub(crate) journal: Arc<Journal>,
+
+    /// Keyspace configuration
     pub(crate) config: Config,
+
+    /// Current sequence number
     pub(crate) seqno: SequenceNumberCounter,
+
+    /// Caps write buffer size by flushing
+    /// memtables to disk segments
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+
+    /// Checks on-disk journal size and flushes memtables
+    /// if needed, to garbage collect sealed journals
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+
+    /// Notifies flush threads
     pub(crate) flush_semaphore: Arc<Semaphore>,
+
+    /// Keeps track of which partitions are most likely to be
+    /// candidates for compaction
     pub(crate) compaction_manager: CompactionManager,
+
+    /// Stop signal when keyspace is dropped to stop background threads
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
+
+    /// Counter of background threads
     pub(crate) active_background_threads: Arc<AtomicUsize>,
+
+    /// Keeps track of write buffer size
     pub(crate) write_buffer_manager: WriteBufferManager,
+
+    /// True if fsync failed
+    pub(crate) is_poisoned: Arc<AtomicBool>,
 }
 
 impl Drop for KeyspaceInner {
@@ -68,7 +98,11 @@ impl Drop for KeyspaceInner {
 }
 
 /// A keyspace is a single logical database
-/// which houses multiple partitions
+/// which can house multiple partitions
+///
+/// In your application, you should create a single keyspace
+/// and keep it around for as long as needed
+/// (as long as you are using its partitions).
 #[derive(Clone)]
 #[doc(alias = "database")]
 #[doc(alias = "collection")]
@@ -154,22 +188,26 @@ impl Keyspace {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(keyspace.disk_space()? > 0);
+    /// assert!(keyspace.disk_space() >= 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn disk_space(&self) -> crate::Result<u64> {
-        let journal_size = fs_extra::dir::get_size(&self.journal.path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+    pub fn disk_space(&self) -> u64 {
+        let journal_size = self
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used();
 
-        let partitions_lock = self.partitions.read().expect("lock is poisoned");
-
-        let partitions_size = partitions_lock
+        let partitions_size = self
+            .partitions
+            .read()
+            .expect("lock is poisoned")
             .values()
             .map(PartitionHandle::disk_space)
             .sum::<u64>();
 
-        Ok(journal_size + partitions_size)
+        journal_size + partitions_size
     }
 
     /// Flushes the active journal to OS buffers, making sure data can be written durably even on
@@ -182,46 +220,19 @@ impl Keyspace {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    pub fn persist_lax(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::Buffer)?;
-        Ok(())
-    }
+    pub fn persist(&self, mode: FlushMode) -> crate::Result<()> {
+        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
 
-    /// Flushes the active journal using `fsyncdata`, making sure recently written data is durable.
-    ///
-    /// This operation is about 2x faster than [`Keyspace::persist_paranoid`]. Only use if you know
-    /// that `fdatasync` is sufficient for your file system and/or operating system.
-    ///
-    /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is crash-safe.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occured.
-    ///
-    /// # Panics
-    ///
-    /// Panics if fsync failed.
-    pub fn persist(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::SyncData)?;
-        Ok(())
-    }
-
-    /// Flushes the active journal using `fsync`, making sure recently written data is durable.
-    ///
-    /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is crash-safe.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occured.
-    ///
-    /// # Panics
-    ///
-    /// Panics if fsync failed.
-    #[doc(hidden)]
-    pub fn persist_paranoid(&self) -> crate::Result<()> {
-        self.journal.flush(FlushMode::SyncAll)?;
+        if let Err(e) = self.journal.flush(mode) {
+            self.is_poisoned
+                .store(true, std::sync::atomic::Ordering::Release);
+            log::error!(
+                "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+            );
+            return Err(crate::Error::Poisoned);
+        };
         Ok(())
     }
 
@@ -231,9 +242,8 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        let compaction_workers_count = config.compaction_workers_count;
         let keyspace = Self::create_or_recover(config)?;
-        keyspace.start_background_threads(compaction_workers_count);
+        keyspace.start_background_threads();
         Ok(keyspace)
     }
 
@@ -257,21 +267,26 @@ impl Keyspace {
     ///
     /// Should not be called, unless in [`Keyspace::open`]
     /// and should definitely not be user-facing.
-    pub(crate) fn start_background_threads(&self, compaction_works_count: usize) {
-        self.spawn_flush_worker();
+    pub(crate) fn start_background_threads(&self) {
+        if self.config.flush_workers_count > 0 {
+            self.spawn_flush_worker();
 
-        for _ in 0..self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .queues
-            .len()
-        {
-            self.flush_semaphore.release();
+            for _ in 0..self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .queues
+                .len()
+            {
+                self.flush_semaphore.release();
+            }
         }
 
-        log::info!("Spawning {compaction_works_count} compaction threads");
-        for _ in 0..compaction_works_count {
+        log::info!(
+            "Spawning {} compaction threads",
+            self.config.compaction_workers_count
+        );
+        for _ in 0..self.config.compaction_workers_count {
             self.spawn_compaction_worker();
         }
 
@@ -290,22 +305,23 @@ impl Keyspace {
     pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
         let partition_path = handle.path();
 
-        handle
-            .is_deleted
-            .store(true, std::sync::atomic::Ordering::Release);
-
         let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&partition_path)?;
 
+        handle
+            .is_deleted
+            .store(true, std::sync::atomic::Ordering::Release);
+
+        // IMPORTANT: Care, locks partitions map
+        self.compaction_manager.remove_partition(&handle.name);
+
         self.flush_manager
             .write()
             .expect("lock is poisoned")
             .remove_partition(&handle.name);
-
-        self.compaction_manager.remove_partition(&handle.name);
 
         self.partitions
             .write()
@@ -319,13 +335,16 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// Partition names can be up to 255 characters long, can not be empty and
+    /// can only contain alphanumerics, underscore (`_`) and dash (`-`).
+    ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
     ///
     /// # Panics
     ///
-    /// Panics if the partition name includes characters other than: a-z A-Z 0-9 _ -
+    /// Panics if the partition name is invalid.
     pub fn open_partition(
         &self,
         name: &str,
@@ -345,6 +364,12 @@ impl Keyspace {
 
             handle
         })
+    }
+
+    /// Returns the amount of partitions
+    #[must_use]
+    pub fn partition_count(&self) -> usize {
+        self.partitions.read().expect("lock is poisoned").len()
     }
 
     /// Gets a list of all partition names in the keyspace
@@ -428,7 +453,7 @@ impl Keyspace {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
         if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V0 {
+            if version != Version::V1 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -514,6 +539,7 @@ impl Keyspace {
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
+            is_poisoned: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -559,12 +585,13 @@ impl Keyspace {
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
+            is_poisoned: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
         // -> the keyspace is fully initialized
         let mut file = std::fs::File::create(marker_path)?;
-        Version::V0.write_file_header(&mut file)?;
+        Version::V1.write_file_header(&mut file)?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
@@ -599,6 +626,7 @@ impl Keyspace {
     fn spawn_fsync_thread(&self, ms: usize) {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
+        let is_poisoned = self.is_poisoned.clone();
 
         std::thread::spawn(move || {
             while !stop_signal.is_stopped() {
@@ -607,9 +635,11 @@ impl Keyspace {
 
                 log::trace!("fsync thread: fsycing journal");
                 if let Err(e) = journal.flush(FlushMode::SyncAll) {
-                    // TODO: what to do?? if fsync fails, it's game over
-                    // TODO: (need to keyspace/journal by poisoning it)
-                    log::error!("Fsync failed: {e:?}");
+                    is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                    log::error!(
+                        "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                    );
+                    return;
                 }
             }
 

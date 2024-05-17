@@ -1,4 +1,4 @@
-use fjall::{BlockCache, Config};
+use fjall::{BlockCache, Config, FlushMode};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -42,7 +42,7 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    keyspace.persist()?;
+    keyspace.persist(FlushMode::SyncAll)?;
 
     let suffix = "west";
     let test_runs = 10;
@@ -57,7 +57,7 @@ fn main() -> fjall::Result<()> {
             eprintln!("\n[SLOW] Scanning all items for suffix {suffix:?}:");
         }
 
-        for item in &items_rev.iter() {
+        for item in items_rev.iter() {
             let (_, value) = item?;
 
             if value.ends_with(suffix.as_bytes()) {
@@ -86,7 +86,7 @@ fn main() -> fjall::Result<()> {
 
         // Uses prefix, so generally faster than table scan
         // `------------------v
-        for item in &items_rev.prefix(suffix.chars().rev().collect::<String>()) {
+        for item in items_rev.prefix(suffix.chars().rev().collect::<String>()) {
             let (_, value) = item?;
 
             if i == 0 {

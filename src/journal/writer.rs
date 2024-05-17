@@ -35,15 +35,25 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
     Ok(bytes.len())
 }
 
+/// Flush mode
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FlushMode {
-    /// Flushes data to OS buffers
+    /// Flushes data to OS buffers. This allows the OS to write out data in case of an
+    /// application crash.
+    ///
+    /// When this function returns, data is **not** guaranteed to be persisted in case
+    /// of a power loss event or OS crash.
     Buffer,
 
-    /// Flushes data using fdatasync
+    /// Flushes data using `fdatasync`.
+    ///
+    /// Depending on your operating system of choice, this operation
+    /// may be about 2x faster than [`FlushMode::SyncAll`].
+    ///
+    /// Only use if you know that `fdatasync` is sufficient for your file system and/or operating system.
     SyncData,
 
-    /// Flushes data + metadata using fsync
+    /// Flushes data + metadata using `fsync`.
     SyncAll,
 }
 
@@ -91,26 +101,14 @@ impl Writer {
     /// # Panics
     ///
     /// Panics if fsync failed.
-    pub(crate) fn flush(&mut self, mode: FlushMode) -> crate::Result<()> {
+    pub(crate) fn flush(&mut self, mode: FlushMode) -> std::io::Result<()> {
         self.file.flush()?;
 
         match mode {
-            FlushMode::SyncAll => {
-                self.file
-                    .get_mut()
-                    .sync_all()
-                    .expect("FATAL: fsyncing all failed");
-            }
-            FlushMode::SyncData => {
-                self.file
-                    .get_mut()
-                    .sync_data()
-                    .expect("FATAL: fsyncing data failed");
-            }
-            FlushMode::Buffer => {}
+            FlushMode::SyncAll => self.file.get_mut().sync_all(),
+            FlushMode::SyncData => self.file.get_mut().sync_data(),
+            FlushMode::Buffer => Ok(()),
         }
-
-        Ok(())
     }
 
     /// Appends a single item wrapped in a batch to the journal

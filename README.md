@@ -9,6 +9,7 @@
 [![docs.rs](https://img.shields.io/docsrs/fjall?color=green)](https://docs.rs/fjall)
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
+[![Discord](https://img.shields.io/discord/1240426554111164486)](https://discord.com/invite/HvYGp4NFFk)
 
 Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
 
@@ -28,7 +29,7 @@ It is not:
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
-For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
 ## Basic usage
 
@@ -37,7 +38,7 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, Keyspace, PartitionCreateOptions};
+use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
 
 let keyspace = Config::new(folder).open()?;
 
@@ -54,17 +55,17 @@ let bytes = items.get("a")?;
 items.remove("a")?;
 
 // Search by prefix
-for item in &items.prefix("prefix") {
+for item in items.prefix("prefix") {
   // ...
 }
 
 // Search by range
-for item in &items.range("a"..="z") {
+for item in items.range("a"..="z") {
   // ...
 }
 
 // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for item in items.prefix("prefix").into_iter().rev() {
+for item in items.prefix("prefix").rev() {
   // ...
 }
 
@@ -78,13 +79,14 @@ batch.commit()?;
 // Sync the journal to disk to make sure data is definitely durable
 // When the keyspace is dropped, it will try to persist
 // Also, by default every second the keyspace will be persisted asynchronously
-keyspace.persist_paranoid()?;
+keyspace.persist(FlushMode::SyncAll)?;
 
 // Destroy the partition, removing all data in it.
 // This may be useful when using temporary tables or indexes,
 // as it is essentially an O(1) operation.
 keyspace.delete_partition(items)?;
 ```
+
 
 ## Details
 
@@ -93,9 +95,32 @@ keyspace.delete_partition(items)?;
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
+
+## Durability
+
+To support different kinds of workloads, Fjall is agnostic about the type of durability
+your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*.
+
+## Multithreading, Async and Multiprocess
+
+Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself. Common operations like inserting and reading are generally lock free.
+
+For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio).
+
+A single keyspace may **not** be loaded in parallel from separate *processes* however.
+
+## Feature flags
+
+#### bloom
+
+Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
+
+*Disabled by default.*
+
 ## Stable disk format
 
-The disk format will be stable from 1.0.0 (oh, the dreaded 1.0.0...) onwards. Any breaking change after that will result in a major bump.
+The disk format is stable as of 1.0.0. Future breaking changes will result in a major version bump and a migration path.
 
 ## Examples
 
