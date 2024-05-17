@@ -1,11 +1,10 @@
-use fjall::{Batch, BlockCache, Config, Keyspace, PartitionHandle};
+use fjall::{Batch, BlockCache, Config, PartitionHandle};
 use format_bytes::format_bytes;
 use nanoid::nanoid;
 use std::path::Path;
 
 fn create_item(
-    ks: &Keyspace,
-    batch: &Batch,
+    batch: &mut Batch,
     table: &PartitionHandle,
     index: &PartitionHandle,
     name: &str,
@@ -15,7 +14,7 @@ fn create_item(
     batch.insert(table, &id, format!("{name} [{year}]"));
 
     let ts_bytes = year.to_be_bytes();
-    let key = format_bytes!(b"{}#{}", ts_bytes, "");
+    let key = format_bytes!(b"{}#{}", ts_bytes, id.as_bytes());
 
     batch.insert(index, &key, "");
 
@@ -35,33 +34,19 @@ fn main() -> fjall::Result<()> {
     let items = keyspace.open_partition("items", Default::default())?;
     let sec = keyspace.open_partition("sec_idx", Default::default())?;
 
-    let batch = keyspace.batch();
-    create_item(&keyspace, &batch, &items, &sec, "Remain in Light", 1_980)?;
-    create_item(
-        &keyspace,
-        &batch,
-        &items,
-        &sec,
-        "Power, Corruption & Lies",
-        1_983,
-    )?;
-    create_item(&keyspace, &batch, &items, &sec, "Hounds of Love", 1_985)?;
-    create_item(&keyspace, &batch, &items, &sec, "Black Celebration", 1_986)?;
-    create_item(&keyspace, &batch, &items, &sec, "Disintegration", 1_989)?;
-    create_item(&keyspace, &batch, &items, &sec, "Violator", 1_990)?;
-    create_item(&keyspace, &batch, &items, &sec, "Wish", 1_991)?;
-    create_item(&keyspace, &batch, &items, &sec, "Loveless", 1_991)?;
-    create_item(&keyspace, &batch, &items, &sec, "Dummy", 1_994)?;
-    create_item(&keyspace, &batch, &items, &sec, "When The Pawn...", 1_999)?;
-    create_item(&keyspace, &batch, &items, &sec, "Kid A", 2_000)?;
-    create_item(
-        &keyspace,
-        &batch,
-        &items,
-        &sec,
-        "Have You In My Wilderness",
-        2_015,
-    )?;
+    let mut batch = keyspace.batch();
+    create_item(&mut batch, &items, &sec, "Remain in Light", 1_980)?;
+    create_item(&mut batch, &items, &sec, "Power, Corruption & Lies", 1_983)?;
+    create_item(&mut batch, &items, &sec, "Hounds of Love", 1_985)?;
+    create_item(&mut batch, &items, &sec, "Black Celebration", 1_986)?;
+    create_item(&mut batch, &items, &sec, "Disintegration", 1_989)?;
+    create_item(&mut batch, &items, &sec, "Violator", 1_990)?;
+    create_item(&mut batch, &items, &sec, "Wish", 1_991)?;
+    create_item(&mut batch, &items, &sec, "Loveless", 1_991)?;
+    create_item(&mut batch, &items, &sec, "Dummy", 1_994)?;
+    create_item(&mut batch, &items, &sec, "When The Pawn...", 1_999)?;
+    create_item(&mut batch, &items, &sec, "Kid A", 2_000)?;
+    create_item(&mut batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
 
     batch.commit()?;
     keyspace.persist(fjall::FlushMode::SyncAll)?;
