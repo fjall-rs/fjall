@@ -26,6 +26,7 @@ fn block_cache_insert(c: &mut Criterion) {
         header: BlockHeader {
             compression: CompressionType::Lz4,
             crc: 0,
+            previous_block_offset: 0,
             data_length: 0,
         },
     });
@@ -60,6 +61,7 @@ fn block_cache_get(c: &mut Criterion) {
         header: BlockHeader {
             compression: CompressionType::Lz4,
             crc: 0,
+            previous_block_offset: 0,
             data_length: 0,
         },
     });
