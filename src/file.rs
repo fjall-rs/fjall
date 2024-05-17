@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::path::Path;
 
 pub const JOURNALS_FOLDER: &str = "journals";
 pub const SEGMENTS_FOLDER: &str = "segments";
@@ -11,13 +11,13 @@ pub const FLUSH_MARKER: &str = ".flush";
 
 #[cfg(not(target_os = "windows"))]
 pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
-    let file = File::open(path)?;
+    let file = std::fs::File::open(path)?;
     debug_assert!(file.metadata()?.is_dir());
     file.sync_all()
 }
 
 #[cfg(target_os = "windows")]
-pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+pub fn fsync_directory<P: AsRef<Path>>(_path: P) -> std::io::Result<()> {
     // Cannot fsync directory on Windows
     Ok(())
 }
