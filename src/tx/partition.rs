@@ -58,4 +58,6 @@ impl TxPartitionHandle {
     pub fn inner(&self) -> &PartitionHandle {
         &self.inner
     }
+
+    // TODO: snapshot (read_tx?)
 }

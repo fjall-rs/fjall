@@ -14,9 +14,9 @@ pub struct TransactionalKeyspace {
 pub type TxKeyspace = TransactionalKeyspace;
 
 impl TxKeyspace {
-    /// Starts a new transaction
+    /// Starts a new writeable transaction.
     #[must_use]
-    pub fn tx(&self) -> Transaction {
+    pub fn write_tx(&self) -> Transaction {
         let instant = self.inner.instant();
         Transaction::new(self.tx_lock.lock().expect("lock is poisoned"), instant)
     }
@@ -36,6 +36,7 @@ impl TxKeyspace {
         create_options: PartitionCreateOptions,
     ) -> crate::Result<TxPartitionHandle> {
         let partition = self.inner.open_partition(name, create_options)?;
+
         Ok(TxPartitionHandle {
             inner: partition,
             tx_lock: self.tx_lock.clone(),
@@ -48,9 +49,8 @@ impl TxKeyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
-        let compaction_workers_count = config.compaction_workers_count;
         let inner = Keyspace::create_or_recover(config)?;
-        inner.start_background_threads(compaction_workers_count);
+        inner.start_background_threads();
 
         Ok(Self {
             inner,
