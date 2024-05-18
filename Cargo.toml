@@ -21,7 +21,6 @@ path = "src/lib.rs"
 [features]
 default = []
 bloom = ["lsm-tree/bloom"]
-segment_history = ["lsm-tree/segment_history"]
 
 [dependencies]
 byteorder = "1.5.0"
