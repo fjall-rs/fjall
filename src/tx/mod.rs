@@ -127,6 +127,28 @@ impl<'a> Transaction<'a> {
             .map(|item| Ok(item?))
     }
 
+    /// Iterate over a range of the transaction's state
+    #[must_use]
+    pub fn prefix<'b, K: AsRef<[u8]>>(
+        &'b mut self,
+        partition: &'b TxPartitionHandle,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+        partition
+            .inner
+            .tree
+            .create_prefix(
+                prefix,
+                Some(self.instant),
+                Some(
+                    self.memtables
+                        .entry(partition.inner.name.clone())
+                        .or_default(),
+                ),
+            )
+            .map(|item| Ok(item?))
+    }
+
     /// Inserts a key-value pair into the partition.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
