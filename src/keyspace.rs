@@ -210,12 +210,26 @@ impl Keyspace {
         journal_size + partitions_size
     }
 
-    /// Flushes the active journal to OS buffers, making sure data can be written durably even on
-    /// application crash. When this function returns, data is **not** guaranteed to be written in case
-    /// of a power loss event.
+    /// Flushes the active journal to OS buffers. The durability depends on the [`FlushMode`]
+    /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
     /// data is crash-safe.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let keyspace = Config::new(folder).open()?;
+    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+    ///
+    /// items.insert("a", "hello")?;
+    ///
+    /// keyspace.persist(FlushMode::SyncAll)?;
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
