@@ -100,7 +100,7 @@ For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-t
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
-your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*.
+your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*. Also when dropped, the keyspace will try to persist the journal synchronously.
 
 ## Multithreading, Async and Multiprocess
 
