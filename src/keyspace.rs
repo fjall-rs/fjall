@@ -662,7 +662,7 @@ impl Keyspace {
                 }
             }
 
-            log::debug!("fsync thread: exiting because tree is dropping");
+            log::trace!("fsync thread: exiting because tree is dropping");
         });
     }
 
@@ -675,13 +675,13 @@ impl Keyspace {
 
         std::thread::spawn(move || {
             while !stop_signal.is_stopped() {
-                log::debug!("compaction: waiting for work");
+                log::trace!("compaction: waiting for work");
                 compaction_manager.wait_for();
 
                 crate::compaction::worker::run(&compaction_manager);
             }
 
-            log::debug!("compaction thread: exiting because tree is dropping");
+            log::trace!("compaction thread: exiting because tree is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
