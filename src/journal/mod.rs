@@ -61,7 +61,7 @@ impl Journal {
         recovery_mode: RecoveryMode,
     ) -> crate::Result<(Self, HashMap<PartitionKey, MemTable>)> {
         let path = path.as_ref();
-        log::info!("Recovering journal from {path:?}");
+        log::debug!("Recovering journal from {path:?}");
 
         let memtables = Self::recover_memtables(path, None, recovery_mode)?;
 

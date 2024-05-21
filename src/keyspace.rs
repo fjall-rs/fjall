@@ -301,7 +301,7 @@ impl Keyspace {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Spawning {} compaction threads",
             self.config.compaction_workers_count
         );
