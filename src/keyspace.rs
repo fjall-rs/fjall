@@ -77,8 +77,13 @@ impl Drop for KeyspaceInner {
 
         self.stop_signal.send();
 
-        if let Err(e) = self.journal.flush(FlushMode::SyncAll) {
-            log::error!("Flush error on drop: {e:?}");
+        match self.journal.flush(FlushMode::SyncAll) {
+            Ok(()) => {
+                log::trace!("Flushed journal successfully");
+            }
+            Err(e) => {
+                log::error!("Flush error on drop: {e:?}");
+            }
         }
 
         while self
