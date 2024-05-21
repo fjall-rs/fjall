@@ -67,7 +67,7 @@ impl JournalShard {
     }
 
     fn truncate_to<P: AsRef<Path>>(path: P, last_valid_pos: u64) -> crate::Result<()> {
-        log::warn!("Truncating shard to {last_valid_pos}");
+        log::trace!("Truncating shard to {last_valid_pos}");
         let file = OpenOptions::new().write(true).open(path)?;
         file.set_len(last_valid_pos)?;
         file.sync_all()?;
@@ -103,7 +103,7 @@ impl JournalShard {
             match item {
                 Marker::Start { item_count, seqno } => {
                     if is_in_batch {
-                        log::warn!("Invalid batch: found batch start inside batch");
+                        log::debug!("Invalid batch: found batch start inside batch");
 
                         // Discard batch
                         Self::truncate_to(path, last_valid_pos)?;
@@ -184,7 +184,7 @@ impl JournalShard {
                     hasher.update(&bytes);
 
                     if !is_in_batch {
-                        log::warn!("Invalid batch: found end marker without start marker");
+                        log::debug!("Invalid batch: found end marker without start marker");
 
                         // Discard batch
                         Self::truncate_to(path, last_valid_pos)?;
@@ -210,7 +210,7 @@ impl JournalShard {
         }
 
         if is_in_batch {
-            log::warn!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
+            log::debug!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 
             // Discard batch
             Self::truncate_to(path, last_valid_pos)?;
