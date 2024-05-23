@@ -87,7 +87,6 @@ keyspace.persist(FlushMode::SyncAll)?;
 keyspace.delete_partition(items)?;
 ```
 
-
 ## Details
 
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
