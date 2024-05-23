@@ -7,7 +7,7 @@ use crate::{
         PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, shard::RecoveryMode, writer::FlushMode, Journal},
+    journal::{manager::JournalManager, shard::RecoveryMode, writer::PersistMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
@@ -77,7 +77,7 @@ impl Drop for KeyspaceInner {
 
         self.stop_signal.send();
 
-        match self.journal.flush(FlushMode::SyncAll) {
+        match self.journal.flush(PersistMode::SyncAll) {
             Ok(()) => {
                 log::trace!("Flushed journal successfully");
             }
@@ -215,7 +215,7 @@ impl Keyspace {
         journal_size + partitions_size
     }
 
-    /// Flushes the active journal to OS buffers. The durability depends on the [`FlushMode`]
+    /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
     /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
@@ -224,14 +224,14 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let keyspace = Config::new(folder).open()?;
     /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
     ///
-    /// keyspace.persist(FlushMode::SyncAll)?;
+    /// keyspace.persist(PersistMode::SyncAll)?;
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
@@ -239,7 +239,7 @@ impl Keyspace {
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    pub fn persist(&self, mode: FlushMode) -> crate::Result<()> {
+    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
@@ -653,7 +653,7 @@ impl Keyspace {
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
                 log::trace!("fsync thread: fsycing journal");
-                if let Err(e) = journal.flush(FlushMode::SyncAll) {
+                if let Err(e) = journal.flush(PersistMode::SyncAll) {
                     is_poisoned.store(true, std::sync::atomic::Ordering::Release);
                     log::error!(
                         "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"

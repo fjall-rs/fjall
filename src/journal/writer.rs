@@ -35,9 +35,9 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
     Ok(bytes.len())
 }
 
-/// Flush mode
+/// The persist mode allows setting the durability guarantee of previous writes
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum FlushMode {
+pub enum PersistMode {
     /// Flushes data to OS buffers. This allows the OS to write out data in case of an
     /// application crash.
     ///
@@ -48,7 +48,7 @@ pub enum FlushMode {
     /// Flushes data using `fdatasync`.
     ///
     /// Depending on your operating system of choice, this operation
-    /// may be about 2x faster than [`FlushMode::SyncAll`].
+    /// may be about 2x faster than [`PersistMode::SyncAll`].
     ///
     /// Only use if you know that `fdatasync` is sufficient for your file system and/or operating system.
     SyncData,
@@ -101,13 +101,13 @@ impl Writer {
     /// # Panics
     ///
     /// Panics if fsync failed.
-    pub(crate) fn flush(&mut self, mode: FlushMode) -> std::io::Result<()> {
+    pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
         self.file.flush()?;
 
         match mode {
-            FlushMode::SyncAll => self.file.get_mut().sync_all(),
-            FlushMode::SyncData => self.file.get_mut().sync_data(),
-            FlushMode::Buffer => Ok(()),
+            PersistMode::SyncAll => self.file.get_mut().sync_all(),
+            PersistMode::SyncData => self.file.get_mut().sync_data(),
+            PersistMode::Buffer => Ok(()),
         }
     }
 

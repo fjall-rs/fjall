@@ -49,7 +49,7 @@ fn main() -> fjall::Result<()> {
     create_item(&mut batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
 
     batch.commit()?;
-    keyspace.persist(fjall::FlushMode::SyncAll)?;
+    keyspace.persist(fjall::PersistMode::SyncAll)?;
 
     // Get items from 1990 to 2000 (exclusive)
     let lo = 1_990_u64;

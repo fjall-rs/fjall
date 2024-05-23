@@ -7,7 +7,7 @@ pub mod writer;
 
 use self::{
     shard::{JournalShard, RecoveryMode},
-    writer::FlushMode,
+    writer::PersistMode,
 };
 use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded};
 use lsm_tree::MemTable;
@@ -130,7 +130,7 @@ impl Journal {
         shard
     }
 
-    pub fn flush(&self, mode: FlushMode) -> crate::Result<()> {
+    pub fn flush(&self, mode: PersistMode) -> crate::Result<()> {
         for mut shard in self.shards.full_lock().expect("lock is poisoned") {
             if shard.should_sync {
                 shard.writer.flush(mode)?;

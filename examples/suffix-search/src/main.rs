@@ -1,4 +1,4 @@
-use fjall::{BlockCache, Config, FlushMode};
+use fjall::{BlockCache, Config, PersistMode};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -42,7 +42,7 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    keyspace.persist(FlushMode::SyncAll)?;
+    keyspace.persist(PersistMode::SyncAll)?;
 
     let suffix = "west";
     let test_runs = 10;
