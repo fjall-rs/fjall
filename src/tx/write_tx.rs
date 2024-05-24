@@ -212,7 +212,7 @@ impl<'a> WriteTransaction<'a> {
                 value.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
-                self.instant - 1, // TODO: if the seqno is too high, the merge iterator will hide it... the seqno should only apply to tree items, not the tx read set
+                SeqNo::MAX,
                 lsm_tree::ValueType::Value,
             ));
     }
@@ -259,8 +259,6 @@ impl<'a> WriteTransaction<'a> {
                 key.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
-                // TODO: need an internal SeqNo..., then on commit only get the newest items and use
-                // the transaction's instant
                 SeqNo::MAX,
             ));
     }

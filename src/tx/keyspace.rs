@@ -18,6 +18,8 @@ impl TxKeyspace {
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction {
         let lock = self.tx_lock.lock().expect("lock is poisoned");
+
+        // IMPORTANT: Get the seqno *after* getting the lock
         let instant = self.inner.instant();
 
         WriteTransaction::new(self.inner.clone(), lock, instant)
