@@ -38,7 +38,7 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
+use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
 
 let keyspace = Config::new(folder).open()?;
 
@@ -79,14 +79,13 @@ batch.commit()?;
 // Sync the journal to disk to make sure data is definitely durable
 // When the keyspace is dropped, it will try to persist
 // Also, by default every second the keyspace will be persisted asynchronously
-keyspace.persist(FlushMode::SyncAll)?;
+keyspace.persist(PersistMode::SyncAll)?;
 
 // Destroy the partition, removing all data in it.
 // This may be useful when using temporary tables or indexes,
 // as it is essentially an O(1) operation.
 keyspace.delete_partition(items)?;
 ```
-
 
 ## Details
 
@@ -100,13 +99,13 @@ For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-t
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
-your application needs. After writing data (be it, `insert`, `remove` or committing a write batch), you can choose to call `Keyspace::persist` which takes a [`FlushMode`](https://docs.rs/fjall/latest/fjall/enum.FlushMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*.
+your application needs. After writing data (`insert`, `remove` or committing a write batch), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*. Also when dropped, the keyspace will try to persist the journal synchronously.
 
 ## Multithreading, Async and Multiprocess
 
 Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself. Common operations like inserting and reading are generally lock free.
 
-For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio).
+For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
 
 A single keyspace may **not** be loaded in parallel from separate *processes* however.
 

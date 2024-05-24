@@ -564,14 +564,14 @@ impl PartitionHandle {
                 break;
             }
 
-            log::warn!("partition: write halt because of too many journals");
+            log::debug!("partition: write halt because of too many journals");
             std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
         }
     }
 
     fn check_write_halt(&self) {
         while self.tree.first_level_segment_count() > 24 {
-            log::warn!("Halting writes until L0 is cleared up...");
+            log::info!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
@@ -620,7 +620,7 @@ impl PartitionHandle {
                     break;
                 }
 
-                log::warn!("partition: write halt because of write buffer saturation");
+                log::info!("partition: write halt because of write buffer saturation");
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }

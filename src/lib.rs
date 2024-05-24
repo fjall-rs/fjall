@@ -21,7 +21,7 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, FlushMode, Keyspace, PartitionCreateOptions};
+//! use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
@@ -57,7 +57,7 @@
 //! // Sync the journal to disk to make sure data is definitely durable
 //! // When the keyspace is dropped, it will try to persist
 //! // Also, by default every second the keyspace will be persisted asynchronously
-//! keyspace.persist(FlushMode::SyncAll)?;
+//! keyspace.persist(PersistMode::SyncAll)?;
 //!
 //! // Destroy the partition, removing all data in it.
 //! // This may be useful when using temporary tables or indexes,
@@ -99,7 +99,7 @@ pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
-    journal::{shard::RecoveryError, writer::FlushMode},
+    journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
     tx::{
@@ -111,6 +111,10 @@ pub use {
 
 /// Alias for [`PartitionHandle`]
 pub type Partition = partition::PartitionHandle;
+
+/// Alias for [`PersistMode`]
+#[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
+pub type FlushMode = PersistMode;
 
 /// A snapshot moment
 ///

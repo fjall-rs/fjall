@@ -7,7 +7,7 @@ use crate::{
         PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, shard::RecoveryMode, writer::FlushMode, Journal},
+    journal::{manager::JournalManager, shard::RecoveryMode, writer::PersistMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
@@ -77,8 +77,13 @@ impl Drop for KeyspaceInner {
 
         self.stop_signal.send();
 
-        if let Err(e) = self.journal.flush(FlushMode::SyncAll) {
-            log::error!("Flush error on drop: {e:?}");
+        match self.journal.flush(PersistMode::SyncAll) {
+            Ok(()) => {
+                log::trace!("Flushed journal successfully");
+            }
+            Err(e) => {
+                log::error!("Flush error on drop: {e:?}");
+            }
         }
 
         while self
@@ -210,17 +215,31 @@ impl Keyspace {
         journal_size + partitions_size
     }
 
-    /// Flushes the active journal to OS buffers, making sure data can be written durably even on
-    /// application crash. When this function returns, data is **not** guaranteed to be written in case
-    /// of a power loss event.
+    /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
+    /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
     /// data is crash-safe.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let keyspace = Config::new(folder).open()?;
+    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+    ///
+    /// items.insert("a", "hello")?;
+    ///
+    /// keyspace.persist(PersistMode::SyncAll)?;
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns error, if an IO error occured.
-    pub fn persist(&self, mode: FlushMode) -> crate::Result<()> {
+    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
@@ -282,7 +301,7 @@ impl Keyspace {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Spawning {} compaction threads",
             self.config.compaction_workers_count
         );
@@ -634,7 +653,7 @@ impl Keyspace {
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
                 log::trace!("fsync thread: fsycing journal");
-                if let Err(e) = journal.flush(FlushMode::SyncAll) {
+                if let Err(e) = journal.flush(PersistMode::SyncAll) {
                     is_poisoned.store(true, std::sync::atomic::Ordering::Release);
                     log::error!(
                         "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
@@ -643,7 +662,7 @@ impl Keyspace {
                 }
             }
 
-            log::debug!("fsync thread: exiting because tree is dropping");
+            log::trace!("fsync thread: exiting because tree is dropping");
         });
     }
 
@@ -656,13 +675,13 @@ impl Keyspace {
 
         std::thread::spawn(move || {
             while !stop_signal.is_stopped() {
-                log::debug!("compaction: waiting for work");
+                log::trace!("compaction: waiting for work");
                 compaction_manager.wait_for();
 
                 crate::compaction::worker::run(&compaction_manager);
             }
 
-            log::debug!("compaction thread: exiting because tree is dropping");
+            log::trace!("compaction thread: exiting because tree is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
