@@ -2,6 +2,7 @@ use crate::PartitionHandle;
 use std::sync::{Arc, Mutex};
 
 /// Access to a partition of a transactional keyspace
+#[derive(Clone)]
 pub struct TransactionalPartitionHandle {
     pub(crate) inner: PartitionHandle,
     pub(crate) tx_lock: Arc<Mutex<()>>,

@@ -3,6 +3,7 @@ use crate::{Config, Keyspace, PartitionCreateOptions};
 use std::sync::{Arc, Mutex};
 
 /// Transaction keyspace
+#[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
     inner: Keyspace,
