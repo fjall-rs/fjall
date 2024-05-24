@@ -12,35 +12,7 @@ impl ReadTransaction {
         Self { instant }
     }
 
-    /// Retrieves an item from the partition.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_tx()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
-    ///
-    /// let mut tx = keyspace.tx();
-    /// tx.insert(&partition, "a", "new_value");
-    ///
-    /// // Read-your-own-write
-    /// let item = tx.get(&partition, "a")?;
-    /// assert_eq!(Some("new_value".as_bytes().into()), item);
-    ///
-    /// drop(tx);
-    ///
-    /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
+    /// Retrieves an item from the transaction's state.
     ///
     /// # Errors
     ///
@@ -51,6 +23,19 @@ impl ReadTransaction {
         key: K,
     ) -> crate::Result<Option<UserValue>> {
         Ok(partition.inner.snapshot_at(self.instant).get(key)?)
+    }
+
+    /// Returns `true` if the transaction's state contains the specified key.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<bool> {
+        self.get(partition, key).map(|x| x.is_some())
     }
 
     /// Returns the first key-value pair in the transaction's state.
@@ -79,12 +64,12 @@ impl ReadTransaction {
         self.iter(partition).next_back().transpose()
     }
 
-    /// Iterate over the transaction's state
+    /// Iterates over the transaction's state
     #[must_use]
-    pub fn iter<'b>(
-        &'b self,
-        partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    pub fn iter<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
         partition
             .inner
             .tree
@@ -92,13 +77,13 @@ impl ReadTransaction {
             .map(|item| Ok(item?))
     }
 
-    /// Iterate over a range of the transaction's state
+    /// Iterates over a range of the transaction's state
     #[must_use]
-    pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
-        &'b mut self,
-        partition: &'b TxPartitionHandle,
+    pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &'a mut self,
+        partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
         partition
             .inner
             .tree
@@ -106,13 +91,13 @@ impl ReadTransaction {
             .map(|item| Ok(item?))
     }
 
-    /// Iterate over a range of the transaction's state
+    /// Iterates over a range of the transaction's state
     #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]>>(
-        &'b mut self,
-        partition: &'b TxPartitionHandle,
+    pub fn prefix<'a, K: AsRef<[u8]>>(
+        &'a mut self,
+        partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
         partition
             .inner
             .tree

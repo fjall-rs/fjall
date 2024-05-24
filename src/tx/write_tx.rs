@@ -41,7 +41,7 @@ impl<'a> WriteTransaction<'a> {
         }
     }
 
-    /// Retrieves an item from the partition.
+    /// Retrieves an item from the transaction's state.
     ///
     /// The transaction allows reading your own writes (RYOW).
     ///
@@ -51,12 +51,12 @@ impl<'a> WriteTransaction<'a> {
     /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_tx()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.tx();
+    /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "a", "new_value");
     ///
     /// // Read-your-own-write
@@ -88,6 +88,19 @@ impl<'a> WriteTransaction<'a> {
         partition.inner.get(key)
     }
 
+    /// Returns `true` if the transaction's state contains the specified key.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<bool> {
+        self.get(partition, key).map(|x| x.is_some())
+    }
+
     /// Returns the first key-value pair in the transaction's state.
     /// The key in this pair is the minimum key in the transaction's state.
     ///
@@ -114,7 +127,7 @@ impl<'a> WriteTransaction<'a> {
         self.iter(partition).next_back().transpose()
     }
 
-    /// Iterate over the transaction's state
+    /// Iterates over the transaction's state
     #[must_use]
     pub fn iter<'b>(
         &'b self,
@@ -130,7 +143,7 @@ impl<'a> WriteTransaction<'a> {
             .map(|item| Ok(item?))
     }
 
-    /// Iterate over a range of the transaction's state
+    /// Iterates over a range of the transaction's state
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
         &'b self,
@@ -148,7 +161,7 @@ impl<'a> WriteTransaction<'a> {
             .map(|item| Ok(item?))
     }
 
-    /// Iterate over a range of the transaction's state
+    /// Iterates over a range of the transaction's state
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]>>(
         &'b self,
@@ -179,12 +192,12 @@ impl<'a> WriteTransaction<'a> {
     /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_tx()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.tx();
+    /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "a", "new_value");
     ///
     /// drop(tx);
@@ -228,12 +241,12 @@ impl<'a> WriteTransaction<'a> {
     /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_tx()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.tx();
+    /// let mut tx = keyspace.write_tx();
     /// tx.remove(&partition, "a");
     ///
     /// // Read-your-own-write
