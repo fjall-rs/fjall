@@ -21,6 +21,21 @@ impl TxPartitionHandle {
     ///
     /// If the key already exists, the item will be overwritten.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// assert!(!keyspace.read_tx().is_empty(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -36,6 +51,23 @@ impl TxPartitionHandle {
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    /// assert!(!keyspace.read_tx().is_empty(&partition)?);
+    ///
+    /// partition.remove("a")?;
+    /// assert!(keyspace.read_tx().is_empty(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -45,6 +77,22 @@ impl TxPartitionHandle {
     }
 
     /// Retrieves an item from the partition.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("my_value".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///

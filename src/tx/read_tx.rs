@@ -2,7 +2,7 @@ use crate::{Instant, TxPartitionHandle};
 use lsm_tree::{UserKey, UserValue};
 use std::ops::RangeBounds;
 
-/// A cross-partition, read-only transaction (snapshot).
+/// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
     instant: Instant,
 }
@@ -13,6 +13,29 @@ impl ReadTransaction {
     }
 
     /// Retrieves an item from the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let tx = keyspace.read_tx();
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(Some("my_value".as_bytes().into()), item);
+    ///
+    /// partition.insert("b", "my_updated_value")?;
+    ///
+    /// // Repeatable read
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(Some("my_value".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -26,6 +49,22 @@ impl ReadTransaction {
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let tx = keyspace.read_tx();
+    /// assert!(tx.contains_key("a")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -62,6 +101,75 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
     ) -> crate::Result<Option<(UserKey, UserValue)>> {
         self.iter(partition).next_back().transpose()
+    }
+
+    /// Scans the entire partition, returning the amount of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// partition.insert("b", "my_value2")?;
+    ///
+    /// let tx = keyspace.read_tx();
+    /// assert_eq!(2, tx.len(&partition)?);
+    ///
+    /// partition.insert("c", "my_value3")?;
+    ///
+    /// // Repeatable read
+    /// assert_eq!(2, tx.len(&partition)?);
+    ///
+    /// // Start new snapshot
+    /// let tx = keyspace.read_tx();
+    /// assert_eq!(3, tx.len(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
+        let mut count = 0;
+
+        for item in self.iter(partition) {
+            let _ = item?;
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    /// Returns `true` if the partition is empty.
+    ///
+    /// This operation has O(1) complexity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert!(keyspace.read_tx().is_empty(&partition)?);
+    ///
+    /// partition.insert("a", "abc")?;
+    /// assert!(!keyspace.read_tx().is_empty(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn is_empty(&self, partition: &TxPartitionHandle) -> crate::Result<bool> {
+        self.first_key_value(partition).map(|x| x.is_none())
     }
 
     /// Iterates over the transaction's state

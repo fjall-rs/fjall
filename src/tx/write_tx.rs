@@ -17,7 +17,7 @@ fn ignore_tombstone_value(item: Value) -> Option<Value> {
     }
 }
 
-/// A single-writer (serialized) cross-partition transaction.
+/// A single-writer (serialized) cross-partition transaction
 ///
 /// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
 ///
@@ -90,6 +90,32 @@ impl<'a> WriteTransaction<'a> {
 
     /// Returns `true` if the transaction's state contains the specified key.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// assert!(keyspace.read_tx().contains_key(&partition, "a")?);
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// assert!(tx.contains_key(&partition, "a")?);
+    ///
+    /// tx.insert(&partition, "b", "my_value2");
+    /// assert!(tx.contains_key(&partition, "b")?);
+    ///
+    /// // Transaction not committed yet
+    /// assert!(!keyspace.read_tx().contains_key(&partition, "b")?);
+    ///
+    /// tx.commit()?;
+    /// assert!(keyspace.read_tx().contains_key(&partition, "b")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -125,6 +151,50 @@ impl<'a> WriteTransaction<'a> {
         partition: &TxPartitionHandle,
     ) -> crate::Result<Option<(UserKey, UserValue)>> {
         self.iter(partition).next_back().transpose()
+    }
+
+    /// Scans the entire partition, returning the amount of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// partition.insert("b", "my_value2")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// assert_eq!(2, tx.len(&partition)?);
+    ///
+    /// tx.insert(&partition, "c", "my_value3");
+    ///
+    /// // read-your-own write
+    /// assert_eq!(3, tx.len(&partition)?);
+    ///
+    /// // Transaction is not committed yet
+    /// assert_eq!(2, keyspace.read_tx().len(&partition)?);
+    ///
+    /// tx.commit()?;
+    /// assert_eq!(3, keyspace.read_tx().len(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
+        let mut count = 0;
+
+        for item in self.iter(partition) {
+            let _ = item?;
+            count += 1;
+        }
+
+        Ok(count)
     }
 
     /// Iterates over the transaction's state

@@ -118,6 +118,12 @@ Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read
 
 *Disabled by default.*
 
+#### single_writer_tx
+
+Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
+
+*Enabled by default.*
+
 ## Stable disk format
 
 The disk format is stable as of 1.0.0. Future breaking changes will result in a major version bump and a migration path.

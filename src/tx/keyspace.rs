@@ -1,5 +1,5 @@
 use super::{partition::TxPartitionHandle, read_tx::ReadTransaction, write_tx::WriteTransaction};
-use crate::{Config, Keyspace, PartitionCreateOptions};
+use crate::{Config, Keyspace, PartitionCreateOptions, PersistMode};
 use std::sync::{Arc, Mutex};
 
 /// Transaction keyspace
@@ -31,6 +31,34 @@ impl TxKeyspace {
     pub fn read_tx(&self) -> ReadTransaction {
         let instant = self.inner.instant();
         ReadTransaction::new(instant)
+    }
+
+    /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
+    /// used.
+    ///
+    /// Persisting only affects durability, NOT consistency! Even without flushing
+    /// data is crash-safe.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let keyspace = Config::new(folder).open_transactional()?;
+    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+    ///
+    /// items.insert("a", "hello")?;
+    ///
+    /// keyspace.persist(PersistMode::SyncAll)?;
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occured.
+    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
+        self.inner.persist(mode)
     }
 
     /// Creates or opens a keyspace partition.
