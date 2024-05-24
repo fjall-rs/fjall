@@ -91,7 +91,10 @@ mod monitor;
 mod partition;
 mod recovery;
 mod sharded;
+
+#[cfg(feature = "single_writer_tx")]
 mod tx;
+
 mod version;
 mod write_buffer_manager;
 
@@ -102,11 +105,14 @@ pub use {
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
-    tx::{
-        keyspace::{TransactionalKeyspace, TxKeyspace},
-        partition::{TransactionalPartitionHandle, TxPartitionHandle},
-        Transaction,
-    },
+};
+
+#[cfg(feature = "single_writer_tx")]
+pub use tx::{
+    keyspace::{TransactionalKeyspace, TxKeyspace},
+    partition::{TransactionalPartitionHandle, TxPartitionHandle},
+    read_tx::ReadTransaction,
+    write_tx::WriteTransaction,
 };
 
 /// Alias for [`PartitionHandle`]

@@ -15,12 +15,12 @@ pub type PartitionKey = Arc<str>;
 ///
 /// Allows atomically writing across partitions inside the [`Keyspace`].
 pub struct Batch {
-    data: Vec<Item>,
+    pub(crate) data: Vec<Item>,
     keyspace: Keyspace,
 }
 
 impl Batch {
-    /* /// Initializes a new write batch.
+    /*  /// Initializes a new write batch.
     ///
     /// This function is called by [`Keyspace::batch`].
     pub(crate) fn new(keyspace: Keyspace) -> Self {

@@ -54,10 +54,9 @@ impl TxPartitionHandle {
 
     /// Allows access to the inner partition handle, allowing to
     /// escape from the transactional context.
+    #[doc(hidden)]
     #[must_use]
     pub fn inner(&self) -> &PartitionHandle {
         &self.inner
     }
-
-    // TODO: snapshot (read_tx?)
 }

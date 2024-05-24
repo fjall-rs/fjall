@@ -1,4 +1,4 @@
-use super::{partition::TxPartitionHandle, Transaction};
+use super::{partition::TxPartitionHandle, read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{Config, Keyspace, PartitionCreateOptions};
 use std::sync::{Arc, Mutex};
 
@@ -16,9 +16,18 @@ pub type TxKeyspace = TransactionalKeyspace;
 impl TxKeyspace {
     /// Starts a new writeable transaction.
     #[must_use]
-    pub fn write_tx(&self) -> Transaction {
+    pub fn write_tx(&self) -> WriteTransaction {
+        let lock = self.tx_lock.lock().expect("lock is poisoned");
         let instant = self.inner.instant();
-        Transaction::new(self.tx_lock.lock().expect("lock is poisoned"), instant)
+
+        WriteTransaction::new(self.inner.clone(), lock, instant)
+    }
+
+    /// Starts a new read-only transaction.
+    #[must_use]
+    pub fn read_tx(&self) -> ReadTransaction {
+        let instant = self.inner.instant();
+        ReadTransaction::new(instant)
     }
 
     /// Creates or opens a keyspace partition.

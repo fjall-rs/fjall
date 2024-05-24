@@ -1,4 +1,4 @@
-use crate::{journal::shard::RecoveryMode, Keyspace, TxKeyspace};
+use crate::{journal::shard::RecoveryMode, Keyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
 use path_absolutize::Absolutize;
 use std::{
@@ -193,7 +193,8 @@ impl Config {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn open_tx(self) -> crate::Result<TxKeyspace> {
-        TxKeyspace::open(self)
+    #[cfg(feature = "single_writer_tx")]
+    pub fn open_tx(self) -> crate::Result<crate::TxKeyspace> {
+        crate::TxKeyspace::open(self)
     }
 }
