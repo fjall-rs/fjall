@@ -116,7 +116,11 @@ pub use tx::{
 };
 
 /// Alias for [`PartitionHandle`]
-pub type Partition = partition::PartitionHandle;
+pub type Partition = PartitionHandle;
+
+/// Alias for [`TxPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TxPartition = TxPartitionHandle;
 
 /// Alias for [`PersistMode`]
 #[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
