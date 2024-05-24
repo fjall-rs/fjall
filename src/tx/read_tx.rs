@@ -61,7 +61,7 @@ impl ReadTransaction {
     /// partition.insert("a", "my_value")?;
     ///
     /// let tx = keyspace.read_tx();
-    /// assert!(tx.contains_key("a")?);
+    /// assert!(tx.contains_key(&partition, "a")?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
