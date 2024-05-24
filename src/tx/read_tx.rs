@@ -3,10 +3,6 @@ use lsm_tree::{UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot).
-///
-/// Use [`Transaction::commit`] to commit changes to the partition(s).
-///
-/// Drop the transaction to rollback changes.
 pub struct ReadTransaction {
     instant: Instant,
 }
