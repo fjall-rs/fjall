@@ -23,7 +23,7 @@ fn main() -> fjall::Result<()> {
     let items_rev = keyspace.open_partition("items_rev", Default::default())?;
 
     if items.is_empty()? {
-        eprintln!("Ingesting test data");
+        println!("Ingesting test data");
 
         let line_reader = BufReader::new(File::open("english_words.txt")?);
 
@@ -37,7 +37,7 @@ fn main() -> fjall::Result<()> {
             batch.commit()?;
 
             if idx % 50_000 == 0 {
-                eprintln!("Loaded {idx} words");
+                println!("Loaded {idx} words");
             }
         }
     }
@@ -54,7 +54,7 @@ fn main() -> fjall::Result<()> {
         let mut found_count = 0;
 
         if i == 0 {
-            eprintln!("\n[SLOW] Scanning all items for suffix {suffix:?}:");
+            println!("\n[SLOW] Scanning all items for suffix {suffix:?}:");
         }
 
         for item in items_rev.iter() {
@@ -62,26 +62,26 @@ fn main() -> fjall::Result<()> {
 
             if value.ends_with(suffix.as_bytes()) {
                 if i == 0 {
-                    eprintln!("  -> {}", std::str::from_utf8(&value).unwrap());
+                    println!("  -> {}", std::str::from_utf8(&value).unwrap());
                 }
 
                 found_count += 1;
             }
         }
 
-        eprintln!(
+        println!(
             "Found {found_count:?} in {count:?} words in {}ms",
             before.elapsed().as_millis()
         );
     }
-    eprintln!("===============================================");
+    println!("===============================================");
 
     for i in 0..test_runs {
         let before = Instant::now();
         let mut found_count = 0;
 
         if i == 0 {
-            eprintln!("\n[FAST] Finding all items by suffix {suffix:?}:");
+            println!("\n[FAST] Finding all items by suffix {suffix:?}:");
         }
 
         // Uses prefix, so generally faster than table scan
@@ -90,18 +90,18 @@ fn main() -> fjall::Result<()> {
             let (_, value) = item?;
 
             if i == 0 {
-                eprintln!("  -> {}", std::str::from_utf8(&value).unwrap());
+                println!("  -> {}", std::str::from_utf8(&value).unwrap());
             }
 
             found_count += 1;
         }
 
-        eprintln!(
+        println!(
             "Found {found_count:?} in {count:?} words in {}ms",
             before.elapsed().as_millis()
         );
     }
-    eprintln!("===============================================");
+    println!("===============================================");
 
     Ok(())
 }

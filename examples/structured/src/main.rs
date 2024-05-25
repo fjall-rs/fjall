@@ -107,20 +107,20 @@ fn main() -> fjall::Result<()> {
 
     for item_to_insert in items {
         if let Some(item) = song_db.get(&item_to_insert.id)? {
-            eprintln!("Found: {item}");
+            println!("Found: {item}");
             assert_eq!(item, item_to_insert);
         } else {
-            eprintln!("Inserting...");
+            println!("Inserting...");
             song_db.insert(&item_to_insert)?;
-            eprintln!("Inserted, start again and it should be found");
+            println!("Inserted, start again and it should be found");
         }
     }
 
-    eprintln!("\nListing all items:");
+    println!("\nListing all items:");
 
     for (idx, song) in song_db.iter().enumerate() {
         let song = song?;
-        eprintln!("[{idx}] {song}");
+        println!("[{idx}] {song}");
     }
 
     Ok(())
