@@ -233,7 +233,9 @@ impl<'a> WriteTransaction<'a> {
     pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
-        for item in self.iter(partition) {
+        let iter = self.iter(partition);
+
+        for item in iter {
             let _ = item?;
             count += 1;
         }
