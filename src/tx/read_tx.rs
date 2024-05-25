@@ -80,6 +80,24 @@ impl ReadTransaction {
     /// Returns the first key-value pair in the transaction's state.
     /// The key in this pair is the minimum key in the transaction's state.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("1", "abc")?;
+    /// partition.insert("3", "abc")?;
+    /// partition.insert("5", "abc")?;
+    ///
+    /// let (key, _) = keyspace.read_tx().first_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "1".as_bytes());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -92,6 +110,24 @@ impl ReadTransaction {
 
     /// Returns the last key-value pair in the transaction's state.
     /// The key in this pair is the maximum key in the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("1", "abc")?;
+    /// partition.insert("3", "abc")?;
+    /// partition.insert("5", "abc")?;
+    ///
+    /// let (key, _) = keyspace.read_tx().last_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "5".as_bytes());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -172,7 +208,25 @@ impl ReadTransaction {
         self.first_key_value(partition).map(|x| x.is_none())
     }
 
-    /// Iterates over the transaction's state
+    /// Iterates over the transaction's state.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    /// partition.insert("f", "abc")?;
+    /// partition.insert("g", "abc")?;
+    /// assert_eq!(3, keyspace.read_tx().iter(&partition).count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn iter<'a>(
         &'a self,
@@ -185,7 +239,25 @@ impl ReadTransaction {
             .map(|item| Ok(item?))
     }
 
-    /// Iterates over a range of the transaction's state
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    /// partition.insert("f", "abc")?;
+    /// partition.insert("g", "abc")?;
+    /// assert_eq!(2, keyspace.read_tx().range(&partition, "a"..="f").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
         &'a mut self,
@@ -199,7 +271,25 @@ impl ReadTransaction {
             .map(|item| Ok(item?))
     }
 
-    /// Iterates over a range of the transaction's state
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    /// partition.insert("ab", "abc")?;
+    /// partition.insert("abc", "abc")?;
+    /// assert_eq!(2, keyspace.read_tx().prefix(&partition, "ab").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]>>(
         &'a mut self,

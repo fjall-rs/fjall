@@ -130,6 +130,28 @@ impl<'a> WriteTransaction<'a> {
     /// Returns the first key-value pair in the transaction's state.
     /// The key in this pair is the minimum key in the transaction's state.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "1", "abc");
+    /// tx.insert(&partition, "3", "abc");
+    /// tx.insert(&partition, "5", "abc");
+    ///
+    /// let (key, _) = tx.first_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "1".as_bytes());
+    ///
+    /// assert!(keyspace.read_tx().first_key_value(&partition)?.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -142,6 +164,28 @@ impl<'a> WriteTransaction<'a> {
 
     /// Returns the last key-value pair in the transaction's state.
     /// The key in this pair is the maximum key in the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "1", "abc");
+    /// tx.insert(&partition, "3", "abc");
+    /// tx.insert(&partition, "5", "abc");
+    ///
+    /// let (key, _) = tx.last_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "5".as_bytes());
+    ///
+    /// assert!(keyspace.read_tx().last_key_value(&partition)?.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -197,7 +241,28 @@ impl<'a> WriteTransaction<'a> {
         Ok(count)
     }
 
-    /// Iterates over the transaction's state
+    /// Iterates over the transaction's state.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "f", "abc");
+    /// tx.insert(&partition, "g", "abc");
+    /// assert_eq!(3, tx.iter(&partition).count());
+    /// assert_eq!(0, keyspace.read_tx().iter(&partition).count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn iter<'b>(
         &'b self,
@@ -213,7 +278,28 @@ impl<'a> WriteTransaction<'a> {
             .map(|item| Ok(item?))
     }
 
-    /// Iterates over a range of the transaction's state
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "f", "abc");
+    /// tx.insert(&partition, "g", "abc");
+    /// assert_eq!(2, tx.range(&partition, "a"..="f").count());
+    /// assert_eq!(0, keyspace.read_tx().range(&partition, "a"..="f").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
         &'b self,
@@ -231,7 +317,28 @@ impl<'a> WriteTransaction<'a> {
             .map(|item| Ok(item?))
     }
 
-    /// Iterates over a range of the transaction's state
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "ab", "abc");
+    /// tx.insert(&partition, "abc", "abc");
+    /// assert_eq!(2, tx.prefix(&partition, "ab").count());
+    /// assert_eq!(0, keyspace.read_tx().prefix(&partition, "ab").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]>>(
         &'b self,
