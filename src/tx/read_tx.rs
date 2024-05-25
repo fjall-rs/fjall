@@ -223,6 +223,7 @@ impl ReadTransaction {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
+    ///
     /// assert_eq!(3, keyspace.read_tx().iter(&partition).count());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -254,6 +255,7 @@ impl ReadTransaction {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
+    ///
     /// assert_eq!(2, keyspace.read_tx().range(&partition, "a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -286,6 +288,7 @@ impl ReadTransaction {
     /// partition.insert("a", "abc")?;
     /// partition.insert("ab", "abc")?;
     /// partition.insert("abc", "abc")?;
+    ///
     /// assert_eq!(2, keyspace.read_tx().prefix(&partition, "ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())

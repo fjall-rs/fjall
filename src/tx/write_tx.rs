@@ -258,6 +258,7 @@ impl<'a> WriteTransaction<'a> {
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "f", "abc");
     /// tx.insert(&partition, "g", "abc");
+    ///
     /// assert_eq!(3, tx.iter(&partition).count());
     /// assert_eq!(0, keyspace.read_tx().iter(&partition).count());
     /// #
@@ -295,6 +296,7 @@ impl<'a> WriteTransaction<'a> {
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "f", "abc");
     /// tx.insert(&partition, "g", "abc");
+    ///
     /// assert_eq!(2, tx.range(&partition, "a"..="f").count());
     /// assert_eq!(0, keyspace.read_tx().range(&partition, "a"..="f").count());
     /// #
@@ -334,6 +336,7 @@ impl<'a> WriteTransaction<'a> {
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "ab", "abc");
     /// tx.insert(&partition, "abc", "abc");
+    ///
     /// assert_eq!(2, tx.prefix(&partition, "ab").count());
     /// assert_eq!(0, keyspace.read_tx().prefix(&partition, "ab").count());
     /// #
