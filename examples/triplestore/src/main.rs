@@ -128,9 +128,9 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    eprintln!("Listing all person-1->knows-> relations:");
+    println!("Listing all person-1->knows-> relations:");
     for (_, _, o, _) in store.out("person-1", "knows")? {
-        eprintln!("person-1 knows {o}!");
+        println!("person-1 knows {o}!");
     }
 
     Ok(())

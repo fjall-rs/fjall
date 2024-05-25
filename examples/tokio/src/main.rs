@@ -23,7 +23,7 @@ async fn main() -> fjall::Result<()> {
 
     assert_eq!(b"world", &*item);
 
-    eprintln!("OK");
+    println!("OK");
 
     Ok(())
 }

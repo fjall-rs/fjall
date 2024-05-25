@@ -55,7 +55,7 @@ fn main() -> fjall::Result<()> {
     let lo = 1_990_u64;
     let hi = 1_999_u64;
 
-    eprintln!("Searching for [{lo} - {hi}]");
+    println!("Searching for [{lo} - {hi}]");
 
     for item in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
         let (k, _) = item?;
@@ -66,7 +66,7 @@ fn main() -> fjall::Result<()> {
         // Get from primary index
         let item = items.get(primary_key)?.unwrap();
 
-        eprintln!("found: {}", std::str::from_utf8(&item).unwrap());
+        println!("found: {}", std::str::from_utf8(&item).unwrap());
     }
 
     Ok(())

@@ -26,7 +26,7 @@ fn main() -> fjall::Result<()> {
             buf.copy_from_slice(&max_key[0..8]);
             let max_key = u64::from_be_bytes(buf);
 
-            eprintln!(
+            println!(
                 "key range: [{min_key}, {max_key}] - disk space used: {} MiB - # segments: {}",
                 log.disk_space() / 1_024 / 1_024,
                 log.segment_count()
