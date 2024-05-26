@@ -20,7 +20,7 @@ fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
         &task.sealed_memtable,
     )?;
 
-    Ok(Arc::new(segment))
+    Ok(segment)
 }
 
 struct MultiFlushResultItem {

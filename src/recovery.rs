@@ -8,7 +8,7 @@ use crate::{
     partition::PartitionHandleInner,
     Keyspace, PartitionHandle,
 };
-use lsm_tree::MemTable;
+use lsm_tree::{AbstractTree, MemTable};
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicBool, Arc, RwLock},

@@ -17,8 +17,8 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, SequenceNumberCounter, Snapshot, Tree as LsmTree, UserKey,
-    UserValue,
+    compaction::CompactionStrategy, AbstractTree, SequenceNumberCounter, Snapshot, Tree as LsmTree,
+    UserKey, UserValue,
 };
 use std::{
     collections::HashMap,
@@ -50,7 +50,7 @@ pub struct PartitionHandleInner {
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
     #[doc(hidden)]
-    pub tree: LsmTree,
+    pub tree: LsmTree, // TODO: blob tree
 
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: AtomicU32,
@@ -632,17 +632,17 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /*  /// Opens a snapshot of this partition
+    /// Opens a snapshot of this partition
     #[must_use]
-    pub fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot<LsmTree> {
         self.snapshot_at(self.seqno.get())
     }
 
     /// Opens a snapshot of this partition with a given sequence number
     #[must_use]
-    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
+    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot<LsmTree> {
         self.tree.snapshot(seqno)
-    } */
+    }
 
     /// Inserts a key-value pair into the partition.
     ///

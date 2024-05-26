@@ -5,7 +5,7 @@ use crate::{
     journal::Journal,
     PartitionHandle,
 };
-use lsm_tree::SeqNo;
+use lsm_tree::{AbstractTree, SeqNo};
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {

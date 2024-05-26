@@ -1,5 +1,5 @@
 use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{UserKey, UserValue};
+use lsm_tree::{AbstractTree, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
@@ -45,7 +45,7 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        Ok(partition.inner.snapshot_at(self.instant).get(key)?)
+        Ok(partition.inner.tree.snapshot_at(self.instant).get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
