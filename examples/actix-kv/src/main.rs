@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::RouteResult;
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, PersistMode, Keyspace, PartitionHandle};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -57,7 +57,7 @@ async fn insert_batch(
         }
 
         batch.commit()?;
-        state.keyspace.persist()
+        state.keyspace.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;
@@ -79,7 +79,7 @@ async fn delete_item(
 
     web::block(move || {
         state.db.remove(key)?;
-        state.keyspace.persist()
+        state.keyspace.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;
@@ -107,7 +107,7 @@ async fn insert_item(
         state
             .db
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
-        state.keyspace.persist()
+        state.keyspace.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;

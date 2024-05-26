@@ -19,8 +19,16 @@ pub enum Error {
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
 
-    /// Invalid disk format version
+    /// Invalid or unparseable data format version
     InvalidVersion(Option<Version>),
+
+    /// A previous flush operation failed, indicating a hardware-related failure.
+    /// Future writes will not be accepted as consistency cannot be guaranteed.
+    ///
+    /// **At this point, it's best to let the application crash and try to recover.**
+    ///
+    /// More info: <https://www.usenix.org/system/files/atc20-rebello.pdf>
+    Poisoned,
 }
 
 impl std::fmt::Display for Error {

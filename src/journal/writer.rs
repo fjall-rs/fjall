@@ -35,6 +35,28 @@ fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeE
     Ok(bytes.len())
 }
 
+/// The persist mode allows setting the durability guarantee of previous writes
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PersistMode {
+    /// Flushes data to OS buffers. This allows the OS to write out data in case of an
+    /// application crash.
+    ///
+    /// When this function returns, data is **not** guaranteed to be persisted in case
+    /// of a power loss event or OS crash.
+    Buffer,
+
+    /// Flushes data using `fdatasync`.
+    ///
+    /// Depending on your operating system of choice, this operation
+    /// may be about 2x faster than [`PersistMode::SyncAll`].
+    ///
+    /// Only use if you know that `fdatasync` is sufficient for your file system and/or operating system.
+    SyncData,
+
+    /// Flushes data + metadata using `fsync`.
+    SyncAll,
+}
+
 impl Writer {
     pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
         let file = File::create(&path)?;
@@ -75,16 +97,18 @@ impl Writer {
     }
 
     /// Flushes the journal file
-    pub(crate) fn flush(&mut self, sync_metadata: bool) -> crate::Result<()> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if fsync failed.
+    pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
         self.file.flush()?;
 
-        if sync_metadata {
-            self.file.get_mut().sync_all()
-        } else {
-            self.file.get_mut().sync_data()
-        }?;
-
-        Ok(())
+        match mode {
+            PersistMode::SyncAll => self.file.get_mut().sync_all(),
+            PersistMode::SyncData => self.file.get_mut().sync_data(),
+            PersistMode::Buffer => Ok(()),
+        }
     }
 
     /// Appends a single item wrapped in a batch to the journal

@@ -60,7 +60,7 @@ impl Triplestore {
     ) -> fjall::Result<Vec<(String, String, String, Value)>> {
         let mut result = vec![];
 
-        for item in self.verbs.prefix(format!("{subject}#{verb}#")).into_iter() {
+        for item in self.verbs.prefix(format!("{subject}#{verb}#")) {
             let (key, value) = item?;
 
             let key = std::str::from_utf8(&key).expect("should be utf-8");
@@ -128,9 +128,9 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    eprintln!("Listing all person-1->knows-> relations:");
+    println!("Listing all person-1->knows-> relations:");
     for (_, _, o, _) in store.out("person-1", "knows")? {
-        eprintln!("person-1 knows {o}!");
+        println!("person-1 knows {o}!");
     }
 
     Ok(())

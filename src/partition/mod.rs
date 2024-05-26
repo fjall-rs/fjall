@@ -17,8 +17,8 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, prefix::Prefix, range::Range, AbstractTree,
-    SequenceNumberCounter, /* Snapshot, */ Tree as LsmTree, UserKey, UserValue,
+    compaction::CompactionStrategy, SequenceNumberCounter, Snapshot, Tree as LsmTree, UserKey,
+    UserValue,
 };
 use std::{
     collections::HashMap,
@@ -47,9 +47,10 @@ pub struct PartitionHandleInner {
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) is_deleted: AtomicBool,
+    pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    /// TEMP pub
-    pub(crate) tree: LsmTree,
+    #[doc(hidden)]
+    pub tree: LsmTree,
 
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: AtomicU32,
@@ -58,10 +59,17 @@ pub struct PartitionHandleInner {
 }
 
 /// Access to a keyspace partition
+///
+/// Each partition is backed by an LSM-tree to provide a
+/// disk-backed search tree, and can be configured individually.
+///
+/// A partition generally only takes a little bit of memory and disk space,
+/// but does not spawn its own background threads.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
+#[doc(alias = "table")]
 pub struct PartitionHandle(pub(crate) Arc<PartitionHandleInner>);
 
 impl std::ops::Deref for PartitionHandle {
@@ -87,8 +95,6 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    // TODO: allow setting block cache
-
     /// Sets the compaction strategy
     ///
     /// Default = Levelled
@@ -139,13 +145,14 @@ impl PartitionHandle {
             max_memtable_size: (8 * 1_024 * 1_024).into(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
+            is_poisoned: keyspace.is_poisoned.clone(),
         })))
     }
 
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
-        self.tree.path.clone()
+        self.tree.config.path.clone()
     }
 
     /// Returns the disk space usage of this partition
@@ -182,7 +189,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
-    /// assert_eq!(3, partition.iter().into_iter().count());
+    /// assert_eq!(3, partition.iter().count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -192,10 +199,11 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(&self) -> Range {
-        self.tree.iter()
+    pub fn iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.iter().map(|item| Ok(item?))
     }
-    // TODO: how to handle error...? wrap iterator?
 
     /// Returns an iterator over a range of items.
     ///
@@ -212,7 +220,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("f", "abc")?;
     /// partition.insert("g", "abc")?;
-    /// assert_eq!(2, partition.range("a"..="f").into_iter().count());
+    /// assert_eq!(2, partition.range("a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -220,8 +228,11 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Range {
-        self.tree.range(range)
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.range(range).map(|item| Ok(item?))
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -239,7 +250,7 @@ impl PartitionHandle {
     /// partition.insert("a", "abc")?;
     /// partition.insert("ab", "abc")?;
     /// partition.insert("abc", "abc")?;
-    /// assert_eq!(2, partition.prefix("ab").into_iter().count());
+    /// assert_eq!(2, partition.prefix("ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -247,8 +258,11 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Prefix {
-        self.tree.prefix(prefix)
+    pub fn prefix<K: AsRef<[u8]>>(
+        &self,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+        self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
     /// Approximates the amount of items in the partition.
@@ -318,7 +332,7 @@ impl PartitionHandle {
     pub fn len(&self) -> crate::Result<usize> {
         let mut count = 0;
 
-        for item in &self.iter() {
+        for item in self.iter() {
             let _ = item?;
             count += 1;
         }
@@ -550,14 +564,14 @@ impl PartitionHandle {
                 break;
             }
 
-            log::warn!("partition: write halt because of too many journals");
+            log::debug!("partition: write halt because of too many journals");
             std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
         }
     }
 
     fn check_write_halt(&self) {
         while self.tree.first_level_segment_count() > 24 {
-            log::warn!("Halting writes until L0 is cleared up...");
+            log::info!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(1_000));
         }
@@ -594,7 +608,7 @@ impl PartitionHandle {
             loop {
                 let bytes = self.write_buffer_manager.get();
 
-                if bytes <= self.keyspace_config.max_write_buffer_size_in_bytes {
+                if bytes < self.keyspace_config.max_write_buffer_size_in_bytes {
                     if bytes as f64
                         > self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.9
                     {
@@ -606,7 +620,7 @@ impl PartitionHandle {
                     break;
                 }
 
-                log::warn!("partition: write halt because of write buffer saturation");
+                log::info!("partition: write halt because of write buffer saturation");
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
@@ -656,6 +670,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
         let mut shard = self.journal.get_writer();
 
         let seqno = self.seqno.next();
@@ -711,6 +729,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
         let mut shard = self.journal.get_writer();
 
         let seqno = self.seqno.next();

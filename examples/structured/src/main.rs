@@ -1,8 +1,9 @@
-use fjall::{Config, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct Song {
+pub struct Song {
     /// ID
     #[serde(skip)]
     id: String,
@@ -23,6 +24,15 @@ impl From<&Song> for Vec<u8> {
     }
 }
 
+impl From<(Arc<[u8]>, Arc<[u8]>)> for Song {
+    fn from((key, value): (Arc<[u8]>, Arc<[u8]>)) -> Self {
+        let key = std::str::from_utf8(&key).unwrap();
+        let mut item: Song = rmp_serde::from_slice(&value).expect("should deserialize");
+        key.clone_into(&mut item.id);
+        item
+    }
+}
+
 impl std::fmt::Display for Song {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -33,21 +43,32 @@ impl std::fmt::Display for Song {
     }
 }
 
-impl Song {
-    pub fn store(&self, tree: &PartitionHandle) -> fjall::Result<()> {
-        let serialized: Vec<u8> = self.into();
-        tree.insert(&self.id, serialized)
-    }
+pub struct SongDatabase {
+    #[allow(unused)]
+    keyspace: Keyspace,
 
-    pub fn load(tree: &PartitionHandle, key: &str) -> fjall::Result<Option<Song>> {
-        let Some(item) = tree.get(key)? else {
+    db: PartitionHandle,
+}
+
+impl SongDatabase {
+    pub fn get(&self, key: &str) -> fjall::Result<Option<Song>> {
+        let Some(item) = self.db.get(key)? else {
             return Ok(None);
         };
 
-        let mut item: Song = rmp_serde::from_slice(&item).expect("should deserialize");
-        item.id = key.to_owned();
+        let mut song: Song = rmp_serde::from_slice(&item).expect("should deserialize");
+        key.clone_into(&mut song.id);
 
-        Ok(Some(item))
+        Ok(Some(song))
+    }
+
+    pub fn insert(&self, song: &Song) -> fjall::Result<()> {
+        let serialized: Vec<u8> = song.into();
+        self.db.insert(&song.id, serialized)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = fjall::Result<Song>> + '_ {
+        self.db.iter().map(|item| item.map(Song::from))
     }
 }
 
@@ -82,26 +103,24 @@ fn main() -> fjall::Result<()> {
     let keyspace = Config::default().open()?;
     let db = keyspace.open_partition("songs", Default::default())?;
 
+    let song_db = SongDatabase { keyspace, db };
+
     for item_to_insert in items {
-        if let Some(item) = Song::load(&db, &item_to_insert.id)? {
-            eprintln!("Found: {item}");
+        if let Some(item) = song_db.get(&item_to_insert.id)? {
+            println!("Found: {item}");
             assert_eq!(item, item_to_insert);
         } else {
-            eprintln!("Inserting...");
-            item_to_insert.store(&db)?;
-            eprintln!("Inserted, start again and it should be found");
+            println!("Inserting...");
+            song_db.insert(&item_to_insert)?;
+            println!("Inserted, start again and it should be found");
         }
     }
 
-    eprintln!("\nListing all items:");
+    println!("\nListing all items:");
 
-    for (idx, item) in db.iter().into_iter().enumerate() {
-        let (key, bytes) = item?;
-
-        let mut item: Song = rmp_serde::from_slice(&bytes).expect("should deserialize");
-        item.id = String::from_utf8_lossy(&key).to_string();
-
-        eprintln!("[{idx}] {item}");
+    for (idx, song) in song_db.iter().enumerate() {
+        let song = song?;
+        println!("[{idx}] {song}");
     }
 
     Ok(())

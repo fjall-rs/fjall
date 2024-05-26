@@ -5,6 +5,7 @@
 //! - Range & prefix searching with forward and reverse iteration
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
+//! - Single-writer transactions (optional)
 //!
 //! Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application.
 //! Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a
@@ -21,7 +22,7 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, Keyspace, PartitionCreateOptions};
+//! use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
@@ -40,24 +41,24 @@
 //! items.remove("a")?;
 //!
 //! // Search by prefix
-//! for item in &items.prefix("prefix") {
+//! for item in items.prefix("prefix") {
 //!   // ...
 //! }
 //!
 //! // Search by range
-//! for item in &items.range("a"..="z") {
+//! for item in items.range("a"..="z") {
 //!   // ...
 //! }
 //!
 //! // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-//! for item in items.prefix("prefix").into_iter().rev() {
+//! for item in items.prefix("prefix").rev() {
 //!   // ...
 //! }
 //!
 //! // Sync the journal to disk to make sure data is definitely durable
 //! // When the keyspace is dropped, it will try to persist
 //! // Also, by default every second the keyspace will be persisted asynchronously
-//! keyspace.persist()?;
+//! keyspace.persist(PersistMode::SyncAll)?;
 //!
 //! // Destroy the partition, removing all data in it.
 //! // This may be useful when using temporary tables or indexes,
@@ -70,9 +71,10 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/logo.png")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/logo.png")]
 #![forbid(unsafe_code)]
-#![deny(clippy::all, missing_docs)]
-#![deny(clippy::unwrap_used, clippy::indexing_slicing)]
-#![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![deny(clippy::all, missing_docs, clippy::cargo)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::indexing_slicing)]
+#![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
 
@@ -91,18 +93,48 @@ mod monitor;
 mod partition;
 mod recovery;
 mod sharded;
+
+#[cfg(feature = "single_writer_tx")]
+mod tx;
+
 mod version;
 mod write_buffer_manager;
-
-pub use lsm_tree::{BlockCache /* , Snapshot */};
 
 pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
+    journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
 };
+
+#[cfg(feature = "single_writer_tx")]
+pub use tx::{
+    keyspace::{TransactionalKeyspace, TxKeyspace},
+    partition::TransactionalPartitionHandle,
+    read_tx::ReadTransaction,
+    write_tx::WriteTransaction,
+};
+
+/// Alias for [`PartitionHandle`]
+pub type Partition = PartitionHandle;
+
+/// Alias for [`TransactionalPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TxPartition = TransactionalPartitionHandle;
+
+/// Alias for [`TransactionalPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TxPartitionHandle = TransactionalPartitionHandle;
+
+/// Alias for [`TransactionalPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TransactionalPartition = TransactionalPartitionHandle;
+
+/// Alias for [`PersistMode`]
+#[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
+pub type FlushMode = PersistMode;
 
 /// A snapshot moment
 ///
@@ -111,3 +143,5 @@ pub type Instant = lsm_tree::SeqNo;
 
 /// Re-export of [`lsm_tree::Error`]
 pub type LsmError = lsm_tree::Error;
+
+pub use lsm_tree::{BlockCache, Snapshot, UserKey, UserValue};
