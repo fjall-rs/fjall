@@ -1,5 +1,5 @@
-use super::{partition::TxPartitionHandle, read_tx::ReadTransaction, write_tx::WriteTransaction};
-use crate::{Config, Keyspace, PartitionCreateOptions, PersistMode};
+use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
+use crate::{Config, Keyspace, PartitionCreateOptions, PersistMode, TxPartitionHandle};
 use std::sync::{Arc, Mutex};
 
 /// Transaction keyspace

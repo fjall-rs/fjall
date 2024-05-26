@@ -1,4 +1,5 @@
 use crate::PartitionHandle;
+use lsm_tree::UserValue;
 use std::sync::{Arc, Mutex};
 
 /// Access to a partition of a transactional keyspace
@@ -8,10 +9,162 @@ pub struct TransactionalPartitionHandle {
     pub(crate) tx_lock: Arc<Mutex<()>>,
 }
 
-/// Alias for [`TransactionalPartitionHandle`]
-pub type TxPartitionHandle = TransactionalPartitionHandle;
+impl TransactionalPartitionHandle {
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let taken = partition.take("a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn take<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<UserValue>> {
+        self.fetch_update(key, |_| None)
+    }
 
-impl TxPartitionHandle {
+    /// Atomically updates an item and returns the previous value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let prev = partition.fetch_update("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let prev = partition.fetch_update("a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &self,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+
+        let prev = self.inner.get(&key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = updated {
+            self.inner.insert(&key, value)?;
+        } else if prev.is_some() {
+            self.inner.remove(&key)?;
+        }
+
+        Ok(prev)
+    }
+
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let updated = partition.update_fetch("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let updated = partition.update_fetch("a", |_| None)?;
+    /// assert!(updated.is_none());
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &self,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+
+        let prev = self.inner.get(&key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = &updated {
+            self.inner.insert(&key, value)?;
+        } else if prev.is_some() {
+            self.inner.remove(&key)?;
+        }
+
+        Ok(updated)
+    }
+
     /// Inserts a key-value pair into the partition.
     ///
     /// The operation will be run wrapped in a transaction.

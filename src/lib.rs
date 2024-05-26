@@ -112,7 +112,7 @@ pub use {
 #[cfg(feature = "single_writer_tx")]
 pub use tx::{
     keyspace::{TransactionalKeyspace, TxKeyspace},
-    partition::{TransactionalPartitionHandle, TxPartitionHandle},
+    partition::TransactionalPartitionHandle,
     read_tx::ReadTransaction,
     write_tx::WriteTransaction,
 };
@@ -120,9 +120,17 @@ pub use tx::{
 /// Alias for [`PartitionHandle`]
 pub type Partition = PartitionHandle;
 
-/// Alias for [`TxPartitionHandle`]
+/// Alias for [`TransactionalPartitionHandle`]
 #[cfg(feature = "single_writer_tx")]
-pub type TxPartition = TxPartitionHandle;
+pub type TxPartition = TransactionalPartitionHandle;
+
+/// Alias for [`TransactionalPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TxPartitionHandle = TransactionalPartitionHandle;
+
+/// Alias for [`TransactionalPartitionHandle`]
+#[cfg(feature = "single_writer_tx")]
+pub type TransactionalPartition = TransactionalPartitionHandle;
 
 /// Alias for [`PersistMode`]
 #[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
