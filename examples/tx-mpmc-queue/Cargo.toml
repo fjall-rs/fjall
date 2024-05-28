@@ -1,0 +1,11 @@
+[package]
+name = "tx-mpmc-queue"
+version = "0.0.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fjall = { path = "../../" }
+rand = "0.8.5"
+scru128 = "3.0.2"
