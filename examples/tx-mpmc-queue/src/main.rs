@@ -1,5 +1,12 @@
 use fjall::{Config, PersistMode};
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering::Relaxed},
+    Arc,
+};
+
+const PRODUCER_COUNT: usize = 4;
+const PRODUCING_COUNT: usize = 100;
 
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
@@ -11,7 +18,9 @@ fn main() -> fjall::Result<()> {
     let keyspace = Config::new(path).open_transactional()?;
     let tasks = keyspace.open_partition("tasks", Default::default())?;
 
-    let producers = (0_u8..4)
+    let counter = Arc::new(AtomicUsize::default());
+
+    let producers = (0..PRODUCER_COUNT)
         .map(|idx| {
             let keyspace = keyspace.clone();
             let tasks = tasks.clone();
@@ -21,7 +30,7 @@ fn main() -> fjall::Result<()> {
 
                 let mut rng = rand::thread_rng();
 
-                for _ in 0..100 {
+                for _ in 0..PRODUCING_COUNT {
                     let task_id = scru128::new_string();
 
                     tasks.insert(&task_id, &task_id)?;
@@ -38,10 +47,11 @@ fn main() -> fjall::Result<()> {
         })
         .collect::<Vec<_>>();
 
-    let consumers = (0_u8..4)
+    let consumers = (0..4)
         .map(|idx| {
             let keyspace = keyspace.clone();
             let tasks = tasks.clone();
+            let counter = counter.clone();
 
             std::thread::spawn(move || {
                 use rand::Rng;
@@ -65,6 +75,8 @@ fn main() -> fjall::Result<()> {
 
                         println!("consumer {idx} completed task {task_id}");
 
+                        counter.fetch_add(1, Relaxed);
+
                         let ms = rng.gen_range(100..200);
                         std::thread::sleep(std::time::Duration::from_millis(ms));
                     } else {
@@ -86,6 +98,8 @@ fn main() -> fjall::Result<()> {
 
     let read_tx = keyspace.read_tx();
     assert!(read_tx.is_empty(&tasks)?);
+
+    assert_eq!(PRODUCER_COUNT * PRODUCING_COUNT, counter.load(Relaxed));
 
     Ok(())
 }
