@@ -75,13 +75,10 @@ fn main() -> fjall::Result<()> {
 
                         println!("consumer {idx} completed task {task_id}");
 
-                        counter.fetch_add(1, Relaxed);
+                        let prev = counter.fetch_add(1, Relaxed);
 
                         let ms = rng.gen_range(100..200);
                         std::thread::sleep(std::time::Duration::from_millis(ms));
-                    } else {
-                        println!("consumer {idx} exited");
-                        return Ok::<_, fjall::Error>(());
                     }
                 }
             })
@@ -92,12 +89,13 @@ fn main() -> fjall::Result<()> {
         t.join().unwrap()?;
     }
 
-    for t in consumers {
-        t.join().unwrap()?;
-    }
+    loop {
+       let read_tx = keyspace.read_tx();
 
-    let read_tx = keyspace.read_tx();
-    assert!(read_tx.is_empty(&tasks)?);
+       if read_tx.is_empty(&tasks)? {
+         break;
+       }
+    }
 
     assert_eq!(PRODUCER_COUNT * PRODUCING_COUNT, counter.load(Relaxed));
 
