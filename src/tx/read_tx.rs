@@ -262,7 +262,7 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
-        &'a mut self,
+        &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
@@ -295,7 +295,7 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]>>(
-        &'a mut self,
+        &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {

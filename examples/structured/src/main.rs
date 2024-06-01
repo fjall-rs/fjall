@@ -70,9 +70,19 @@ impl SongDatabase {
     pub fn iter(&self) -> impl Iterator<Item = fjall::Result<Song>> + '_ {
         self.db.iter().map(|item| item.map(Song::from))
     }
+
+    pub fn len(&self) -> fjall::Result<usize> {
+        self.db.len()
+    }
 }
 
 fn main() -> fjall::Result<()> {
+    let path = std::path::Path::new(".fjall_data");
+
+    if path.try_exists()? {
+        std::fs::remove_dir_all(path)?;
+    }
+
     let items = vec![
         Song {
             id: "clairo:amoeba".to_owned(),
@@ -100,27 +110,49 @@ fn main() -> fjall::Result<()> {
         },
     ];
 
-    let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("songs", Default::default())?;
+    {
+        let keyspace = Config::new(path).open()?;
+        let db = keyspace.open_partition("songs", Default::default())?;
 
-    let song_db = SongDatabase { keyspace, db };
+        let song_db = SongDatabase {
+            keyspace: keyspace.clone(),
+            db,
+        };
 
-    for item_to_insert in items {
-        if let Some(item) = song_db.get(&item_to_insert.id)? {
-            println!("Found: {item}");
-            assert_eq!(item, item_to_insert);
-        } else {
-            println!("Inserting...");
-            song_db.insert(&item_to_insert)?;
-            println!("Inserted, start again and it should be found");
+        for item_to_insert in &items {
+            if let Some(item) = song_db.get(&item_to_insert.id)? {
+                println!("Found: {item}");
+                assert_eq!(&item, item_to_insert);
+            } else {
+                println!("Inserting...");
+                song_db.insert(&item_to_insert)?;
+            }
         }
+        keyspace.persist(fjall::PersistMode::SyncAll)?;
+
+        assert_eq!(items.len(), song_db.len()?);
     }
 
-    println!("\nListing all items:");
+    // Reload from disk
+    {
+        println!("\nReloading...");
 
-    for (idx, song) in song_db.iter().enumerate() {
-        let song = song?;
-        println!("[{idx}] {song}");
+        let keyspace = Config::new(path).open()?;
+        let db = keyspace.open_partition("songs", Default::default())?;
+
+        let song_db = SongDatabase {
+            keyspace: keyspace.clone(),
+            db,
+        };
+
+        println!("\nListing all items:");
+
+        for (idx, song) in song_db.iter().enumerate() {
+            let song = song?;
+            println!("[{idx}] {song}");
+        }
+
+        assert_eq!(items.len(), song_db.len()?);
     }
 
     Ok(())

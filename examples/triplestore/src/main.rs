@@ -127,11 +127,18 @@ fn main() -> fjall::Result<()> {
             )?;
         }
     }
+    store.keyspace.persist(fjall::PersistMode::SyncAll)?;
+
+    let mut count = 0;
 
     println!("Listing all person-1->knows-> relations:");
     for (_, _, o, _) in store.out("person-1", "knows")? {
         println!("person-1 knows {o}!");
+
+        count += 1;
     }
+
+    assert_eq!(2, count);
 
     Ok(())
 }

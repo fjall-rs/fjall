@@ -57,6 +57,8 @@ fn main() -> fjall::Result<()> {
 
     println!("Searching for [{lo} - {hi}]");
 
+    let mut found_count = 0;
+
     for item in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
         let (k, _) = item?;
 
@@ -67,7 +69,11 @@ fn main() -> fjall::Result<()> {
         let item = items.get(primary_key)?.unwrap();
 
         println!("found: {}", std::str::from_utf8(&item).unwrap());
+
+        found_count += 1;
     }
+
+    assert_eq!(5, found_count);
 
     Ok(())
 }

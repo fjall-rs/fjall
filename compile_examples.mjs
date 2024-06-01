@@ -42,7 +42,7 @@ for (const exampleName of await readdir(examplesFolder)) {
     });
 
     proc.stdout.on("data", buf => console.log(String(buf)));
-    // proc.stderr.on("data", buf => console.error(String(buf)));
+    proc.stderr.on("data", buf => console.error(String(buf)));
 
     await new Promise((resolve, _) => {
       proc.on("exit", () => {
