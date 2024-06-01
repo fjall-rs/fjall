@@ -8,6 +8,8 @@ use std::sync::{
 const PRODUCER_COUNT: usize = 4;
 const PRODUCING_COUNT: usize = 100;
 
+const EXPECTED_COUNT: usize = PRODUCER_COUNT * PRODUCING_COUNT;
+
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
@@ -75,10 +77,12 @@ fn main() -> fjall::Result<()> {
 
                         println!("consumer {idx} completed task {task_id}");
 
-                        let prev = counter.fetch_add(1, Relaxed);
+                        counter.fetch_add(1, Relaxed);
 
-                        let ms = rng.gen_range(100..200);
+                        let ms = rng.gen_range(50..200);
                         std::thread::sleep(std::time::Duration::from_millis(ms));
+                    } else if counter.load(Relaxed) == EXPECTED_COUNT {
+                        return Ok::<_, fjall::Error>(());
                     }
                 }
             })
@@ -89,15 +93,11 @@ fn main() -> fjall::Result<()> {
         t.join().unwrap()?;
     }
 
-    loop {
-       let read_tx = keyspace.read_tx();
-
-       if read_tx.is_empty(&tasks)? {
-         break;
-       }
+    for t in consumers {
+        t.join().unwrap()?;
     }
 
-    assert_eq!(PRODUCER_COUNT * PRODUCING_COUNT, counter.load(Relaxed));
+    assert_eq!(EXPECTED_COUNT, counter.load(Relaxed));
 
     Ok(())
 }
