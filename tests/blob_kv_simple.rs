@@ -13,7 +13,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     )?;
 
     assert_eq!(partition.len()?, 0);
-    partition.insert("1", "oxygen".repeat(128_000))?;
+    partition.insert("1", "oxygen".repeat(1_000_000))?;
     partition.insert("3", "abc")?;
     partition.insert("5", "abc")?;
     assert_eq!(partition.len()?, 3);
@@ -24,8 +24,11 @@ fn blob_kv_simple() -> fjall::Result<()> {
     if let fjall::AnyTree::Blob(tree) = &partition.tree {
         assert!(tree.index.disk_space() < 200);
 
-        // NOTE: The data is compressed quite well, so it's way less than 128k
-        assert!(tree.disk_space() > 1_000);
+        // NOTE: The data is compressed quite well, so it's way less than 1M
+        assert!(tree.disk_space() > 5_000);
+
+        assert!(tree.blobs.manifest.disk_space_used() > 5_000);
+        assert_eq!(1, tree.blobs.segment_count());
     } else {
         panic!("nope");
     }
