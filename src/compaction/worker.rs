@@ -1,4 +1,5 @@
 use super::manager::CompactionManager;
+use lsm_tree::AbstractTree;
 
 /// Runs a single run of compaction.
 pub fn run(compaction_manager: &CompactionManager) {

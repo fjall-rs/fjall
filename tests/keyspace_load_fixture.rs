@@ -1,4 +1,5 @@
 use fjall::Config;
+use lsm_tree::AbstractTree;
 use test_log::test;
 
 #[test]

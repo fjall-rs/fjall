@@ -1,3 +1,5 @@
+use lsm_tree::AbstractTree;
+
 use crate::{
     config::Config as KeyspaceConfig, flush::manager::FlushManager,
     journal::manager::JournalManager, keyspace::Partitions,

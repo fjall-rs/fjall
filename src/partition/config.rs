@@ -1,3 +1,5 @@
+use lsm_tree::TreeType;
+
 /// Options to configure a partition
 pub struct CreateOptions {
     /// Block size of data and index blocks
@@ -17,6 +19,11 @@ pub struct CreateOptions {
     ///
     /// A level target size is: `max_memtable_size * level_ratio.pow(#level + 1)`
     pub(crate) level_ratio: u8,
+
+    /// Tree type, see [`TreeType`].
+    ///
+    /// Once set for a partition, this property is not considered in the future.
+    pub(crate) tree_type: TreeType,
 }
 
 impl Default for CreateOptions {
@@ -27,6 +34,7 @@ impl Default for CreateOptions {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
             level_ratio: default_tree_config.level_ratio,
+            tree_type: TreeType::Standard,
         }
     }
 }
@@ -74,6 +82,12 @@ impl CreateOptions {
         assert!(n > 1);
 
         self.level_count = n;
+        self
+    }
+
+    /// Enables key-value separation for this partition.
+    pub fn use_kv_separation(mut self) -> Self {
+        self.tree_type = TreeType::Blob;
         self
     }
 }

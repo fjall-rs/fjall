@@ -15,7 +15,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-        path = tree.path();
+        path = tree.path().to_path_buf();
 
         assert!(path.try_exists()?);
 

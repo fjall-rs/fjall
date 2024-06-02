@@ -2,7 +2,7 @@ pub mod item;
 
 use crate::{Keyspace, PartitionHandle};
 use item::Item;
-use lsm_tree::{Value, ValueType};
+use lsm_tree::{AbstractTree, Value, ValueType};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -115,6 +115,10 @@ impl Batch {
             let Some(active_memtable) = locked_memtables.get(&item.partition) else {
                 continue;
             };
+
+            // TODO: we are not allowed to just insert items blindly anymore
+            // TODO: we need an API to insert items into the active memtable
+            // TODO: depending on the type of tree...
 
             let value = Value {
                 key: item.key,

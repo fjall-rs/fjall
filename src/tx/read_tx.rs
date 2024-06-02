@@ -1,5 +1,5 @@
 use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{AbstractTree, UserKey, UserValue};
+use lsm_tree::{AbstractTree, KvPair, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
@@ -101,10 +101,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next().transpose()
     }
 
@@ -132,10 +129,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next_back().transpose()
     }
 
@@ -232,11 +226,11 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
         partition
             .inner
             .tree
-            .create_iter(Some(self.instant), None)
+            .iter_with_seqno(self.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -265,11 +259,11 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
         partition
             .inner
             .tree
-            .create_range(range, Some(self.instant), None)
+            .range_with_seqno(range, self.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -298,11 +292,11 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
         partition
             .inner
             .tree
-            .create_prefix(prefix, Some(self.instant), None)
+            .prefix_with_seqno(prefix, self.instant, None)
             .map(|item| Ok(item?))
     }
 }

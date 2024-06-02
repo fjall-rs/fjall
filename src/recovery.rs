@@ -8,7 +8,7 @@ use crate::{
     partition::PartitionHandleInner,
     Keyspace, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, MemTable};
+use lsm_tree::{AbstractTree, AnyTree, MemTable};
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicBool, Arc, RwLock},
@@ -50,10 +50,19 @@ pub fn recover_partitions(
 
         let path = partitions_folder.join(partition_name);
 
-        let tree = lsm_tree::Config::new(path)
+        let is_blob_tree = partition_path
+            .join(lsm_tree::file::BLOBS_FOLDER)
+            .try_exists()?;
+
+        let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
-            .block_cache(keyspace.config.block_cache.clone())
-            .open()?;
+            .block_cache(keyspace.config.block_cache.clone());
+
+        let tree = if is_blob_tree {
+            AnyTree::Blob(base_config.open_as_blob_tree()?)
+        } else {
+            AnyTree::Standard(base_config.open()?)
+        };
 
         let partition_inner = PartitionHandleInner {
             max_memtable_size: (8 * 1_024 * 1_024).into(),

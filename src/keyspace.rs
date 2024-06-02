@@ -328,7 +328,7 @@ impl Keyspace {
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
-        fsync_directory(&partition_path)?;
+        fsync_directory(partition_path)?;
 
         handle
             .is_deleted

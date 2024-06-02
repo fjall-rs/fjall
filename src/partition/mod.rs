@@ -17,13 +17,12 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, AbstractTree, SequenceNumberCounter, Snapshot, Tree as LsmTree,
-    UserKey, UserValue,
+    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, Snapshot,
 };
 use std::{
     collections::HashMap,
     ops::RangeBounds,
-    path::PathBuf,
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32},
         Arc, RwLock,
@@ -50,7 +49,7 @@ pub struct PartitionHandleInner {
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
     #[doc(hidden)]
-    pub tree: LsmTree, // TODO: blob tree
+    pub tree: AnyTree,
 
     /// Maximum size of this partition's memtable
     pub(crate) max_memtable_size: AtomicU32,
@@ -122,13 +121,17 @@ impl PartitionHandle {
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
 
-        let tree = lsm_tree::Config::new(path)
+        let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
-            .level_ratio(config.level_ratio)
-            .open()?;
+            .level_ratio(config.level_ratio);
+
+        let tree = match config.tree_type {
+            lsm_tree::TreeType::Standard => AnyTree::Standard(base_config.open()?),
+            lsm_tree::TreeType::Blob => AnyTree::Blob(base_config.open_as_blob_tree()?),
+        };
 
         Ok(Self(Arc::new(PartitionHandleInner {
             name,
@@ -151,8 +154,8 @@ impl PartitionHandle {
 
     /// Returns the underlying LSM-tree's path
     #[must_use]
-    pub fn path(&self) -> PathBuf {
-        self.tree.config.path.clone()
+    pub fn path(&self) -> &Path {
+        self.tree.tree_config().path.as_path()
     }
 
     /// Returns the disk space usage of this partition
@@ -199,9 +202,7 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
         self.tree.iter().map(|item| Ok(item?))
     }
 
@@ -231,7 +232,7 @@ impl PartitionHandle {
     pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
         &self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -261,7 +262,7 @@ impl PartitionHandle {
     pub fn prefix<K: AsRef<[u8]>>(
         &self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
@@ -441,7 +442,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
         Ok(self.tree.first_key_value()?)
     }
 
@@ -469,7 +470,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
         Ok(self.tree.last_key_value()?)
     }
 
@@ -634,13 +635,13 @@ impl PartitionHandle {
 
     /// Opens a snapshot of this partition
     #[must_use]
-    pub fn snapshot(&self) -> Snapshot<LsmTree> {
+    pub fn snapshot(&self) -> Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
     /// Opens a snapshot of this partition with a given sequence number
     #[must_use]
-    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot<LsmTree> {
+    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
         self.tree.snapshot(seqno)
     }
 

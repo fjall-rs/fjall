@@ -3,7 +3,7 @@ use crate::{
     batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
     write_buffer_manager::WriteBufferManager, PartitionHandle,
 };
-use lsm_tree::Segment;
+use lsm_tree::{AbstractTree, Segment};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
