@@ -1,0 +1,11 @@
+[package]
+name = "tx-blob-cas"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+env_logger = "0.11.3"
+fjall = { path = "../../" }
+format-bytes = "0.3.0"
+log = "0.4.21"
+sha2 = "0.10.8"
