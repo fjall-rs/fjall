@@ -28,21 +28,6 @@ pub struct Journal {
     pub shards: Sharded<JournalShard>,
 }
 
-impl Drop for Journal {
-    fn drop(&mut self) {
-        log::trace!("Dropping Journal, trying to flush");
-
-        match self.flush(PersistMode::SyncAll) {
-            Ok(()) => {
-                log::trace!("Flushed journal successfully");
-            }
-            Err(e) => {
-                log::error!("Flush error on drop: {e:?}");
-            }
-        }
-    }
-}
-
 impl Journal {
     pub fn recover_memtables<P: AsRef<Path>>(
         path: P,
