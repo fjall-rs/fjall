@@ -33,9 +33,9 @@ pub enum Marker {
 }
 
 pub enum Tag {
-    Start = 0,
-    Item = 1,
-    End = 2,
+    Start = 1,
+    Item = 2,
+    End = 3,
 }
 
 impl TryFrom<u8> for Tag {
@@ -45,9 +45,9 @@ impl TryFrom<u8> for Tag {
         use Tag::{End, Item, Start};
 
         match value {
-            0 => Ok(Start),
-            1 => Ok(Item),
-            2 => Ok(End),
+            1 => Ok(Start),
+            2 => Ok(Item),
+            3 => Ok(End),
             _ => Err(DeserializeError::InvalidTag(("JournalMarkerTag", value))),
         }
     }

@@ -107,6 +107,7 @@ pub use {
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    version::Version,
 };
 
 #[cfg(feature = "single_writer_tx")]
@@ -131,10 +132,6 @@ pub type TxPartitionHandle = TransactionalPartitionHandle;
 /// Alias for [`TransactionalPartitionHandle`]
 #[cfg(feature = "single_writer_tx")]
 pub type TransactionalPartition = TransactionalPartitionHandle;
-
-/// Alias for [`PersistMode`]
-#[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
-pub type FlushMode = PersistMode;
 
 /// A snapshot moment
 ///

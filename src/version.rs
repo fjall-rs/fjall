@@ -1,9 +1,13 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+/// Disk format version
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Version {
-    // V0,
-    V1, // 1.x.x
+    /// Version for 1.x.x releases
+    V1,
+
+    /// Version for 2.x.x releases
+    V2,
 }
 
 impl std::fmt::Display for Version {
@@ -15,8 +19,8 @@ impl std::fmt::Display for Version {
 impl From<Version> for u16 {
     fn from(value: Version) -> Self {
         match value {
-            // Version::V0 => 0,
             Version::V1 => 1,
+            Version::V2 => 2,
         }
     }
 }
@@ -25,8 +29,8 @@ impl TryFrom<u16> for Version {
     type Error = ();
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            // 0 => Ok(Self::V0),
             1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
             _ => Err(()),
         }
     }
@@ -35,11 +39,13 @@ impl TryFrom<u16> for Version {
 const MAGIC_BYTES: [u8; 3] = [b'F', b'J', b'L'];
 
 impl Version {
-    pub fn len() -> u8 {
+    // NOTE: Used in tests
+    #[allow(unused)]
+    pub(crate) fn len() -> u8 {
         5
     }
 
-    pub fn parse_file_header(bytes: &[u8]) -> Option<Self> {
+    pub(crate) fn parse_file_header(bytes: &[u8]) -> Option<Self> {
         let first_three = bytes.get(0..3)?;
 
         if first_three == MAGIC_BYTES {
@@ -58,7 +64,10 @@ impl Version {
         }
     }
 
-    pub fn write_file_header<W: std::io::Write>(self, writer: &mut W) -> std::io::Result<usize> {
+    pub(crate) fn write_file_header<W: std::io::Write>(
+        self,
+        writer: &mut W,
+    ) -> std::io::Result<usize> {
         writer.write_all(&MAGIC_BYTES)?;
         writer.write_u16::<BigEndian>(u16::from(self))?;
         Ok(5)
@@ -81,9 +90,25 @@ mod tests {
 
     #[test]
     #[allow(clippy::expect_used)]
+    pub fn version_serialize_2() -> crate::Result<()> {
+        let mut bytes = vec![];
+        Version::V2.write_file_header(&mut bytes)?;
+        assert_eq!(bytes, &[b'F', b'J', b'L', 0, 2]);
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
     pub fn version_deserialize_success() {
         let version = Version::parse_file_header(&[b'F', b'J', b'L', 0, 1]);
         assert_eq!(version, Some(Version::V1));
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    pub fn version_deserialize_success_2() {
+        let version = Version::parse_file_header(&[b'F', b'J', b'L', 0, 2]);
+        assert_eq!(version, Some(Version::V2));
     }
 
     #[test]
