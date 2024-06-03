@@ -380,6 +380,7 @@ fn main() -> fjall::Result<()> {
     assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
     eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
+    // TODO: this will be a better API at some point
     if let fjall::AnyTree::Blob(tree) = &cas.blobs.inner().tree {
         tree.gc_scan_stats()?;
         tree.gc_drop_stale()?;
