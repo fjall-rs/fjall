@@ -21,9 +21,7 @@ fn batch_simple() -> fjall::Result<()> {
     Ok(())
 }
 
-// TODO: 2.0.0
 #[test]
-#[ignore = "need to fix batch commit"]
 fn blob_batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -32,16 +30,21 @@ fn blob_batch_simple() -> fjall::Result<()> {
         "default",
         PartitionCreateOptions::default().use_kv_separation(),
     )?;
+
+    let blob = "oxygen".repeat(128_000);
+
     let mut batch = keyspace.batch();
 
     assert_eq!(partition.len()?, 0);
-    batch.insert(&partition, "1", "oxygen".repeat(128_000));
+    batch.insert(&partition, "1", &blob);
     batch.insert(&partition, "3", "abc");
     batch.insert(&partition, "5", "abc");
     assert_eq!(partition.len()?, 0);
 
     batch.commit()?;
     assert_eq!(partition.len()?, 3);
+
+    assert_eq!(&*partition.get("1")?.unwrap(), blob.as_bytes());
 
     Ok(())
 }

@@ -2,7 +2,7 @@ pub mod item;
 
 use crate::{Keyspace, PartitionHandle};
 use item::Item;
-use lsm_tree::{AbstractTree, Value, ValueType};
+use lsm_tree::{AbstractTree, ValueType};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -116,18 +116,14 @@ impl Batch {
                 continue;
             };
 
-            // TODO: we are not allowed to just insert items blindly anymore
-            // TODO: we need an API to insert items into the active memtable
-            // TODO: depending on the type of tree...
+            let (item_size, _) = partition.tree.raw_insert_with_lock(
+                active_memtable,
+                item.key,
+                item.value,
+                batch_seqno,
+                item.value_type,
+            );
 
-            let value = Value {
-                key: item.key,
-                value: item.value,
-                seqno: batch_seqno,
-                value_type: item.value_type,
-            };
-
-            let (item_size, _) = active_memtable.insert(value);
             batch_size += u64::from(item_size);
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
