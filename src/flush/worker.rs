@@ -129,6 +129,12 @@ pub fn run(
                 } else {
                     log::debug!("flush worker: write locking flush manager to submit results");
                     let mut flush_manager = flush_manager.write().expect("lock is poisoned");
+
+                    log::debug!(
+                        "Dequeing flush tasks: {} => {}",
+                        partition.name,
+                        created_segments.len()
+                    );
                     flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
 
                     write_buffer_manager.free(memtables_size);

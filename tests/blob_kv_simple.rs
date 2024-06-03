@@ -18,8 +18,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     partition.insert("5", "abc")?;
     assert_eq!(partition.len()?, 3);
 
-    partition.rotate_memtable()?;
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    partition.rotate_memtable_and_wait()?;
 
     if let fjall::AnyTree::Blob(tree) = &partition.tree {
         assert!(tree.index.disk_space() < 200);

@@ -10,7 +10,7 @@ use std::sync::Arc;
 ///
 /// This is only really works because there is one flush thread
 /// that spawns flush workers for each partition it collects tasks for.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushQueue {
     items: Vec<Arc<Task>>,
