@@ -19,7 +19,7 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["single_writer_tx", "lsm-tree/kv_sep"]
+default = ["single_writer_tx", "lsm-tree/kv_sep", "lsm-tree/lz4"]
 single_writer_tx = []
 bloom = ["lsm-tree/bloom"]
 
