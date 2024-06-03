@@ -112,13 +112,13 @@ A single keyspace may **not** be loaded in parallel from separate *processes* ho
 
 ## Feature flags
 
-#### bloom
+### bloom
 
 Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
 
 *Disabled by default.*
 
-#### single_writer_tx
+### single_writer_tx
 
 Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 
