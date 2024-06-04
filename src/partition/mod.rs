@@ -108,6 +108,10 @@ impl PartitionHandle {
     pub fn set_max_memtable_size(&self, bytes: u32) {
         use std::sync::atomic::Ordering::Release;
 
+        if bytes < 1_000_000 {
+            log::warn!("Memtable size below 1 MB is not recommended");
+        }
+
         self.max_memtable_size.store(bytes, Release);
     }
 
