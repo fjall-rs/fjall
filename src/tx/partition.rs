@@ -12,6 +12,8 @@ pub struct TransactionalPartitionHandle {
 impl TransactionalPartitionHandle {
     /// Removes an item and returns its value if it existed.
     ///
+    /// The operation will run wrapped in a transaction.
+    ///
     /// ```
     /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
@@ -40,6 +42,8 @@ impl TransactionalPartitionHandle {
     /// Atomically updates an item and returns the previous value.
     ///
     /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
     ///
     /// # Examples
     ///
@@ -105,6 +109,8 @@ impl TransactionalPartitionHandle {
     ///
     /// Returning `None` removes the item if it existed before.
     ///
+    /// The operation will run wrapped in a transaction.
+    ///
     /// # Examples
     ///
     /// ```
@@ -167,12 +173,12 @@ impl TransactionalPartitionHandle {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// The operation will be run wrapped in a transaction.
-    ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
+    ///
+    /// The operation will run wrapped in a transaction.
     ///
     /// # Examples
     ///
@@ -199,10 +205,10 @@ impl TransactionalPartitionHandle {
 
     /// Removes an item from the partition.
     ///
-    /// The operation will be run wrapped in a transaction.
-    ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
+    ///
+    /// The operation will run wrapped in a transaction.
     ///
     /// # Examples
     ///
@@ -231,6 +237,8 @@ impl TransactionalPartitionHandle {
 
     /// Retrieves an item from the partition.
     ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
     /// # Examples
     ///
     /// ```
@@ -252,6 +260,33 @@ impl TransactionalPartitionHandle {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<lsm_tree::UserValue>> {
         self.inner.get(key)
+    }
+
+    /// Returns `true` if the partition contains the specified key.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// assert!(partition.contains_key("a")?);
+    /// assert!(!partition.contains_key("b")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
+        self.inner.contains_key(key)
     }
 
     /// Allows access to the inner partition handle, allowing to
