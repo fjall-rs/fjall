@@ -68,13 +68,12 @@ fn main() -> fjall::Result<()> {
                     // Something like SingleDelete https://github.com/facebook/rocksdb/wiki/Single-Delete
                     // would be good for this type of workload
                     if let Some((key, _)) = tx.first_key_value(&tasks)? {
-                        let task_id = std::str::from_utf8(&key).unwrap();
-
-                        tx.remove(&tasks, task_id);
+                        tx.remove(&tasks, &key);
 
                         tx.commit()?;
                         keyspace.persist(PersistMode::Buffer)?;
 
+                        let task_id = std::str::from_utf8(&key).unwrap();
                         println!("consumer {idx} completed task {task_id}");
 
                         counter.fetch_add(1, Relaxed);
