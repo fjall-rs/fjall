@@ -57,8 +57,8 @@ fn main() -> fjall::Result<()> {
             println!("\n[SLOW] Scanning all items for suffix {suffix:?}:");
         }
 
-        for item in items_rev.iter() {
-            let (_, value) = item?;
+        for kv in items_rev.iter() {
+            let (_, value) = kv?;
 
             if value.ends_with(suffix.as_bytes()) {
                 if i == 0 {
@@ -88,8 +88,8 @@ fn main() -> fjall::Result<()> {
 
         // Uses prefix, so generally faster than table scan
         // `------------------v
-        for item in items_rev.prefix(suffix.chars().rev().collect::<String>()) {
-            let (_, value) = item?;
+        for kv in items_rev.prefix(suffix.chars().rev().collect::<String>()) {
+            let (_, value) = kv?;
 
             if i == 0 {
                 println!("  -> {}", std::str::from_utf8(&value).unwrap());

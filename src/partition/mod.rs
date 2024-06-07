@@ -332,8 +332,8 @@ impl PartitionHandle {
     pub fn len(&self) -> crate::Result<usize> {
         let mut count = 0;
 
-        for item in self.iter() {
-            let _ = item?;
+        for kv in self.iter() {
+            let _ = kv?;
             count += 1;
         }
 
