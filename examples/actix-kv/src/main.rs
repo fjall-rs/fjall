@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::RouteResult;
-use fjall::{Config, PersistMode, Keyspace, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle, PersistMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 

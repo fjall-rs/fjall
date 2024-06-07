@@ -135,6 +135,13 @@ impl ReadTransaction {
 
     /// Scans the entire partition, returning the amount of items.
     ///
+    /// ###### Caution
+    ///
+    /// This operation scans the entire partition: O(n) complexity!
+    ///
+    /// Never, under any circumstances, use .`len()` == 0 to check
+    /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
+    ///
     /// # Examples
     ///
     /// ```
@@ -167,8 +174,8 @@ impl ReadTransaction {
     pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
-        for item in self.iter(partition) {
-            let _ = item?;
+        for kv in self.iter(partition) {
+            let _ = kv?;
             count += 1;
         }
 

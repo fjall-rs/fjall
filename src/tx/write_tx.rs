@@ -229,8 +229,8 @@ impl<'a> WriteTransaction<'a> {
 
         let iter = self.iter(partition);
 
-        for item in iter {
-            let _ = item?;
+        for kv in iter {
+            let _ = kv?;
             count += 1;
         }
 

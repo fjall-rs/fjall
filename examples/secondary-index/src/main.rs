@@ -59,8 +59,8 @@ fn main() -> fjall::Result<()> {
 
     let mut found_count = 0;
 
-    for item in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
-        let (k, _) = item?;
+    for kv in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
+        let (k, _) = kv?;
 
         // Get ID
         let primary_key = k.split(|&c| c == b'#').nth(1).unwrap();

@@ -60,8 +60,8 @@ impl Triplestore {
     ) -> fjall::Result<Vec<(String, String, String, Value)>> {
         let mut result = vec![];
 
-        for item in self.verbs.prefix(format!("{subject}#{verb}#")) {
-            let (key, value) = item?;
+        for kv in self.verbs.prefix(format!("{subject}#{verb}#")) {
+            let (key, value) = kv?;
 
             let key = std::str::from_utf8(&key).expect("should be utf-8");
             let mut splits = key.split('#');
