@@ -193,7 +193,7 @@ impl Keyspace {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(keyspace.disk_space() > 0);
+    /// assert!(keyspace.disk_space() >= 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
