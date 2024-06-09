@@ -96,7 +96,7 @@ impl std::hash::Hash for PartitionHandle {
 impl PartitionHandle {
     /// Sets the compaction strategy
     ///
-    /// Default = Levelled
+    /// Default = Leveled
     pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
         let mut lock = self.compaction_strategy.write().expect("lock is poisoned");
         *lock = strategy;
@@ -148,7 +148,7 @@ impl PartitionHandle {
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             tree,
-            compaction_strategy: RwLock::new(Arc::new(super::compaction::Levelled::default())),
+            compaction_strategy: RwLock::new(Arc::new(super::compaction::Leveled::default())),
             max_memtable_size: (8 * 1_024 * 1_024).into(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),

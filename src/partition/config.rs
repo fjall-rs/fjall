@@ -86,6 +86,9 @@ impl CreateOptions {
     }
 
     /// Enables key-value separation for this partition.
+    ///
+    /// Once set for a partition, this property is not considered in the future.
+    #[must_use]
     pub fn use_kv_separation(mut self) -> Self {
         self.tree_type = TreeType::Blob;
         self
