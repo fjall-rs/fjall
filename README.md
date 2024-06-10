@@ -114,9 +114,9 @@ A single keyspace may **not** be loaded in parallel from separate *processes* ho
 
 ### bloom
 
-Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
+Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
 
-*Disabled by default.*
+*Enabled by default.*
 
 ### single_writer_tx
 
