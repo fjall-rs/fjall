@@ -19,6 +19,7 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - Cross-partition snapshots (MVCC)
 - Automatic background maintenance
 - Single-writer transactions (optional)
+- Supports [key-value separation](https://github.com/fjall-rs/fjall/blob/v2/src/partition/config.rs#L92) for large blob use cases
 
 Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single database-level journal, which will be recovered on restart.
 
