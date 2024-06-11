@@ -22,6 +22,7 @@ pub enum RecoveryMode {
     /*  /// Skips corrupt (invalid CRC) batches. This may violate
     /// consistency, but will recover as much data as possible.
     SkipInvalidBatches, */
+    // TODO: absolute consistency
 }
 
 /// Errors that can occur during journal recovery
