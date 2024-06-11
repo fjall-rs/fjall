@@ -1,6 +1,9 @@
 use crate::PartitionHandle;
 use lsm_tree::UserValue;
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 /// Access to a partition of a transactional keyspace
 #[derive(Clone)]
@@ -10,6 +13,12 @@ pub struct TransactionalPartitionHandle {
 }
 
 impl TransactionalPartitionHandle {
+    /// Returns the underlying LSM-tree's path
+    #[must_use]
+    pub fn path(&self) -> PathBuf {
+        self.inner.path()
+    }
+
     /// Removes an item and returns its value if it existed.
     ///
     /// The operation will run wrapped in a transaction.
