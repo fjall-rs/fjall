@@ -29,6 +29,9 @@ pub enum Error {
     ///
     /// More info: <https://www.usenix.org/system/files/atc20-rebello.pdf>
     Poisoned,
+
+    /// Partition is deleted.
+    PartitionDeleted,
 }
 
 impl std::fmt::Display for Error {

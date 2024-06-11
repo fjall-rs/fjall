@@ -57,6 +57,18 @@ pub struct PartitionHandleInner {
     pub(crate) compaction_strategy: RwLock<Arc<dyn CompactionStrategy + Send + Sync>>,
 }
 
+impl Drop for PartitionHandleInner {
+    fn drop(&mut self) {
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            let path = self.tree.config.path.clone();
+
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
+            }
+        }
+    }
+}
+
 /// Access to a keyspace partition
 ///
 /// Each partition is backed by an LSM-tree to provide a
@@ -691,6 +703,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+        if self.is_deleted.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::PartitionDeleted);
+        }
+
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
@@ -750,6 +766,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+        if self.is_deleted.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::PartitionDeleted);
+        }
+
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }

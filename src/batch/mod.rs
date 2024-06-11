@@ -66,6 +66,14 @@ impl Batch {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(mut self) -> crate::Result<()> {
+        if self
+            .keyspace
+            .is_poisoned
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(crate::Error::Poisoned);
+        }
+
         log::trace!("batch: Acquiring shard");
         let mut shard = self.keyspace.journal.get_writer();
 
@@ -87,6 +95,13 @@ impl Batch {
                 let Some(partition) = partitions.get(&item.partition) else {
                     continue;
                 };
+
+                if partition
+                    .is_deleted
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    return Err(crate::Error::PartitionDeleted);
+                }
 
                 lock_map.insert(
                     item.partition.clone(),

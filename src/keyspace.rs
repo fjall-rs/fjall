@@ -347,8 +347,6 @@ impl Keyspace {
             .expect("lock is poisoned")
             .remove(&handle.name);
 
-        std::fs::remove_dir_all(partition_path)?;
-
         Ok(())
     }
 

@@ -1,5 +1,7 @@
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
-use crate::{Config, Keyspace, PartitionCreateOptions, PersistMode, TxPartitionHandle};
+use crate::{
+    batch::PartitionKey, Config, Keyspace, PartitionCreateOptions, PersistMode, TxPartitionHandle,
+};
 use std::sync::{Arc, Mutex};
 
 /// Transaction keyspace
@@ -96,6 +98,7 @@ impl TxKeyspace {
     }
 
     /// Returns `true` if the partition with the given name exists.
+    #[must_use]
     pub fn partition_exists(&self, name: &str) -> bool {
         self.inner.partition_exists(name)
     }
@@ -105,8 +108,8 @@ impl TxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
-        self.inner.delete_partition(handle)
+    pub fn delete_partition(&self, handle: TxPartitionHandle) -> crate::Result<()> {
+        self.inner.delete_partition(handle.inner)
     }
 
     /// Returns the current write buffer size (active + sealed memtables).
@@ -116,11 +119,13 @@ impl TxKeyspace {
     }
 
     /// Returns the amount of journals on disk.
+    #[must_use]
     pub fn journal_count(&self) -> usize {
         self.inner.journal_count()
     }
 
     /// Returns the disk space usage of the entire keyspace.
+    #[must_use]
     pub fn disk_space(&self) -> u64 {
         self.inner.disk_space()
     }
