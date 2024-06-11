@@ -83,6 +83,48 @@ impl TxKeyspace {
         })
     }
 
+    /// Returns the amount of partitions
+    #[must_use]
+    pub fn partition_count(&self) -> usize {
+        self.inner.partition_count()
+    }
+
+    /// Gets a list of all partition names in the keyspace
+    #[must_use]
+    pub fn list_partitions(&self) -> Vec<PartitionKey> {
+        self.inner.list_partitions()
+    }
+
+    /// Returns `true` if the partition with the given name exists.
+    pub fn partition_exists(&self, name: &str) -> bool {
+        self.inner.partition_exists(name)
+    }
+
+    /// Destroys the partition, removing all data associated with it.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
+        self.inner.delete_partition(handle)
+    }
+
+    /// Returns the current write buffer size (active + sealed memtables).
+    #[must_use]
+    pub fn write_buffer_size(&self) -> u64 {
+        self.inner.write_buffer_size()
+    }
+
+    /// Returns the amount of journals on disk.
+    pub fn journal_count(&self) -> usize {
+        self.inner.journal_count()
+    }
+
+    /// Returns the disk space usage of the entire keyspace.
+    pub fn disk_space(&self) -> u64 {
+        self.inner.disk_space()
+    }
+
     /// Opens a keyspace in the given directory.
     ///
     /// # Errors
