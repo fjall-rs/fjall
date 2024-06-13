@@ -183,6 +183,15 @@ impl Keyspace {
             .journal_count()
     }
 
+    /// Returns the disk space usage of the journal.
+    #[doc(hidden)]
+    pub fn journal_disk_space(&self) -> u64 {
+        self.journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used()
+    }
+
     /// Returns the disk space usage of the entire keyspace.
     ///
     /// # Examples
@@ -198,12 +207,6 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     pub fn disk_space(&self) -> u64 {
-        let journal_size = self
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used();
-
         let partitions_size = self
             .partitions
             .read()
@@ -212,7 +215,7 @@ impl Keyspace {
             .map(PartitionHandle::disk_space)
             .sum::<u64>();
 
-        journal_size + partitions_size
+        self.journal_disk_space() + partitions_size
     }
 
     /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
