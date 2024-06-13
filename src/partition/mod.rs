@@ -568,7 +568,6 @@ impl PartitionHandle {
             },
         );
 
-        journal_manager.disk_space_used();
         drop(journal_manager);
         drop(flush_manager);
         drop(journal);
