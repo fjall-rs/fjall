@@ -5,9 +5,16 @@ use crate::{
     journal::Journal,
     PartitionHandle,
 };
-use lsm_tree::{AbstractTree, SeqNo};
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+use lsm_tree::{AbstractTree, MemTable, SeqNo};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, RwLockWriteGuard},
+};
 
+#[derive(Clone)]
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
     pub(crate) lsn: SeqNo,
@@ -59,7 +66,7 @@ impl JournalManager {
     }
 
     pub(crate) fn enqueue(&mut self, item: Item) {
-        self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_add(item.size_in_bytes);
+        self.disk_space_in_bytes += item.size_in_bytes;
         self.items.push(item);
     }
 
@@ -79,26 +86,44 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
-    /// Enqueues partitions to be flushed so that the oldest journal can be safely evicted
-    pub(crate) fn get_partitions_to_flush_for_oldest_journal_eviction(
+    /// Rotates & lists partitions to be flushed so that the oldest journal can be safely evicted
+    pub(crate) fn rotate_partitions_to_flush_for_oldest_journal_eviction(
         &self,
-    ) -> Vec<PartitionHandle> {
-        let mut items = vec![];
+    ) -> HashMap<PartitionKey, (PartitionHandle, PartitionSeqNo, u64, Arc<MemTable>)> {
+        let mut map = HashMap::new();
 
         if let Some(item) = self.items.first() {
             for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
-                    items.push(item.partition.clone());
-                    continue;
-                };
+                let highest_persisted_seqno = item.partition.tree.get_segment_lsn();
 
-                if partition_seqno < item.lsn {
-                    items.push(item.partition.clone());
+                if highest_persisted_seqno.is_none()
+                    || highest_persisted_seqno.expect("unwrap") < item.lsn
+                {
+                    // log::info!("rotateyyyy {}", item.partition.name);
+
+                    if let Some((yanked_id, yanked_memtable)) =
+                        item.partition.tree.rotate_memtable()
+                    {
+                        map.insert(
+                            item.partition.name.clone(),
+                            (
+                                item.partition.clone(),
+                                PartitionSeqNo {
+                                    partition: item.partition.clone(),
+                                    lsn: yanked_memtable
+                                        .get_lsn()
+                                        .expect("memtable should not be empty"),
+                                },
+                                yanked_id,
+                                yanked_memtable,
+                            ),
+                        );
+                    }
                 }
             }
         }
 
-        items
+        map
     }
 
     /// Performs maintenance, maybe deleting some old journals
