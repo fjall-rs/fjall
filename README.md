@@ -119,6 +119,18 @@ Uses bloom filters to reduce disk I/O when serving point reads, but increases me
 
 *Enabled by default.*
 
+### lz4
+
+Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
+
+*Enabled by default.*
+
+### miniz
+
+Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://github.com/Frommi/miniz_oxide).
+
+*Disabled by default.*
+
 ### single_writer_tx
 
 Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.

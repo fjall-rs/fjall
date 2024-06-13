@@ -66,7 +66,7 @@ pub fn recover_partitions(
 
         let partition_inner = PartitionHandleInner {
             max_memtable_size: (8 * 1_024 * 1_024).into(),
-            compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Levelled::default())),
+            compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Leveled::default())),
             name: partition_name.into(),
             tree,
             partitions: keyspace.partitions.clone(),

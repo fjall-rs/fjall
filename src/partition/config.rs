@@ -1,15 +1,11 @@
-use lsm_tree::TreeType;
+use lsm_tree::{CompressionType, TreeType};
 
 /// Options to configure a partition
 pub struct CreateOptions {
     /// Block size of data and index blocks
-    ///
-    /// Once set for a partition, this property is not considered in the future.
     pub(crate) block_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree)
-    ///
-    /// Once set for a partition, this property is not considered in the future.
     pub(crate) level_count: u8,
 
     /// Size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
@@ -21,9 +17,9 @@ pub struct CreateOptions {
     pub(crate) level_ratio: u8,
 
     /// Tree type, see [`TreeType`].
-    ///
-    /// Once set for a partition, this property is not considered in the future.
     pub(crate) tree_type: TreeType,
+
+    pub(crate) compression: CompressionType,
 }
 
 impl Default for CreateOptions {
@@ -33,14 +29,36 @@ impl Default for CreateOptions {
         Self {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
-            level_ratio: default_tree_config.level_ratio,
+            level_ratio: default_tree_config.inner.level_ratio,
             tree_type: TreeType::Standard,
+
+            #[cfg(feature = "lz4")]
+            compression: CompressionType::Lz4,
+
+            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
+            compression: CompressionType::Miniz,
+
+            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            compression: CompressionType::None,
         }
     }
 }
 
 impl CreateOptions {
+    /// Sets the compression method.
+    ///
+    /// Once set for a partition, this property is not considered in the future.
+    ///
+    /// Default = In order: Lz4 -> Miniz -> None, depending on compilation flags
+    #[must_use]
+    pub fn compression(mut self, compression: CompressionType) -> Self {
+        self.compression = compression;
+        self
+    }
+
     /// Sets the block size.
+    ///
+    /// Once set for a partition, this property is not considered in the future.
     ///
     /// Default = 4 KiB
     ///
@@ -57,6 +75,8 @@ impl CreateOptions {
 
     /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
     ///
+    /// Once set for a partition, this property is not considered in the future.
+    ///
     /// Default = 8
     ///
     /// # Panics
@@ -71,6 +91,8 @@ impl CreateOptions {
     }
 
     /// Sets the level count (depth of the tree).
+    ///
+    /// Once set for a partition, this property is not considered in the future.
     ///
     /// Default = 7
     ///
@@ -88,6 +110,8 @@ impl CreateOptions {
     /// Enables key-value separation for this partition.
     ///
     /// Once set for a partition, this property is not considered in the future.
+    ///
+    /// Default = false
     #[must_use]
     pub fn use_kv_separation(mut self) -> Self {
         self.tree_type = TreeType::Blob;

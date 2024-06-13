@@ -60,9 +60,9 @@ pub struct PartitionHandleInner {
 impl Drop for PartitionHandleInner {
     fn drop(&mut self) {
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            let path = self.tree.config.path.clone();
+            let path = self.tree.tree_config().path.as_path();
 
-            if let Err(e) = std::fs::remove_dir_all(&path) {
+            if let Err(e) = std::fs::remove_dir_all(path) {
                 log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
             }
         }
@@ -142,7 +142,8 @@ impl PartitionHandle {
             .block_cache(keyspace.config.block_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
-            .level_ratio(config.level_ratio);
+            .level_ratio(config.level_ratio)
+            .compression(config.compression);
 
         let tree = match config.tree_type {
             lsm_tree::TreeType::Standard => AnyTree::Standard(base_config.open()?),

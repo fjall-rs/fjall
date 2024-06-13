@@ -16,7 +16,7 @@ impl TransactionalPartitionHandle {
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
-        self.inner.path()
+        self.inner.path().into()
     }
 
     /// Removes an item and returns its value if it existed.

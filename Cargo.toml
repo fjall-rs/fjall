@@ -19,9 +19,11 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["bloom", "single_writer_tx", "lsm-tree/kv_sep", "lsm-tree/lz4"]
-single_writer_tx = []
+default = ["bloom", "single_writer_tx", "lz4"]
+lz4 = ["lsm-tree/lz4"]
+miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
+single_writer_tx = []
 
 [dependencies]
 byteorder = "1.5.0"
