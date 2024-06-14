@@ -33,91 +33,141 @@ impl Monitor {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
-    pub fn run(&self) -> bool {
-        let mut idle = true;
+    fn try_reduce_journal_size(&self) {
+        log::debug!(
+            "monitor: try flushing affected partitions because journals have passed 50% of threshold"
+        );
+        let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
-        let journal_manager = self.journal_manager.read().expect("lock is poisoned");
-        let size = journal_manager.disk_space_used();
+        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
 
-        if size as f64 > (self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.5) {
-            idle = false;
+        let seqno_map = journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
 
+        if seqno_map.is_empty() {
+            self.flush_semaphore.release();
+
+            if let Err(e) = journal_manager.maintenance() {
+                log::error!("journal GC failed: {e:?}");
+            };
+        } else {
             log::debug!(
-                "monitor: try flushing affected partitions because journals have passed 50% of threshold"
+                "monitor: need to flush {} partitions to evict oldest journal",
+                seqno_map.len()
             );
 
-            drop(journal_manager);
-            let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
+            let partitions_names_with_queued_tasks = self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .get_partitions_with_tasks();
 
-            let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+            let actual_seqno_map = seqno_map
+                .iter()
+                .map(|(_, seqno, _, _)| seqno)
+                .cloned()
+                .collect::<Vec<_>>();
 
-            let seqno_map =
-                journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
+            #[allow(clippy::collapsible_if)]
+            if actual_seqno_map
+                .iter()
+                .any(|x| !partitions_names_with_queued_tasks.contains(&x.partition.name))
+            {
+                if journal_manager
+                    .rotate_journal(&mut journal, actual_seqno_map)
+                    .is_ok()
+                {
+                    let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
 
-            if seqno_map.is_empty() {
+                    for (partition, _, yanked_id, yanked_memtable) in seqno_map {
+                        flush_manager.enqueue_task(
+                            partition.name.clone(),
+                            FlushTask {
+                                id: yanked_id,
+                                partition,
+                                sealed_memtable: yanked_memtable,
+                            },
+                        );
+                    }
+
+                    self.flush_semaphore.release();
+
+                    drop(journal_manager);
+                    drop(flush_manager);
+                    drop(journal);
+                }
+            } else {
                 self.flush_semaphore.release();
 
                 if let Err(e) = journal_manager.maintenance() {
                     log::error!("journal GC failed: {e:?}");
-                };
-            } else {
-                log::debug!(
-                    "monitor: need to flush {} partitions to evict oldest journal",
-                    seqno_map.len()
-                );
-
-                let partitions_names_with_queued_tasks = self
-                    .flush_manager
-                    .read()
-                    .expect("lock is poisoned")
-                    .get_partitions_with_tasks();
-
-                let actual_seqno_map = seqno_map
-                    .iter()
-                    .map(|(_, seqno, _, _)| seqno)
-                    .cloned()
-                    .collect::<Vec<_>>();
-
-                #[allow(clippy::collapsible_if)]
-                if actual_seqno_map
-                    .iter()
-                    .any(|x| !partitions_names_with_queued_tasks.contains(&x.partition.name))
-                {
-                    if journal_manager
-                        .rotate_journal(&mut journal, actual_seqno_map)
-                        .is_ok()
-                    {
-                        let mut flush_manager =
-                            self.flush_manager.write().expect("lock is poisoned");
-
-                        for (partition, _, yanked_id, yanked_memtable) in seqno_map {
-                            flush_manager.enqueue_task(
-                                partition.name.clone(),
-                                FlushTask {
-                                    id: yanked_id,
-                                    partition,
-                                    sealed_memtable: yanked_memtable,
-                                },
-                            );
-                        }
-
-                        self.flush_semaphore.release();
-
-                        drop(journal_manager);
-                        drop(flush_manager);
-                        drop(journal);
-                    }
-                } /* else {
-                      self.flush_semaphore.release();
-
-                      if let Err(e) = journal_manager.maintenance() {
-                          log::error!("journal GC failed: {e:?}");
-                      };
-                  } */
+                }
             }
-        } else {
-            drop(journal_manager);
+        }
+    }
+
+    fn try_reduce_write_buffer_size(&self) {
+        log::trace!(
+            "monitor: flush inactive partition because write buffer has passed 50% of threshold"
+        );
+
+        let mut partitions = self
+            .partitions
+            .read()
+            .expect("lock is poisoned")
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        partitions.sort_by(|a, b| {
+            b.tree
+                .active_memtable_size()
+                .cmp(&a.tree.active_memtable_size())
+        });
+
+        let partitions_names_with_queued_tasks = self
+            .flush_manager
+            .read()
+            .expect("lock is poisoned")
+            .get_partitions_with_tasks();
+
+        let partitions = partitions
+            .into_iter()
+            .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+
+        for partition in partitions {
+            log::debug!("monitor: WB rotating {:?}", partition.name);
+
+            match partition.rotate_memtable() {
+                Ok(rotated) => {
+                    if rotated {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "monitor: memtable rotation failed for {:?}: {e:?}",
+                        partition.name
+                    );
+                }
+            };
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub fn run(&self) -> bool {
+        let mut idle = true;
+
+        let jm_size = self
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used();
+
+        let max_journal_size = self.keyspace_config.max_journaling_size_in_bytes;
+
+        if jm_size as f64 > (max_journal_size as f64 * 0.5) {
+            self.try_reduce_journal_size();
+            idle = false;
         }
 
         let write_buffer_size = self.write_buffer_manager.get();
@@ -143,66 +193,18 @@ impl Monitor {
             }
         }
 
-        if self
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used()
-            < self.keyspace_config.max_journaling_size_in_bytes
-        {
+        // NOTE: We cannot flush more stuff if the journal is aleady too large
+        if jm_size < max_journal_size {
+            let max_write_buffer_size = self.keyspace_config.max_write_buffer_size_in_bytes;
+
             // NOTE: Take the queued size of unflushed memtables into account
             // so the system isn't performing a flush storm once the threshold is reached
             //
             // Also, As a fail safe, use saturating_sub so it doesn't overflow
             let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
 
-            if buffer_size_without_queued_size as f64
-                > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
-            {
-                log::trace!("monitor: flush inactive partition because write buffer has passed 50% of threshold");
-
-                let mut partitions = self
-                    .partitions
-                    .read()
-                    .expect("lock is poisoned")
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>();
-
-                partitions.sort_by(|a, b| {
-                    b.tree
-                        .active_memtable_size()
-                        .cmp(&a.tree.active_memtable_size())
-                });
-
-                let partitions_names_with_queued_tasks = self
-                    .flush_manager
-                    .read()
-                    .expect("lock is poisoned")
-                    .get_partitions_with_tasks();
-
-                let partitions = partitions
-                    .into_iter()
-                    .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
-
-                for partition in partitions {
-                    log::debug!("monitor: WB rotating {:?}", partition.name);
-
-                    match partition.rotate_memtable() {
-                        Ok(rotated) => {
-                            if rotated {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "monitor: memtable rotation failed for {:?}: {e:?}",
-                                partition.name
-                            );
-                        }
-                    };
-                }
-
+            if buffer_size_without_queued_size as f64 > (max_write_buffer_size as f64 * 0.5) {
+                self.try_reduce_write_buffer_size();
                 idle = false;
             }
         } else {

@@ -49,10 +49,19 @@ impl Default for Config {
             // Should never be 0
             .max(1);
 
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let max_open_files = 900;
+
+        #[cfg(target_os = "windows")]
+        let max_open_files = 400;
+
+        #[cfg(target_os = "macos")]
+        let max_open_files = 150;
+
         Self {
             path: absolute_path (".fjall_data"),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
-            descriptor_table: Arc::new(FileDescriptorTable::new(960, 2)),
+            descriptor_table: Arc::new(FileDescriptorTable::new(max_open_files, 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
