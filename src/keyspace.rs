@@ -192,6 +192,12 @@ impl Keyspace {
             .disk_space_used()
     }
 
+    /// Returns approximate memory usage.
+    pub fn memory_usage(&self) -> u64 {
+        self.0.config.block_cache.size() + self.write_buffer_size()
+        // TODO: 2.0.0 + blob cache
+    }
+
     /// Returns the disk space usage of the entire keyspace.
     ///
     /// # Examples
