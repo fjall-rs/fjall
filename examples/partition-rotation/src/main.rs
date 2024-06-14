@@ -6,7 +6,13 @@ const SPLITS: usize = 1_000;
 const ITEMS_PER_SPLIT: usize = 1_000;
 
 fn main() -> fjall::Result<()> {
-    let keyspace = fjall::Config::default().open()?;
+    let path = std::path::Path::new(".fjall_data");
+
+    if path.try_exists()? {
+        std::fs::remove_dir_all(path)?;
+    }
+
+    let keyspace = fjall::Config::new(path).open()?;
 
     let start = std::time::Instant::now();
 
@@ -25,14 +31,15 @@ fn main() -> fjall::Result<()> {
 
         keyspace.persist(fjall::PersistMode::SyncData)?;
 
-        // IMPORTANT: Flush memtable because partition becomes immutable
-        // This relaxes the journal GC, making everything faster
+        // NOTE: Flush memtable because partition becomes immutable
+        // This simplifies things for the journal GC, making everything a bit faster
         split.rotate_memtable()?;
 
         eprintln!(
-            "writing {ITEMS_PER_SPLIT} took {}ms, journal size: {} MiB",
+            "writing {ITEMS_PER_SPLIT} took {}ms, journal size: {} MiB - KS.memory_usage={} MiB",
             before.elapsed().as_millis(),
             keyspace.journal_disk_space() / 1_024 / 1_024,
+            keyspace.memory_usage() / 1_024 / 1_024,
         );
     }
 
