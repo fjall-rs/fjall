@@ -185,6 +185,7 @@ impl Keyspace {
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
+    #[must_use]
     pub fn journal_disk_space(&self) -> u64 {
         self.journal_manager
             .read()
@@ -193,6 +194,7 @@ impl Keyspace {
     }
 
     /// Returns approximate memory usage.
+    #[must_use]
     pub fn memory_usage(&self) -> u64 {
         self.0.config.block_cache.size() + self.write_buffer_size()
         // TODO: 2.0.0 + blob cache
