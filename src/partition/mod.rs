@@ -21,7 +21,6 @@ use lsm_tree::{
     UserValue,
 };
 use std::{
-    collections::HashMap,
     ops::RangeBounds,
     path::PathBuf,
     sync::{
@@ -505,31 +504,25 @@ impl PartitionHandle {
         let seqno_map = {
             let partitions = self.partitions.write().expect("lock is poisoned");
 
-            let mut map = HashMap::new();
+            let mut seqnos = Vec::with_capacity(partitions.len());
 
-            for (name, partition) in &*partitions {
+            for partition in partitions.values() {
                 if let Some(lsn) = partition.tree.get_memtable_lsn() {
-                    map.insert(
-                        name.clone(),
-                        PartitionSeqNo {
-                            lsn,
-                            partition: partition.clone(),
-                        },
-                    );
+                    seqnos.push(PartitionSeqNo {
+                        lsn,
+                        partition: partition.clone(),
+                    });
                 }
             }
 
-            map.insert(
-                self.name.clone(),
-                PartitionSeqNo {
-                    partition: self.clone(),
-                    lsn: yanked_memtable
-                        .get_lsn()
-                        .expect("sealed memtable is never empty"),
-                },
-            );
+            seqnos.push(PartitionSeqNo {
+                partition: self.clone(),
+                lsn: yanked_memtable
+                    .get_lsn()
+                    .expect("sealed memtable is never empty"),
+            });
 
-            map
+            seqnos
         };
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
@@ -546,7 +539,6 @@ impl PartitionHandle {
             },
         );
 
-        journal_manager.disk_space_used();
         drop(journal_manager);
         drop(flush_manager);
         drop(journal);

@@ -1,12 +1,11 @@
 use super::shard::JournalShard;
 use crate::{
-    batch::PartitionKey,
     file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
     PartitionHandle,
 };
 use lsm_tree::SeqNo;
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+use std::{fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
@@ -22,7 +21,7 @@ impl std::fmt::Debug for PartitionSeqNo {
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+    pub(crate) partition_seqnos: Vec<PartitionSeqNo>,
 }
 
 impl std::fmt::Debug for Item {
@@ -86,7 +85,7 @@ impl JournalManager {
         let mut items = vec![];
 
         if let Some(item) = self.items.first() {
-            for item in item.partition_seqnos.values() {
+            for item in &item.partition_seqnos {
                 let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
                     items.push(item.partition.clone());
                     continue;
@@ -110,7 +109,7 @@ impl JournalManager {
             };
 
             // TODO: unit test: check deleted partition does not prevent journal eviction
-            for item in item.partition_seqnos.values() {
+            for item in &item.partition_seqnos {
                 // Only check partition seqno if not deleted
                 if !item
                     .partition
@@ -149,7 +148,7 @@ impl JournalManager {
     pub(crate) fn rotate_journal(
         &mut self,
         journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
-        seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+        seqnos: Vec<PartitionSeqNo>,
     ) -> crate::Result<()> {
         let old_journal_path = self.active_path.clone();
 
@@ -157,8 +156,8 @@ impl JournalManager {
 
         let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
 
-        for (name, item) in &seqnos {
-            writeln!(file, "{name}:{}", item.lsn)?;
+        for item in &seqnos {
+            writeln!(file, "{}:{}", item.partition.name, item.lsn)?;
         }
         file.sync_all()?;
 
