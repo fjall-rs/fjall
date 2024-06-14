@@ -1,9 +1,13 @@
 use crate::{
-    config::Config as KeyspaceConfig, flush::manager::FlushManager,
-    journal::manager::JournalManager, keyspace::Partitions,
-    write_buffer_manager::WriteBufferManager, Keyspace,
+    config::Config as KeyspaceConfig,
+    flush::manager::{FlushManager, Task as FlushTask},
+    journal::{manager::JournalManager, Journal},
+    keyspace::Partitions,
+    write_buffer_manager::WriteBufferManager,
+    Keyspace,
 };
 use std::sync::{Arc, RwLock};
+use std_semaphore::Semaphore;
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
@@ -12,6 +16,8 @@ pub struct Monitor {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) partitions: Arc<RwLock<Partitions>>,
+    pub(crate) journal: Arc<Journal>,
+    pub(crate) flush_semaphore: Arc<Semaphore>,
 }
 
 impl Monitor {
@@ -22,9 +28,12 @@ impl Monitor {
             keyspace_config: keyspace.config.clone(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             partitions: keyspace.partitions.clone(),
+            journal: keyspace.journal.clone(),
+            flush_semaphore: keyspace.flush_semaphore.clone(),
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn run(&self) -> bool {
         let mut idle = true;
 
@@ -38,30 +47,74 @@ impl Monitor {
                 "monitor: try flushing affected partitions because journals have passed 50% of threshold"
             );
 
-            let partitions = journal_manager.get_partitions_to_flush_for_oldest_journal_eviction();
             drop(journal_manager);
+            let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
-            // NOTE: Don't try to flush partitions that are already enqueued in the flush manager
-            // to prevent a flush storm once the threshold is reached
-            let partition_names_with_queued_tasks = self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .get_partitions_with_tasks();
+            let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
 
-            let partitions = partitions
-                .into_iter()
-                .filter(|x| !partition_names_with_queued_tasks.contains(&x.name));
+            let seqno_map =
+                journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
 
-            for partition in partitions {
-                log::debug!("monitor: JM rotating {:?}", partition.name);
+            if seqno_map.is_empty() {
+                self.flush_semaphore.release();
 
-                if let Err(e) = partition.rotate_memtable() {
-                    log::error!(
-                        "monitor: memtable rotation failed for {:?}: {e:?}",
-                        partition.name
-                    );
+                if let Err(e) = journal_manager.maintenance() {
+                    log::error!("journal GC failed: {e:?}");
                 };
+            } else {
+                log::debug!(
+                    "monitor: need to flush {} partitions to evict oldest journal",
+                    seqno_map.len()
+                );
+
+                let partitions_names_with_queued_tasks = self
+                    .flush_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .get_partitions_with_tasks();
+
+                let actual_seqno_map = seqno_map
+                    .iter()
+                    .map(|(_, seqno, _, _)| seqno)
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                #[allow(clippy::collapsible_if)]
+                if actual_seqno_map
+                    .iter()
+                    .any(|x| !partitions_names_with_queued_tasks.contains(&x.partition.name))
+                {
+                    if journal_manager
+                        .rotate_journal(&mut journal, actual_seqno_map)
+                        .is_ok()
+                    {
+                        let mut flush_manager =
+                            self.flush_manager.write().expect("lock is poisoned");
+
+                        for (partition, _, yanked_id, yanked_memtable) in seqno_map {
+                            flush_manager.enqueue_task(
+                                partition.name.clone(),
+                                FlushTask {
+                                    id: yanked_id,
+                                    partition,
+                                    sealed_memtable: yanked_memtable,
+                                },
+                            );
+                        }
+
+                        self.flush_semaphore.release();
+
+                        drop(journal_manager);
+                        drop(flush_manager);
+                        drop(journal);
+                    }
+                } /* else {
+                      self.flush_semaphore.release();
+
+                      if let Err(e) = journal_manager.maintenance() {
+                          log::error!("journal GC failed: {e:?}");
+                      };
+                  } */
             }
         } else {
             drop(journal_manager);
@@ -90,60 +143,70 @@ impl Monitor {
             }
         }
 
-        // NOTE: Take the queued size of unflushed memtables into account
-        // so the system isn't performing a flush storm once the threshold is reached
-        //
-        // Also, As a fail safe, use saturating_sub so it doesn't overflow
-        let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
-
-        if buffer_size_without_queued_size as f64
-            > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
+        if self
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used()
+            < self.keyspace_config.max_journaling_size_in_bytes
         {
-            log::trace!("monitor: flush inactive partition because write buffer has passed 50% of threshold");
+            // NOTE: Take the queued size of unflushed memtables into account
+            // so the system isn't performing a flush storm once the threshold is reached
+            //
+            // Also, As a fail safe, use saturating_sub so it doesn't overflow
+            let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
 
-            let mut partitions = self
-                .partitions
-                .read()
-                .expect("lock is poisoned")
-                .values()
-                .cloned()
-                .collect::<Vec<_>>();
+            if buffer_size_without_queued_size as f64
+                > (self.keyspace_config.max_write_buffer_size_in_bytes as f64 * 0.5)
+            {
+                log::trace!("monitor: flush inactive partition because write buffer has passed 50% of threshold");
 
-            partitions.sort_by(|a, b| {
-                b.tree
-                    .active_memtable_size()
-                    .cmp(&a.tree.active_memtable_size())
-            });
+                let mut partitions = self
+                    .partitions
+                    .read()
+                    .expect("lock is poisoned")
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
 
-            let partitions_names_with_queued_tasks = self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .get_partitions_with_tasks();
+                partitions.sort_by(|a, b| {
+                    b.tree
+                        .active_memtable_size()
+                        .cmp(&a.tree.active_memtable_size())
+                });
 
-            let partitions = partitions
-                .into_iter()
-                .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+                let partitions_names_with_queued_tasks = self
+                    .flush_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .get_partitions_with_tasks();
 
-            for partition in partitions {
-                log::debug!("monitor: WB rotating {:?}", partition.name);
+                let partitions = partitions
+                    .into_iter()
+                    .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
 
-                match partition.rotate_memtable() {
-                    Ok(rotated) => {
-                        if rotated {
-                            break;
+                for partition in partitions {
+                    log::debug!("monitor: WB rotating {:?}", partition.name);
+
+                    match partition.rotate_memtable() {
+                        Ok(rotated) => {
+                            if rotated {
+                                break;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "monitor: memtable rotation failed for {:?}: {e:?}",
-                            partition.name
-                        );
-                    }
-                };
-            }
+                        Err(e) => {
+                            log::error!(
+                                "monitor: memtable rotation failed for {:?}: {e:?}",
+                                partition.name
+                            );
+                        }
+                    };
+                }
 
-            idle = false;
+                idle = false;
+            }
+        } else {
+            log::debug!("cannot rotate memtable to free write buffer - journal too large");
         }
 
         idle
