@@ -484,6 +484,22 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
+    /// Used in tests
+    #[doc(hidden)]
+    pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
+        if self.rotate_memtable()? {
+            while !self
+                .flush_manager
+                .read()
+                .expect("lock is poisoned")
+                .is_empty()
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        Ok(())
+    }
+
     /// Returns `true` if the memtable was indeed rotated.
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
