@@ -2,14 +2,14 @@ use crate::{
     batch::{item::Item, PartitionKey},
     Batch, Instant, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, KvPair, MemTable, SeqNo, Value};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo};
 use std::{
     collections::HashMap,
     ops::{Deref, RangeBounds},
     sync::{Arc, MutexGuard},
 };
 
-fn ignore_tombstone_value(item: Value) -> Option<Value> {
+fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
     if item.is_tombstone() {
         None
     } else {
@@ -396,7 +396,7 @@ impl<'a> WriteTransaction<'a> {
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
-            .insert(lsm_tree::Value::new(
+            .insert(lsm_tree::InternalValue::from_components(
                 key.as_ref(),
                 value.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
@@ -444,7 +444,7 @@ impl<'a> WriteTransaction<'a> {
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
-            .insert(lsm_tree::Value::new_tombstone(
+            .insert(lsm_tree::InternalValue::new_tombstone(
                 key.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest

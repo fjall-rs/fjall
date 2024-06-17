@@ -155,12 +155,12 @@ impl JournalShard {
 
                         let memtable = memtables.entry(item.partition).or_default();
 
-                        let value = lsm_tree::Value {
-                            key: item.key,
-                            value: item.value,
-                            seqno: batch_seqno,
-                            value_type: item.value_type,
-                        };
+                        let value = lsm_tree::InternalValue::from_components(
+                            item.key,
+                            item.value,
+                            batch_seqno,
+                            item.value_type,
+                        );
 
                         memtable.insert(value);
                     }

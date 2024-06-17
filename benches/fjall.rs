@@ -1,9 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
-use lsm_tree::segment::{
-    block::header::Header as BlockHeader, meta::CompressionType, value_block::ValueBlock,
+use lsm_tree::{
+    segment::{
+        block::header::Header as BlockHeader, meta::CompressionType, value_block::ValueBlock,
+    },
+    InternalValue,
 };
-use lsm_tree::Value;
 use rand::Rng;
 use std::sync::Arc;
 
@@ -12,7 +14,7 @@ fn block_cache_insert(c: &mut Criterion) {
 
     let items = (0..100)
         .map(|_| {
-            Value::new(
+            InternalValue::from_components(
                 "a".repeat(16).as_bytes(),
                 "a".repeat(100).as_bytes(),
                 63,
@@ -46,7 +48,7 @@ fn block_cache_get(c: &mut Criterion) {
 
     let items = (0..100)
         .map(|_| {
-            Value::new(
+            InternalValue::from_components(
                 "a".repeat(16).as_bytes(),
                 "a".repeat(100).as_bytes(),
                 63,
