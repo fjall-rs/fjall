@@ -8,7 +8,7 @@ use std::sync::Arc;
 /// which allows processing N tasks even if there is just
 /// one partition.
 ///
-/// This is only really works because there is one flush thread
+/// This only really works because there is one flush thread
 /// that spawns flush workers for each partition it collects tasks for.
 #[derive(Default, Debug)]
 #[allow(clippy::module_name_repetitions)]
