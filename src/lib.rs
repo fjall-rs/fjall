@@ -143,4 +143,6 @@ pub type Instant = lsm_tree::SeqNo;
 /// Re-export of [`lsm_tree::Error`]
 pub type LsmError = lsm_tree::Error;
 
-pub use lsm_tree::{AnyTree, BlockCache, KvPair, Snapshot, TreeType, UserKey, UserValue};
+pub use lsm_tree::{
+    AnyTree, BlockCache, CompressionType, KvPair, Snapshot, TreeType, UserKey, UserValue,
+};

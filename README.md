@@ -10,6 +10,7 @@
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
 [![Discord](https://img.shields.io/discord/1240426554111164486)](https://discord.com/invite/HvYGp4NFFk)
+[![dependency status](https://deps.rs/repo/github/fjall-rs/fjall/status.svg)](https://deps.rs/repo/github/fjall-rs/fjall)
 
 Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
 
