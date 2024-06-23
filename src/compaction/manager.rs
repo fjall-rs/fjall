@@ -10,6 +10,12 @@ pub struct CompactionManagerInner {
     semaphore: Semaphore,
 }
 
+impl Drop for CompactionManagerInner {
+    fn drop(&mut self) {
+        log::trace!("Dropping compaction manager inner");
+    }
+}
+
 impl Default for CompactionManagerInner {
     fn default() -> Self {
         Self {

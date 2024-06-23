@@ -14,6 +14,12 @@ pub struct Monitor {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
 }
 
+impl Drop for Monitor {
+    fn drop(&mut self) {
+        log::trace!("Dropping monitor");
+    }
+}
+
 impl Monitor {
     pub fn new(keyspace: &Keyspace) -> Self {
         Self {

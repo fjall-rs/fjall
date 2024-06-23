@@ -91,7 +91,7 @@ impl Drop for KeyspaceInner {
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(1));
 
             // NOTE: Trick threads into waking up
             self.flush_semaphore.release();
@@ -99,6 +99,12 @@ impl Drop for KeyspaceInner {
         }
 
         self.config.descriptor_table.clear();
+
+        // IMPORTANT: Break cyclic Arcs
+        self.partitions.write().expect("lock is poisoned").clear();
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
@@ -263,6 +269,10 @@ impl Keyspace {
     pub fn open(config: Config) -> crate::Result<Self> {
         let keyspace = Self::create_or_recover(config)?;
         keyspace.start_background_threads();
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Ok(keyspace)
     }
 
@@ -378,6 +388,9 @@ impl Keyspace {
 
             let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
+
+            #[cfg(feature = "__internal_integration")]
+            crate::drop::increment_drop_counter();
 
             handle
         })

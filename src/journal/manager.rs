@@ -49,6 +49,12 @@ pub struct JournalManager {
     disk_space_in_bytes: u64,
 }
 
+impl Drop for JournalManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping journal manager");
+    }
+}
+
 impl JournalManager {
     pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
         Self {

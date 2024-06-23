@@ -35,6 +35,12 @@ pub struct FlushManager {
     pub(crate) queues: HashMap<PartitionKey, FlushQueue>,
 }
 
+impl Drop for FlushManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping flush manager");
+    }
+}
+
 impl FlushManager {
     /// Gets the names of partitions that have queued tasks
     pub(crate) fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
