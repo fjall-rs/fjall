@@ -38,10 +38,20 @@ pub struct FlushManager {
 impl Drop for FlushManager {
     fn drop(&mut self) {
         log::trace!("Dropping flush manager");
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
 impl FlushManager {
+    pub fn new() -> Self {
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
+        Self::default()
+    }
+
     /// Gets the names of partitions that have queued tasks
     pub(crate) fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
         self.queues
