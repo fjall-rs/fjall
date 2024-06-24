@@ -73,18 +73,9 @@ pub struct KeyspaceInner {
 
 impl Drop for KeyspaceInner {
     fn drop(&mut self) {
-        log::trace!("Dropping Keyspace, trying to flush journal");
+        log::trace!("Dropping Keyspace");
 
         self.stop_signal.send();
-
-        match self.journal.flush(PersistMode::SyncAll) {
-            Ok(()) => {
-                log::trace!("Flushed journal successfully");
-            }
-            Err(e) => {
-                log::error!("Flush error on drop: {e:?}");
-            }
-        }
 
         while self
             .active_background_threads
