@@ -22,6 +22,7 @@ path = "src/lib.rs"
 default = ["single_writer_tx"]
 single_writer_tx = []
 bloom = ["lsm-tree/bloom"]
+all = ["single_writer_tx", "bloom"]
 
 [dependencies]
 byteorder = "1.5.0"
