@@ -496,7 +496,7 @@ impl PartitionHandle {
         log::debug!("Rotating memtable {:?}", self.name);
 
         log::trace!("partition: acquiring full write lock");
-        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+        let mut journal = self.journal.full_lock();
 
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {

@@ -12,7 +12,7 @@ pub struct CompactionManagerInner {
 
 impl Drop for CompactionManagerInner {
     fn drop(&mut self) {
-        log::trace!("Dropping compaction manager inner");
+        log::trace!("Dropping compaction manager");
     }
 }
 

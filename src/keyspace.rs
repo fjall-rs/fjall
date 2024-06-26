@@ -82,7 +82,7 @@ impl Drop for KeyspaceInner {
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(std::time::Duration::from_micros(100));
 
             // NOTE: Trick threads into waking up
             self.flush_semaphore.release();
@@ -639,7 +639,7 @@ impl Keyspace {
                 }
             }
 
-            log::trace!("monitor: exiting because tree is dropping");
+            log::trace!("monitor: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
@@ -648,6 +648,9 @@ impl Keyspace {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
         let is_poisoned = self.is_poisoned.clone();
+        let thread_counter = self.active_background_threads.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::spawn(move || {
             while !stop_signal.is_stopped() {
@@ -664,7 +667,9 @@ impl Keyspace {
                 }
             }
 
-            log::trace!("fsync thread: exiting because tree is dropping");
+            log::trace!("fsync thread: exiting because keyspace is dropping");
+
+            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
 
@@ -683,7 +688,7 @@ impl Keyspace {
                 crate::compaction::worker::run(&compaction_manager);
             }
 
-            log::trace!("compaction thread: exiting because tree is dropping");
+            log::trace!("compaction thread: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
@@ -732,7 +737,7 @@ impl Keyspace {
                 );
             }
 
-            log::trace!("flush worker: exiting because tree is dropping");
+            log::trace!("flush worker: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
