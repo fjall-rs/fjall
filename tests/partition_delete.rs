@@ -69,6 +69,7 @@ fn partition_delete() -> fjall::Result<()> {
 }
 
 #[test]
+#[cfg(feature = "single_writer_tx")]
 fn tx_partition_delete() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
