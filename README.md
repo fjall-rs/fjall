@@ -17,7 +17,6 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
-- Cross-partition snapshots (MVCC)
 - Automatic background maintenance
 - Single-writer transactions (optional)
 - Key-value separation for large blob use cases (optional)
