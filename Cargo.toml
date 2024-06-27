@@ -24,6 +24,7 @@ lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
+all = ["single_writer_tx", "bloom", "lz4", "miniz"]
 
 [dependencies]
 byteorder = "1.5.0"
