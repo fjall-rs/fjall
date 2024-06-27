@@ -2,10 +2,10 @@ use lsm_tree::{CompressionType, TreeType};
 
 /// Options to configure a partition
 pub struct CreateOptions {
-    /// Block size of data and index blocks
+    /// Block size of data and index blocks.
     pub(crate) block_size: u32,
 
-    /// Amount of levels of the LSM tree (depth of tree)
+    /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
     /// Size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
@@ -19,6 +19,7 @@ pub struct CreateOptions {
     /// Tree type, see [`TreeType`].
     pub(crate) tree_type: TreeType,
 
+    /// Compression to use.
     pub(crate) compression: CompressionType,
 }
 
@@ -109,9 +110,16 @@ impl CreateOptions {
 
     /// Enables key-value separation for this partition.
     ///
+    /// Key-value separation is intended for large value scenarios (1 KiB+ per KV).
+    /// Large values will be separated into a log-structured value log, which heavily
+    /// decreases compaction overhead at the cost of slightly higher read latency
+    /// and higher temporary space usage.
+    /// Also, garbage collection for deleted or outdated values becomes lazy, so
+    /// GC needs to be triggered *manually*.
+    ///
     /// Once set for a partition, this property is not considered in the future.
     ///
-    /// Default = false
+    /// Default = disabled
     #[must_use]
     pub fn use_kv_separation(mut self) -> Self {
         self.tree_type = TreeType::Blob;
