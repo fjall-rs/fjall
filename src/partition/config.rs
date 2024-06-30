@@ -37,7 +37,7 @@ impl Default for CreateOptions {
             compression: CompressionType::Lz4,
 
             #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            compression: CompressionType::Miniz,
+            compression: CompressionType::Miniz(6),
 
             #[cfg(not(any(feature = "lz4", feature = "miniz")))]
             compression: CompressionType::None,
