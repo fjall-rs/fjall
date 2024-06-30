@@ -13,7 +13,7 @@ use crate::{
     recovery::{recover_partitions, recover_sealed_memtables},
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    PartitionCreateOptions, PartitionHandle,
+    Error, PartitionCreateOptions, PartitionHandle,
 };
 use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{
@@ -372,7 +372,12 @@ impl Keyspace {
         let mut partitions = self.partitions.write().expect("lock is poisoned");
 
         Ok(if let Some(partition) = partitions.get(name) {
-            partition.clone()
+            let handle = partition.clone();
+            if handle.path().join(PARTITION_DELETED_MARKER).exists() {
+                log::error!("Failed to open partition, partition is deleted.");
+                return Err(Error::PartitionDeleted);
+            }
+            handle
         } else {
             let name: PartitionKey = name.into();
 
