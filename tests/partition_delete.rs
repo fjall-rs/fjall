@@ -145,3 +145,22 @@ fn tx_partition_delete() -> fjall::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn partition_deletion_and_reopening_behavior() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let keyspace = Config::new(&folder).open()?;
+    let partition = keyspace.open_partition("default", Default::default())?;
+
+    keyspace.delete_partition(partition.clone())?;
+    assert!(keyspace
+        .open_partition("default", Default::default())
+        .is_err());
+
+    drop(partition);
+    assert!(keyspace
+        .open_partition("default", Default::default())
+        .is_ok());
+    Ok(())
+}

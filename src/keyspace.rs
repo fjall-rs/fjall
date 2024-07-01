@@ -372,13 +372,7 @@ impl Keyspace {
         let mut partitions = self.partitions.write().expect("lock is poisoned");
 
         Ok(if let Some(partition) = partitions.get(name) {
-            let handle = partition.clone();
-            /// throw error if [PARTITION_DELETED_MARKER] exists with a existing partition
-            if handle.path().join(PARTITION_DELETED_MARKER).exists() {
-                log::error!("Failed to open partition, partition is deleted.");
-                return Err(Error::PartitionDeleted);
-            }
-            handle
+            partition.clone()
         } else {
             let name: PartitionKey = name.into();
 
