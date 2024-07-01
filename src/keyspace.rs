@@ -13,7 +13,7 @@ use crate::{
     recovery::{recover_partitions, recover_sealed_memtables},
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    Error, PartitionCreateOptions, PartitionHandle,
+    PartitionCreateOptions, PartitionHandle,
 };
 use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{

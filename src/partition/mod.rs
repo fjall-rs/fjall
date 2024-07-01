@@ -134,7 +134,6 @@ impl PartitionHandle {
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
 
-        /// throw error if [PARTITION_DELETED_MARKER] exists with an existing partition
         if path.join(PARTITION_DELETED_MARKER).exists() {
             log::error!("Failed to open partition, partition is deleted.");
             return Err(Error::PartitionDeleted);
