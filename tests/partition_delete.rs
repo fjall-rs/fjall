@@ -154,13 +154,11 @@ fn partition_deletion_and_reopening_behavior() -> fjall::Result<()> {
     let partition = keyspace.open_partition("default", Default::default())?;
 
     keyspace.delete_partition(partition.clone())?;
-    assert!(keyspace
-        .open_partition("default", Default::default())
-        .is_err());
+
+    assert!(matches!(keyspace.open_partition("default", Default::default()), fjall::Error::PartitionDeleted));
 
     drop(partition);
-    assert!(keyspace
-        .open_partition("default", Default::default())
-        .is_ok());
+    assert!(keyspace.open_partition("default", Default::default()).is_ok());
+    
     Ok(())
 }
