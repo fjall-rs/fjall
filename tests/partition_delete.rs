@@ -155,10 +155,18 @@ fn partition_deletion_and_reopening_behavior() -> fjall::Result<()> {
 
     keyspace.delete_partition(partition.clone())?;
 
-    assert!(matches!(keyspace.open_partition("default", Default::default()), fjall::Error::PartitionDeleted));
+    // NOTE: Partition is marked as deleted but still referenced, so it's not cleaned up
+    assert!(matches!(
+        keyspace.open_partition("default", Default::default()),
+        fjall::Error::PartitionDeleted
+    ));
 
+    // NOTE: Remove last handle, will drop partition folder, allowing us to recreate again
     drop(partition);
-    assert!(keyspace.open_partition("default", Default::default()).is_ok());
+    
+    assert!(keyspace
+        .open_partition("default", Default::default())
+        .is_ok());
     
     Ok(())
 }
