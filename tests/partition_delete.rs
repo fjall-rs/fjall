@@ -158,7 +158,7 @@ fn partition_deletion_and_reopening_behavior() -> fjall::Result<()> {
     // NOTE: Partition is marked as deleted but still referenced, so it's not cleaned up
     assert!(matches!(
         keyspace.open_partition("default", Default::default()),
-        fjall::Error::PartitionDeleted
+        Err(fjall::Error::PartitionDeleted)
     ));
 
     // NOTE: Remove last handle, will drop partition folder, allowing us to recreate again
