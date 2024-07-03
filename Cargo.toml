@@ -26,6 +26,9 @@ bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
 all = ["single_writer_tx", "bloom", "lz4", "miniz"]
 
+[package.metadata.cargo-all-features]
+denylist = ["all"]
+
 [dependencies]
 byteorder = "1.5.0"
 crc32fast = "1.4.2"
