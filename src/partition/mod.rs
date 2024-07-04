@@ -33,34 +33,64 @@ use std_semaphore::Semaphore;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
+    // Internal
+    //
     /// Partition name
     pub name: PartitionKey,
 
-    pub(crate) keyspace_config: KeyspaceConfig,
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) flush_semaphore: Arc<Semaphore>,
-    pub(crate) journal: Arc<Journal>,
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
-    pub(crate) compaction_manager: CompactionManager,
-    pub(crate) seqno: SequenceNumberCounter,
-    pub(crate) write_buffer_manager: WriteBufferManager,
+    /// If `true`, the partition is marked as deleted
     pub(crate) is_deleted: AtomicBool,
+
+    /// If `true`, fsync failed during persisting, see `Error::Poisoned`
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
+    /// LSM-tree wrapper
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    /// Maximum size of this partition's memtable
+    // Keyspace stuff
+    //
+    /// Config of keyspace
+    pub(crate) keyspace_config: KeyspaceConfig,
+
+    /// Flush manager of keyspace
+    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+
+    /// Journal manager of keyspace
+    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+
+    /// Compaction manager of keyspace
+    pub(crate) compaction_manager: CompactionManager,
+
+    /// Write buffer manager of keyspace
+    pub(crate) write_buffer_manager: WriteBufferManager,
+
+    // TODO: notifying flush worker should probably become a method in FlushManager
+    /// Flush semaphore of keyspace
+    pub(crate) flush_semaphore: Arc<Semaphore>,
+
+    /// Journal of keyspace
+    pub(crate) journal: Arc<Journal>,
+
+    /// Partition map of keyspace
+    pub(crate) partitions: Arc<RwLock<Partitions>>,
+
+    /// Sequence number generator of keyspace
+    pub(crate) seqno: SequenceNumberCounter,
+
+    // Configuration
+    //
+    /// Maximum size of this partition's memtable - can be changed during runtime
     pub(crate) max_memtable_size: AtomicU32,
 
+    /// Chosen compaction strategy - can be changed during runtime
     pub(crate) compaction_strategy: RwLock<Arc<dyn CompactionStrategy + Send + Sync>>,
 }
 
 impl Drop for PartitionHandleInner {
     fn drop(&mut self) {
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            let path = self.tree.tree_config().path.as_path();
+            let path = &self.tree.tree_config().path;
 
             if let Err(e) = std::fs::remove_dir_all(path) {
                 log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
@@ -106,7 +136,7 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    /// Sets the compaction strategy
+    /// Sets the compaction strategy.
     ///
     /// Default = Leveled
     pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
@@ -114,9 +144,15 @@ impl PartitionHandle {
         *lock = strategy;
     }
 
-    /// Sets the maximum memtable size
+    /// Sets the maximum memtable size.
     ///
     /// Default = 8 MiB
+    ///
+    /// Recommended size 8 - 64 MiB, depending on how much memory
+    /// is available.
+    /// Note that the memory usage may temporarily be `max_memtable_size * flush_worker_count`
+    /// because of parallel flushing.
+    /// Use the keyspace's `max_write_buffer_size` to cap global memory usage.
     pub fn set_max_memtable_size(&self, bytes: u32) {
         use std::sync::atomic::Ordering::Release;
 
@@ -127,7 +163,7 @@ impl PartitionHandle {
         self.max_memtable_size.store(bytes, Release);
     }
 
-    /// Creates a new partition
+    /// Creates a new partition.
     pub(crate) fn create_new(
         keyspace: &Keyspace,
         name: PartitionKey,
@@ -169,13 +205,13 @@ impl PartitionHandle {
         })))
     }
 
-    /// Returns the underlying LSM-tree's path
+    /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> &Path {
         self.tree.tree_config().path.as_path()
     }
 
-    /// Returns the disk space usage of this partition
+    /// Returns the disk space usage of this partition.
     ///
     /// # Examples
     ///
@@ -491,7 +527,7 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
-    /// Used in tests
+    // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         if self.rotate_memtable()? {
@@ -665,13 +701,13 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /// Opens a snapshot of this partition
+    /// Opens a snapshot of this partition.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
-    /// Opens a snapshot of this partition with a given sequence number
+    /// Opens a snapshot of this partition with a given sequence number.
     #[must_use]
     pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
         self.tree.snapshot(seqno)
