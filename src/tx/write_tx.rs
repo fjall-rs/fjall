@@ -2,7 +2,7 @@ use crate::{
     batch::{item::Item, PartitionKey},
     Batch, Instant, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserValue};
 use std::{
     collections::HashMap,
     ops::{Deref, RangeBounds},
@@ -39,6 +39,182 @@ impl<'a> WriteTransaction<'a> {
             instant,
             tx_lock,
         }
+    }
+
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let taken = tx.take(&partition, "a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn take<K: AsRef<[u8]>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        self.fetch_update(partition, key, |_| None)
+    }
+
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
+    /// assert!(updated.is_none());
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = &updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(updated)
+    }
+
+    /// Atomically updates an item and returns the previous value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(prev)
     }
 
     /// Retrieves an item from the transaction's state.
