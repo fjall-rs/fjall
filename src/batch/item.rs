@@ -31,6 +31,7 @@ impl std::fmt::Debug for Item {
             match self.value_type {
                 ValueType::Value => "V",
                 ValueType::Tombstone => "T",
+                ValueType::WeakTombstone => "W",
             },
             self.value
         )
