@@ -1,8 +1,8 @@
-use fjall::{Config, PartitionCreateOptions};
-use test_log::test;
-
-#[test]
+#[test_log::test]
+#[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
+    use fjall::{Config, PartitionCreateOptions};
+
     let folder = tempfile::tempdir()?;
 
     let keyspace = Config::new(&folder).open_transactional()?;

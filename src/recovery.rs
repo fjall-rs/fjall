@@ -115,7 +115,7 @@ pub fn recover_partitions(
 
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::{
-        parse as parse_partition_manifest, ParseError as PartitionManifestParseError,
+        Error as PartitionManifestParseError, PartitionManifest,
     };
 
     let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
@@ -141,7 +141,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
 
             // Only consider partitions that are registered in the journal
             let file_content = std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
-            let partitions_to_consider = match parse_partition_manifest(&file_content) {
+            let partitions_to_consider = match PartitionManifest::from_str(&file_content) {
                 Ok(v) => Ok(v),
                 Err(e) => match e {
                     PartitionManifestParseError::Io(e) => Err(crate::Error::from(e)),
