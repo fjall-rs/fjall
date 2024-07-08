@@ -139,6 +139,7 @@ And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalon
 How can you help?
 
 - [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
+  - or join the Discord server: https://discord.com/invite/HvYGp4NFFk
 - [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
 - [Open a PR](https://github.com/fjall-rs/fjall/compare)
