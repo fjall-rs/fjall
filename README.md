@@ -21,7 +21,7 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - Single-writer transactions (optional)
 - Key-value separation for large blob use cases (optional)
 
-Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single database-level journal, which will be recovered on restart.
+Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single keyspace-level journal, which will be recovered on restart.
 
 It is not:
 
@@ -152,6 +152,7 @@ And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalon
 How can you help?
 
 - [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
+  - or join the Discord server: https://discord.com/invite/HvYGp4NFFk
 - [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
 - [Open a PR](https://github.com/fjall-rs/fjall/compare)
