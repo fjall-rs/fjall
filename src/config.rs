@@ -49,6 +49,17 @@ pub struct Config {
 
 const DEFAULT_CPU_CORES: usize = 4;
 
+fn get_open_file_limit() -> usize {
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    return 900;
+
+    #[cfg(target_os = "windows")]
+    return 400;
+
+    #[cfg(target_os = "macos")]
+    return 150;
+}
+
 impl Default for Config {
     fn default() -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
@@ -61,7 +72,7 @@ impl Default for Config {
         Self {
             path: absolute_path (".fjall_data"),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
-            descriptor_table: Arc::new(FileDescriptorTable::new(960, 2)),
+            descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),

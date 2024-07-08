@@ -67,20 +67,20 @@ jobs:
       matrix:
         target:
           - aarch64-unknown-linux-gnu
-          # - aarch64-linux-android
           - aarch64-unknown-linux-musl
+          - i686-unknown-linux-gnu
+          - powerpc64-unknown-linux-gnu
+          - riscv64gc-unknown-linux-gnu
+          # - aarch64-linux-android
           # - i686-linux-android
           # - x86_64-linux-android
-          # - i686-unknown-linux-gnu
-          - powerpc64-unknown-linux-gnu
           #- mips64-unknown-linux-gnuabi64
-          - riscv64gc-unknown-linux-gnu
           #- x86_64-apple-darwin
           #- aarch64-apple-darwin
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: cross build --target ${{ matrix.target }}
+      - name: cross test
         run: |
           cargo install cross
-          cross build --target ${{ matrix.target }}
+          cross test -r --features all --target ${{ matrix.target }}
