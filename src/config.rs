@@ -60,15 +60,6 @@ impl Default for Config {
             // Should never be 0
             .max(1);
 
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        let max_open_files = 900;
-
-        #[cfg(target_os = "windows")]
-        let max_open_files = 400;
-
-        #[cfg(target_os = "macos")]
-        let max_open_files = 150;
-
         Self {
             path: absolute_path (".fjall_data"),
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
