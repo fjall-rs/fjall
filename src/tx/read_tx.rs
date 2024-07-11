@@ -268,7 +268,7 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
@@ -276,7 +276,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .create_range(range, Some(self.instant), None)
+            .create_range(&range, Some(self.instant), None)
             .map(|item| Ok(item?))
     }
 
@@ -301,7 +301,7 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'a, K: AsRef<[u8]>>(
+    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,

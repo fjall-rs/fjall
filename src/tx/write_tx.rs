@@ -5,7 +5,7 @@ use crate::{
 use lsm_tree::{MemTable, SeqNo, UserKey, UserValue, Value};
 use std::{
     collections::HashMap,
-    ops::{Deref, RangeBounds},
+    ops::RangeBounds,
     sync::{Arc, MutexGuard},
 };
 
@@ -270,13 +270,13 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
         partition
             .inner
             .tree
             .create_iter(
                 Some(self.instant),
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -305,18 +305,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
         partition
             .inner
             .tree
             .create_range(
-                range,
+                &range,
                 Some(self.instant),
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -345,18 +345,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]>>(
+    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
         partition
             .inner
             .tree
             .create_prefix(
                 prefix,
                 Some(self.instant),
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
