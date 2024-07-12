@@ -295,8 +295,7 @@ impl Keyspace {
                 .flush_manager
                 .read()
                 .expect("lock is poisoned")
-                .queues
-                .len()
+                .queue_count()
             {
                 self.flush_semaphore.release();
             }
@@ -306,6 +305,7 @@ impl Keyspace {
             "Spawning {} compaction threads",
             self.config.compaction_workers_count
         );
+
         for _ in 0..self.config.compaction_workers_count {
             self.spawn_compaction_worker();
         }
