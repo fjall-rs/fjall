@@ -233,7 +233,7 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
@@ -262,11 +262,11 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
@@ -295,11 +295,11 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'a, K: AsRef<[u8]>>(
+    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree

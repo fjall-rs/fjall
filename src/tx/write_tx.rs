@@ -5,7 +5,7 @@ use crate::{
 use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserValue};
 use std::{
     collections::HashMap,
-    ops::{Deref, RangeBounds},
+    ops::RangeBounds,
     sync::{Arc, MutexGuard},
 };
 
@@ -440,13 +440,13 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .iter_with_seqno(
                 self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -475,18 +475,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .range_with_seqno(
                 range,
                 self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -515,18 +515,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]>>(
+    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .prefix_with_seqno(
                 prefix,
                 self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }

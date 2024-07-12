@@ -255,7 +255,7 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.iter().map(|item| Ok(item?))
     }
 
@@ -282,10 +282,10 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
-        &self,
+    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
+        &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -312,10 +312,10 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(
-        &self,
+    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
+        &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
