@@ -744,11 +744,18 @@ impl Keyspace {
 mod tests {
     use super::*;
     use test_log::test;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    fn current_unix_timestamp() -> String {
+        let now = SystemTime::now();
+        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+        duration_since_epoch.as_secs().to_string()
+    }
     
     #[test]
     pub fn test_config_path_clean_on_drop() -> crate::Result<()> {
-      let keyspace = Config::new_temp().open()?;
-      let folder = keyspace.config.path.clone();
+      let folder = std::env::temp_dir().join(current_unix_timestamp());
+      let keyspace = Config::new_temp(&folder).open()?;
       
       assert!(folder.exists());
       drop(keyspace);

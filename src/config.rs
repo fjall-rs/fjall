@@ -2,17 +2,9 @@ use crate::{journal::shard::RecoveryMode, Keyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
 use path_absolutize::Absolutize;
 use std::{
-    env::temp_dir,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH}
 };
-
-fn current_unix_timestamp() -> String {
-    let now = SystemTime::now();
-    let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    duration_since_epoch.as_secs().to_string()
-}
 
 fn absolute_path<P: AsRef<Path>>(path: P) -> PathBuf {
     // TODO: replace with https://doc.rust-lang.org/std/path/fn.absolute.html once stable
@@ -105,8 +97,8 @@ impl Config {
     }
     
     /// Creates a new temp configuration which will delete the folder upon drop.
-    pub fn new_temp() -> Self {
-        let mut instance = Self::new(temp_dir().join(current_unix_timestamp()));
+    pub fn new_temp<P: AsRef<Path>>(path: P) -> Self {
+        let mut instance = Self::new(path);
         instance.path_clean_on_drop = true;
         instance
     }
