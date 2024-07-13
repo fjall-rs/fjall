@@ -19,6 +19,9 @@ fn absolute_path<P: AsRef<Path>>(path: P) -> PathBuf {
 pub struct Config {
     /// Base path of database
     pub(crate) path: PathBuf,
+    
+    /// Base path of database
+    pub(crate) path_clean_on_drop: bool,
 
     /// Block cache that will be shared between partitions
     pub(crate) block_cache: Arc<BlockCache>,
@@ -71,6 +74,7 @@ impl Default for Config {
 
         Self {
             path: absolute_path (".fjall_data"),
+            path_clean_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
@@ -90,6 +94,13 @@ impl Config {
             path: absolute_path(path),
             ..Default::default()
         }
+    }
+    
+    /// Creates a new temp configuration
+    pub fn new_temp<P: AsRef<Path>>(path: P) -> Self {
+        let mut instance = Self::new(path);
+        instance.path_clean_on_drop = true;
+        instance
     }
 
     /// Sets the amount of flush workers
