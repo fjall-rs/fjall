@@ -19,8 +19,8 @@ fn absolute_path<P: AsRef<Path>>(path: P) -> PathBuf {
 pub struct Config {
     /// Base path of database
     pub(crate) path: PathBuf,
-    
-    /// Base path of database
+
+    /// When true, the path will be deleted upon drop
     pub(crate) path_clean_on_drop: bool,
 
     /// Block cache that will be shared between partitions
@@ -94,13 +94,6 @@ impl Config {
             path: absolute_path(path),
             ..Default::default()
         }
-    }
-    
-    /// Creates a new temp configuration which will delete the folder upon drop.
-    pub fn new_temp<P: AsRef<Path>>(path: P) -> Self {
-        let mut instance = Self::new(path);
-        instance.path_clean_on_drop = true;
-        instance
     }
 
     /// Sets the amount of flush workers
@@ -218,5 +211,15 @@ impl Config {
     #[cfg(feature = "single_writer_tx")]
     pub fn open_transactional(self) -> crate::Result<crate::TxKeyspace> {
         crate::TxKeyspace::open(self)
+    }
+
+    /// Opens a keyspace using the config.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn temporary(mut self) -> Self {
+        self.path_clean_on_drop  = true;
+        self
     }
 }

@@ -102,7 +102,7 @@ impl Drop for KeyspaceInner {
         
         if self.config.path_clean_on_drop {
           if let Err(err) = remove_dir_all(&self.config.path) {
-            eprintln!("Failed to clean up path: {} - {err}", self.config.path.display());
+            eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
           }
         }
     }
@@ -753,9 +753,9 @@ mod tests {
     }
     
     #[test]
-    pub fn test_config_path_clean_on_drop() -> crate::Result<()> {
+    pub fn test_config_temporary() -> crate::Result<()> {
       let folder = std::env::temp_dir().join(current_unix_timestamp());
-      let keyspace = Config::new_temp(&folder).open()?;
+      let keyspace = Config::new(&folder).temporary().open()?;
       
       assert!(folder.exists());
       drop(keyspace);
