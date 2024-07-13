@@ -213,11 +213,7 @@ impl Config {
         crate::TxKeyspace::open(self)
     }
 
-    /// Opens a keyspace using the config.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
+    /// Sets the `Keyspace` to clean upon drop.
     pub fn temporary(mut self) -> Self {
         self.path_clean_on_drop  = true;
         self
