@@ -70,22 +70,10 @@ for kv in items.prefix("prefix").rev() {
   // ...
 }
 
-// Atomic write batches (multiple partitions can be used in a single batch)
-let mut batch = keyspace.batch();
-batch.insert(&items, "1", "abc");
-batch.insert(&items, "3", "abc");
-batch.insert(&items, "5", "abc");
-batch.commit()?;
-
 // Sync the journal to disk to make sure data is definitely durable
 // When the keyspace is dropped, it will try to persist
 // Also, by default every second the keyspace will be persisted asynchronously
 keyspace.persist(PersistMode::SyncAll)?;
-
-// Destroy the partition, removing all data in it.
-// This may be useful when using temporary tables or indexes,
-// as it is essentially an O(1) operation.
-keyspace.delete_partition(items)?;
 ```
 
 ## Details
