@@ -96,7 +96,7 @@ impl Config {
         }
     }
     
-    /// Creates a new temp configuration
+    /// Creates a new temp configuration which will delete the folder upon drop.
     pub fn new_temp<P: AsRef<Path>>(path: P) -> Self {
         let mut instance = Self::new(path);
         instance.path_clean_on_drop = true;
