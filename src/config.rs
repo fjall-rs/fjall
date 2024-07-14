@@ -214,8 +214,8 @@ impl Config {
     }
 
     /// Sets the `Keyspace` to clean upon drop.
-    pub fn temporary(mut self) -> Self {
-        self.path_clean_on_drop  = true;
+    #[must_use] pub fn temporary(mut self) -> Self {
+        self.path_clean_on_drop = true;
         self
     }
 }

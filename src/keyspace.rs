@@ -18,7 +18,7 @@ use crate::{
 use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{
     collections::HashMap,
-    fs::{File, remove_dir_all},
+    fs::{remove_dir_all, File},
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
@@ -99,11 +99,11 @@ impl Drop for KeyspaceInner {
         }
 
         self.config.descriptor_table.clear();
-        
+
         if self.config.path_clean_on_drop {
-          if let Err(err) = remove_dir_all(&self.config.path) {
-            eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
-          }
+            if let Err(err) = remove_dir_all(&self.config.path) {
+                eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
+            }
         }
     }
 }
@@ -743,27 +743,26 @@ impl Keyspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_log::test;
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+    use test_log::test;
+
     fn current_unix_timestamp() -> String {
         let now = SystemTime::now();
         let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
         duration_since_epoch.as_secs().to_string()
     }
-    
+
     #[test]
     pub fn test_config_temporary() -> crate::Result<()> {
-      let folder = std::env::temp_dir().join(current_unix_timestamp());
-      let keyspace = Config::new(&folder).temporary().open()?;
-      
-      assert!(folder.exists());
-      drop(keyspace);
-      assert!(!folder.exists());
-      
-      Ok(())
+        let folder = std::env::temp_dir().join(current_unix_timestamp());
+        let keyspace = Config::new(&folder).temporary().open()?;
+
+        assert!(folder.exists());
+        drop(keyspace);
+        assert!(!folder.exists());
+
+        Ok(())
     }
-    
 
     #[test]
     pub fn force_flush_multiple_partitions() -> crate::Result<()> {
