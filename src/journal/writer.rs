@@ -96,11 +96,7 @@ impl Writer {
         })
     }
 
-    /// Flushes the journal file
-    ///
-    /// # Panics
-    ///
-    /// Panics if fsync failed.
+    /// Flushes the journal file.
     pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
         self.file.flush()?;
 
