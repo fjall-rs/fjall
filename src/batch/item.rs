@@ -14,7 +14,7 @@ pub struct Item {
 
     /// User-defined value - an arbitrary byte array
     ///
-    /// Supports up to 2^32 bytes
+    /// Supports up to 65535 bytes
     pub value: UserValue,
 
     /// Tombstone marker - if this is true, the value has been deleted
@@ -53,7 +53,9 @@ impl Item {
         assert!(!k.is_empty());
         assert!(p.len() <= u8::MAX.into());
         assert!(k.len() <= u16::MAX.into());
-        assert!(u32::try_from(v.len()).is_ok());
+
+        // TODO: u32 in 2.0.0
+        assert!(u16::try_from(v.len()).is_ok());
 
         Self {
             partition: p,
