@@ -107,7 +107,7 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    /// Sets the compaction strategy
+    /// Sets the compaction strategy.
     ///
     /// Default = Levelled
     pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
@@ -115,7 +115,7 @@ impl PartitionHandle {
         *lock = strategy;
     }
 
-    /// Sets the maximum memtable size
+    /// Sets the maximum memtable size.
     ///
     /// Default = 8 MiB
     pub fn set_max_memtable_size(&self, bytes: u32) {
@@ -124,7 +124,7 @@ impl PartitionHandle {
         self.max_memtable_size.store(bytes, Release);
     }
 
-    /// Creates a new partition
+    /// Creates a new partition.
     pub(crate) fn create_new(
         keyspace: &Keyspace,
         name: PartitionKey,
@@ -161,13 +161,13 @@ impl PartitionHandle {
         })))
     }
 
-    /// Returns the underlying LSM-tree's path
+    /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.tree.config.path.clone()
     }
 
-    /// Returns the disk space usage of this partition
+    /// Returns the disk space usage of this partition.
     ///
     /// # Examples
     ///
@@ -642,13 +642,13 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /// Opens a snapshot of this partition
+    /// Opens a snapshot of this partition.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
-    /// Opens a snapshot of this partition with a given sequence number
+    /// Opens a snapshot of this partition with a given sequence number.
     #[must_use]
     pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
         self.tree.snapshot(seqno)

@@ -85,7 +85,7 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        partition.inner.get(key)
+        Ok(partition.inner.snapshot_at(self.instant).get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
