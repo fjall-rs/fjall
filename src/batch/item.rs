@@ -51,11 +51,16 @@ impl Item {
 
         assert!(!p.is_empty());
         assert!(!k.is_empty());
-        assert!(p.len() <= u8::MAX.into());
-        assert!(k.len() <= u16::MAX.into());
 
-        // TODO: u32 in 2.0.0
-        assert!(u16::try_from(v.len()).is_ok());
+        assert!(u8::try_from(p.len()).is_ok(), "Partition name too long");
+        assert!(
+            u16::try_from(k.len()).is_ok(),
+            "Keys can be up to 65535 bytes long"
+        );
+        assert!(
+            u32::try_from(v.len()).is_ok(),
+            "Values can be up to 2^32 bytes long"
+        );
 
         Self {
             partition: p,

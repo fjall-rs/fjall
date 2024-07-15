@@ -533,7 +533,7 @@ impl<'a> WriteTransaction<'a> {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Keys may be up to 65536 bytes long, values up to 65536 bytes.
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
@@ -569,20 +569,12 @@ impl<'a> WriteTransaction<'a> {
         key: K,
         value: V,
     ) {
-        let value = value.as_ref();
-
-        // TODO: remove in 2.0.0
-        assert!(
-            u16::try_from(value.len()).is_ok(),
-            "Value should be 65535 bytes or less"
-        );
-
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
             .insert(lsm_tree::InternalValue::from_components(
                 key.as_ref(),
-                value,
+                value.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
                 SeqNo::MAX,

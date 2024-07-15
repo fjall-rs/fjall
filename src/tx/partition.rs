@@ -182,7 +182,7 @@ impl TransactionalPartitionHandle {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Keys may be up to 65536 bytes long, values up to 65536 bytes.
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
@@ -208,14 +208,6 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let value = value.as_ref();
-
-        // TODO: remove in 2.0.0
-        assert!(
-            u16::try_from(value.len()).is_ok(),
-            "Value should be 65535 bytes or less"
-        );
-
         let _lock = self.tx_lock.lock().expect("lock is poisoned");
         self.inner.insert(key, value)
     }
