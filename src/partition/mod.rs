@@ -5,7 +5,7 @@ use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
-    file::PARTITIONS_FOLDER,
+    file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
     journal::{
         manager::{JournalManager, PartitionSeqNo},
@@ -13,7 +13,7 @@ use crate::{
     },
     keyspace::Partitions,
     write_buffer_manager::WriteBufferManager,
-    Keyspace,
+    Error, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
@@ -172,6 +172,11 @@ impl PartitionHandle {
         log::debug!("Creating partition {name}");
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+
+        if path.join(PARTITION_DELETED_MARKER).exists() {
+            log::error!("Failed to open partition, partition is deleted.");
+            return Err(Error::PartitionDeleted);
+        }
 
         let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
