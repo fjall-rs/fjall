@@ -475,15 +475,12 @@ impl<'a> WriteTransaction<'a> {
         let mut batch = Batch::with_capacity(self.keyspace, 10);
 
         for (partition_key, memtable) in &self.memtables {
-            for entry in &memtable.items {
-                let key = entry.key();
-                let value = entry.value();
-
+            for item in memtable.iter() {
                 batch.data.push(Item::new(
                     partition_key.clone(),
-                    key.user_key.clone(),
-                    value.clone(),
-                    key.value_type,
+                    item.key.clone(),
+                    item.value.clone(),
+                    item.value_type,
                 ));
             }
         }
