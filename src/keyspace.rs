@@ -743,19 +743,12 @@ impl Keyspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
     use test_log::test;
-
-    fn current_unix_timestamp() -> String {
-        let now = SystemTime::now();
-        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-        duration_since_epoch.as_secs().to_string()
-    }
 
     #[test]
     pub fn test_config_temporary() -> crate::Result<()> {
-        let folder = std::env::temp_dir().join(current_unix_timestamp());
-        let keyspace = Config::new(&folder).temporary().open()?;
+        let folder = tempfile::tempdir()?.into_path();
+        let keyspace = Config::new(&folder).temporary(true).open()?;
 
         assert!(folder.exists());
         drop(keyspace);
