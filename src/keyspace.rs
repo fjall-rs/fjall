@@ -100,7 +100,7 @@ impl Drop for KeyspaceInner {
 
         self.config.descriptor_table.clear();
 
-        if self.config.path_clean_on_drop {
+        if self.config.clean_path_on_drop {
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
