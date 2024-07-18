@@ -19,7 +19,10 @@ pub fn run(compaction_manager: &CompactionManager) {
 
     // TODO: loop if there's more work to do
 
-    if let Err(e) = item.tree.compact(strategy) {
+    if let Err(e) = item
+        .tree
+        .compact(strategy, 0 /* TODO: 2.0.0: snapshot GC tracker */)
+    {
         log::error!("Compaction failed: {e:?}");
     };
 }

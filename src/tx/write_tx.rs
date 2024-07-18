@@ -640,9 +640,9 @@ impl<'a> WriteTransaction<'a> {
             for item in memtable.iter() {
                 batch.data.push(Item::new(
                     partition_key.clone(),
-                    item.key.clone(),
+                    item.key.user_key.clone(),
                     item.value.clone(),
-                    item.value_type,
+                    item.key.value_type,
                 ));
             }
         }
