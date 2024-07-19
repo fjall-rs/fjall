@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       matrix:
         rust_version:
