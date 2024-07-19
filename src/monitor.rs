@@ -51,7 +51,7 @@ impl Monitor {
         );
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
-        let mut journal = self.journal.full_lock().expect("lock is poisoned");
+        let mut journal = self.journal.full_lock();
 
         let seqno_map = journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
 
