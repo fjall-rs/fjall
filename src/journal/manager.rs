@@ -54,8 +54,20 @@ pub struct JournalManager {
     disk_space_in_bytes: u64,
 }
 
+impl Drop for JournalManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping journal manager");
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
+    }
+}
+
 impl JournalManager {
     pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Self {
             active_path: path.into(),
             items: Vec::with_capacity(10),

@@ -123,7 +123,7 @@ impl Deserializable for Marker {
                 let partition_len = reader.read_u8()?;
                 let mut partition = vec![0; partition_len.into()];
                 reader.read_exact(&mut partition)?;
-                let partition = std::str::from_utf8(&partition).expect("should be utf-8");
+                let partition = std::str::from_utf8(&partition)?;
 
                 // Read key
                 let key_len = reader.read_u16::<BigEndian>()?;

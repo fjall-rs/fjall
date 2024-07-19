@@ -5,7 +5,7 @@ use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
-    file::PARTITIONS_FOLDER,
+    file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
     journal::{
         manager::{JournalManager, PartitionSeqNo},
@@ -13,7 +13,7 @@ use crate::{
     },
     keyspace::Partitions,
     write_buffer_manager::WriteBufferManager,
-    Keyspace,
+    Error, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
@@ -59,6 +59,8 @@ pub struct PartitionHandleInner {
 
 impl Drop for PartitionHandleInner {
     fn drop(&mut self) {
+        log::trace!("Dropping partition inner: {:?}", self.name);
+
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             let path = self.tree.config.path.clone();
 
@@ -66,6 +68,9 @@ impl Drop for PartitionHandleInner {
                 log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
             }
         }
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
@@ -129,9 +134,14 @@ impl PartitionHandle {
         name: PartitionKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        log::debug!("Creating partition {name}");
+        log::debug!("Creating partition {name:?}");
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+
+        if path.join(PARTITION_DELETED_MARKER).exists() {
+            log::error!("Failed to open partition, partition is deleted.");
+            return Err(Error::PartitionDeleted);
+        }
 
         let tree = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
@@ -504,7 +514,7 @@ impl PartitionHandle {
         log::debug!("Rotating memtable {:?}", self.name);
 
         log::trace!("partition: acquiring full write lock");
-        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+        let mut journal = self.journal.full_lock();
 
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
