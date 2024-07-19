@@ -25,7 +25,25 @@ fn get_shard_path<P: AsRef<Path>>(base: P, idx: u8) -> PathBuf {
 
 pub struct Journal {
     pub path: PathBuf,
-    pub shards: Sharded<JournalShard>,
+    shards: Sharded<JournalShard>,
+}
+
+impl Drop for Journal {
+    fn drop(&mut self) {
+        log::trace!("Dropping journal, trying to flush");
+
+        match self.flush(PersistMode::SyncAll) {
+            Ok(()) => {
+                log::trace!("Flushed journal successfully");
+            }
+            Err(e) => {
+                log::error!("Flush error on drop: {e:?}");
+            }
+        }
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
+    }
 }
 
 impl Journal {
@@ -73,6 +91,9 @@ impl Journal {
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Ok((
             Self {
                 shards: Sharded::new(shards),
@@ -118,20 +139,30 @@ impl Journal {
         // IMPORTANT: fsync folder on Unix
         fsync_directory(path)?;
 
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Ok(Self {
             shards: Sharded::new(shards),
             path: path.to_path_buf(),
         })
     }
 
+    /// Locks all shards for exclusive control over the journal.
+    pub(crate) fn full_lock(&self) -> Vec<RwLockWriteGuard<'_, JournalShard>> {
+        self.shards.full_lock().expect("lock is poisoned")
+    }
+
+    /// Locks a shard to write to it.
     pub(crate) fn get_writer(&self) -> RwLockWriteGuard<'_, JournalShard> {
         let mut shard = self.shards.write_one();
         shard.should_sync = true;
         shard
     }
 
+    /// Flushes the journal.
     pub fn flush(&self, mode: PersistMode) -> crate::Result<()> {
-        for mut shard in self.shards.full_lock().expect("lock is poisoned") {
+        for mut shard in self.full_lock() {
             if shard.should_sync {
                 shard.writer.flush(mode)?;
                 shard.should_sync = false;
@@ -142,6 +173,7 @@ impl Journal {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::marker::Marker;
     use super::*;
@@ -350,8 +382,8 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::Item {
                 partition: "default".into(),
-                key: "zzz".as_bytes().into(),
-                value: "".as_bytes().into(),
+                key: (*b"zzz").into(),
+                value: (*b"").into(),
                 value_type: ValueType::Tombstone,
             }
             .serialize(&mut file)?;
@@ -372,8 +404,8 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
             Marker::Item {
                 partition: "default".into(),
-                key: "zzz".as_bytes().into(),
-                value: "".as_bytes().into(),
+                key: (*b"zzz").into(),
+                value: (*b"").into(),
                 value_type: ValueType::Tombstone,
             }
             .serialize(&mut file)?;
