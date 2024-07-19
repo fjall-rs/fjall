@@ -32,7 +32,8 @@ pub type Partitions = HashMap<PartitionKey, PartitionHandle>;
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     /// Dictionary of all partitions
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
+    #[doc(hidden)]
+    pub partitions: Arc<RwLock<Partitions>>,
 
     /// Journal (write-ahead-log/WAL)
     pub(crate) journal: Arc<Journal>,
@@ -753,18 +754,6 @@ impl Keyspace {
 mod tests {
     use super::*;
     use test_log::test;
-
-    #[test]
-    pub fn test_config_temporary() -> crate::Result<()> {
-        let folder = tempfile::tempdir()?.into_path();
-        let keyspace = Config::new(&folder).temporary(true).open()?;
-
-        assert!(folder.exists());
-        drop(keyspace);
-        assert!(!folder.exists());
-
-        Ok(())
-    }
 
     #[test]
     pub fn force_flush_multiple_partitions() -> crate::Result<()> {

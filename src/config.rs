@@ -214,6 +214,20 @@ impl Config {
     }
 
     /// Sets the `Keyspace` to clean upon drop.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let keyspace = Config::new(&folder).temporary(true).open()?;
+    ///
+    /// assert!(folder.try_exists()?);
+    /// drop(keyspace);
+    /// assert!(!folder.try_exists()?);
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn temporary(mut self, flag: bool) -> Self {
         self.clean_path_on_drop = flag;
