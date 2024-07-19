@@ -18,7 +18,7 @@ use crate::{
 use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{remove_dir_all, File},
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
@@ -93,6 +93,12 @@ impl Drop for KeyspaceInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.partitions.write().expect("lock is poisoned").clear();
+
+        if self.config.clean_path_on_drop {
+            if let Err(err) = remove_dir_all(&self.config.path) {
+                eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
+            }
+        }
 
         #[cfg(feature = "__internal_integration")]
         crate::drop::decrement_drop_counter();
@@ -747,6 +753,18 @@ impl Keyspace {
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    pub fn test_config_temporary() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?.into_path();
+        let keyspace = Config::new(&folder).temporary(true).open()?;
+
+        assert!(folder.exists());
+        drop(keyspace);
+        assert!(!folder.exists());
+
+        Ok(())
+    }
 
     #[test]
     pub fn force_flush_multiple_partitions() -> crate::Result<()> {

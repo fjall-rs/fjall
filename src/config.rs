@@ -20,6 +20,9 @@ pub struct Config {
     /// Base path of database
     pub(crate) path: PathBuf,
 
+    /// When true, the path will be deleted upon drop
+    pub(crate) clean_path_on_drop: bool,
+
     /// Block cache that will be shared between partitions
     pub(crate) block_cache: Arc<BlockCache>,
 
@@ -71,6 +74,7 @@ impl Default for Config {
 
         Self {
             path: absolute_path (".fjall_data"),
+            clean_path_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
@@ -207,5 +211,12 @@ impl Config {
     #[cfg(feature = "single_writer_tx")]
     pub fn open_transactional(self) -> crate::Result<crate::TxKeyspace> {
         crate::TxKeyspace::open(self)
+    }
+
+    /// Sets the `Keyspace` to clean upon drop.
+    #[must_use]
+    pub fn temporary(mut self, flag: bool) -> Self {
+        self.clean_path_on_drop = flag;
+        self
     }
 }
