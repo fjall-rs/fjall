@@ -73,25 +73,16 @@ pub struct KeyspaceInner {
 
 impl Drop for KeyspaceInner {
     fn drop(&mut self) {
-        log::trace!("Dropping Keyspace, trying to flush journal");
+        log::trace!("Dropping Keyspace");
 
         self.stop_signal.send();
-
-        match self.journal.flush(PersistMode::SyncAll) {
-            Ok(()) => {
-                log::trace!("Flushed journal successfully");
-            }
-            Err(e) => {
-                log::error!("Flush error on drop: {e:?}");
-            }
-        }
 
         while self
             .active_background_threads
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_micros(100));
 
             // NOTE: Trick threads into waking up
             self.flush_semaphore.release();
@@ -100,11 +91,17 @@ impl Drop for KeyspaceInner {
 
         self.config.descriptor_table.clear();
 
+        // IMPORTANT: Break cyclic Arcs
+        self.partitions.write().expect("lock is poisoned").clear();
+
         if self.config.clean_path_on_drop {
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
         }
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
@@ -269,6 +266,10 @@ impl Keyspace {
     pub fn open(config: Config) -> crate::Result<Self> {
         let keyspace = Self::create_or_recover(config)?;
         keyspace.start_background_threads();
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Ok(keyspace)
     }
 
@@ -300,8 +301,7 @@ impl Keyspace {
                 .flush_manager
                 .read()
                 .expect("lock is poisoned")
-                .queues
-                .len()
+                .queue_count()
             {
                 self.flush_semaphore.release();
             }
@@ -311,6 +311,7 @@ impl Keyspace {
             "Spawning {} compaction threads",
             self.config.compaction_workers_count
         );
+
         for _ in 0..self.config.compaction_workers_count {
             self.spawn_compaction_worker();
         }
@@ -384,6 +385,9 @@ impl Keyspace {
 
             let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
+
+            #[cfg(feature = "__internal_integration")]
+            crate::drop::increment_drop_counter();
 
             handle
         })
@@ -555,7 +559,7 @@ impl Keyspace {
             journal,
             partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
             seqno: SequenceNumberCounter::default(),
-            flush_manager: Arc::default(),
+            flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
@@ -601,7 +605,7 @@ impl Keyspace {
             journal,
             partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
             seqno: SequenceNumberCounter::default(),
-            flush_manager: Arc::default(),
+            flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(JournalManager::new(active_journal_path))),
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
@@ -641,7 +645,7 @@ impl Keyspace {
                 }
             }
 
-            log::trace!("monitor: exiting because tree is dropping");
+            log::trace!("monitor: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
@@ -650,6 +654,9 @@ impl Keyspace {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
         let is_poisoned = self.is_poisoned.clone();
+        let thread_counter = self.active_background_threads.clone();
+
+        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::spawn(move || {
             while !stop_signal.is_stopped() {
@@ -666,7 +673,9 @@ impl Keyspace {
                 }
             }
 
-            log::trace!("fsync thread: exiting because tree is dropping");
+            log::trace!("fsync thread: exiting because keyspace is dropping");
+
+            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
 
@@ -685,7 +694,7 @@ impl Keyspace {
                 crate::compaction::worker::run(&compaction_manager);
             }
 
-            log::trace!("compaction thread: exiting because tree is dropping");
+            log::trace!("compaction thread: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }
@@ -734,7 +743,7 @@ impl Keyspace {
                 );
             }
 
-            log::trace!("flush worker: exiting because tree is dropping");
+            log::trace!("flush worker: exiting because keyspace is dropping");
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         });
     }

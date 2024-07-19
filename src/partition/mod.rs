@@ -5,7 +5,7 @@ use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
-    file::PARTITIONS_FOLDER,
+    file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
     journal::{
         manager::{JournalManager, PartitionSeqNo},
@@ -13,7 +13,7 @@ use crate::{
     },
     keyspace::Partitions,
     write_buffer_manager::WriteBufferManager,
-    Keyspace,
+    Error, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
@@ -60,6 +60,8 @@ pub struct PartitionHandleInner {
 
 impl Drop for PartitionHandleInner {
     fn drop(&mut self) {
+        log::trace!("Dropping partition inner: {:?}", self.name);
+
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             let path = self.tree.config.path.clone();
 
@@ -67,6 +69,9 @@ impl Drop for PartitionHandleInner {
                 log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
             }
         }
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
@@ -107,7 +112,7 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    /// Sets the compaction strategy
+    /// Sets the compaction strategy.
     ///
     /// Default = Levelled
     pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
@@ -115,7 +120,7 @@ impl PartitionHandle {
         *lock = strategy;
     }
 
-    /// Sets the maximum memtable size
+    /// Sets the maximum memtable size.
     ///
     /// Default = 8 MiB
     pub fn set_max_memtable_size(&self, bytes: u32) {
@@ -124,15 +129,20 @@ impl PartitionHandle {
         self.max_memtable_size.store(bytes, Release);
     }
 
-    /// Creates a new partition
+    /// Creates a new partition.
     pub(crate) fn create_new(
         keyspace: &Keyspace,
         name: PartitionKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        log::debug!("Creating partition {name}");
+        log::debug!("Creating partition {name:?}");
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+
+        if path.join(PARTITION_DELETED_MARKER).exists() {
+            log::error!("Failed to open partition, partition is deleted.");
+            return Err(Error::PartitionDeleted);
+        }
 
         let tree = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
@@ -161,13 +171,13 @@ impl PartitionHandle {
         })))
     }
 
-    /// Returns the underlying LSM-tree's path
+    /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.tree.config.path.clone()
     }
 
-    /// Returns the disk space usage of this partition
+    /// Returns the disk space usage of this partition.
     ///
     /// # Examples
     ///
@@ -489,7 +499,7 @@ impl PartitionHandle {
         log::debug!("Rotating memtable {:?}", self.name);
 
         log::trace!("partition: acquiring full write lock");
-        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+        let mut journal = self.journal.full_lock();
 
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
@@ -642,13 +652,13 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /// Opens a snapshot of this partition
+    /// Opens a snapshot of this partition.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
-    /// Opens a snapshot of this partition with a given sequence number
+    /// Opens a snapshot of this partition with a given sequence number.
     #[must_use]
     pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
         self.tree.snapshot(seqno)
@@ -656,7 +666,7 @@ impl PartitionHandle {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
+    /// Keys may be up to 65536 bytes long, values up to 65536 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
@@ -680,6 +690,14 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+        let value = value.as_ref();
+
+        // TODO: remove in 2.0.0
+        assert!(
+            u16::try_from(value.len()).is_ok(),
+            "Value should be 65535 bytes or less"
+        );
+
         if self.is_deleted.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::PartitionDeleted);
         }

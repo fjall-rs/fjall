@@ -28,7 +28,7 @@ It is not:
 - a relational database
 - a wide-column database: it has no notion of columns
 
-Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
+Keys are limited to 65536 bytes, values are limited to 65536 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
 Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
