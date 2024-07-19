@@ -219,7 +219,7 @@ impl Config {
     ///
     /// ```
     /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
-    /// # let folder = tempfile::tempdir()?;
+    /// # let folder = tempfile::tempdir()?.into_path();
     /// let keyspace = Config::new(&folder).temporary(true).open()?;
     ///
     /// assert!(folder.try_exists()?);
