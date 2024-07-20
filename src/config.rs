@@ -1,18 +1,9 @@
-use crate::{journal::shard::RecoveryMode, Keyspace};
+use crate::{journal::shard::RecoveryMode, path::absolute_path, Keyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
-use path_absolutize::Absolutize;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-
-fn absolute_path<P: AsRef<Path>>(path: P) -> PathBuf {
-    // TODO: replace with https://doc.rust-lang.org/std/path/fn.absolute.html once stable
-    path.as_ref()
-        .absolutize()
-        .expect("should be absolute path")
-        .into()
-}
 
 /// Global keyspace configuration
 #[derive(Clone)]
@@ -73,7 +64,7 @@ impl Default for Config {
             .max(1);
 
         Self {
-            path: absolute_path (".fjall_data"),
+            path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),

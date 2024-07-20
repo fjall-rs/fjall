@@ -96,6 +96,7 @@ mod journal;
 mod keyspace;
 mod monitor;
 mod partition;
+mod path;
 mod recovery;
 mod sharded;
 
