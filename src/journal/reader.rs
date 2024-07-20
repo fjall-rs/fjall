@@ -6,6 +6,15 @@ use std::{
     path::Path,
 };
 
+macro_rules! fail_iter {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e.into())),
+        }
+    };
+}
+
 /// Reads and emits through the entries in a journal shard file, but doesn't
 /// check the validity of batches
 ///
@@ -28,14 +37,20 @@ impl JournalShardReader {
     }
 
     fn truncate_file(&mut self, pos: u64) -> crate::Result<()> {
-        log::debug!("truncating log to {pos}");
+        log::debug!("truncating journal to {pos}");
         self.reader.get_mut().set_len(pos)?;
         self.reader.get_mut().sync_all()?;
         Ok(())
     }
 
-    fn truncate_file_to_last_valid_pos(&mut self) -> crate::Result<()> {
-        self.truncate_file(self.last_valid_pos)
+    fn maybe_truncate_file_to_last_valid_pos(&mut self) -> crate::Result<()> {
+        let stream_pos = self.reader.stream_position()?;
+
+        if stream_pos > self.last_valid_pos {
+            self.truncate_file(self.last_valid_pos)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -44,43 +59,27 @@ impl Iterator for JournalShardReader {
 
     fn next(&mut self) -> Option<Self::Item> {
         match Marker::deserialize(&mut self.reader) {
-            Ok(abc) => {
-                self.last_valid_pos = self
-                    .reader
-                    .stream_position()
-                    .expect("should get stream position of journal reader");
+            Ok(item) => {
+                self.last_valid_pos = fail_iter!(self.reader.stream_position());
 
-                Some(Ok((self.last_valid_pos, abc)))
+                Some(Ok((self.last_valid_pos, item)))
             }
-            Err(e) => match e {
-                DeserializeError::Io(e) => match e.kind() {
-                    std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
-                        let stream_pos = self
-                            .reader
-                            .stream_position()
-                            .expect("should get stream position of journal reader");
+            Err(err) => {
+                if let DeserializeError::Io(e) = err {
+                    match e.kind() {
+                        std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
+                            fail_iter!(self.maybe_truncate_file_to_last_valid_pos());
 
-                        if stream_pos > self.last_valid_pos {
-                            self.truncate_file_to_last_valid_pos()
-                                .expect("should truncate journal");
+                            None
                         }
-                        None
+                        _ => Some(Err(crate::Error::Io(e))),
                     }
-                    _ => Some(Err(crate::Error::Io(e))),
-                },
-                _ => {
-                    let stream_pos = self
-                        .reader
-                        .stream_position()
-                        .expect("should get stream position of journal reader");
+                } else {
+                    fail_iter!(self.maybe_truncate_file_to_last_valid_pos());
 
-                    if stream_pos > self.last_valid_pos {
-                        self.truncate_file_to_last_valid_pos()
-                            .expect("should truncate journal");
-                    }
                     None
                 }
-            },
+            }
         }
     }
 }
