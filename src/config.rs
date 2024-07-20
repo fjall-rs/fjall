@@ -64,7 +64,7 @@ impl Default for Config {
             .max(1);
 
         Self {
-            path: absolute_path (".fjall_data"),
+            path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
