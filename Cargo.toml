@@ -41,6 +41,9 @@ nanoid = "0.4.0"
 test-log = "0.2.16"
 rand = "0.8.5"
 
+[package.metadata.cargo-all-features]
+denylist = ["__internal_integration", "all"]
+
 [[bench]]
 name = "lsmt"
 harness = false
