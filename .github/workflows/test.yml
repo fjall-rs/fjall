@@ -64,7 +64,11 @@ jobs:
       - name: Run tests
         run: cargo test-all-features -v -- --nocapture
         env:
-          RUST_LOG: debug
+          RUST_LOG: info
+      - name: Run integration tests
+        run: cargo test --features __internal_integration -- integration_ --nocapture
+        env:
+          RUST_LOG: info
   cross:
     timeout-minutes: 20
     name: cross
