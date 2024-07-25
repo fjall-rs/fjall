@@ -70,8 +70,8 @@ fn main() -> fjall::Result<()> {
         }
 
         println!(
-            "Found {found_count:?} in {count:?} words in {}ms",
-            before.elapsed().as_millis()
+            "Found {found_count:?} in {count:?} words in {:?}",
+            before.elapsed(),
         );
 
         assert_eq!(40, found_count);
@@ -99,8 +99,8 @@ fn main() -> fjall::Result<()> {
         }
 
         println!(
-            "Found {found_count:?} in {count:?} words in {}ms",
-            before.elapsed().as_millis()
+            "Found {found_count:?} in {count:?} words in {:?}",
+            before.elapsed(),
         );
 
         assert_eq!(40, found_count);

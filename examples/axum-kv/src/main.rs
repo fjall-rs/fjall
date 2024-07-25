@@ -1,17 +1,16 @@
 mod error;
 
+use crate::error::Error;
 use axum::{
     extract,
-    http::StatusCode,
     http::header::{self, HeaderName},
+    http::StatusCode,
     routing::{delete, get, post, put},
     Router,
 };
 use fjall::{Config, Keyspace, PartitionHandle, PersistMode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::error::Error;
 
 #[derive(Deserialize, Serialize)]
 struct InsertBody {
@@ -59,11 +58,16 @@ async fn insert_batch(
 
         batch.commit()?;
         state.keyspace.persist(PersistMode::SyncAll)
-    }).await.unwrap()?;
+    })
+    .await
+    .unwrap()?;
 
     Ok((
         StatusCode::OK,
-        [(HeaderName::from_bytes(b"x-took-ms").unwrap(), before.elapsed().as_millis().to_string())],
+        [(
+            HeaderName::from_bytes(b"x-took-ms").unwrap(),
+            before.elapsed().as_millis().to_string(),
+        )],
         "OK",
     ))
 }
@@ -79,11 +83,16 @@ async fn delete_item(
     tokio::task::spawn_blocking(move || {
         state.db.remove(key)?;
         state.keyspace.persist(PersistMode::SyncAll)
-    }).await.unwrap()?;
+    })
+    .await
+    .unwrap()?;
 
     Ok((
         StatusCode::OK,
-        [(HeaderName::from_bytes(b"x-took-ms").unwrap(), before.elapsed().as_millis().to_string())],
+        [(
+            HeaderName::from_bytes(b"x-took-ms").unwrap(),
+            before.elapsed().as_millis().to_string(),
+        )],
         "OK",
     ))
 }
@@ -101,13 +110,20 @@ async fn insert_item(
     let before = std::time::Instant::now();
 
     tokio::task::spawn_blocking(move || {
-        state.db.insert(key, serde_json::to_string(&body.item).unwrap())?;
+        state
+            .db
+            .insert(key, serde_json::to_string(&body.item).unwrap())?;
         state.keyspace.persist(PersistMode::SyncAll)
-    }).await.unwrap()?;
+    })
+    .await
+    .unwrap()?;
 
     Ok((
         StatusCode::CREATED,
-        [(HeaderName::from_bytes(b"x-took-ms").unwrap(), before.elapsed().as_millis().to_string())],
+        [(
+            HeaderName::from_bytes(b"x-took-ms").unwrap(),
+            before.elapsed().as_millis().to_string(),
+        )],
         "Created",
     ))
 }
@@ -120,15 +136,18 @@ async fn get_item(
 
     let before = std::time::Instant::now();
 
-    let item = tokio::task::spawn_blocking(move || {
-        state.db.get(key)
-    }).await.unwrap()?;
+    let item = tokio::task::spawn_blocking(move || state.db.get(key))
+        .await
+        .unwrap()?;
 
     Ok(match item {
         Some(item) => (
             StatusCode::OK,
             [
-                (HeaderName::from_bytes(b"x-took-ms").unwrap(), before.elapsed().as_millis().to_string()),
+                (
+                    HeaderName::from_bytes(b"x-took-ms").unwrap(),
+                    before.elapsed().as_millis().to_string(),
+                ),
                 (header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()),
             ],
             item.to_vec(),
@@ -136,7 +155,10 @@ async fn get_item(
         None => (
             StatusCode::NOT_FOUND,
             [
-                (HeaderName::from_bytes(b"x-took-ms").unwrap(), before.elapsed().as_millis().to_string()),
+                (
+                    HeaderName::from_bytes(b"x-took-ms").unwrap(),
+                    before.elapsed().as_millis().to_string(),
+                ),
                 (header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()),
             ],
             b"null".to_vec(),
@@ -158,10 +180,7 @@ async fn main() -> Result<(), Error> {
     let keyspace = Config::default().open()?;
     let db = keyspace.open_partition("data", Default::default())?;
 
-    let state = State {
-        keyspace,
-        db,
-    };
+    let state = State { keyspace, db };
 
     log::info!("Starting on port {port}");
 
@@ -182,11 +201,7 @@ async fn main() -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    use axum::{
-        body::Body,
-        extract::Request,
-        http::Method,
-    };
+    use axum::{body::Body, extract::Request, http::Method};
     use http_body_util::BodyExt as _;
     use serde_json::json;
     use tower::ServiceExt as _;
@@ -202,10 +217,7 @@ mod tests {
         let keyspace = Config::new(data_folder).open()?;
         let db = keyspace.open_partition("data", Default::default())?;
 
-        let state = State {
-            keyspace,
-            db,
-        };
+        let state = State { keyspace, db };
 
         let app = Router::new()
             .route("/:key", get(get_item))
@@ -220,7 +232,8 @@ mod tests {
             "name": "Peter",
         });
 
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::PUT)
@@ -238,7 +251,8 @@ mod tests {
 
         // Get
 
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
@@ -255,7 +269,8 @@ mod tests {
 
         // Delete
 
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::DELETE)
