@@ -109,8 +109,6 @@ impl JournalManager {
                 if highest_persisted_seqno.is_none()
                     || highest_persisted_seqno.expect("unwrap") < item.lsn
                 {
-                    // log::info!("rotateyyyy {}", item.partition.name);
-
                     if let Some((yanked_id, yanked_memtable)) =
                         item.partition.tree.rotate_memtable()
                     {
