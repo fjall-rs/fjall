@@ -107,7 +107,7 @@ fn main() -> fjall::Result<()> {
     ];
 
     {
-        let keyspace = Config::new(path).temporary(true).open()?;
+        let keyspace = Config::new(path).open()?;
         let db = keyspace.open_partition("songs", Default::default())?;
 
         let song_db = SongDatabase {
@@ -133,7 +133,7 @@ fn main() -> fjall::Result<()> {
     {
         println!("\nReloading...");
 
-        let keyspace = Config::new(path).open()?;
+        let keyspace = Config::new(path).temporary(true).open()?;
         let db = keyspace.open_partition("songs", Default::default())?;
 
         let song_db = SongDatabase {
