@@ -5,8 +5,10 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
     #[error(transparent)]
     Axum(#[from] axum::Error),
+
     #[error(transparent)]
     Fjall(#[from] fjall::Error),
 }

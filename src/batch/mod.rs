@@ -117,6 +117,7 @@ impl Batch {
         let items = self.data.iter().collect::<Vec<_>>();
         let _ = shard.writer.write_batch(&items, batch_seqno)?;
 
+        #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
 
         let mut batch_size = 0u64;

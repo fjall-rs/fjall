@@ -24,13 +24,7 @@ fn create_item(
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
-    let keyspace = Config::new(path)
-        .block_cache(BlockCache::with_capacity_bytes(10 * 1_024).into())
-        .open()?;
+    let keyspace = Config::new(path).temporary(true).open()?;
     let items = keyspace.open_partition("items", Default::default())?;
     let sec = keyspace.open_partition("sec_idx", Default::default())?;
 

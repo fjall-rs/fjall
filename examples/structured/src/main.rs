@@ -79,10 +79,6 @@ impl SongDatabase {
 fn main() -> fjall::Result<()> {
     let path = std::path::Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
     let items = vec![
         Song {
             id: "clairo:amoeba".to_owned(),
@@ -137,7 +133,7 @@ fn main() -> fjall::Result<()> {
     {
         println!("\nReloading...");
 
-        let keyspace = Config::new(path).open()?;
+        let keyspace = Config::new(path).temporary(true).open()?;
         let db = keyspace.open_partition("songs", Default::default())?;
 
         let song_db = SongDatabase {

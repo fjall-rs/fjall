@@ -1,6 +1,6 @@
 #[cfg(feature = "__internal_integration")]
 #[test_log::test]
-fn keyspace_drop() -> fjall::Result<()> {
+fn integration_keyspace_drop() -> fjall::Result<()> {
     use fjall::Config;
 
     {
