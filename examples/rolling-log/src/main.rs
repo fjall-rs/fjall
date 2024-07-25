@@ -10,11 +10,11 @@ fn main() -> fjall::Result<()> {
         std::fs::remove_dir_all(path)?;
     }
 
-    let keyspace = Config::new(path).max_write_buffer_size(8_000_000).open()?;
+    let keyspace = Config::new(path).max_write_buffer_size(4_000_000).open()?;
     let log = keyspace.open_partition("log", PartitionCreateOptions::default())?;
     log.set_compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)));
 
-    for x in 0u64..5_000_000 {
+    for x in 0u64..2_500_000 {
         log.insert(x.to_be_bytes(), x.to_be_bytes())?;
 
         if x % 100_000 == 0 {
