@@ -6,11 +6,7 @@ const ITEM_COUNT: u64 = 200;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
-    let keyspace = Config::new(path).open_transactional()?;
+    let keyspace = Config::new(path).temporary(true).open_transactional()?;
     let src = keyspace.open_partition("src", Default::default())?;
     let dst = keyspace.open_partition("dst", Default::default())?;
 

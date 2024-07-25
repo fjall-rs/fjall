@@ -9,13 +9,7 @@ use std::{
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
-    let keyspace = Config::new(path)
-        .block_cache(BlockCache::with_capacity_bytes(10 * 1_024).into())
-        .open()?;
+    let keyspace = Config::new(path).temporary(true).open()?;
     let items = keyspace.open_partition("items", Default::default())?;
 
     // To search suffixes of keys, we store a secondary index that stores the reversed key

@@ -6,11 +6,11 @@ const LIMIT: u64 = 16_000_000;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
+    let keyspace = Config::new(path)
+        .temporary(true)
+        .max_write_buffer_size(4_000_000)
+        .open()?;
 
-    let keyspace = Config::new(path).max_write_buffer_size(4_000_000).open()?;
     let log = keyspace.open_partition("log", PartitionCreateOptions::default())?;
     log.set_compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)));
 
