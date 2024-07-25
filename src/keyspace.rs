@@ -664,7 +664,7 @@ impl Keyspace {
                 log::trace!("fsync thread: sleeping {ms}ms");
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
-                log::trace!("fsync thread: fsycing journal");
+                log::trace!("fsync thread: fsyncing journal");
                 if let Err(e) = journal.flush(PersistMode::SyncAll) {
                     is_poisoned.store(true, std::sync::atomic::Ordering::Release);
                     log::error!(
