@@ -183,7 +183,6 @@ impl PartitionHandle {
             .block_cache(keyspace.config.block_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
-            .level_ratio(config.level_ratio)
             .compression(config.compression);
 
         let tree = match config.tree_type {

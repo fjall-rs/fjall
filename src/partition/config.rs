@@ -8,14 +8,6 @@ pub struct CreateOptions {
     /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
-    /// Size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
-    ///
-    /// This is the exponential growth of the from one
-    /// level to the next
-    ///
-    /// A level target size is: `max_memtable_size * level_ratio.pow(#level + 1)`
-    pub(crate) level_ratio: u8,
-
     /// Tree type, see [`TreeType`].
     pub(crate) tree_type: TreeType,
 
@@ -30,7 +22,6 @@ impl Default for CreateOptions {
         Self {
             block_size: default_tree_config.inner.block_size,
             level_count: default_tree_config.inner.level_count,
-            level_ratio: default_tree_config.inner.level_ratio,
             tree_type: TreeType::Standard,
 
             #[cfg(feature = "lz4")]
@@ -77,23 +68,6 @@ impl CreateOptions {
         assert!(block_size >= 1_024);
 
         self.block_size = block_size;
-        self
-    }
-
-    /// Sets the size ratio between levels of the LSM tree (a.k.a fanout, growth rate).
-    ///
-    /// Once set for a partition, this property is not considered in the future.
-    ///
-    /// Default = 8
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is 0.
-    #[must_use]
-    pub fn level_ratio(mut self, n: u8) -> Self {
-        assert!(n > 0);
-
-        self.level_ratio = n;
         self
     }
 
