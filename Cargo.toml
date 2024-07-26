@@ -25,6 +25,7 @@ miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
 all = ["single_writer_tx", "bloom", "lz4", "miniz"]
+__internal_integration = []
 
 [package.metadata.cargo-all-features]
 denylist = ["all"]
@@ -44,6 +45,9 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.16"
 rand = "0.8.5"
+
+[package.metadata.cargo-all-features]
+denylist = ["__internal_integration", "all"]
 
 [[bench]]
 name = "lsmt"

@@ -85,6 +85,11 @@ mod batch;
 pub mod compaction;
 
 mod config;
+
+#[cfg(feature = "__internal_integration")]
+#[doc(hidden)]
+pub mod drop;
+
 mod error;
 mod file;
 mod flush;

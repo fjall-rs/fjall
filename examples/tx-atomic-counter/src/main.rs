@@ -6,11 +6,7 @@ const LIMIT: u64 = 100;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
-    let keyspace = Config::new(path).open_transactional()?;
+    let keyspace = Config::new(path).temporary(true).open_transactional()?;
     let counters = keyspace.open_partition("counters", Default::default())?;
 
     counters.insert("c1", 0_u64.to_be_bytes())?;
