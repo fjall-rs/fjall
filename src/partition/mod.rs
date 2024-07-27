@@ -18,6 +18,7 @@ use crate::{
 use config::CreateOptions;
 use lsm_tree::{
     compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, Snapshot,
+    UserKey, UserValue,
 };
 use std::{
     collections::HashMap,
@@ -258,14 +259,25 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[must_use]
-    #[allow(clippy::iter_not_returning_iterator)]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.iter().map(|item| Ok(item?))
+    }
+
+    /// Returns an iterator that scans through the entire partition, returning only keys.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        self.tree.keys().map(|item| Ok(item?))
+    }
+
+    /// Returns an iterator that scans through the entire partition, returning only values.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        self.tree.values().map(|item| Ok(item?))
     }
 
     /// Returns an iterator over a range of items.
@@ -287,10 +299,6 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
@@ -317,10 +325,6 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,

@@ -2,7 +2,7 @@ use crate::{
     batch::{item::Item, PartitionKey},
     Batch, Instant, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserValue};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
 use std::{
     collections::HashMap,
     ops::RangeBounds,
@@ -448,6 +448,36 @@ impl<'a> WriteTransaction<'a> {
                 self.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.instant, None)
             .map(|item| Ok(item?))
     }
 

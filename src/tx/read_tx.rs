@@ -1,5 +1,5 @@
 use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{AbstractTree, KvPair, UserValue};
+use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
@@ -238,6 +238,36 @@ impl ReadTransaction {
             .inner
             .tree
             .iter_with_seqno(self.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.instant, None)
             .map(|item| Ok(item?))
     }
 
