@@ -9,10 +9,9 @@ use self::{
     shard::{JournalShard, RecoveryMode},
     writer::PersistMode,
 };
-use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded};
+use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded, HashMap};
 use lsm_tree::MemTable;
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };
@@ -52,6 +51,8 @@ impl Journal {
         whitelist: Option<&[PartitionKey]>,
         recovery_mode: RecoveryMode,
     ) -> crate::Result<HashMap<PartitionKey, MemTable>> {
+        use ahash::HashMapExt;
+
         let path = path.as_ref();
         let mut memtables = HashMap::new();
 

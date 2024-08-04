@@ -107,6 +107,8 @@ mod tx;
 mod version;
 mod write_buffer_manager;
 
+pub(crate) type HashMap<K, V> = ahash::HashMap<K, V>;
+
 pub use {
     batch::Batch,
     config::Config,

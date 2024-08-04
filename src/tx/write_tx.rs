@@ -1,10 +1,9 @@
 use crate::{
     batch::{item::Item, PartitionKey},
-    Batch, Instant, Keyspace, TxPartitionHandle,
+    Batch, HashMap, Instant, Keyspace, TxPartitionHandle,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
 use std::{
-    collections::HashMap,
     ops::RangeBounds,
     sync::{Arc, MutexGuard},
 };

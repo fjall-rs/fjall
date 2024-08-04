@@ -1,10 +1,7 @@
 use super::queue::FlushQueue;
-use crate::{batch::PartitionKey, PartitionHandle};
+use crate::{batch::PartitionKey, HashMap, PartitionHandle};
 use lsm_tree::{MemTable, SegmentId};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 pub struct Task {
     /// ID of memtable

@@ -6,13 +6,10 @@ use crate::{
     },
     journal::Journal,
     partition::PartitionHandleInner,
-    Keyspace, PartitionHandle,
+    HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree, MemTable};
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicBool, Arc, RwLock},
-};
+use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 const LSM_VERSION_MARKER_FILE: &str = "version";
 

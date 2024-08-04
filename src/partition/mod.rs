@@ -13,7 +13,7 @@ use crate::{
     },
     keyspace::Partitions,
     write_buffer_manager::WriteBufferManager,
-    Error, Keyspace,
+    Error, HashMap, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
@@ -21,7 +21,6 @@ use lsm_tree::{
     UserKey, UserValue,
 };
 use std::{
-    collections::HashMap,
     ops::RangeBounds,
     path::Path,
     sync::{
@@ -574,6 +573,8 @@ impl PartitionHandle {
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = {
+            use ahash::HashMapExt;
+
             let partitions = self.partitions.write().expect("lock is poisoned");
 
             let mut map = HashMap::new();

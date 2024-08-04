@@ -3,10 +3,10 @@ use crate::{
     batch::PartitionKey,
     file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
-    PartitionHandle,
+    HashMap, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, SeqNo};
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+use std::{fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,

@@ -13,11 +13,10 @@ use crate::{
     recovery::{recover_partitions, recover_sealed_memtables},
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    PartitionCreateOptions, PartitionHandle,
+    HashMap, PartitionCreateOptions, PartitionHandle,
 };
 use lsm_tree::{MemTable, SequenceNumberCounter};
 use std::{
-    collections::HashMap,
     fs::{remove_dir_all, File},
     path::Path,
     sync::{
@@ -530,6 +529,8 @@ impl Keyspace {
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
+        use ahash::HashMapExt;
+
         log::info!("Recovering keyspace at {:?}", config.path);
         let recovery_mode = config.journal_recovery_mode;
 
@@ -586,6 +587,8 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
+        use ahash::HashMapExt;
+
         let path = config.path.clone();
         log::info!("Creating keyspace at {path:?}");
 
