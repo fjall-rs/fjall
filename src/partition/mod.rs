@@ -221,7 +221,9 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
+    pub fn iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
         self.tree.iter().map(|item| Ok(item?))
     }
 
@@ -251,7 +253,7 @@ impl PartitionHandle {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -281,7 +283,7 @@ impl PartitionHandle {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
