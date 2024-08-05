@@ -156,7 +156,8 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                 partitions_to_consider.len()
             );
 
-            let mut partition_seqno_map = HashMap::default();
+            // let mut partition_seqno_map = HashMap::default();
+            let mut partition_seqnos = Vec::with_capacity(partitions_to_consider.len());
 
             // Only get the partitions that have a lower seqno than the journal
             // which means there's still some unflushed data in this sealed journal
@@ -172,13 +173,10 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
 
                 if has_lower_lsn {
-                    partition_seqno_map.insert(
-                        entry.partition_name.into(),
-                        crate::journal::manager::PartitionSeqNo {
-                            lsn: entry.seqno,
-                            partition: partition.clone(),
-                        },
-                    );
+                    partition_seqnos.push(crate::journal::manager::PartitionSeqNo {
+                        lsn: entry.seqno,
+                        partition: partition.clone(),
+                    });
                 } else {
                     log::trace!(
                         "Partition {} has higher seqno ({partition_lsn:?}), skipping",
@@ -188,8 +186,11 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             }
 
             // Recover sealed memtables for affected partitions
-            let partition_names_to_recover =
-                partition_seqno_map.keys().cloned().collect::<Vec<_>>();
+            let partition_names_to_recover = partition_seqnos
+                .iter()
+                .map(|x| &x.partition.name)
+                .cloned()
+                .collect::<Vec<_>>();
 
             log::trace!("Recovering memtables for partitions: {partition_names_to_recover:#?}");
             let memtables = Journal::recover_memtables(
@@ -201,7 +202,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
 
             // IMPORTANT: Add sealed journal to journal manager
             journal_manager_lock.enqueue(crate::journal::manager::Item {
-                partition_seqnos: partition_seqno_map,
+                partition_seqnos,
                 path: journal_path.clone(),
                 size_in_bytes: journal_size,
             });
