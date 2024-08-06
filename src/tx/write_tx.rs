@@ -2,7 +2,7 @@ use crate::{
     batch::{item::Item, PartitionKey},
     Batch, Instant, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{MemTable, SeqNo, UserKey, UserValue, Value};
+use lsm_tree::{KvPair, MemTable, SeqNo, UserValue, Value};
 use std::{
     collections::HashMap,
     ops::RangeBounds,
@@ -78,7 +78,7 @@ impl<'a> WriteTransaction<'a> {
         &self,
         partition: &TxPartitionHandle,
         key: K,
-    ) -> crate::Result<Option<lsm_tree::UserValue>> {
+    ) -> crate::Result<Option<UserValue>> {
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
             if let Some(item) = memtable.get(&key, None) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
@@ -155,10 +155,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next().transpose()
     }
 
@@ -190,10 +187,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next_back().transpose()
     }
 
@@ -270,7 +264,7 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -309,7 +303,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -349,7 +343,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree

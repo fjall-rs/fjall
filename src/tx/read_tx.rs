@@ -1,5 +1,5 @@
 use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{UserKey, UserValue};
+use lsm_tree::{KvPair, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
@@ -101,10 +101,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next().transpose()
     }
 
@@ -132,10 +129,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next_back().transpose()
     }
 
@@ -239,7 +233,7 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -272,7 +266,7 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -305,7 +299,7 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree

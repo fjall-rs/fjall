@@ -17,8 +17,7 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, SequenceNumberCounter, Snapshot, Tree as LsmTree, UserKey,
-    UserValue,
+    compaction::CompactionStrategy, KvPair, SequenceNumberCounter, Snapshot, Tree as LsmTree,
 };
 use std::{
     collections::HashMap,
@@ -221,9 +220,7 @@ impl PartitionHandle {
     /// Will return `Err` if an IO error occurs.
     #[must_use]
     #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.iter().map(|item| Ok(item?))
     }
 
@@ -253,7 +250,7 @@ impl PartitionHandle {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -283,7 +280,7 @@ impl PartitionHandle {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<(UserKey, UserValue)>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
@@ -463,7 +460,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
         Ok(self.tree.first_key_value()?)
     }
 
@@ -491,7 +488,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<(UserKey, UserValue)>> {
+    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
         Ok(self.tree.last_key_value()?)
     }
 
