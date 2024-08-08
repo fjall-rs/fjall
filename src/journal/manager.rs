@@ -99,7 +99,8 @@ impl JournalManager {
 
         if let Some(item) = self.items.first() {
             for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                else {
                     items.push(item.partition.clone());
                     continue;
                 };
@@ -129,7 +130,8 @@ impl JournalManager {
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                    let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                    else {
                         continue 'outer;
                     };
 

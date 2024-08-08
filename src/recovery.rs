@@ -99,7 +99,12 @@ pub fn recover_partitions(
         }
 
         // Recover seqno
-        let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
+        let maybe_next_seqno = partition
+            .tree
+            .get_highest_seqno()
+            .map(|x| x + 1)
+            .unwrap_or_default();
+
         keyspace
             .seqno
             .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
@@ -173,7 +178,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     continue;
                 };
 
-                let partition_lsn = partition.tree.get_segment_lsn();
+                let partition_lsn = partition.tree.get_highest_persisted_seqno();
                 let has_lower_lsn =
                     partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
 
@@ -227,7 +232,12 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     .add_sealed_memtable(memtable_id, sealed_memtable.clone());
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
-                let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
+                let maybe_next_seqno = partition
+                    .tree
+                    .get_highest_seqno()
+                    .map(|x| x + 1)
+                    .unwrap_or_default();
+
                 keyspace
                     .seqno
                     .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);

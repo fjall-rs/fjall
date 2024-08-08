@@ -580,7 +580,7 @@ impl PartitionHandle {
             let mut map = HashMap::new();
 
             for (name, partition) in &*partitions {
-                if let Some(lsn) = partition.tree.get_memtable_lsn() {
+                if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {
                     map.insert(
                         name.clone(),
                         PartitionSeqNo {
@@ -596,7 +596,7 @@ impl PartitionHandle {
                 PartitionSeqNo {
                     partition: self.clone(),
                     lsn: yanked_memtable
-                        .get_lsn()
+                        .get_highest_seqno()
                         .expect("sealed memtable is never empty"),
                 },
             );

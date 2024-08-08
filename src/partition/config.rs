@@ -20,7 +20,7 @@ impl Default for CreateOptions {
         let default_tree_config = lsm_tree::Config::default();
 
         Self {
-            block_size: default_tree_config.inner.block_size,
+            block_size: default_tree_config.inner.data_block_size,
             level_count: default_tree_config.inner.level_count,
             tree_type: TreeType::Standard,
 
