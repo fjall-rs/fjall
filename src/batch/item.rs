@@ -14,7 +14,7 @@ pub struct Item {
 
     /// User-defined value - an arbitrary byte array
     ///
-    /// Supports up to 2^32 bytes
+    /// Supports up to 65535 bytes
     pub value: UserValue,
 
     /// Tombstone marker - if this is true, the value has been deleted
@@ -31,6 +31,7 @@ impl std::fmt::Debug for Item {
             match self.value_type {
                 ValueType::Value => "V",
                 ValueType::Tombstone => "T",
+                ValueType::WeakTombstone => "W",
             },
             self.value
         )
@@ -50,9 +51,16 @@ impl Item {
 
         assert!(!p.is_empty());
         assert!(!k.is_empty());
-        assert!(p.len() <= u8::MAX.into());
-        assert!(k.len() <= u16::MAX.into());
-        assert!(u32::try_from(v.len()).is_ok());
+
+        assert!(u8::try_from(p.len()).is_ok(), "Partition name too long");
+        assert!(
+            u16::try_from(k.len()).is_ok(),
+            "Keys can be up to 65535 bytes long"
+        );
+        assert!(
+            u32::try_from(v.len()).is_ok(),
+            "Values can be up to 2^32 bytes long"
+        );
 
         Self {
             partition: p,

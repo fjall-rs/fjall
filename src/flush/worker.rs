@@ -1,13 +1,10 @@
 use super::manager::{FlushManager, Task};
 use crate::{
     batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    write_buffer_manager::WriteBufferManager, PartitionHandle,
+    write_buffer_manager::WriteBufferManager, HashMap, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, Segment};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
 fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {

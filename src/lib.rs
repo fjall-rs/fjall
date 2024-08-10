@@ -18,7 +18,7 @@
 //! - a relational database
 //! - a wide-column database: it has no notion of columns
 //!
-//! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
+//! Keys are limited to 65536 bytes, values are limited to 65536 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
@@ -78,6 +78,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
+#![warn(clippy::multiple_crate_versions)]
 
 mod batch;
 
@@ -85,6 +86,11 @@ mod batch;
 pub mod compaction;
 
 mod config;
+
+#[cfg(feature = "__internal_integration")]
+#[doc(hidden)]
+pub mod drop;
+
 mod error;
 mod file;
 mod flush;
@@ -95,12 +101,17 @@ mod partition;
 mod path;
 mod recovery;
 mod sharded;
+mod snapshot_nonce;
+mod snapshot_tracker;
+mod tracked_snapshot;
 
 #[cfg(feature = "single_writer_tx")]
 mod tx;
 
 mod version;
 mod write_buffer_manager;
+
+pub(crate) type HashMap<K, V> = ahash::HashMap<K, V>;
 
 pub use {
     batch::Batch,
@@ -109,6 +120,7 @@ pub use {
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };
 
@@ -143,6 +155,9 @@ pub type Instant = lsm_tree::SeqNo;
 /// Re-export of [`lsm_tree::Error`]
 pub type LsmError = lsm_tree::Error;
 
+#[doc(hidden)]
+pub use lsm_tree::AbstractTree;
+
 pub use lsm_tree::{
-    AnyTree, BlockCache, CompressionType, KvPair, Snapshot, TreeType, UserKey, UserValue,
+    AnyTree, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
 };

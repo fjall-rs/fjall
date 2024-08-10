@@ -13,11 +13,7 @@ const EXPECTED_COUNT: usize = PRODUCER_COUNT * PRODUCING_COUNT;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    if path.try_exists()? {
-        std::fs::remove_dir_all(path)?;
-    }
-
-    let keyspace = Config::new(path).open_transactional()?;
+    let keyspace = Config::new(path).temporary(true).open_transactional()?;
     let tasks = keyspace.open_partition("tasks", Default::default())?;
 
     let counter = Arc::new(AtomicUsize::default());

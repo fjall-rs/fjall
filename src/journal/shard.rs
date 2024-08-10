@@ -1,8 +1,9 @@
 use super::{marker::Marker, writer::Writer as JournalWriter};
 use crate::batch::{item::Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
+use crate::HashMap;
 use lsm_tree::{serde::Serializable, MemTable, SeqNo};
-use std::{collections::HashMap, fs::OpenOptions, path::Path};
+use std::{fs::OpenOptions, path::Path};
 
 /// Recovery mode to use
 ///

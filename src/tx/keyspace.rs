@@ -1,6 +1,7 @@
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
-    batch::PartitionKey, Config, Keyspace, PartitionCreateOptions, PersistMode, TxPartitionHandle,
+    batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
+    PersistMode, TxPartitionHandle,
 };
 use std::sync::{Arc, Mutex};
 
@@ -25,14 +26,22 @@ impl TxKeyspace {
         // IMPORTANT: Get the seqno *after* getting the lock
         let instant = self.inner.instant();
 
-        WriteTransaction::new(self.inner.clone(), lock, instant)
+        WriteTransaction::new(
+            self.inner.clone(),
+            lock,
+            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
+        )
     }
 
     /// Starts a new read-only transaction.
     #[must_use]
     pub fn read_tx(&self) -> ReadTransaction {
         let instant = self.inner.instant();
-        ReadTransaction::new(instant)
+
+        ReadTransaction::new(SnapshotNonce::new(
+            instant,
+            self.inner.snapshot_tracker.clone(),
+        ))
     }
 
     /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]

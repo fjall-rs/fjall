@@ -5,22 +5,24 @@ use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
-    file::PARTITIONS_FOLDER,
+    file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
     journal::{
         manager::{JournalManager, PartitionSeqNo},
         Journal,
     },
     keyspace::Partitions,
+    snapshot_nonce::SnapshotNonce,
+    snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
-    Keyspace,
+    Error, HashMap, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, Snapshot,
+    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
+    UserValue,
 };
 use std::{
-    collections::HashMap,
     ops::RangeBounds,
     path::Path,
     sync::{
@@ -33,39 +35,77 @@ use std_semaphore::Semaphore;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
+    // Internal
+    //
     /// Partition name
     pub name: PartitionKey,
 
-    pub(crate) keyspace_config: KeyspaceConfig,
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) flush_semaphore: Arc<Semaphore>,
-    pub(crate) journal: Arc<Journal>,
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
-    pub(crate) compaction_manager: CompactionManager,
-    pub(crate) seqno: SequenceNumberCounter,
-    pub(crate) write_buffer_manager: WriteBufferManager,
+    /// If `true`, the partition is marked as deleted
     pub(crate) is_deleted: AtomicBool,
+
+    /// If `true`, fsync failed during persisting, see `Error::Poisoned`
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
+    /// LSM-tree wrapper
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    /// Maximum size of this partition's memtable
+    // Keyspace stuff
+    //
+    /// Config of keyspace
+    pub(crate) keyspace_config: KeyspaceConfig,
+
+    /// Flush manager of keyspace
+    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+
+    /// Journal manager of keyspace
+    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+
+    /// Compaction manager of keyspace
+    pub(crate) compaction_manager: CompactionManager,
+
+    /// Write buffer manager of keyspace
+    pub(crate) write_buffer_manager: WriteBufferManager,
+
+    // TODO: notifying flush worker should probably become a method in FlushManager
+    /// Flush semaphore of keyspace
+    pub(crate) flush_semaphore: Arc<Semaphore>,
+
+    /// Journal of keyspace
+    pub(crate) journal: Arc<Journal>,
+
+    /// Partition map of keyspace
+    pub(crate) partitions: Arc<RwLock<Partitions>>,
+
+    /// Sequence number generator of keyspace
+    pub(crate) seqno: SequenceNumberCounter,
+
+    // Configuration
+    //
+    /// Maximum size of this partition's memtable - can be changed during runtime
     pub(crate) max_memtable_size: AtomicU32,
 
+    /// Chosen compaction strategy - can be changed during runtime
     pub(crate) compaction_strategy: RwLock<Arc<dyn CompactionStrategy + Send + Sync>>,
+
+    /// Snapshot tracker
+    pub(crate) snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for PartitionHandleInner {
     fn drop(&mut self) {
+        log::trace!("Dropping partition inner: {:?}", self.name);
+
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            let path = self.tree.tree_config().path.as_path();
+            let path = &self.tree.tree_config().path;
 
             if let Err(e) = std::fs::remove_dir_all(path) {
                 log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
             }
         }
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
     }
 }
 
@@ -106,7 +146,7 @@ impl std::hash::Hash for PartitionHandle {
 }
 
 impl PartitionHandle {
-    /// Sets the compaction strategy
+    /// Sets the compaction strategy.
     ///
     /// Default = Leveled
     pub fn set_compaction_strategy(&self, strategy: Arc<dyn CompactionStrategy + Send + Sync>) {
@@ -114,9 +154,15 @@ impl PartitionHandle {
         *lock = strategy;
     }
 
-    /// Sets the maximum memtable size
+    /// Sets the maximum memtable size.
     ///
     /// Default = 8 MiB
+    ///
+    /// Recommended size 8 - 64 MiB, depending on how much memory
+    /// is available.
+    /// Note that the memory usage may temporarily be `max_memtable_size * flush_worker_count`
+    /// because of parallel flushing.
+    /// Use the keyspace's `max_write_buffer_size` to cap global memory usage.
     pub fn set_max_memtable_size(&self, bytes: u32) {
         use std::sync::atomic::Ordering::Release;
 
@@ -127,22 +173,26 @@ impl PartitionHandle {
         self.max_memtable_size.store(bytes, Release);
     }
 
-    /// Creates a new partition
+    /// Creates a new partition.
     pub(crate) fn create_new(
         keyspace: &Keyspace,
         name: PartitionKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        log::debug!("Creating partition {name}");
+        log::debug!("Creating partition {name:?}");
 
         let path = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+
+        if path.join(PARTITION_DELETED_MARKER).exists() {
+            log::error!("Failed to open partition, partition is deleted.");
+            return Err(Error::PartitionDeleted);
+        }
 
         let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
-            .level_ratio(config.level_ratio)
             .compression(config.compression);
 
         let tree = match config.tree_type {
@@ -166,16 +216,17 @@ impl PartitionHandle {
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
         })))
     }
 
-    /// Returns the underlying LSM-tree's path
+    /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> &Path {
         self.tree.tree_config().path.as_path()
     }
 
-    /// Returns the disk space usage of this partition
+    /// Returns the disk space usage of this partition.
     ///
     /// # Examples
     ///
@@ -213,14 +264,25 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[must_use]
-    #[allow(clippy::iter_not_returning_iterator)]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.iter().map(|item| Ok(item?))
+    }
+
+    /// Returns an iterator that scans through the entire partition, returning only keys.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        self.tree.keys().map(|item| Ok(item?))
+    }
+
+    /// Returns an iterator that scans through the entire partition, returning only values.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        self.tree.values().map(|item| Ok(item?))
     }
 
     /// Returns an iterator over a range of items.
@@ -242,14 +304,10 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
-        &self,
+    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
+        &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -272,14 +330,10 @@ impl PartitionHandle {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn prefix<K: AsRef<[u8]>>(
-        &self,
+    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
+        &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 
@@ -491,7 +545,7 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value()?)
     }
 
-    /// Used in tests
+    // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         if self.rotate_memtable()? {
@@ -513,7 +567,7 @@ impl PartitionHandle {
         log::debug!("Rotating memtable {:?}", self.name);
 
         log::trace!("partition: acquiring full write lock");
-        let mut journal = self.journal.shards.full_lock().expect("lock is poisoned");
+        let mut journal = self.journal.full_lock();
 
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
@@ -525,12 +579,14 @@ impl PartitionHandle {
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = {
+            use ahash::HashMapExt;
+
             let partitions = self.partitions.write().expect("lock is poisoned");
 
             let mut map = HashMap::new();
 
             for (name, partition) in &*partitions {
-                if let Some(lsn) = partition.tree.get_memtable_lsn() {
+                if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {
                     map.insert(
                         name.clone(),
                         PartitionSeqNo {
@@ -546,7 +602,7 @@ impl PartitionHandle {
                 PartitionSeqNo {
                     partition: self.clone(),
                     lsn: yanked_memtable
-                        .get_lsn()
+                        .get_highest_seqno()
                         .expect("sealed memtable is never empty"),
                 },
             );
@@ -665,16 +721,19 @@ impl PartitionHandle {
         self.tree.segment_count()
     }
 
-    /// Opens a snapshot of this partition
+    /// Opens a snapshot of this partition.
     #[must_use]
-    pub fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> crate::Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
-    /// Opens a snapshot of this partition with a given sequence number
+    /// Opens a snapshot of this partition with a given sequence number.
     #[must_use]
-    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
-        self.tree.snapshot(seqno)
+    pub fn snapshot_at(&self, seqno: crate::Instant) -> crate::Snapshot {
+        crate::Snapshot::new(
+            self.tree.snapshot(seqno),
+            SnapshotNonce::new(seqno, self.snapshot_tracker.clone()),
+        )
     }
 
     /// Inserts a key-value pair into the partition.

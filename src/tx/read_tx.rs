@@ -1,15 +1,15 @@
-use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{AbstractTree, KvPair, UserValue};
+use crate::{snapshot_nonce::SnapshotNonce, TxPartitionHandle};
+use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
-    instant: Instant,
+    nonce: SnapshotNonce,
 }
 
 impl ReadTransaction {
-    pub(crate) fn new(instant: Instant) -> Self {
-        Self { instant }
+    pub(crate) fn new(nonce: SnapshotNonce) -> Self {
+        Self { nonce }
     }
 
     /// Retrieves an item from the transaction's state.
@@ -45,7 +45,11 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        Ok(partition.inner.tree.snapshot_at(self.instant).get(key)?)
+        Ok(partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -233,11 +237,41 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
-            .iter_with_seqno(self.instant, None)
+            .iter_with_seqno(self.nonce.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.nonce.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -262,15 +296,15 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'a, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
-            .range_with_seqno(range, self.instant, None)
+            .range_with_seqno(range, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -295,15 +329,15 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'a, K: AsRef<[u8]>>(
+    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
-            .prefix_with_seqno(prefix, self.instant, None)
+            .prefix_with_seqno(prefix, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 }

@@ -1,10 +1,7 @@
 use super::queue::FlushQueue;
-use crate::{batch::PartitionKey, PartitionHandle};
+use crate::{batch::PartitionKey, HashMap, PartitionHandle};
 use lsm_tree::{MemTable, SegmentId};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 pub struct Task {
     /// ID of memtable
@@ -29,14 +26,31 @@ impl std::fmt::Debug for Task {
 /// containing some flush tasks.
 ///
 /// Each flush task references a sealed memtable and the given partition.
-#[derive(Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushManager {
-    pub(crate) queues: HashMap<PartitionKey, FlushQueue>,
+    queues: HashMap<PartitionKey, FlushQueue>,
+}
+
+impl Drop for FlushManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping flush manager");
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
+    }
 }
 
 impl FlushManager {
-    /// Gets the names of partitions that have queued tasks
+    pub fn new() -> Self {
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
+        Self {
+            queues: HashMap::default(),
+        }
+    }
+
+    /// Gets the names of partitions that have queued tasks.
     pub(crate) fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
         self.queues
             .iter()
@@ -46,14 +60,19 @@ impl FlushManager {
             .collect()
     }
 
-    /// Returns the amount of tasks queued
+    /// Returns the amount of queues.
+    pub(crate) fn queue_count(&self) -> usize {
+        self.queues.len()
+    }
+
+    /// Returns the amount of bytes queued.
     pub(crate) fn queued_size(&self) -> u64 {
         self.queues.values().map(FlushQueue::size).sum::<u64>()
     }
 
     // NOTE: is actually used in tests
     #[allow(dead_code)]
-    /// Returns the amount of bytes that are queued to be flushed
+    /// Returns the amount of tasks that are queued to be flushed.
     pub fn len(&self) -> usize {
         self.queues.values().map(FlushQueue::len).sum::<usize>()
     }

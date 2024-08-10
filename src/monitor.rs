@@ -16,8 +16,20 @@ pub struct Monitor {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
 }
 
+impl Drop for Monitor {
+    fn drop(&mut self) {
+        log::trace!("Dropping monitor");
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
+    }
+}
+
 impl Monitor {
     pub fn new(keyspace: &Keyspace) -> Self {
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Self {
             flush_manager: keyspace.flush_manager.clone(),
             journal_manager: keyspace.journal_manager.clone(),

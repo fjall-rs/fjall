@@ -166,7 +166,9 @@ impl Cas {
 }
 
 fn main() -> fjall::Result<()> {
-    env_logger::Builder::from_default_env().init();
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     let path = Path::new(".fjall_data");
 
@@ -294,97 +296,103 @@ fn main() -> fjall::Result<()> {
 
     // example
 
-    eprintln!("\n>>> Storing HTML page for https://google.com");
+    log::info!(">>> Storing HTML page for https://google.com");
     cas.insert(
         "com.google",
         "<html>hello google</html>".repeat(1_000_000).as_bytes(),
     )?;
 
     assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
-    eprintln!("\n>>> Storing HTML page for https://github.com");
+    log::info!(">>> Storing HTML page for https://github.com");
     cas.insert(
         "com.github",
         "<html>hello github</html>".repeat(1_000_000).as_bytes(),
     )?;
 
     assert_eq!(2, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
     assert!(cas.get("com.google")?.is_some());
-    eprintln!(
+    log::info!(
         "Do I have https://google.com? {}",
         cas.get("com.google")?.is_some()
     );
 
     assert!(cas.get("com.github")?.is_some());
-    eprintln!(
+    log::info!(
         "Do I have https://www.github.com? {}",
         cas.get("com.github")?.is_some()
     );
 
-    eprintln!("\n>>> Storing HTML page for https://www.google.com");
+    log::info!(">>> Storing HTML page for https://www.google.com");
     cas.insert(
         "com.google.www",
         "<html>hello google</html>".repeat(1_000_000).as_bytes(),
     )?;
 
     assert!(cas.get("com.google.www")?.is_some());
-    eprintln!(
+    log::info!(
         "Do I have https://www.google.com? {}",
         cas.get("com.google.www")?.is_some()
     );
 
     assert_eq!(2, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
     assert_eq!(cas.get("com.google.www")?, cas.get("com.google")?);
-    eprintln!(
+    log::info!(
         "www.google should be same as google: {}",
         cas.get("com.google.www")? == cas.get("com.google")?
     );
 
-    eprintln!("\n>>> Removing https://github.com");
+    log::info!(">>> Removing https://github.com");
     cas.remove("com.github")?;
 
-    eprintln!(
+    log::info!(
         "Do I have https://www.github.com? {}",
         cas.get("com.github")?.is_some()
     );
 
     assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
-    eprintln!("\n>>> Removing https://google.com");
+    log::info!(">>> Removing https://google.com");
     cas.remove("com.google")?;
 
     assert!(cas.get("com.google")?.is_none());
-    eprintln!(
+    log::info!(
         "Do I have https://google.com? {}",
         cas.get("com.google")?.is_some()
     );
 
     assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
-    eprintln!("\n>>> Removing https://www.google.com");
+    log::info!(">>> Removing https://www.google.com");
     cas.remove("com.google.www")?;
 
     assert!(cas.get("com.google.www")?.is_none());
-    eprintln!(
+    log::info!(
         "Do I have https://www.google.com? {}",
         cas.get("www.com.google")?.is_some()
     );
 
     assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
-    eprintln!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
     // TODO: this will be a better API at some point
     if let fjall::AnyTree::Blob(tree) = &cas.blobs.inner().tree {
-        tree.gc_scan_stats()?;
+        tree.gc_scan_stats(u64::MAX)?;
+        tree.blobs.print_gc_report();
+
         tree.gc_drop_stale()?;
-        tree.gc_scan_stats()?;
+
+        tree.gc_scan_stats(u64::MAX)?;
+        tree.blobs.print_gc_report();
+    } else {
+        unreachable!();
     }
 
     Ok(())

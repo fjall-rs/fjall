@@ -1,11 +1,11 @@
 use crate::{
     batch::{item::Item, PartitionKey},
-    Batch, Instant, Keyspace, TxPartitionHandle,
+    snapshot_nonce::SnapshotNonce,
+    Batch, HashMap, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
 use std::{
-    collections::HashMap,
-    ops::{Deref, RangeBounds},
+    ops::RangeBounds,
     sync::{Arc, MutexGuard},
 };
 
@@ -25,20 +25,201 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 pub struct WriteTransaction<'a> {
     keyspace: Keyspace,
     memtables: HashMap<PartitionKey, Arc<MemTable>>,
-    instant: Instant,
+
+    nonce: SnapshotNonce,
 
     #[allow(unused)]
     tx_lock: MutexGuard<'a, ()>,
 }
 
 impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(keyspace: Keyspace, tx_lock: MutexGuard<'a, ()>, instant: Instant) -> Self {
+    pub(crate) fn new(
+        keyspace: Keyspace,
+        tx_lock: MutexGuard<'a, ()>,
+        nonce: SnapshotNonce,
+    ) -> Self {
         Self {
             keyspace,
             memtables: HashMap::default(),
-            instant,
             tx_lock,
+            nonce,
         }
+    }
+
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let taken = tx.take(&partition, "a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn take<K: AsRef<[u8]>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        self.fetch_update(partition, key, |_| None)
+    }
+
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
+    /// assert!(updated.is_none());
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = &updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(updated)
+    }
+
+    /// Atomically updates an item and returns the previous value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(prev)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -85,7 +266,7 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        partition.inner.get(key)
+        Ok(partition.inner.snapshot_at(self.nonce.instant).get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -264,14 +445,44 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .iter_with_seqno(
-                self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.nonce.instant,
+                self.memtables.get(&partition.inner.name).cloned(),
             )
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.nonce.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -299,18 +510,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'b, K: AsRef<[u8]>, R: RangeBounds<K>>(
+    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .range_with_seqno(
                 range,
-                self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.nonce.instant,
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -339,18 +550,18 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]>>(
+    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
         partition
             .inner
             .tree
             .prefix_with_seqno(
                 prefix,
-                self.instant,
-                self.memtables.get(&partition.inner.name).map(Deref::deref),
+                self.nonce.instant,
+                self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
     }
@@ -461,15 +672,12 @@ impl<'a> WriteTransaction<'a> {
         let mut batch = Batch::with_capacity(self.keyspace, 10);
 
         for (partition_key, memtable) in &self.memtables {
-            for entry in &memtable.items {
-                let key = entry.key();
-                let value = entry.value();
-
+            for item in memtable.iter() {
                 batch.data.push(Item::new(
                     partition_key.clone(),
-                    key.user_key.clone(),
-                    value.clone(),
-                    key.value_type,
+                    item.key.user_key.clone(),
+                    item.value.clone(),
+                    item.key.value_type,
                 ));
             }
         }

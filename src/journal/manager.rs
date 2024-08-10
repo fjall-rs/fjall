@@ -3,10 +3,10 @@ use crate::{
     batch::PartitionKey,
     file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
-    PartitionHandle,
+    HashMap, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, SeqNo};
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+use std::{fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
 
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
@@ -49,8 +49,20 @@ pub struct JournalManager {
     disk_space_in_bytes: u64,
 }
 
+impl Drop for JournalManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping journal manager");
+
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::decrement_drop_counter();
+    }
+}
+
 impl JournalManager {
     pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
+        #[cfg(feature = "__internal_integration")]
+        crate::drop::increment_drop_counter();
+
         Self {
             active_path: path.into(),
             items: Vec::with_capacity(10),
@@ -87,7 +99,8 @@ impl JournalManager {
 
         if let Some(item) = self.items.first() {
             for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                else {
                     items.push(item.partition.clone());
                     continue;
                 };
@@ -117,7 +130,8 @@ impl JournalManager {
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
+                    let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                    else {
                         continue 'outer;
                     };
 

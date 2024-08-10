@@ -6,13 +6,11 @@ use crate::{
     },
     journal::Journal,
     partition::PartitionHandleInner,
-    Keyspace, PartitionHandle,
+    snapshot_tracker::SnapshotTracker,
+    HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree, MemTable};
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicBool, Arc, RwLock},
-};
+use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 const LSM_VERSION_MARKER_FILE: &str = "version";
 
@@ -80,6 +78,7 @@ pub fn recover_partitions(
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
         };
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);
@@ -102,7 +101,12 @@ pub fn recover_partitions(
         }
 
         // Recover seqno
-        let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
+        let maybe_next_seqno = partition
+            .tree
+            .get_highest_seqno()
+            .map(|x| x + 1)
+            .unwrap_or_default();
+
         keyspace
             .seqno
             .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
@@ -122,6 +126,7 @@ pub fn recover_partitions(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::{
         Error as PartitionManifestParseError, PartitionManifest,
@@ -176,7 +181,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     continue;
                 };
 
-                let partition_lsn = partition.tree.get_segment_lsn();
+                let partition_lsn = partition.tree.get_highest_persisted_seqno();
                 let has_lower_lsn =
                     partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
 
@@ -230,7 +235,12 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     .add_sealed_memtable(memtable_id, sealed_memtable.clone());
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
-                let maybe_next_seqno = partition.tree.get_lsn().map(|x| x + 1).unwrap_or_default();
+                let maybe_next_seqno = partition
+                    .tree
+                    .get_highest_seqno()
+                    .map(|x| x + 1)
+                    .unwrap_or_default();
+
                 keyspace
                     .seqno
                     .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);

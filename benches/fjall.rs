@@ -27,9 +27,10 @@ fn block_cache_insert(c: &mut Criterion) {
         items,
         header: BlockHeader {
             compression: CompressionType::Lz4,
-            crc: 0,
+            checksum: lsm_tree::Checksum::from_raw(0),
             previous_block_offset: 0,
             data_length: 0,
+            uncompressed_length: 0,
         },
     });
 
@@ -62,9 +63,10 @@ fn block_cache_get(c: &mut Criterion) {
         items,
         header: BlockHeader {
             compression: CompressionType::Lz4,
-            crc: 0,
+            checksum: lsm_tree::Checksum::from_raw(0),
             previous_block_offset: 0,
             data_length: 0,
+            uncompressed_length: 0,
         },
     });
 

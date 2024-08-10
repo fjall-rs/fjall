@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       matrix:
         rust_version:
@@ -42,24 +42,33 @@ jobs:
             . -> target
             examples/actix-kv -> target
             examples/axum-kv -> target
+            examples/partition-rotation -> target
             examples/rolling-log -> target
             examples/secondary-index -> target
             examples/structured -> target
             examples/suffix-search -> target
             examples/tokio -> target
             examples/triplestore -> target
+            examples/tx-atomic-counter -> target
+            examples/tx-mpmc-queue -> target
+            examples/tx-partition-move -> target
       - name: Install cargo-all-features
         run: cargo install cargo-all-features
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy
+        # NOTE: Run examples before unit tests, because they are faster to complete
+      - name: Build & test examples
+        run: node compile_examples.mjs
       - name: Run tests
         run: cargo test-all-features -v -- --nocapture
         env:
-          RUST_LOG: debug
-      - name: Build & test examples
-        run: node compile_examples.mjs
+          RUST_LOG: info
+      - name: Run integration tests
+        run: cargo test --features __internal_integration -- integration_ --nocapture
+        env:
+          RUST_LOG: info
   cross:
     timeout-minutes: 20
     name: cross

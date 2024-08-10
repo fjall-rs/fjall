@@ -6,7 +6,7 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
-const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'L', b'L', b'T', b'R', b'L', b'1'];
+const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'L', b'L', b'T', b'R', b'L', b'2'];
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
@@ -91,7 +91,7 @@ impl Serializable for Marker {
 
                 // NOTE: Truncation is okay and actually needed
                 #[allow(clippy::cast_possible_truncation)]
-                writer.write_u16::<BigEndian>(value.len() as u16)?;
+                writer.write_u32::<BigEndian>(value.len() as u32)?;
                 writer.write_all(value)?;
             }
             End(val) => {
@@ -123,7 +123,7 @@ impl Deserializable for Marker {
                 let partition_len = reader.read_u8()?;
                 let mut partition = vec![0; partition_len.into()];
                 reader.read_exact(&mut partition)?;
-                let partition = std::str::from_utf8(&partition).expect("should be utf-8");
+                let partition = std::str::from_utf8(&partition)?;
 
                 // Read key
                 let key_len = reader.read_u16::<BigEndian>()?;
@@ -131,7 +131,7 @@ impl Deserializable for Marker {
                 reader.read_exact(&mut key)?;
 
                 // Read value
-                let value_len = reader.read_u16::<BigEndian>()?;
+                let value_len = reader.read_u32::<BigEndian>()?;
                 let mut value = vec![0; value_len as usize];
                 reader.read_exact(&mut value)?;
 
