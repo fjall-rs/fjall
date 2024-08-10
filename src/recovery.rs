@@ -6,7 +6,6 @@ use crate::{
     },
     journal::Journal,
     partition::PartitionHandleInner,
-    snapshot_tracker::SnapshotTracker,
     HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree, MemTable};
