@@ -101,6 +101,9 @@ mod partition;
 mod path;
 mod recovery;
 mod sharded;
+mod snapshot_nonce;
+mod snapshot_tracker;
+mod tracked_snapshot;
 
 #[cfg(feature = "single_writer_tx")]
 mod tx;
@@ -117,6 +120,7 @@ pub use {
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };
 
@@ -155,5 +159,5 @@ pub type LsmError = lsm_tree::Error;
 pub use lsm_tree::AbstractTree;
 
 pub use lsm_tree::{
-    AnyTree, BlockCache, CompressionType, KvPair, Slice, Snapshot, TreeType, UserKey, UserValue,
+    AnyTree, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
 };

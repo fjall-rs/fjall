@@ -6,6 +6,7 @@ use crate::{
     },
     journal::Journal,
     partition::PartitionHandleInner,
+    snapshot_tracker::SnapshotTracker,
     HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree, MemTable};
@@ -77,6 +78,7 @@ pub fn recover_partitions(
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
         };
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);
@@ -124,6 +126,7 @@ pub fn recover_partitions(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::{
         Error as PartitionManifestParseError, PartitionManifest,

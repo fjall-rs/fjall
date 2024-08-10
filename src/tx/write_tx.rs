@@ -1,5 +1,6 @@
 use crate::{
     batch::{item::Item, PartitionKey},
+    snapshot_nonce::SnapshotNonce,
     Batch, HashMap, Instant, Keyspace, TxPartitionHandle,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
@@ -27,16 +28,25 @@ pub struct WriteTransaction<'a> {
     instant: Instant,
 
     #[allow(unused)]
+    nonce: SnapshotNonce,
+
+    #[allow(unused)]
     tx_lock: MutexGuard<'a, ()>,
 }
 
 impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(keyspace: Keyspace, tx_lock: MutexGuard<'a, ()>, instant: Instant) -> Self {
+    pub(crate) fn new(
+        keyspace: Keyspace,
+        tx_lock: MutexGuard<'a, ()>,
+        instant: Instant,
+        nonce: SnapshotNonce,
+    ) -> Self {
         Self {
             keyspace,
             memtables: HashMap::default(),
             instant,
             tx_lock,
+            nonce,
         }
     }
 

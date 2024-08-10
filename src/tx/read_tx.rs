@@ -1,15 +1,18 @@
-use crate::{Instant, TxPartitionHandle};
+use crate::{snapshot_nonce::SnapshotNonce, Instant, TxPartitionHandle};
 use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
     instant: Instant,
+
+    #[allow(unused)]
+    nonce: SnapshotNonce,
 }
 
 impl ReadTransaction {
-    pub(crate) fn new(instant: Instant) -> Self {
-        Self { instant }
+    pub(crate) fn new(instant: Instant, nonce: SnapshotNonce) -> Self {
+        Self { instant, nonce }
     }
 
     /// Retrieves an item from the transaction's state.

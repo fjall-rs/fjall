@@ -12,13 +12,15 @@ use crate::{
         Journal,
     },
     keyspace::Partitions,
+    snapshot_nonce::SnapshotNonce,
+    snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
     Error, HashMap, Keyspace,
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, Snapshot,
-    UserKey, UserValue,
+    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
+    UserValue,
 };
 use std::{
     ops::RangeBounds,
@@ -85,6 +87,9 @@ pub struct PartitionHandleInner {
 
     /// Chosen compaction strategy - can be changed during runtime
     pub(crate) compaction_strategy: RwLock<Arc<dyn CompactionStrategy + Send + Sync>>,
+
+    /// Snapshot tracker
+    pub(crate) snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for PartitionHandleInner {
@@ -211,6 +216,7 @@ impl PartitionHandle {
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
         })))
     }
 
@@ -717,14 +723,17 @@ impl PartitionHandle {
 
     /// Opens a snapshot of this partition.
     #[must_use]
-    pub fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> crate::Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
     /// Opens a snapshot of this partition with a given sequence number.
     #[must_use]
-    pub fn snapshot_at(&self, seqno: crate::Instant) -> Snapshot {
-        self.tree.snapshot(seqno)
+    pub fn snapshot_at(&self, seqno: crate::Instant) -> crate::Snapshot {
+        crate::Snapshot::new(
+            self.tree.snapshot(seqno),
+            SnapshotNonce::new(seqno, self.snapshot_tracker.clone()),
+        )
     }
 
     /// Inserts a key-value pair into the partition.

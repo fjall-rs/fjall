@@ -11,6 +11,7 @@ use crate::{
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
+    snapshot_tracker::SnapshotTracker,
     version::Version,
     write_buffer_manager::WriteBufferManager,
     HashMap, PartitionCreateOptions, PartitionHandle,
@@ -69,6 +70,8 @@ pub struct KeyspaceInner {
 
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
+
+    pub(crate) snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for KeyspaceInner {
@@ -572,6 +575,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
+            snapshot_tracker: SnapshotTracker::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -620,6 +624,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
+            snapshot_tracker: SnapshotTracker::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -690,6 +695,7 @@ impl Keyspace {
         let compaction_manager = self.compaction_manager.clone();
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
+        let snapshot_tracker = self.snapshot_tracker.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -698,7 +704,7 @@ impl Keyspace {
                 log::trace!("compaction: waiting for work");
                 compaction_manager.wait_for();
 
-                crate::compaction::worker::run(&compaction_manager);
+                crate::compaction::worker::run(&compaction_manager, &snapshot_tracker);
             }
 
             log::trace!("compaction thread: exiting because keyspace is dropping");

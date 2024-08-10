@@ -1,8 +1,9 @@
 use super::manager::CompactionManager;
+use crate::snapshot_tracker::SnapshotTracker;
 use lsm_tree::AbstractTree;
 
 /// Runs a single run of compaction.
-pub fn run(compaction_manager: &CompactionManager) {
+pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTracker) {
     let Some(item) = compaction_manager.pop() else {
         return;
     };
@@ -21,7 +22,7 @@ pub fn run(compaction_manager: &CompactionManager) {
 
     if let Err(e) = item
         .tree
-        .compact(strategy, 0 /* TODO: 2.0.0: snapshot GC tracker */)
+        .compact(strategy, snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
     };
