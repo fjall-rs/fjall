@@ -1,7 +1,7 @@
 use crate::{
     batch::{item::Item, PartitionKey},
     snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, Instant, Keyspace, TxPartitionHandle,
+    Batch, HashMap, Keyspace, TxPartitionHandle,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
 use std::{
@@ -25,7 +25,6 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 pub struct WriteTransaction<'a> {
     keyspace: Keyspace,
     memtables: HashMap<PartitionKey, Arc<MemTable>>,
-    instant: Instant,
 
     #[allow(unused)]
     nonce: SnapshotNonce,
@@ -38,13 +37,11 @@ impl<'a> WriteTransaction<'a> {
     pub(crate) fn new(
         keyspace: Keyspace,
         tx_lock: MutexGuard<'a, ()>,
-        instant: Instant,
         nonce: SnapshotNonce,
     ) -> Self {
         Self {
             keyspace,
             memtables: HashMap::default(),
-            instant,
             tx_lock,
             nonce,
         }
@@ -270,7 +267,7 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        Ok(partition.inner.snapshot_at(self.instant).get(key)?)
+        Ok(partition.inner.snapshot_at(self.nonce.instant).get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -454,7 +451,7 @@ impl<'a> WriteTransaction<'a> {
             .inner
             .tree
             .iter_with_seqno(
-                self.instant,
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
@@ -471,7 +468,7 @@ impl<'a> WriteTransaction<'a> {
         partition
             .inner
             .tree
-            .keys_with_seqno(self.instant, None)
+            .keys_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -486,7 +483,7 @@ impl<'a> WriteTransaction<'a> {
         partition
             .inner
             .tree
-            .values_with_seqno(self.instant, None)
+            .values_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -524,7 +521,7 @@ impl<'a> WriteTransaction<'a> {
             .tree
             .range_with_seqno(
                 range,
-                self.instant,
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))
@@ -564,7 +561,7 @@ impl<'a> WriteTransaction<'a> {
             .tree
             .prefix_with_seqno(
                 prefix,
-                self.instant,
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| Ok(item?))

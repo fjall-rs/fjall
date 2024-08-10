@@ -1,18 +1,16 @@
-use crate::{snapshot_nonce::SnapshotNonce, Instant, TxPartitionHandle};
+use crate::{snapshot_nonce::SnapshotNonce, TxPartitionHandle};
 use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
-    instant: Instant,
-
     #[allow(unused)]
     nonce: SnapshotNonce,
 }
 
 impl ReadTransaction {
-    pub(crate) fn new(instant: Instant, nonce: SnapshotNonce) -> Self {
-        Self { instant, nonce }
+    pub(crate) fn new(nonce: SnapshotNonce) -> Self {
+        Self { nonce }
     }
 
     /// Retrieves an item from the transaction's state.
@@ -48,7 +46,11 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        Ok(partition.inner.tree.snapshot_at(self.instant).get(key)?)
+        Ok(partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .get(key)?)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -240,7 +242,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .iter_with_seqno(self.instant, None)
+            .iter_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -255,7 +257,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .keys_with_seqno(self.instant, None)
+            .keys_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -270,7 +272,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .values_with_seqno(self.instant, None)
+            .values_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -303,7 +305,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .range_with_seqno(range, self.instant, None)
+            .range_with_seqno(range, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -336,7 +338,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .prefix_with_seqno(prefix, self.instant, None)
+            .prefix_with_seqno(prefix, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 }

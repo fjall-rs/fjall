@@ -2,7 +2,7 @@ use crate::{snapshot_tracker::SnapshotTracker, Instant};
 
 /// Holds a snapshot instant and automatically frees it from the snapshot tracker when dropped
 pub struct SnapshotNonce {
-    instant: Instant,
+    pub(crate) instant: Instant,
     tracker: SnapshotTracker,
 }
 
