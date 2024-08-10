@@ -128,7 +128,7 @@ pub fn run(
                     let mut flush_manager = flush_manager.write().expect("lock is poisoned");
 
                     log::debug!(
-                        "Dequeing flush tasks: {} => {}",
+                        "Dequeuing flush tasks: {} => {}",
                         partition.name,
                         created_segments.len()
                     );
