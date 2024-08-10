@@ -281,7 +281,7 @@ impl PartitionHandle {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
         self.tree.values().map(|item| Ok(item?))
     }
 
@@ -307,7 +307,7 @@ impl PartitionHandle {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.range(range).map(|item| Ok(item?))
     }
 
@@ -333,7 +333,7 @@ impl PartitionHandle {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.prefix(prefix).map(|item| Ok(item?))
     }
 

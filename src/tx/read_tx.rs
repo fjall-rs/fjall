@@ -237,7 +237,7 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -300,7 +300,7 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -333,7 +333,7 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree

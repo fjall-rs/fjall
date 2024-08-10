@@ -259,7 +259,7 @@ impl<'a> WriteTransaction<'a> {
         &self,
         partition: &TxPartitionHandle,
         key: K,
-    ) -> crate::Result<Option<lsm_tree::UserValue>> {
+    ) -> crate::Result<Option<UserValue>> {
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
             if let Some(item) = memtable.get(&key, None) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
@@ -445,7 +445,7 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         partition: &'b TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -514,7 +514,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
@@ -554,7 +554,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         partition
             .inner
             .tree
