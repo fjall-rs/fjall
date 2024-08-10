@@ -26,7 +26,6 @@ pub struct WriteTransaction<'a> {
     keyspace: Keyspace,
     memtables: HashMap<PartitionKey, Arc<MemTable>>,
 
-    #[allow(unused)]
     nonce: SnapshotNonce,
 
     #[allow(unused)]

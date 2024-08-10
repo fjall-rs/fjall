@@ -4,7 +4,6 @@ use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
-    #[allow(unused)]
     nonce: SnapshotNonce,
 }
 
