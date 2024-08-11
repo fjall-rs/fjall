@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::{snapshot_tracker::SnapshotTracker, Instant};
 
 /// Holds a snapshot instant and automatically frees it from the snapshot tracker when dropped

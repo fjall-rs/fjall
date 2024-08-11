@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use lsm_tree::{CompressionType, TreeType};
 
 /// Options to configure a partition
@@ -62,10 +66,11 @@ impl CreateOptions {
     ///
     /// # Panics
     ///
-    /// Panics if the block size is smaller than 1 KiB (1024 bytes).
+    /// Panics if the block size is smaller than 1 KiB or larger than 512 KiB.
     #[must_use]
     pub fn block_size(mut self, block_size: u32) -> Self {
         assert!(block_size >= 1_024);
+        assert!(block_size <= 512 * 1_024);
 
         self.block_size = block_size;
         self

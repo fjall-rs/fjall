@@ -1,10 +1,13 @@
-use lsm_tree::AbstractTree;
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
 
 use crate::{
     config::Config as KeyspaceConfig, flush::manager::FlushManager,
     journal::manager::JournalManager, keyspace::Partitions,
     write_buffer_manager::WriteBufferManager, Keyspace,
 };
+use lsm_tree::AbstractTree;
 use std::sync::{Arc, RwLock};
 
 /// Monitors write buffer size & journal size

@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::snapshot_nonce::SnapshotNonce;
 
 /// A snapshot captures a read-only point-in-time view of the tree at the time the snapshot was created
