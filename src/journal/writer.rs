@@ -47,10 +47,7 @@ pub enum PersistMode {
 
     /// Flushes data using `fdatasync`.
     ///
-    /// Depending on your operating system of choice, this operation
-    /// may be about 2x faster than [`PersistMode::SyncAll`].
-    ///
-    /// Only use if you know that `fdatasync` is sufficient for your file system and/or operating system.
+    /// Use if you know that `fdatasync` is sufficient for your file system and/or operating system.
     SyncData,
 
     /// Flushes data + metadata using `fsync`.
