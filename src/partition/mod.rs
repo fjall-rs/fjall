@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod name;
+mod write_delay;
 
 use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
@@ -36,6 +37,7 @@ use std::{
     time::Duration,
 };
 use std_semaphore::Semaphore;
+use write_delay::get_write_delay;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
@@ -662,23 +664,22 @@ impl PartitionHandle {
         }
     }
 
-    fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() > 24 {
-            log::info!("Halting writes until L0 is cleared up...");
-            self.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(1_000));
-        }
-    }
-
     fn check_write_stall(&self) {
         let seg_count = self.tree.first_level_segment_count();
 
-        if seg_count > 20 {
-            log::info!("Stalling writes, many segments in L0...");
+        if seg_count > 10 {
+            let sleep_us = get_write_delay(seg_count);
+            log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
             self.compaction_manager.notify(self.clone());
+            std::thread::sleep(Duration::from_micros(sleep_us));
+        }
+    }
 
-            let ms = if seg_count > 22 { 500 } else { 100 };
-            std::thread::sleep(Duration::from_millis(ms));
+    fn check_write_halt(&self) {
+        while self.tree.first_level_segment_count() > 20 {
+            log::info!("Halting writes until L0 is cleared up...");
+            self.compaction_manager.notify(self.clone());
+            std::thread::sleep(Duration::from_millis(1_000));
         }
     }
 
