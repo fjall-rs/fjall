@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{journal::shard::RecoveryMode, path::absolute_path, Keyspace};
-use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
+use lsm_tree::{descriptor_table::FileDescriptorTable, BlobCache, BlockCache};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -19,7 +19,10 @@ pub struct Config {
     pub(crate) clean_path_on_drop: bool,
 
     /// Block cache that will be shared between partitions
-    pub(crate) block_cache: Arc<BlockCache>,
+    #[doc(hidden)]
+    pub block_cache: Arc<BlockCache>,
+
+    pub(crate) blob_cache: Arc<BlobCache>,
 
     /// Descriptor table that will be shared between partitions
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
@@ -71,6 +74,7 @@ impl Default for Config {
             path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
+            blob_cache: Arc::new(BlobCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
@@ -131,6 +135,16 @@ impl Config {
     #[must_use]
     pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
         self.block_cache = block_cache;
+        self
+    }
+
+    /// Sets the blob cache.
+    ///
+    /// Defaults to a block cache with 16 MiB of capacity
+    /// shared between all partitions inside this keyspace.
+    #[must_use]
+    pub fn blob_cache(mut self, blob_cache: Arc<BlobCache>) -> Self {
+        self.blob_cache = blob_cache;
         self
     }
 

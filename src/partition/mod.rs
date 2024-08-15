@@ -197,6 +197,7 @@ impl PartitionHandle {
         let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
+            .blob_cache(keyspace.config.blob_cache.clone())
             .block_size(config.block_size)
             .level_count(config.level_count)
             .compression(config.compression);

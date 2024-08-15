@@ -158,5 +158,5 @@ pub type LsmError = lsm_tree::Error;
 pub use lsm_tree::AbstractTree;
 
 pub use lsm_tree::{
-    AnyTree, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
+    AnyTree, BlobCache, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
 };

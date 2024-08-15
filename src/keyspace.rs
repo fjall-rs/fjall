@@ -275,6 +275,15 @@ impl Keyspace {
     ///
     /// Returns error, if an IO error occured.
     pub fn open(config: Config) -> crate::Result<Self> {
+        log::debug!(
+            "block cache capacity={}MiB",
+            config.block_cache.capacity() / 1_024 / 1_024,
+        );
+        log::debug!(
+            "blob cache capacity={}MiB",
+            config.blob_cache.capacity() / 1_024 / 1_024,
+        );
+
         let keyspace = Self::create_or_recover(config)?;
         keyspace.start_background_threads();
 
