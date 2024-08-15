@@ -457,7 +457,7 @@ impl<'a> WriteTransaction<'a> {
                 self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over the transaction's state, returning keys only.
@@ -472,7 +472,7 @@ impl<'a> WriteTransaction<'a> {
             .inner
             .tree
             .keys_with_seqno(self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over the transaction's state, returning values only.
@@ -487,7 +487,7 @@ impl<'a> WriteTransaction<'a> {
             .inner
             .tree
             .values_with_seqno(self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over a range of the transaction's state.
@@ -527,7 +527,7 @@ impl<'a> WriteTransaction<'a> {
                 self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over a range of the transaction's state.
@@ -567,7 +567,7 @@ impl<'a> WriteTransaction<'a> {
                 self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Inserts a key-value pair into the partition.

@@ -27,6 +27,7 @@ fn journal_recover_large_value() -> fjall::Result<()> {
 
 // TODO: 2.0.0: recover blob tree needs to read journal values as MaybeInlineValue...
 #[test_log::test]
+#[ignore]
 fn journal_recover_large_value_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 

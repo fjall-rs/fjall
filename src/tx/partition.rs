@@ -61,7 +61,7 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -69,7 +69,7 @@ impl TransactionalPartitionHandle {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let prev = partition.fetch_update("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// let prev = partition.fetch_update("a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
     ///
     /// let item = partition.get("a")?;
@@ -127,7 +127,7 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -135,7 +135,7 @@ impl TransactionalPartitionHandle {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let updated = partition.update_fetch("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// let updated = partition.update_fetch("a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
     ///
     /// let item = partition.get("a")?;

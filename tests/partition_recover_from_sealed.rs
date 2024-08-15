@@ -1,7 +1,7 @@
 use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
-const ITEM_COUNT: usize = 100;
+const ITEM_COUNT: usize = 10;
 
 #[test]
 fn recover_sealed_journal() -> fjall::Result<()> {

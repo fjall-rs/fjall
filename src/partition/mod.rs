@@ -84,7 +84,8 @@ pub struct PartitionHandleInner {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
 
     /// Sequence number generator of keyspace
-    pub(crate) seqno: SequenceNumberCounter,
+    #[doc(hidden)]
+    pub seqno: SequenceNumberCounter,
 
     // Configuration
     //
@@ -273,7 +274,7 @@ impl PartitionHandle {
     /// ```
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
-        self.tree.iter().map(|item| Ok(item?))
+        self.tree.iter().map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only keys.
@@ -281,7 +282,7 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
-        self.tree.keys().map(|item| Ok(item?))
+        self.tree.keys().map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only values.
@@ -289,7 +290,7 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        self.tree.values().map(|item| Ok(item?))
+        self.tree.values().map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a range of items.
@@ -315,7 +316,7 @@ impl PartitionHandle {
         &'a self,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.range(range).map(|item| Ok(item?))
+        self.tree.range(range).map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -341,7 +342,9 @@ impl PartitionHandle {
         &'a self,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.prefix(prefix).map(|item| Ok(item?))
+        self.tree
+            .prefix(prefix)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Approximates the amount of items in the partition.
