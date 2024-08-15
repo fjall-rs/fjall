@@ -148,7 +148,7 @@ impl ReadTransaction {
     /// This operation scans the entire partition: O(n) complexity!
     ///
     /// Never, under any circumstances, use .`len()` == 0 to check
-    /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
+    /// if the partition is empty, use [`ReadTransaction::is_empty`] instead.
     ///
     /// # Examples
     ///
