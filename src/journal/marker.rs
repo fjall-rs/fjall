@@ -16,7 +16,7 @@ const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'L', b'L', b'T', b'R', b'L', b'2'];
 ///
 /// - The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
 ///
-/// - The end marker contains a CRC value. If the CRC of the items doesn't match that, the batch is broken.
+/// - The end marker contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
 /// - The end marker terminates each batch with the magic u64 value: [`TRAILER_MAGIC`].
 ///
@@ -33,7 +33,7 @@ pub enum Marker {
         value: UserValue,
         value_type: ValueType,
     },
-    End(u32),
+    End(u64),
 }
 
 pub enum Tag {
@@ -100,10 +100,10 @@ impl Serializable for Marker {
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
-                writer.write_u32::<BigEndian>(*val)?;
+                writer.write_u64::<BigEndian>(*val)?;
 
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
-                // Otherwise we couldn't know if the CRC value is maybe mangled
+                // Otherwise we couldn't know if the checksum value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
                 writer.write_all(TRAILER_MAGIC)?;
             }
@@ -147,7 +147,7 @@ impl Deserializable for Marker {
                 })
             }
             Tag::End => {
-                let crc = reader.read_u32::<BigEndian>()?;
+                let checksum = reader.read_u64::<BigEndian>()?;
 
                 // Check trailer
                 let mut magic = [0u8; TRAILER_MAGIC.len()];
@@ -157,7 +157,7 @@ impl Deserializable for Marker {
                     return Err(DeserializeError::InvalidTrailer);
                 }
 
-                Ok(Self::End(crc))
+                Ok(Self::End(checksum))
             }
         }
     }

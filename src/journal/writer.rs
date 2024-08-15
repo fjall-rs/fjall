@@ -7,6 +7,7 @@ use crate::batch::item::Item as BatchItem;
 use lsm_tree::{serde::Serializable, SeqNo, SerializeError};
 use std::{
     fs::{File, OpenOptions},
+    hash::Hasher,
     io::{BufWriter, Write},
     path::Path,
 };
@@ -31,9 +32,9 @@ fn write_start(
 }
 
 /// Writes a batch end marker to the journal
-fn write_end(writer: &mut BufWriter<File>, crc: u32) -> Result<usize, SerializeError> {
+fn write_end(writer: &mut BufWriter<File>, checksum: u64) -> Result<usize, SerializeError> {
     let mut bytes = Vec::new();
-    Marker::End(crc).serialize(&mut bytes)?;
+    Marker::End(checksum).serialize(&mut bytes)?;
 
     writer.write_all(&bytes)?;
     Ok(bytes.len())
@@ -118,7 +119,7 @@ impl Writer {
         #[allow(clippy::cast_possible_truncation)]
         let item_count = items.len() as u32;
 
-        let mut hasher = crc32fast::Hasher::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut byte_count = 0;
 
         byte_count += write_start(&mut self.file, item_count, seqno)?;
@@ -139,8 +140,8 @@ impl Writer {
             byte_count += bytes.len();
         }
 
-        let crc = hasher.finalize();
-        byte_count += write_end(&mut self.file, crc)?;
+        let checksum = hasher.finish();
+        byte_count += write_end(&mut self.file, checksum)?;
 
         Ok(byte_count)
     }

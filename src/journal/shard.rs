@@ -7,6 +7,7 @@ use crate::batch::{item::Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
 use crate::HashMap;
 use lsm_tree::{serde::Serializable, Memtable, SeqNo};
+use std::hash::Hasher;
 use std::{fs::OpenOptions, path::Path};
 
 /// Recovery mode to use
@@ -24,7 +25,7 @@ pub enum RecoveryMode {
     #[default]
     TolerateCorruptTail,
     // TODO: in the future?
-    /*  /// Skips corrupt (invalid CRC) batches. This may violate
+    /*  /// Skips corrupt (invalid checksum) batches. This may violate
     /// consistency, but will recover as much data as possible.
     SkipInvalidBatches, */
     // TODO: absolute consistency
@@ -41,8 +42,8 @@ pub enum RecoveryError {
     /// Too many items in batch
     TooManyItems,
 
-    /// The CRC value does not match the expected value
-    CrcCheck,
+    /// The checksum value does not match the expected value
+    ChecksumMismatch,
 }
 
 // TODO: don't require locking for sync check
@@ -95,7 +96,7 @@ impl JournalShard {
         let path = path.as_ref();
         let recoverer = JournalShardReader::new(path)?;
 
-        let mut hasher = crc32fast::Hasher::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut is_in_batch = false;
         let mut batch_counter = 0;
         let mut batch_seqno = SeqNo::default();
@@ -121,7 +122,7 @@ impl JournalShard {
                     batch_counter = item_count;
                     batch_seqno = seqno;
                 }
-                Marker::End(checksum) => {
+                Marker::End(expected_checksum) => {
                     if batch_counter > 0 {
                         log::error!("Invalid batch: insufficient length");
                         return Err(JournalRecovery(RecoveryError::InsufficientLength));
@@ -136,12 +137,12 @@ impl JournalShard {
                         break 'a;
                     }
 
-                    let crc = hasher.finalize();
-                    hasher = crc32fast::Hasher::new();
+                    let got_checksum = hasher.finish();
+                    hasher = xxhash_rust::xxh3::Xxh3::new();
 
-                    if crc != checksum {
-                        log::error!("Invalid batch: checksum check failed, expected: {checksum}, got: {crc}");
-                        return Err(JournalRecovery(RecoveryError::CrcCheck));
+                    if got_checksum != expected_checksum {
+                        log::error!("Invalid batch: checksum check failed, expected: {expected_checksum}, got: {got_checksum}");
+                        return Err(JournalRecovery(RecoveryError::ChecksumMismatch));
                     }
 
                     // Reset all variables

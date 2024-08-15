@@ -29,7 +29,7 @@ __internal_integration = []
 
 [dependencies]
 byteorder = "1.5.0"
-crc32fast = "1.4.2"
+lsm-tree = { path = "../lsm-tree", default-features = false }
 lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "v2", default-features = false }
 log = "0.4.21"
 std-semaphore = "0.1.0"
@@ -38,6 +38,7 @@ fs_extra = "1.3.0"
 path-absolutize = "3.1.1"
 ahash = "0.8.11"
 dashmap = "6.0.1"
+xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
