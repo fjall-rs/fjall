@@ -7,7 +7,7 @@ use crate::{
     snapshot_nonce::SnapshotNonce,
     Batch, HashMap, Keyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, MemTable, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{
     ops::RangeBounds,
     sync::{Arc, MutexGuard},
@@ -28,7 +28,7 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 /// Drop the transaction to rollback changes.
 pub struct WriteTransaction<'a> {
     keyspace: Keyspace,
-    memtables: HashMap<PartitionKey, Arc<MemTable>>,
+    memtables: HashMap<PartitionKey, Arc<Memtable>>,
 
     nonce: SnapshotNonce,
 

@@ -6,7 +6,7 @@ use super::{marker::Marker, writer::Writer as JournalWriter};
 use crate::batch::{item::Item as BatchItem, PartitionKey};
 use crate::journal::reader::JournalShardReader;
 use crate::HashMap;
-use lsm_tree::{serde::Serializable, MemTable, SeqNo};
+use lsm_tree::{serde::Serializable, Memtable, SeqNo};
 use std::{fs::OpenOptions, path::Path};
 
 /// Recovery mode to use
@@ -86,7 +86,7 @@ impl JournalShard {
     #[allow(clippy::too_many_lines)]
     pub fn recover_and_repair<P: AsRef<Path>>(
         path: P,
-        memtables: &mut HashMap<PartitionKey, MemTable>,
+        memtables: &mut HashMap<PartitionKey, Memtable>,
         whitelist: Option<&[PartitionKey]>,
         _recovery_mode: RecoveryMode, // TODO:
     ) -> crate::Result<()> {

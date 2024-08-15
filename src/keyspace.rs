@@ -20,7 +20,7 @@ use crate::{
     write_buffer_manager::WriteBufferManager,
     HashMap, PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{MemTable, SequenceNumberCounter};
+use lsm_tree::{Memtable, SequenceNumberCounter};
 use std::{
     fs::{remove_dir_all, File},
     path::Path,
@@ -43,7 +43,8 @@ pub struct KeyspaceInner {
     pub(crate) journal: Arc<Journal>,
 
     /// Keyspace configuration
-    pub(crate) config: Config,
+    #[doc(hidden)]
+    pub config: Config,
 
     /// Current sequence number
     pub(crate) seqno: SequenceNumberCounter,
@@ -507,7 +508,7 @@ impl Keyspace {
         recovery_mode: RecoveryMode,
     ) -> crate::Result<(
         lsm_tree::SegmentId,
-        Option<(Journal, HashMap<PartitionKey, MemTable>)>,
+        Option<(Journal, HashMap<PartitionKey, Memtable>)>,
     )> {
         let mut journal = None;
         let mut max_journal_id = 0;

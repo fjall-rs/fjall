@@ -12,7 +12,7 @@ use crate::{
     partition::PartitionHandleInner,
     HashMap, Keyspace, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, AnyTree, MemTable};
+use lsm_tree::{AbstractTree, AnyTree, Memtable};
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 const LSM_VERSION_MARKER_FILE: &str = "version";
@@ -20,7 +20,7 @@ const LSM_VERSION_MARKER_FILE: &str = "version";
 /// Recovers partitions
 pub fn recover_partitions(
     keyspace: &Keyspace,
-    memtables: &mut HashMap<PartitionKey, MemTable>,
+    memtables: &mut HashMap<PartitionKey, Memtable>,
 ) -> crate::Result<()> {
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 

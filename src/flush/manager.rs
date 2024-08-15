@@ -4,7 +4,7 @@
 
 use super::queue::FlushQueue;
 use crate::{batch::PartitionKey, HashMap, PartitionHandle};
-use lsm_tree::{MemTable, SegmentId};
+use lsm_tree::{Memtable, SegmentId};
 use std::{collections::HashSet, sync::Arc};
 
 pub struct Task {
@@ -12,7 +12,7 @@ pub struct Task {
     pub(crate) id: SegmentId,
 
     /// Memtable to flush
-    pub(crate) sealed_memtable: Arc<MemTable>,
+    pub(crate) sealed_memtable: Arc<Memtable>,
 
     /// Partition
     pub(crate) partition: PartitionHandle,
