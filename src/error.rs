@@ -23,7 +23,7 @@ pub enum Error {
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
 
-    /// Invalid or unparseable data format version
+    /// Invalid or unparsable data format version
     InvalidVersion(Option<Version>),
 
     /// A previous flush operation failed, indicating a hardware-related failure.

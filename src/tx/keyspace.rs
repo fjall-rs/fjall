@@ -71,7 +71,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         self.inner.persist(mode)
     }
@@ -80,7 +80,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     ///
     /// # Panics
     ///
@@ -147,7 +147,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         let inner = Keyspace::create_or_recover(config)?;
         inner.start_background_threads();

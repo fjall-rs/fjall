@@ -252,7 +252,7 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
@@ -273,7 +273,7 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!(
             "block cache capacity={}MiB",
@@ -384,7 +384,7 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     ///
     /// # Panics
     ///
