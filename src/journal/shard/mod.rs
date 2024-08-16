@@ -113,7 +113,9 @@ impl JournalShard {
             let journal_file_pos = recoverer.last_valid_pos;
 
             match item {
-                Marker::Start { item_count, seqno } => {
+                Marker::Start {
+                    item_count, seqno, ..
+                } => {
                     if is_in_batch {
                         log::debug!("Invalid batch: found batch start inside batch");
 

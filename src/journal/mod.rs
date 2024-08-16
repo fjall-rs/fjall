@@ -276,6 +276,7 @@ mod tests {
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
+                compression: lsm_tree::CompressionType::None,
             }
             .serialize(&mut file)?;
             file.sync_all()?;
@@ -295,6 +296,7 @@ mod tests {
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
+                compression: lsm_tree::CompressionType::None,
             }
             .serialize(&mut file)?;
             file.sync_all()?;

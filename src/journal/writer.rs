@@ -25,7 +25,12 @@ fn write_start(
     seqno: SeqNo,
 ) -> Result<usize, SerializeError> {
     let mut bytes = Vec::new();
-    Marker::Start { item_count, seqno }.serialize(&mut bytes)?;
+    Marker::Start {
+        item_count,
+        seqno,
+        compression: lsm_tree::CompressionType::None,
+    }
+    .serialize(&mut bytes)?;
 
     writer.write_all(&bytes)?;
     Ok(bytes.len())

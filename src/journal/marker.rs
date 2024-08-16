@@ -6,7 +6,7 @@ use crate::batch::PartitionKey;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     serde::{Deserializable, Serializable},
-    DeserializeError, SeqNo, SerializeError, UserKey, UserValue, ValueType,
+    CompressionType, DeserializeError, SeqNo, SerializeError, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
 
@@ -26,6 +26,7 @@ pub enum Marker {
     Start {
         item_count: u32,
         seqno: SeqNo,
+        compression: CompressionType,
     },
     Item {
         partition: PartitionKey,
@@ -68,10 +69,15 @@ impl Serializable for Marker {
         use Marker::{End, Item, Start};
 
         match self {
-            Start { item_count, seqno } => {
+            Start {
+                item_count,
+                seqno,
+                compression,
+            } => {
                 writer.write_u8(Tag::Start.into())?;
                 writer.write_u32::<BigEndian>(*item_count)?;
                 writer.write_u64::<BigEndian>(*seqno)?;
+                compression.serialize(writer)?;
             }
             Item {
                 partition,
@@ -118,7 +124,19 @@ impl Deserializable for Marker {
             Tag::Start => {
                 let item_count = reader.read_u32::<BigEndian>()?;
                 let seqno = reader.read_u64::<BigEndian>()?;
-                Ok(Self::Start { item_count, seqno })
+                let compression = CompressionType::deserialize(reader)?;
+
+                assert_eq!(
+                    compression,
+                    CompressionType::None,
+                    "invalid compression type"
+                );
+
+                Ok(Self::Start {
+                    item_count,
+                    seqno,
+                    compression,
+                })
             }
             Tag::Item => {
                 let value_type = reader.read_u8()?.into();
