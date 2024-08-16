@@ -11,6 +11,7 @@ use std::{
 };
 
 /// Keeps track of open snapshots
+#[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
     data: DashMap<Instant, usize, BuildHasherDefault<AHasher>>,
     safety_gap: u64,

@@ -5,20 +5,24 @@
 use super::manager::{FlushManager, Task};
 use crate::{
     batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    write_buffer_manager::WriteBufferManager, HashMap, PartitionHandle,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, HashMap,
+    PartitionHandle,
 };
-use lsm_tree::{AbstractTree, Segment};
+use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
-fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
+fn run_flush_worker(
+    task: &Arc<Task>,
+    eviction_threshold: SeqNo,
+) -> crate::Result<Option<Arc<Segment>>> {
     #[rustfmt::skip]
     let segment = task.partition.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
         task.id,
-        
         &task.sealed_memtable,
+        eviction_threshold,
     )?;
 
     Ok(segment)
@@ -37,7 +41,10 @@ type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
 /// Distributes tasks of multiple partitions over multiple worker threads.
 ///
 /// Each thread is responsible for the tasks of one partition.
-fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) -> MultiFlushResults {
+fn run_multi_flush(
+    partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>,
+    eviction_threshold: SeqNo,
+) -> MultiFlushResults {
     log::debug!(
         "flush worker: spawning {} worker threads",
         partitioned_tasks.len()
@@ -72,7 +79,9 @@ fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) ->
                 #[allow(clippy::needless_collect)]
                 let flush_workers = tasks
                     .into_iter()
-                    .map(|task| std::thread::spawn(move || run_flush_worker(&task)))
+                    .map(|task| {
+                        std::thread::spawn(move || run_flush_worker(&task, eviction_threshold))
+                    })
                     .collect::<Vec<_>>();
 
                 let created_segments = flush_workers
@@ -82,7 +91,7 @@ fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) ->
 
                 Ok(MultiFlushResultItem {
                     partition,
-                    created_segments,
+                    created_segments: created_segments.into_iter().flatten().collect(),
                     size: memtables_size,
                 })
             })
@@ -102,6 +111,7 @@ pub fn run(
     journal_manager: &Arc<RwLock<JournalManager>>,
     compaction_manager: &CompactionManager,
     write_buffer_manager: &WriteBufferManager,
+    snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
 ) {
     log::debug!("flush worker: write locking flush manager");
@@ -116,7 +126,7 @@ pub fn run(
         return;
     }
 
-    for result in run_multi_flush(&partitioned_tasks) {
+    for result in run_multi_flush(&partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
         match result {
             Ok(MultiFlushResultItem {
                 partition,

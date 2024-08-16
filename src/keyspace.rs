@@ -738,6 +738,7 @@ impl Keyspace {
             &self.journal_manager,
             &self.compaction_manager,
             &self.write_buffer_manager,
+            &self.snapshot_tracker,
             parallelism,
         );
     }
@@ -748,6 +749,7 @@ impl Keyspace {
         let compaction_manager = self.compaction_manager.clone();
         let flush_semaphore = self.flush_semaphore.clone();
         let write_buffer_manager = self.write_buffer_manager.clone();
+        let snapshot_tracker = self.snapshot_tracker.clone();
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
@@ -766,6 +768,7 @@ impl Keyspace {
                     &journal_manager,
                     &compaction_manager,
                     &write_buffer_manager,
+                    &snapshot_tracker,
                     parallelism,
                 );
             }
