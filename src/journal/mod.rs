@@ -5,7 +5,6 @@
 pub mod manager;
 mod marker;
 pub mod partition_manifest;
-mod reader;
 pub mod shard;
 pub mod writer;
 
@@ -48,6 +47,13 @@ impl Drop for Journal {
         crate::drop::decrement_drop_counter();
     }
 }
+
+// TODO: need JournalReader which merges all shards
+// TODO: into a single stream... the stream emitting
+// TODO: valid batches, deprecates Shard::recover_and_repair
+// TODO: need to write the valid batches into a RecoveryThing
+// TODO: that writes into the memtables
+// TODO: the journal shouldn't know about memtables!!!
 
 impl Journal {
     pub fn recover_memtables<P: AsRef<Path>>(

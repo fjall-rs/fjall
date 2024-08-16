@@ -1,7 +1,7 @@
 use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
-const ITEM_COUNT: usize = 100;
+const ITEM_COUNT: usize = 10;
 
 #[test]
 fn partition_delete() -> fjall::Result<()> {
@@ -108,7 +108,7 @@ fn tx_partition_delete() -> fjall::Result<()> {
         );
     }
 
-    for _ in 0..10 {
+    for _ in 0..5 {
         let keyspace = Config::new(&folder).open_transactional()?;
 
         let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;

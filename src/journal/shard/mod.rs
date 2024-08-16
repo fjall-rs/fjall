@@ -2,11 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+mod reader;
+
 use super::{marker::Marker, writer::Writer as JournalWriter};
 use crate::batch::{item::Item as BatchItem, PartitionKey};
-use crate::journal::reader::JournalShardReader;
 use crate::HashMap;
 use lsm_tree::{serde::Serializable, Memtable, SeqNo};
+use reader::JournalShardReader;
 use std::hash::Hasher;
 use std::{fs::OpenOptions, path::Path};
 
@@ -14,6 +16,7 @@ use std::{fs::OpenOptions, path::Path};
 ///
 /// Based on `RocksDB`'s WAL Recovery Modes: <https://github.com/facebook/rocksdb/wiki/WAL-Recovery-Modes>
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RecoveryMode {
     /// The last batch in the journal may be corrupt on crash,
     /// and will be discarded without error.
@@ -73,6 +76,7 @@ impl JournalShard {
         })
     }
 
+    // TODO: reallocate space
     fn truncate_to<P: AsRef<Path>>(path: P, last_valid_pos: u64) -> crate::Result<()> {
         log::trace!("Truncating shard to {last_valid_pos}");
         let file = OpenOptions::new().write(true).open(path)?;
@@ -94,7 +98,7 @@ impl JournalShard {
         use crate::Error::JournalRecovery;
 
         let path = path.as_ref();
-        let recoverer = JournalShardReader::new(path)?;
+        let mut recoverer = JournalShardReader::new(path)?;
 
         let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut is_in_batch = false;
@@ -104,8 +108,9 @@ impl JournalShard {
 
         let mut items: Vec<BatchItem> = vec![];
 
-        'a: for item in recoverer {
-            let (journal_file_pos, item) = item?;
+        'a: while let Some(item) = recoverer.next() {
+            let item = item?;
+            let journal_file_pos = recoverer.last_valid_pos;
 
             match item {
                 Marker::Start { item_count, seqno } => {
