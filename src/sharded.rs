@@ -8,9 +8,9 @@ type Shard<T> = RwLock<T>;
 
 /// Defines a sharded structure
 ///
-/// The sharded structure consists of N shards that can be independently locked
+/// The sharded structure consists of N shards that can be independently locked.
 ///
-/// This reduces contention when working with multiple threads
+/// This reduces contention when working with multiple threads.
 pub struct Sharded<T> {
     shards: Vec<Shard<T>>,
 }

@@ -79,8 +79,8 @@ impl Default for Config {
             max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: Some(1_000),
-            flush_workers_count: cpus,
-            compaction_workers_count: cpus,
+            flush_workers_count: cpus.min(4),
+            compaction_workers_count: cpus.min(4),
             journal_recovery_mode: RecoveryMode::default(),
         }
     }
