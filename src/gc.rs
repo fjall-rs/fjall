@@ -57,8 +57,8 @@ impl GarbageCollector {
     /// assert_eq!(0, report.stale_segment_count);
     /// assert_eq!(1, report.segment_count);
     ///
-    /// // TODO: 2.0.0 bytes_freed
     /// let bytes_freed = Gc::with_space_amp_target(&blobs, 1.5)?;
+    /// assert!(bytes_freed > 0);
     ///
     /// let report = Gc::scan(&blobs)?;
     /// assert_eq!(0.0, report.stale_ratio());
@@ -80,7 +80,10 @@ impl GarbageCollector {
     /// Panics if the partition is not KV-separated.
     ///
     /// Panics if the threshold is < 1.5.
-    pub fn with_space_amp_target(partition: &PartitionHandle, threshold: f32) -> crate::Result<()> {
+    pub fn with_space_amp_target(
+        partition: &PartitionHandle,
+        threshold: f32,
+    ) -> crate::Result<u64> {
         assert!(
             threshold >= 1.5,
             "space amp threshold should be 1.5x or higher"
@@ -124,8 +127,8 @@ impl GarbageCollector {
     /// assert_eq!(0, report.stale_segment_count);
     /// assert_eq!(1, report.segment_count);
     ///
-    /// // TODO: 2.0.0 bytes_freed
     /// let bytes_freed = Gc::with_staleness_threshold(&blobs, 0.5)?;
+    /// assert!(bytes_freed > 0);
     ///
     /// let report = Gc::scan(&blobs)?;
     /// assert_eq!(0.0, report.stale_ratio());
@@ -153,7 +156,7 @@ impl GarbageCollector {
     pub fn with_staleness_threshold(
         partition: &PartitionHandle,
         threshold: f32,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<u64> {
         assert!(threshold >= 0.0, "invalid staleness threshold");
 
         let threshold = threshold.min(1.0);
@@ -189,8 +192,8 @@ impl GarbageCollector {
     /// assert_eq!(1, report.stale_segment_count);
     /// assert_eq!(1, report.segment_count);
     ///
-    /// // TODO: 2.0.0 bytes_freed
     /// let bytes_freed = Gc::drop_stale_segments(&blobs)?;
+    /// assert!(bytes_freed > 0);
     ///
     /// let report = Gc::scan(&blobs)?;
     /// assert_eq!(0.0, report.stale_ratio());
@@ -208,7 +211,7 @@ impl GarbageCollector {
     /// # Panics
     ///
     /// Panics if the partition is not KV-separated.
-    pub fn drop_stale_segments(partition: &PartitionHandle) -> crate::Result<()> {
+    pub fn drop_stale_segments(partition: &PartitionHandle) -> crate::Result<u64> {
         if let AnyTree::Blob(tree) = &partition.tree {
             return tree.gc_drop_stale().map_err(Into::into);
         }
