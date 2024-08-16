@@ -22,5 +22,8 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
     let write_buffer_size_after_batch = keyspace.write_buffer_size();
     assert!(write_buffer_size_after_batch > write_buffer_size_after);
 
+    tree.rotate_memtable_and_wait()?;
+    assert_eq!(0, keyspace.write_buffer_size());
+
     Ok(())
 }
