@@ -6,6 +6,8 @@ use crate::PartitionHandle;
 use lsm_tree::{AnyTree, GcReport};
 
 /// Functions for garbage collection strategies
+///
+/// These functions are to be used with a key-value separated partition.
 pub struct GarbageCollector;
 
 impl GarbageCollector {
@@ -78,20 +80,12 @@ impl GarbageCollector {
     /// # Panics
     ///
     /// Panics if the partition is not KV-separated.
-    ///
-    /// Panics if the threshold is < 1.5.
-    pub fn with_space_amp_target(
-        partition: &PartitionHandle,
-        threshold: f32,
-    ) -> crate::Result<u64> {
-        assert!(
-            threshold >= 1.5,
-            "space amp threshold should be 1.5x or higher"
-        );
-
+    pub fn with_space_amp_target(partition: &PartitionHandle, factor: f32) -> crate::Result<u64> {
         if let AnyTree::Blob(tree) = &partition.tree {
+            let strategy = lsm_tree::SpaceAmpStrategy::new(factor);
+
             return tree
-                .gc_with_space_amp_target(threshold, partition.seqno.next())
+                .apply_gc_strategy(&strategy, partition.seqno.next())
                 .map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");
@@ -157,13 +151,11 @@ impl GarbageCollector {
         partition: &PartitionHandle,
         threshold: f32,
     ) -> crate::Result<u64> {
-        assert!(threshold >= 0.0, "invalid staleness threshold");
-
-        let threshold = threshold.min(1.0);
-
         if let AnyTree::Blob(tree) = &partition.tree {
+            let strategy = lsm_tree::StaleThresholdStrategy::new(threshold);
+
             return tree
-                .gc_with_staleness_threshold(threshold, partition.seqno.next())
+                .apply_gc_strategy(&strategy, partition.seqno.next())
                 .map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");
