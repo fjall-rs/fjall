@@ -37,7 +37,7 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
         let partition = keyspace.open_partition(
             "default",
-            PartitionCreateOptions::default().use_kv_separation(),
+            PartitionCreateOptions::default().use_kv_separation(true),
         )?;
         partition.insert("a", &large_value)?;
         partition.insert("b", "b")?;
@@ -47,7 +47,7 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
         let partition = keyspace.open_partition(
             "default",
-            PartitionCreateOptions::default().use_kv_separation(),
+            PartitionCreateOptions::default().use_kv_separation(true),
         )?;
         assert_eq!(large_value.as_bytes(), &*partition.get("a")?.unwrap());
         assert_eq!(b"b", &*partition.get("b")?.unwrap());

@@ -106,8 +106,12 @@ impl CreateOptions {
     ///
     /// Default = disabled
     #[must_use]
-    pub fn use_kv_separation(mut self) -> Self {
-        self.tree_type = TreeType::Blob;
+    pub fn use_kv_separation(mut self, enabled: bool) -> Self {
+        self.tree_type = if enabled {
+            TreeType::Blob
+        } else {
+            TreeType::Standard
+        };
         self
     }
 }

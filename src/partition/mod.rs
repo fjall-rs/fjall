@@ -39,6 +39,8 @@ use std::{
 use std_semaphore::Semaphore;
 use write_delay::get_write_delay;
 
+pub const DEFAULT_MEMTABLE_SIZE: u32 = /* 16 MiB */ 16 * 1_024 * 1_024;
+
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
     // Internal
@@ -220,7 +222,7 @@ impl PartitionHandle {
             seqno: keyspace.seqno.clone(),
             tree,
             compaction_strategy: RwLock::new(Arc::new(super::compaction::Leveled::default())),
-            max_memtable_size: (8 * 1_024 * 1_024).into(),
+            max_memtable_size: DEFAULT_MEMTABLE_SIZE.into(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
@@ -846,7 +848,6 @@ impl PartitionHandle {
 
         let seqno = self.seqno.next();
 
-        /* let bytes_written = */
         shard.writer.write(
             &BatchItem {
                 key: key.as_ref().into(),

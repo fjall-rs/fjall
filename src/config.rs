@@ -76,7 +76,7 @@ impl Default for Config {
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             blob_cache: Arc::new(BlobCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
-            max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: None,
             flush_workers_count: cpus.min(4),

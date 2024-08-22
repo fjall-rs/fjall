@@ -28,7 +28,7 @@ fn blob_batch_simple() -> fjall::Result<()> {
     let keyspace = Config::new(folder).open()?;
     let partition = keyspace.open_partition(
         "default",
-        PartitionCreateOptions::default().use_kv_separation(),
+        PartitionCreateOptions::default().use_kv_separation(true),
     )?;
 
     let blob = "oxygen".repeat(128_000);

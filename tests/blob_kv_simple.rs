@@ -9,7 +9,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     let keyspace = Config::new(folder).open()?;
     let partition = keyspace.open_partition(
         "default",
-        PartitionCreateOptions::default().use_kv_separation(),
+        PartitionCreateOptions::default().use_kv_separation(true),
     )?;
 
     assert_eq!(partition.len()?, 0);
