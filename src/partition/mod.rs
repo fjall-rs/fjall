@@ -591,11 +591,9 @@ impl PartitionHandle {
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = {
-            use ahash::HashMapExt;
-
             let partitions = self.partitions.write().expect("lock is poisoned");
 
-            let mut map = HashMap::new();
+            let mut map = HashMap::with_hasher(xxhash_rust::xxh3::Xxh3Builder::new());
 
             for (name, partition) in &*partitions {
                 if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {

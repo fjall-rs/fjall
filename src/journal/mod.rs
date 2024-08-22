@@ -61,10 +61,8 @@ impl Journal {
         whitelist: Option<&[PartitionKey]>,
         recovery_mode: RecoveryMode,
     ) -> crate::Result<HashMap<PartitionKey, Memtable>> {
-        use ahash::HashMapExt;
-
         let path = path.as_ref();
-        let mut memtables = HashMap::new();
+        let mut memtables = HashMap::with_hasher(xxhash_rust::xxh3::Xxh3Builder::new());
 
         for idx in 0..SHARD_COUNT {
             let shard_path = get_shard_path(path, idx);

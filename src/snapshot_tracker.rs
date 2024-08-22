@@ -3,17 +3,13 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::Instant;
-use ahash::AHasher;
 use dashmap::DashMap;
-use std::{
-    hash::BuildHasherDefault,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 /// Keeps track of open snapshots
 #[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
-    data: DashMap<Instant, usize, BuildHasherDefault<AHasher>>,
+    data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
     safety_gap: u64,
     lowest_freed_instant: RwLock<Instant>,
 }

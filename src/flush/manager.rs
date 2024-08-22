@@ -3,9 +3,9 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::queue::FlushQueue;
-use crate::{batch::PartitionKey, HashMap, PartitionHandle};
+use crate::{batch::PartitionKey, HashMap, HashSet, PartitionHandle};
 use lsm_tree::{Memtable, SegmentId};
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 pub struct Task {
     /// ID of memtable

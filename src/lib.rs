@@ -111,7 +111,8 @@ mod tx;
 mod version;
 mod write_buffer_manager;
 
-pub(crate) type HashMap<K, V> = ahash::HashMap<K, V>;
+pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh3::Xxh3Builder>;
+pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh3Builder>;
 
 pub use {
     batch::Batch,

@@ -546,8 +546,6 @@ impl Keyspace {
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
-        use ahash::HashMapExt;
-
         log::info!("Recovering keyspace at {:?}", config.path);
         let recovery_mode = config.journal_recovery_mode;
 
@@ -579,7 +577,10 @@ impl Keyspace {
         let inner = KeyspaceInner {
             config,
             journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+                10,
+                xxhash_rust::xxh3::Xxh3Builder::new(),
+            ))),
             seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
@@ -605,8 +606,6 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
-        use ahash::HashMapExt;
-
         let path = config.path.clone();
         log::info!("Creating keyspace at {path:?}");
 
@@ -628,7 +627,10 @@ impl Keyspace {
         let inner = KeyspaceInner {
             config,
             journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+                10,
+                xxhash_rust::xxh3::Xxh3Builder::new(),
+            ))),
             seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(JournalManager::new(active_journal_path))),
