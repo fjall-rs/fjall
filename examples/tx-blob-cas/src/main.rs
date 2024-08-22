@@ -20,7 +20,7 @@ impl Cas {
         let blobs = keyspace.open_partition(
             "blobs",
             // IMPORTANT: Use KV-separation
-            PartitionCreateOptions::default().use_kv_separation(),
+            PartitionCreateOptions::default().use_kv_separation(true),
         )?;
         blobs.inner().set_max_memtable_size(32_000_000);
 
