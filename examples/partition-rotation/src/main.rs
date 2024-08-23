@@ -25,7 +25,7 @@ fn main() -> fjall::Result<()> {
 
         keyspace.persist(fjall::PersistMode::SyncData)?;
 
-        // IMPORTANT: Flush memtable because partition becomes immutable
+        // NOTE: Flush memtable because partition becomes immutable
         // This relaxes the journal GC, making everything faster
         split.rotate_memtable()?;
 

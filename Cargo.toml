@@ -12,8 +12,6 @@ homepage = "https://github.com/fjall-rs/fjall"
 keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "fjall"
 path = "src/lib.rs"
