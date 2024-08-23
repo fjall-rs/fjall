@@ -1,6 +1,5 @@
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, Keyspace, PartitionHandle, UserKey, UserValue};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Song {
@@ -24,8 +23,8 @@ impl From<&Song> for Vec<u8> {
     }
 }
 
-impl From<(Arc<[u8]>, Arc<[u8]>)> for Song {
-    fn from((key, value): (Arc<[u8]>, Arc<[u8]>)) -> Self {
+impl From<(UserKey, UserValue)> for Song {
+    fn from((key, value): (UserKey, UserValue)) -> Self {
         let key = std::str::from_utf8(&key).unwrap();
         let mut item: Song = rmp_serde::from_slice(&value).expect("should deserialize");
         key.clone_into(&mut item.id);
@@ -121,7 +120,7 @@ fn main() -> fjall::Result<()> {
                 assert_eq!(&item, item_to_insert);
             } else {
                 println!("Inserting...");
-                song_db.insert(&item_to_insert)?;
+                song_db.insert(item_to_insert)?;
             }
         }
         keyspace.persist(fjall::PersistMode::SyncAll)?;
