@@ -382,18 +382,13 @@ fn main() -> fjall::Result<()> {
     assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
     log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
-    // TODO: this will be a better API at some point
-    if let fjall::AnyTree::Blob(tree) = &cas.blobs.inner().tree {
-        tree.gc_scan_stats(u64::MAX)?;
-        tree.blobs.print_gc_report();
+    let report = fjall::Gc::scan(cas.blobs.inner())?;
+    eprintln!("{report}");
 
-        tree.gc_drop_stale()?;
+    fjall::Gc::drop_stale_segments(cas.blobs.inner())?;
 
-        tree.gc_scan_stats(u64::MAX)?;
-        tree.blobs.print_gc_report();
-    } else {
-        unreachable!();
-    }
+    let report = fjall::Gc::scan(cas.blobs.inner())?;
+    eprintln!("{report}");
 
     Ok(())
 }
