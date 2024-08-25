@@ -70,6 +70,10 @@ impl JournalManager {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.items.clear();
+    }
+
     pub(crate) fn enqueue(&mut self, item: Item) {
         self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_add(item.size_in_bytes);
         self.items.push(item);

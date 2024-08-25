@@ -53,6 +53,10 @@ impl FlushManager {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.queues.clear();
+    }
+
     /// Gets the names of partitions that have queued tasks.
     pub(crate) fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
         self.queues
