@@ -31,6 +31,7 @@ impl std::fmt::Debug for Task {
 ///
 /// Each flush task references a sealed memtable and the given partition.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub struct FlushManager {
     queues: HashMap<PartitionKey, FlushQueue>,
 }
@@ -45,13 +46,18 @@ impl Drop for FlushManager {
 }
 
 impl FlushManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         #[cfg(feature = "__internal_integration")]
         crate::drop::increment_drop_counter();
 
         Self {
             queues: HashMap::default(),
         }
+    }
+
+    // TODO: 2.0.0 backport to 1.x.x
+    pub(crate) fn clear(&mut self) {
+        self.queues.clear();
     }
 
     /// Gets the names of partitions that have queued tasks.
@@ -77,14 +83,14 @@ impl FlushManager {
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     /// Returns the amount of tasks that are queued to be flushed.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.queues.values().map(FlushQueue::len).sum::<usize>()
     }
 
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 

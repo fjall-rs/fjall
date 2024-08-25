@@ -99,14 +99,23 @@ impl Drop for KeyspaceInner {
 
         self.config.descriptor_table.clear();
 
-        // IMPORTANT: Break cyclic Arcs
-        self.partitions.write().expect("lock is poisoned").clear();
-
         if self.config.clean_path_on_drop {
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
         }
+
+        // IMPORTANT: Break cyclic Arcs
+        self.flush_manager
+            .write()
+            .expect("lock is poisoned")
+            .clear();
+        self.compaction_manager.clear();
+        self.partitions.write().expect("lock is poisoned").clear();
+        self.journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .clear();
 
         #[cfg(feature = "__internal_integration")]
         crate::drop::decrement_drop_counter();

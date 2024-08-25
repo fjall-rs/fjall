@@ -45,10 +45,7 @@ fn run_multi_flush(
     partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>,
     eviction_threshold: SeqNo,
 ) -> MultiFlushResults {
-    log::debug!(
-        "flush worker: spawning {} worker threads",
-        partitioned_tasks.len()
-    );
+    log::debug!("spawning {} worker threads", partitioned_tasks.len());
 
     // NOTE: Don't trust clippy
     #[allow(clippy::needless_collect)]
@@ -60,7 +57,7 @@ fn run_multi_flush(
 
             std::thread::spawn(move || {
                 log::trace!(
-                    "flush thread: flushing {} memtables for partition {partition_name:?}",
+                    "flushing {} memtables for partition {partition_name:?}",
                     tasks.len()
                 );
 
@@ -114,7 +111,7 @@ pub fn run(
     snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
 ) {
-    log::debug!("flush worker: write locking flush manager");
+    log::debug!("write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
     let partitioned_tasks = fm.collect_tasks(parallelism);
     drop(fm);
@@ -122,7 +119,7 @@ pub fn run(
     let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
 
     if task_count == 0 {
-        log::debug!("flush worker: No tasks collected");
+        log::debug!("No tasks collected");
         return;
     }
 
@@ -138,7 +135,7 @@ pub fn run(
                 if let Err(e) = partition.tree.register_segments(&created_segments) {
                     log::error!("Failed to register segments: {e:?}");
                 } else {
-                    log::debug!("flush worker: write locking flush manager to submit results");
+                    log::debug!("write locking flush manager to submit results");
                     let mut flush_manager = flush_manager.write().expect("lock is poisoned");
 
                     log::debug!(
@@ -158,7 +155,7 @@ pub fn run(
         }
     }
 
-    log::debug!("flush worker: write locking journal manager to maybe do maintenance");
+    log::debug!("write locking journal manager to maybe do maintenance");
     if let Err(e) = journal_manager
         .write()
         .expect("lock is poisoned")
@@ -167,5 +164,5 @@ pub fn run(
         log::error!("journal GC failed: {e:?}");
     };
 
-    log::debug!("flush worker: fully done");
+    log::debug!("fully done");
 }

@@ -13,9 +13,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {
@@ -32,7 +32,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT);
         }
 
-        partitions.first().unwrap().rotate_memtable()?;
+        partitions.first().unwrap().rotate_memtable_and_wait()?;
 
         for tree in partitions {
             for x in 0..ITEM_COUNT as u64 {
@@ -53,9 +53,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {

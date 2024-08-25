@@ -45,6 +45,7 @@ impl std::fmt::Debug for Item {
 ///
 /// Each journal may contain items of different partitions.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub struct JournalManager {
     active_path: PathBuf,
     items: Vec<Item>,
@@ -72,6 +73,11 @@ impl JournalManager {
             items: Vec::with_capacity(10),
             disk_space_in_bytes: 0,
         }
+    }
+
+    // TODO: 2.0.0 backport to 1.x.x
+    pub(crate) fn clear(&mut self) {
+        self.items.clear();
     }
 
     pub(crate) fn enqueue(&mut self, item: Item) {
