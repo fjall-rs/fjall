@@ -139,7 +139,10 @@ impl Deserializable for Marker {
                 })
             }
             Tag::Item => {
-                let value_type = reader.read_u8()?.into();
+                let value_type = reader
+                    .read_u8()?
+                    .try_into()
+                    .expect("invalid value type tag");
 
                 // Read partition key
                 let partition_len = reader.read_u8()?;
