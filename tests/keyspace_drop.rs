@@ -50,3 +50,27 @@ fn integration_keyspace_drop() -> fjall::Result<()> {
 
     Ok(())
 }
+
+#[cfg(feature = "__internal_integration")]
+#[test_log::test]
+fn integration_keyspace_drop_2() -> fjall::Result<()> {
+    use fjall::{Config, PartitionCreateOptions};
+
+    let folder = tempfile::tempdir()?;
+
+    {
+        let keyspace = Config::new(&folder).open()?;
+
+        let partition = keyspace.open_partition("tree", PartitionCreateOptions::default())?;
+        let partition2 = keyspace.open_partition("tree1", PartitionCreateOptions::default())?;
+
+        partition.insert("a", "a")?;
+        partition2.insert("b", "b")?;
+
+        partition.rotate_memtable_and_wait()?;
+    }
+
+    assert_eq!(0, fjall::drop::load_drop_counter());
+
+    Ok(())
+}
