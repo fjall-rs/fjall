@@ -55,7 +55,6 @@ impl FlushManager {
         }
     }
 
-    // TODO: 2.0.0 backport to 1.x.x
     pub(crate) fn clear(&mut self) {
         self.queues.clear();
     }

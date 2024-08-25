@@ -75,7 +75,6 @@ impl JournalManager {
         }
     }
 
-    // TODO: 2.0.0 backport to 1.x.x
     pub(crate) fn clear(&mut self) {
         self.items.clear();
     }

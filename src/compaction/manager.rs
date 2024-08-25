@@ -49,7 +49,6 @@ impl std::ops::Deref for CompactionManager {
 }
 
 impl CompactionManager {
-    // TODO: 2.0.0 backport to 1.x.x
     pub fn clear(&self) {
         self.partitions.lock().expect("lock is poisoned").clear();
     }
