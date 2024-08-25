@@ -473,7 +473,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.get(key).map(|x| x.is_some())
+        self.tree.contains_key(key).map_err(Into::into)
     }
 
     /// Retrieves an item from the partition.

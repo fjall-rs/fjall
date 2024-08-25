@@ -49,11 +49,12 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        Ok(partition
+        partition
             .inner
             .tree
             .snapshot_at(self.nonce.instant)
-            .get(key)?)
+            .get(key)
+            .map_err(Into::into)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -82,7 +83,12 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
-        self.get(partition, key).map(|x| x.is_some())
+        partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .contains_key(key)
+            .map_err(Into::into)
     }
 
     /// Returns the first key-value pair in the transaction's state.

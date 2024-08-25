@@ -270,7 +270,11 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        Ok(partition.inner.snapshot_at(self.nonce.instant).get(key)?)
+        partition
+            .inner
+            .snapshot_at(self.nonce.instant)
+            .get(key)
+            .map_err(Into::into)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -309,7 +313,17 @@ impl<'a> WriteTransaction<'a> {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
-        self.get(partition, key).map(|x| x.is_some())
+        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
+            if let Some(item) = memtable.get(&key, None) {
+                return Ok(!item.key.is_tombstone());
+            }
+        }
+
+        partition
+            .inner
+            .snapshot_at(self.nonce.instant)
+            .contains_key(key)
+            .map_err(Into::into)
     }
 
     /// Returns the first key-value pair in the transaction's state.
