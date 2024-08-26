@@ -5,6 +5,7 @@
 use super::PartitionKey;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
+#[derive(Clone, PartialEq, Eq)]
 pub struct Item {
     /// Partition key - an arbitrary byte array
     ///

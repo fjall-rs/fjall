@@ -227,19 +227,19 @@ impl Journal {
     }
 }
 
-/* #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
-    use super::marker::Marker;
     use super::*;
     use crate::batch::item::Item as BatchItem;
     use lsm_tree::{serde::Serializable, ValueType};
+    use marker::Marker;
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;
 
     #[test]
-    fn test_log_truncation_corrupt_bytes() -> crate::Result<()> {
+    fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let dir = tempdir()?;
         let shard_path = dir.path().join("0");
 
@@ -254,9 +254,11 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -267,11 +269,11 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -282,18 +284,18 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         Ok(())
     }
 
     #[test]
-    fn test_log_truncation_repeating_start_marker() -> crate::Result<()> {
+    fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let dir = tempdir()?;
         let shard_path = dir.path().join("0");
 
@@ -308,10 +310,11 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -327,11 +330,11 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -347,18 +350,18 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         Ok(())
     }
 
     #[test]
-    fn test_log_truncation_repeating_end_marker() -> crate::Result<()> {
+    fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let dir = tempdir()?;
         let shard_path = dir.path().join("0");
 
@@ -373,10 +376,11 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -387,11 +391,11 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -402,18 +406,18 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         Ok(())
     }
 
     #[test]
-    fn test_log_truncation_repeating_item_marker() -> crate::Result<()> {
+    fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let dir = tempdir()?;
         let shard_path = dir.path().join("0");
 
@@ -428,10 +432,11 @@ mod tests {
         }
 
         {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -449,11 +454,11 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         // Mangle journal
@@ -471,14 +476,13 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let (_, memtables) = Journal::recover(&dir, RecoveryMode::TolerateCorruptTail)?;
-            let memtable = memtables.get("default").expect("should exist");
-
-            // Should recover all items
-            assert_eq!(memtable.len(), values.len());
+            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            assert_eq!(
+                values.into_iter().cloned().collect::<Vec<_>>(),
+                collected.first().unwrap().items
+            );
         }
 
         Ok(())
     }
 }
- */
