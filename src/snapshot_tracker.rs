@@ -52,7 +52,7 @@ impl SnapshotTrackerInner {
 
         self.data.alter(&seqno, |_, v| v - 1);
 
-        if seqno % self.safety_gap == 0 {
+        if (seqno % self.safety_gap) == 0 {
             self.gc(seqno);
         }
     }
@@ -66,7 +66,7 @@ impl SnapshotTrackerInner {
 
         let mut lock = self.lowest_freed_instant.write().expect("lock is poisoned");
 
-        let seqno_threshold = watermark - self.safety_gap;
+        let seqno_threshold = watermark.saturating_sub(self.safety_gap);
 
         let mut lowest_retained = 0;
 
@@ -98,6 +98,18 @@ impl SnapshotTrackerInner {
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn seqno_tracker_one_shot() {
+        let mut map = SnapshotTrackerInner::default();
+        map.safety_gap = 5;
+
+        map.open(1);
+        map.close(1);
+
+        assert_eq!(map.get_seqno_safe_to_gc(), 0);
+    }
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
@@ -136,7 +148,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn seqno_tracker_simple() {
+    fn seqno_tracker_simple_2() {
         let mut map = SnapshotTrackerInner::default();
         map.safety_gap = 5;
 
