@@ -62,7 +62,7 @@ jobs:
       - name: Build & test examples
         run: node compile_examples.mjs
       - name: Run whitebox tests
-        run: cargo test --features __internal_whitebox -- whitebox_ --nocapture
+        run: cargo test --features __internal_whitebox -- whitebox_ --nocapture --test-threads=1
         env:
           RUST_LOG: info
       - name: Run tests
