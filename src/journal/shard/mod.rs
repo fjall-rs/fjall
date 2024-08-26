@@ -2,15 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-mod reader;
+pub(crate) mod batch_reader;
+pub(crate) mod reader;
 
-use super::{marker::Marker, writer::Writer as JournalWriter};
-use crate::batch::{item::Item as BatchItem, PartitionKey};
-use crate::HashMap;
-use lsm_tree::{serde::Serializable, Memtable, SeqNo};
-use reader::JournalShardReader;
-use std::hash::Hasher;
-use std::{fs::OpenOptions, path::Path};
+use super::writer::Writer as JournalWriter;
+use std::path::Path;
+
+// TODO: 2.0.0 move enums into batch_reader file
 
 /// Recovery mode to use
 ///
@@ -76,16 +74,16 @@ impl JournalShard {
         })
     }
 
-    // TODO: reallocate space
+    /* // TODO: reallocate space
     fn truncate_to<P: AsRef<Path>>(path: P, last_valid_pos: u64) -> crate::Result<()> {
         log::trace!("Truncating shard to {last_valid_pos}");
         let file = OpenOptions::new().write(true).open(path)?;
         file.set_len(last_valid_pos)?;
         file.sync_all()?;
         Ok(())
-    }
+    } */
 
-    /// Recovers a journal shard and writes the items into the given memtable
+    /*  /// Recovers a journal shard and writes the items into the given memtable
     ///
     /// Will truncate the file to the position of the last valid batch
     #[allow(clippy::too_many_lines)]
@@ -231,5 +229,5 @@ impl JournalShard {
         }
 
         Ok(())
-    }
+    } */
 }

@@ -113,7 +113,7 @@ impl Drop for PartitionHandleInner {
             }
         }
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
@@ -672,6 +672,12 @@ impl PartitionHandle {
         let seg_count = self.tree.first_level_segment_count();
 
         if seg_count > 10 {
+            if self.tree.is_first_level_disjoint() {
+                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
+                // so nothing to do
+                return;
+            }
+
             let sleep_us = get_write_delay(seg_count);
             log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
             self.compaction_manager.notify(self.clone());

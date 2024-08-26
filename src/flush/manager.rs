@@ -40,14 +40,14 @@ impl Drop for FlushManager {
     fn drop(&mut self) {
         log::trace!("Dropping flush manager");
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
 
 impl FlushManager {
     pub(crate) fn new() -> Self {
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {

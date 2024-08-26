@@ -23,14 +23,14 @@ impl Drop for Monitor {
     fn drop(&mut self) {
         log::trace!("Dropping monitor");
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
 
 impl Monitor {
     pub fn new(keyspace: &Keyspace) -> Self {
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {

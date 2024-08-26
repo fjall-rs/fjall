@@ -58,14 +58,14 @@ impl Drop for JournalManager {
     fn drop(&mut self) {
         log::trace!("Dropping journal manager");
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
 
 impl JournalManager {
-    pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
-        #[cfg(feature = "__internal_integration")]
+    pub(crate) fn from_active<P: Into<PathBuf>>(path: P) -> Self {
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {
@@ -195,7 +195,7 @@ impl JournalManager {
             .file_name()
             .expect("should have filename")
             .to_str()
-            .expect("should be valid utf-8")
+            .expect("should be valid UTF-8")
             .parse::<lsm_tree::SegmentId>()
             .expect("should be valid journal ID");
 

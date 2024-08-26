@@ -61,12 +61,12 @@ jobs:
         # NOTE: Run examples before unit tests, because they are faster to complete
       - name: Build & test examples
         run: node compile_examples.mjs
-      - name: Run tests
-        run: cargo test-all-features -v -- --nocapture
+      - name: Run whitebox tests
+        run: cargo test --features __internal_whitebox -- whitebox_ --nocapture
         env:
           RUST_LOG: info
-      - name: Run integration tests
-        run: cargo test --features __internal_integration -- integration_ --nocapture
+      - name: Run tests
+        run: cargo test-all-features -v -- --nocapture
         env:
           RUST_LOG: info
   cross:

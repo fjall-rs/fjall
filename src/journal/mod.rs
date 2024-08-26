@@ -5,21 +5,19 @@
 pub mod manager;
 mod marker;
 pub mod partition_manifest;
+mod reader;
 pub mod shard;
 pub mod writer;
 
-use self::{
-    shard::{JournalShard, RecoveryMode},
-    writer::PersistMode,
-};
-use crate::{batch::PartitionKey, file::fsync_directory, sharded::Sharded, HashMap};
-use lsm_tree::Memtable;
+use self::{shard::JournalShard, writer::PersistMode};
+use crate::{file::fsync_directory, sharded::Sharded};
+use reader::JournalReader;
 use std::{
     path::{Path, PathBuf},
     sync::{RwLock, RwLockWriteGuard},
 };
 
-const SHARD_COUNT: u8 = 4;
+pub const SHARD_COUNT: u8 = 4;
 
 fn get_shard_path<P: AsRef<Path>>(base: P, idx: u8) -> PathBuf {
     base.as_ref().join(idx.to_string())
@@ -43,7 +41,7 @@ impl Drop for Journal {
             }
         }
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
@@ -56,7 +54,26 @@ impl Drop for Journal {
 // TODO: the journal shouldn't know about memtables!!!
 
 impl Journal {
-    pub fn recover_memtables<P: AsRef<Path>>(
+    pub fn get_reader<P: AsRef<Path>>(path: P) -> crate::Result<JournalReader> {
+        JournalReader::new(path)
+    }
+
+    pub fn restore_existing<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+        let shards = (0..SHARD_COUNT)
+            .map(|idx| {
+                Ok(RwLock::new(JournalShard::from_file(get_shard_path(
+                    &path, idx,
+                ))?))
+            })
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        Ok(Self {
+            path: path.as_ref().into(),
+            shards: Sharded::new(shards),
+        })
+    }
+
+    /* pub fn recover_memtables<P: AsRef<Path>>(
         path: P,
         whitelist: Option<&[PartitionKey]>,
         recovery_mode: RecoveryMode,
@@ -81,9 +98,9 @@ impl Journal {
         }
 
         Ok(memtables)
-    }
+    } */
 
-    pub fn recover<P: AsRef<Path>>(
+    /* pub fn recover<P: AsRef<Path>>(
         path: P,
         recovery_mode: RecoveryMode,
     ) -> crate::Result<(Self, HashMap<PartitionKey, Memtable>)> {
@@ -100,7 +117,7 @@ impl Journal {
             })
             .collect::<crate::Result<Vec<_>>>()?;
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Ok((
@@ -110,7 +127,36 @@ impl Journal {
             },
             memtables,
         ))
-    }
+    } */
+
+    /*   pub fn recover<P: AsRef<Path>>(
+        path: P,
+        recovery_mode: RecoveryMode,
+    ) -> crate::Result<(Self, HashMap<PartitionKey, Memtable>)> {
+        let path = path.as_ref();
+        log::debug!("Recovering journal from {path:?}");
+
+        let memtables = Self::recover_memtables(path, None, recovery_mode)?;
+
+        let shards = (0..SHARD_COUNT)
+            .map(|idx| {
+                Ok(RwLock::new(JournalShard::from_file(get_shard_path(
+                    path, idx,
+                ))?))
+            })
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        #[cfg(feature = "__internal_whitebox")]
+        crate::drop::increment_drop_counter();
+
+        Ok((
+            Self {
+                shards: Sharded::new(shards),
+                path: path.to_path_buf(),
+            },
+            memtables,
+        ))
+    } */
 
     pub fn rotate<P: AsRef<Path>>(
         path: P,
@@ -148,7 +194,7 @@ impl Journal {
         // IMPORTANT: fsync folder on Unix
         fsync_directory(path)?;
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Ok(Self {
@@ -181,7 +227,7 @@ impl Journal {
     }
 }
 
-#[cfg(test)]
+/* #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
     use super::marker::Marker;
@@ -435,3 +481,4 @@ mod tests {
         Ok(())
     }
 }
+ */

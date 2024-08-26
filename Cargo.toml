@@ -23,7 +23,7 @@ miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
 all = ["single_writer_tx", "bloom", "lz4", "miniz"]
-__internal_integration = []
+__internal_whitebox = []
 
 [dependencies]
 byteorder = "1.5.0"
@@ -43,7 +43,7 @@ test-log = "0.2.16"
 rand = "0.8.5"
 
 [package.metadata.cargo-all-features]
-denylist = ["__internal_integration", "all"]
+denylist = ["__internal_whitebox", "all"]
 
 [[bench]]
 name = "lsmt"

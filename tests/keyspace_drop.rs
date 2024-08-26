@@ -1,6 +1,6 @@
-#[cfg(feature = "__internal_integration")]
+#[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-fn integration_keyspace_drop() -> fjall::Result<()> {
+fn whitebox_keyspace_drop() -> fjall::Result<()> {
     use fjall::Config;
 
     {
@@ -48,9 +48,9 @@ fn integration_keyspace_drop() -> fjall::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "__internal_integration")]
+#[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-fn integration_keyspace_drop_2() -> fjall::Result<()> {
+fn whitebox_keyspace_drop_2() -> fjall::Result<()> {
     use fjall::{Config, PartitionCreateOptions};
 
     let folder = tempfile::tempdir()?;
@@ -72,9 +72,9 @@ fn integration_keyspace_drop_2() -> fjall::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "__internal_integration")]
+#[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-fn integration_keyspace_drop_2() -> fjall::Result<()> {
+fn whitebox_keyspace_drop_2() -> fjall::Result<()> {
     use fjall::{Config, PartitionCreateOptions};
 
     let folder = tempfile::tempdir()?;

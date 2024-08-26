@@ -2,7 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{journal::shard::RecoveryError as JournalRecoveryError, version::Version};
+use crate::{
+    journal::{
+        partition_manifest::Error as PartitionManifestParseError,
+        shard::RecoveryError as JournalRecoveryError,
+    },
+    version::Version,
+};
 use lsm_tree::{DeserializeError, SerializeError};
 
 /// Errors that may occur in the storage engine
@@ -26,7 +32,8 @@ pub enum Error {
     /// Invalid or unparsable data format version
     InvalidVersion(Option<Version>),
 
-    /// A previous flush operation failed, indicating a hardware-related failure.
+    /// A previous flush operation failed, indicating a hardware-related failure
+    ///
     /// Future writes will not be accepted as consistency cannot be guaranteed.
     ///
     /// **At this point, it's best to let the application crash and try to recover.**
@@ -34,8 +41,11 @@ pub enum Error {
     /// More info: <https://www.usenix.org/system/files/atc20-rebello.pdf>
     Poisoned,
 
-    /// Partition is deleted.
+    /// Partition is deleted
     PartitionDeleted,
+
+    /// Something has gone horribly wrong
+    CorruptPartitionManifest(PartitionManifestParseError),
 }
 
 impl std::fmt::Display for Error {
@@ -59,6 +69,12 @@ impl From<SerializeError> for Error {
 impl From<DeserializeError> for Error {
     fn from(value: DeserializeError) -> Self {
         Self::Deserialize(value)
+    }
+}
+
+impl From<PartitionManifestParseError> for Error {
+    fn from(value: PartitionManifestParseError) -> Self {
+        Self::CorruptPartitionManifest(value)
     }
 }
 

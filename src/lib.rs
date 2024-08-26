@@ -86,7 +86,7 @@ pub mod compaction;
 
 mod config;
 
-#[cfg(feature = "__internal_integration")]
+#[cfg(feature = "__internal_whitebox")]
 #[doc(hidden)]
 pub mod drop;
 

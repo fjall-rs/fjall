@@ -7,7 +7,7 @@ use lsm_tree::{serde::Deserializable, DeserializeError};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 macro_rules! fail_iter {
@@ -26,15 +26,17 @@ macro_rules! fail_iter {
 /// bytes at the end of the file, which would jeopardize future writes into the file.
 #[allow(clippy::module_name_repetitions)]
 pub struct JournalShardReader {
-    reader: BufReader<File>,
+    pub(crate) path: PathBuf,
+    pub(crate) reader: BufReader<File>,
     pub(crate) last_valid_pos: u64,
 }
 
 impl JournalShardReader {
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let file = OpenOptions::new().read(true).write(true).open(path)?;
+        let file = OpenOptions::new().read(true).write(true).open(&path)?;
 
         Ok(Self {
+            path: path.as_ref().into(),
             reader: BufReader::new(file),
             last_valid_pos: 0,
         })

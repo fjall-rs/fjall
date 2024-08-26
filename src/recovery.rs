@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    batch::PartitionKey,
     file::{
         FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, PARTITIONS_FOLDER,
         PARTITION_DELETED_MARKER,
@@ -12,7 +11,7 @@ use crate::{
     partition::PartitionHandleInner,
     HashMap, Keyspace, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, AnyTree, Memtable};
+use lsm_tree::{AbstractTree, AnyTree};
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 const LSM_VERSION_MARKER_FILE: &str = "version";
@@ -20,7 +19,7 @@ const LSM_VERSION_MARKER_FILE: &str = "version";
 /// Recovers partitions
 pub fn recover_partitions(
     keyspace: &Keyspace,
-    memtables: &mut HashMap<PartitionKey, Memtable>,
+    /* memtables: &mut HashMap<PartitionKey, Memtable>, */
 ) -> crate::Result<()> {
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
@@ -29,8 +28,13 @@ pub fn recover_partitions(
         let partition_name = dirent.file_name();
         let partition_path = dirent.path();
 
+        assert!(dirent.file_type()?.is_dir());
+
         log::trace!("Recovering partition {:?}", partition_name);
 
+        // TODO: check for empty folder
+
+        // TODO: the order in which files here are deleted may cause undefined behaviour
         // IMPORTANT: Check deletion marker
         if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
             log::debug!("Deleting deleted partition {:?}", partition_name);
@@ -87,7 +91,7 @@ pub fn recover_partitions(
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);
 
-        // NOTE: We already recovered all active memtables from the active journal,
+        /*  // NOTE: We already recovered all active memtables from the active journal,
         // so just yank it out and give to the partition
         if let Some(recovered_memtable) = memtables.remove(partition_name) {
             log::trace!(
@@ -102,20 +106,7 @@ pub fn recover_partitions(
                 .allocate(recovered_memtable.size().into());
 
             partition.tree.set_active_memtable(recovered_memtable);
-        }
-
-        // Recover seqno
-        let maybe_next_seqno = partition
-            .tree
-            .get_highest_seqno()
-            .map(|x| x + 1)
-            .unwrap_or_default();
-
-        keyspace
-            .seqno
-            .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
-
-        log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+        } */
 
         // Add partition to dictionary
         keyspace
@@ -132,9 +123,7 @@ pub fn recover_partitions(
 
 #[allow(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
-    use crate::journal::partition_manifest::{
-        Error as PartitionManifestParseError, PartitionManifest,
-    };
+    use crate::journal::partition_manifest::PartitionManifest;
 
     let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
     let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
@@ -144,106 +133,106 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     let mut dirents = std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
     dirents.sort_by_key(std::fs::DirEntry::file_name);
 
+    log::trace!(
+        "looking for sealed journals in potentially {} found journals",
+        dirents.len()
+    );
+
     for dirent in dirents {
         let journal_path = dirent.path();
 
-        // Check if journal is sealed
-        if dirent.path().join(FLUSH_MARKER).try_exists()? {
-            log::debug!("Recovering sealed journal: {journal_path:?}");
+        assert!(dirent.file_type()?.is_dir(), "journal should be directory");
 
-            let journal_size = fs_extra::dir::get_size(&journal_path).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind))
-            })?;
+        // IMPORTANT: Check if journal is sealed
+        if !dirent.path().join(FLUSH_MARKER).try_exists()? {
+            continue;
+        }
 
-            log::trace!("Reading sealed journal at {:?}", journal_path);
+        log::debug!("Recovering sealed journal: {journal_path:?}");
 
-            // Only consider partitions that are registered in the journal
-            let file_content = std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
-            let partitions_to_consider = match PartitionManifest::from_str(&file_content) {
-                Ok(v) => Ok(v),
-                Err(e) => match e {
-                    PartitionManifestParseError::Io(e) => Err(crate::Error::from(e)),
-                    e => {
-                        panic!("invalid partition reference file: {e:?}")
+        let journal_size = fs_extra::dir::get_size(&journal_path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+
+        log::trace!("Reading sealed journal at {journal_path:?}");
+
+        // Only consider partitions that are registered in the journal
+        let file_content = std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
+        let partitions_to_consider = PartitionManifest::from_str(&file_content)?;
+
+        log::trace!(
+            "Journal contains data of {} partitions",
+            partitions_to_consider.len()
+        );
+
+        let mut partition_seqno_map = HashMap::default();
+
+        // NOTE: Only get the partitions that have a lower seqno than the journal
+        // which means there's still some unflushed data in this sealed journal
+        for entry in partitions_to_consider {
+            let Some(partition) = partitions_lock.get(entry.partition_name) else {
+                // Partition was probably deleted
+                log::trace!("Partition {} does not exist", entry.partition_name);
+                continue;
+            };
+
+            let partition_lsn = partition.tree.get_highest_persisted_seqno();
+            let has_lower_lsn =
+                partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
+
+            if has_lower_lsn {
+                partition_seqno_map.insert(
+                    entry.partition_name.into(),
+                    crate::journal::manager::PartitionSeqNo {
+                        lsn: entry.seqno,
+                        partition: partition.clone(),
+                    },
+                );
+            } else {
+                log::trace!(
+                    "Partition {} has higher seqno ({partition_lsn:?}), skipping",
+                    entry.partition_name
+                );
+            }
+        }
+
+        log::trace!(
+            "Recovering sealed memtables for partitions: {:#?}",
+            partition_seqno_map.keys()
+        );
+        let reader = Journal::get_reader(&journal_path)?;
+
+        for batch in reader {
+            let batch = batch?;
+
+            for item in batch.items {
+                if let Some(handle) = partition_seqno_map.get(&item.partition) {
+                    let tree = &handle.partition.tree;
+
+                    match item.value_type {
+                        lsm_tree::ValueType::Value => {
+                            tree.insert(item.key, item.value, batch.seqno);
+                        }
+                        lsm_tree::ValueType::Tombstone => {
+                            tree.remove(item.key, batch.seqno);
+                        }
+                        lsm_tree::ValueType::WeakTombstone => {
+                            tree.remove_weak(item.key, batch.seqno);
+                        }
                     }
-                },
-            }?;
-
-            log::trace!(
-                "Journal contains data of {} partitions",
-                partitions_to_consider.len()
-            );
-
-            let mut partition_seqno_map = HashMap::default();
-
-            // Only get the partitions that have a lower seqno than the journal
-            // which means there's still some unflushed data in this sealed journal
-            for entry in partitions_to_consider {
-                let Some(partition) = partitions_lock.get(entry.partition_name) else {
-                    // Partition was probably deleted
-                    log::trace!("Partition {} does not exist", entry.partition_name);
-                    continue;
-                };
-
-                let partition_lsn = partition.tree.get_highest_persisted_seqno();
-                let has_lower_lsn =
-                    partition_lsn.map_or(true, |partition_lsn| entry.seqno > partition_lsn);
-
-                if has_lower_lsn {
-                    partition_seqno_map.insert(
-                        entry.partition_name.into(),
-                        crate::journal::manager::PartitionSeqNo {
-                            lsn: entry.seqno,
-                            partition: partition.clone(),
-                        },
-                    );
-                } else {
-                    log::trace!(
-                        "Partition {} has higher seqno ({partition_lsn:?}), skipping",
-                        entry.partition_name
-                    );
                 }
             }
+        }
 
-            // Recover sealed memtables for affected partitions
-            let partition_names_to_recover =
-                partition_seqno_map.keys().cloned().collect::<Vec<_>>();
+        log::trace!("Sealing recovered memtables");
+        let mut recovered_count = 0;
 
-            log::trace!("Recovering memtables for partitions: {partition_names_to_recover:#?}");
-            let memtables = Journal::recover_memtables(
-                &journal_path,
-                Some(&partition_names_to_recover),
-                keyspace.config.journal_recovery_mode,
-            )?;
-            log::trace!("Recovered {} sealed memtables", memtables.len());
+        for handle in partition_seqno_map.values() {
+            let tree = &handle.partition.tree;
+            let memtable_id = tree.get_next_segment_id();
 
-            // IMPORTANT: Add sealed journal to journal manager
-            journal_manager_lock.enqueue(crate::journal::manager::Item {
-                partition_seqnos: partition_seqno_map,
-                path: journal_path.clone(),
-                size_in_bytes: journal_size,
-            });
-
-            // Consume memtables by giving back to the partition
-            for (partition_name, sealed_memtable) in memtables {
-                let Some(partition) = partitions_lock.get(&partition_name) else {
-                    // Should not happen
-                    continue;
-                };
-
-                let memtable_id = partition.tree.get_next_segment_id();
-                let sealed_memtable = Arc::new(sealed_memtable);
-
-                partition
-                    .tree
-                    .add_sealed_memtable(memtable_id, sealed_memtable.clone());
-
+            if let Some((_, sealed_memtable)) = tree.rotate_memtable() {
                 // Maybe the memtable has a higher seqno, so try to set to maximum
-                let maybe_next_seqno = partition
-                    .tree
-                    .get_highest_seqno()
-                    .map(|x| x + 1)
-                    .unwrap_or_default();
+                let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
 
                 keyspace
                     .seqno
@@ -260,17 +249,28 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
 
                 // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
                 flush_manager_lock.enqueue_task(
-                    partition_name,
+                    handle.partition.name.clone(),
                     crate::flush::manager::Task {
                         id: memtable_id,
                         sealed_memtable,
-                        partition: partition.clone(),
+                        partition: handle.partition.clone(),
                     },
                 );
-            }
 
-            log::trace!("Requeued sealed journal at {:?}", journal_path);
+                recovered_count += 1;
+            };
         }
+
+        log::trace!("Recovered {recovered_count} sealed memtables");
+
+        // IMPORTANT: Add sealed journal to journal manager
+        journal_manager_lock.enqueue(crate::journal::manager::Item {
+            partition_seqnos: partition_seqno_map,
+            path: journal_path.clone(),
+            size_in_bytes: journal_size,
+        });
+
+        log::trace!("Requeued sealed journal at {:?}", journal_path);
     }
 
     Ok(())
