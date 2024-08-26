@@ -37,7 +37,7 @@ impl GarbageCollector {
     /// # use fjall::{Config, Gc, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation();
+    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
@@ -84,11 +84,11 @@ impl GarbageCollector {
         if let AnyTree::Blob(tree) = &partition.tree {
             let strategy = lsm_tree::SpaceAmpStrategy::new(factor);
 
-            return tree
-                .apply_gc_strategy(&strategy, partition.seqno.next())
-                .map_err(Into::into);
+            tree.apply_gc_strategy(&strategy, partition.seqno.next())
+                .map_err(Into::into)
+        } else {
+            panic!("Cannot use GC for non-KV-separated tree");
         }
-        panic!("Cannot use GC for non-KV-separated tree");
     }
 
     /// Rewrites blobs that have reached a given staleness threshold.
@@ -99,7 +99,7 @@ impl GarbageCollector {
     /// # use fjall::{Config, Gc, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation();
+    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
@@ -171,7 +171,7 @@ impl GarbageCollector {
     /// # use fjall::{Config, Gc, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation();
+    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
