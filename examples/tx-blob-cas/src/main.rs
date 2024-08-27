@@ -16,13 +16,15 @@ struct Cas {
 impl Cas {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
         let keyspace = Config::new(path).open_transactional()?;
+
         let items = keyspace.open_partition("items", Default::default())?;
         let blobs = keyspace.open_partition(
             "blobs",
             // IMPORTANT: Use KV-separation
-            PartitionOptions::default().use_kv_separation(true),
+            PartitionOptions::default()
+                .use_kv_separation(true)
+                .max_memtable_size(32_000_000),
         )?;
-        blobs.inner().set_max_memtable_size(32_000_000);
 
         Ok(Self {
             keyspace,
