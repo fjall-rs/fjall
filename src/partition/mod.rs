@@ -200,7 +200,10 @@ impl PartitionHandle {
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
             .compression(config.compression)
-            .blob_compression(config.blob_compression);
+            .blob_compression(config.blob_compression)
+            .blob_file_separation_threshold(config.blob_file_separation_threshold)
+            .blob_file_target_size(config.blob_file_target_size)
+            .bloom_bits_per_key(config.bloom_bits_per_key);
 
         #[cfg(feature = "bloom")]
         {

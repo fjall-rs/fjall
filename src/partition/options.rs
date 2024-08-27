@@ -84,6 +84,37 @@ impl Default for Options {
 }
 
 impl Options {
+    /// Sets the target size of blob files.
+    ///
+    /// Smaller blob files allow more granular garbage collection
+    /// which allows lower space amp for lower write I/O cost.
+    ///
+    /// Larger blob files decrease the number of files on disk and maintenance
+    /// overhead.
+    ///
+    /// Defaults to 64 MiB.
+    ///
+    /// This option has no effect when not used for opening a blob tree.
+    #[must_use]
+    pub fn blob_file_target_size(mut self, bytes: u64) -> Self {
+        self.blob_file_target_size = bytes;
+        self
+    }
+
+    /// Sets the key-value separation threshold in bytes.
+    ///
+    /// Smaller value will reduce compaction overhead and thus write amplification,
+    /// at the cost of lower read performance.
+    ///
+    /// Defaults to 4KiB.
+    ///
+    /// This option has no effect when not used for opening a blob tree.
+    #[must_use]
+    pub fn blob_file_separation_threshold(mut self, bytes: u32) -> Self {
+        self.blob_file_separation_threshold = bytes;
+        self
+    }
+
     /// Sets the compression method.
     ///
     /// Once set for a partition, this property is not considered in the future.

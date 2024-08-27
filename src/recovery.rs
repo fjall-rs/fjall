@@ -70,6 +70,9 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         base_config.index_block_size = recovered_config.index_block_size;
         base_config.compression = recovered_config.compression;
         base_config.blob_compression = recovered_config.blob_compression;
+        base_config.blob_file_target_size = recovered_config.blob_file_target_size;
+        base_config.blob_file_separation_threshold =
+            recovered_config.blob_file_separation_threshold;
 
         let is_blob_tree = partition_path
             .join(lsm_tree::file::BLOBS_FOLDER)
