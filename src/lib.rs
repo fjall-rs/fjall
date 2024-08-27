@@ -27,14 +27,14 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+//! use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
 //! let keyspace = Config::new(folder).open()?;
 //!
 //! // Each partition is its own physical LSM-tree
-//! let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+//! let items = keyspace.open_partition("my_items", PartitionOptions::default())?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -121,7 +121,7 @@ pub use {
     gc::GarbageCollection,
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
-    partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    partition::{options::Options as PartitionOptions, PartitionHandle},
     tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };

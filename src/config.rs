@@ -36,6 +36,8 @@ pub struct Config {
     /// many (possibly inactive) partitions.
     pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
 
+    pub(crate) manual_journal_persist: bool,
+
     /// Amount of concurrent flush workers
     pub(crate) flush_workers_count: usize,
 
@@ -82,6 +84,7 @@ impl Default for Config {
             flush_workers_count: cpus.min(4),
             compaction_workers_count: cpus.min(4),
             journal_recovery_mode: RecoveryMode::default(),
+            manual_journal_persist: false,
         }
     }
 }
@@ -93,6 +96,17 @@ impl Config {
             path: absolute_path(path),
             ..Default::default()
         }
+    }
+
+    /// If `false`, write batches or transactions automatically flush data to the operating system.
+    ///
+    /// Default = false
+    ///
+    /// Set to `true` to handle persistence manually, e.g. manually using `PersistMode::SyncData` for ACID transactions.
+    #[must_use]
+    pub fn manual_journal_persist(mut self, flag: bool) -> Self {
+        self.manual_journal_persist = flag;
+        self
     }
 
     /// Sets the amount of flush workers
@@ -227,7 +241,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
     /// # let folder = tempfile::tempdir()?.into_path();
     /// let keyspace = Config::new(&folder).temporary(true).open()?;
     ///

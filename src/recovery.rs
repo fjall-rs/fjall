@@ -8,7 +8,7 @@ use crate::{
         PARTITION_DELETED_MARKER,
     },
     journal::Journal,
-    partition::PartitionHandleInner,
+    partition::{options::Options as PartitionOptions, PartitionHandleInner},
     HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree};
@@ -17,10 +17,7 @@ use std::sync::{atomic::AtomicBool, Arc, RwLock};
 const LSM_MANIFEST_FILE: &str = "manifest";
 
 /// Recovers partitions
-pub fn recover_partitions(
-    keyspace: &Keyspace,
-    /* memtables: &mut HashMap<PartitionKey, Memtable>, */
-) -> crate::Result<()> {
+pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
     for dirent in std::fs::read_dir(&partitions_folder)? {
@@ -32,20 +29,23 @@ pub fn recover_partitions(
 
         log::trace!("Recovering partition {:?}", partition_name);
 
-        // TODO: check for empty folder
-
-        // TODO: the order in which files here are deleted may cause undefined behaviour
         // IMPORTANT: Check deletion marker
         if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
             log::debug!("Deleting deleted partition {:?}", partition_name);
+
+            // TODO: the order in which files here are deleted may cause undefined behaviour?
             std::fs::remove_dir_all(partition_path)?;
+
             continue;
         }
 
         // Check for marker, maybe the partition is not fully initialized
         if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
             log::debug!("Deleting uninitialized partition {:?}", partition_name);
+
+            // TODO: the order in which files here are deleted may cause undefined behaviour?
             std::fs::remove_dir_all(partition_path)?;
+
             continue;
         }
 
@@ -70,8 +70,10 @@ pub fn recover_partitions(
             AnyTree::Standard(base_config.open()?)
         };
 
+        // TODO: 2.0.0 recover
+        let recovered_config = PartitionOptions::default();
+
         let partition_inner = PartitionHandleInner {
-            max_memtable_size: (8 * 1_024 * 1_024).into(),
             compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Leveled::default())),
             name: partition_name.into(),
             tree,
@@ -87,26 +89,10 @@ pub fn recover_partitions(
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            config: recovered_config,
         };
         let partition_inner = Arc::new(partition_inner);
         let partition = PartitionHandle(partition_inner);
-
-        /*  // NOTE: We already recovered all active memtables from the active journal,
-        // so just yank it out and give to the partition
-        if let Some(recovered_memtable) = memtables.remove(partition_name) {
-            log::trace!(
-                "Recovered previously active memtable for {:?}, with size: {} B",
-                partition_name,
-                recovered_memtable.size()
-            );
-
-            // IMPORTANT: Add active memtable size to current write buffer size
-            keyspace
-                .write_buffer_manager
-                .allocate(recovered_memtable.size().into());
-
-            partition.tree.set_active_memtable(recovered_memtable);
-        } */
 
         // Add partition to dictionary
         keyspace

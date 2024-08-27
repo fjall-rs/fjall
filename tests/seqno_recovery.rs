@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Config, PartitionOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -15,9 +15,9 @@ fn recover_seqno() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default1", PartitionOptions::default())?,
+            keyspace.open_partition("default2", PartitionOptions::default())?,
+            keyspace.open_partition("default3", PartitionOptions::default())?,
         ];
 
         for tree in partitions {
@@ -52,9 +52,9 @@ fn recover_seqno() -> fjall::Result<()> {
         assert_eq!(seqno, keyspace.instant());
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default1", PartitionOptions::default())?,
+            keyspace.open_partition("default2", PartitionOptions::default())?,
+            keyspace.open_partition("default3", PartitionOptions::default())?,
         ];
 
         for tree in partitions {

@@ -18,7 +18,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker,
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    HashMap, PartitionCreateOptions, PartitionHandle,
+    HashMap, PartitionHandle, PartitionOptions,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
@@ -100,6 +100,11 @@ impl Drop for KeyspaceInner {
         self.config.descriptor_table.clear();
 
         if self.config.clean_path_on_drop {
+            log::info!(
+                "Deleting keyspace because temporary=true: {:?}",
+                self.config.path
+            );
+
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
@@ -150,11 +155,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, PartitionOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
     /// let mut batch = keyspace.batch();
     ///
     /// assert_eq!(partition.len()?, 0);
@@ -186,11 +191,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, PartitionOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
     /// assert_eq!(1, keyspace.journal_count());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -217,11 +222,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, PartitionOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
     /// assert!(keyspace.disk_space() >= 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -247,10 +252,10 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let keyspace = Config::new(folder).open()?;
-    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+    /// let items = keyspace.open_partition("my_items", PartitionOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -401,7 +406,7 @@ impl Keyspace {
     pub fn open_partition(
         &self,
         name: &str,
-        create_options: PartitionCreateOptions,
+        create_options: PartitionOptions,
     ) -> crate::Result<PartitionHandle> {
         assert!(is_valid_partition_name(name));
 
@@ -444,12 +449,12 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, PartitionOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// assert!(!keyspace.partition_exists("default"));
-    /// keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// keyspace.open_partition("default", PartitionOptions::default())?;
     /// assert!(keyspace.partition_exists("default"));
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -469,12 +474,12 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, PartitionOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let partition1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// let partition2 = keyspace.open_partition("another", PartitionCreateOptions::default())?;
+    /// let partition1 = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// let partition2 = keyspace.open_partition("another", PartitionOptions::default())?;
     ///
     /// partition1.insert("abc1", "abc")?;
     /// partition2.insert("abc2", "abc")?;
