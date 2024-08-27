@@ -55,23 +55,28 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         let path = partitions_folder.join(partition_name);
 
-        let is_blob_tree = partition_path
-            .join(lsm_tree::file::BLOBS_FOLDER)
-            .try_exists()?;
-
-        let base_config = lsm_tree::Config::new(path)
+        let mut base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .blob_cache(keyspace.config.blob_cache.clone());
+
+        // TODO: 2.0.0 recover
+        let recovered_config = PartitionOptions::default();
+        base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
+        base_config.data_block_size = recovered_config.data_block_size;
+        base_config.index_block_size = recovered_config.index_block_size;
+        base_config.compression = recovered_config.compression;
+        base_config.blob_compression = recovered_config.blob_compression;
+
+        let is_blob_tree = partition_path
+            .join(lsm_tree::file::BLOBS_FOLDER)
+            .try_exists()?;
 
         let tree = if is_blob_tree {
             AnyTree::Blob(base_config.open_as_blob_tree()?)
         } else {
             AnyTree::Standard(base_config.open()?)
         };
-
-        // TODO: 2.0.0 recover
-        let recovered_config = PartitionOptions::default();
 
         let partition_inner = PartitionHandleInner {
             compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Leveled::default())),
