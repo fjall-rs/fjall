@@ -22,7 +22,6 @@ lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
-all = ["single_writer_tx", "bloom", "lz4", "miniz"]
 __internal_whitebox = []
 
 [dependencies]
@@ -43,7 +42,7 @@ test-log = "0.2.16"
 rand = "0.8.5"
 
 [package.metadata.cargo-all-features]
-denylist = ["__internal_whitebox", "all"]
+denylist = ["__internal_whitebox"]
 
 [[bench]]
 name = "lsmt"

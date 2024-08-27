@@ -192,7 +192,7 @@ impl PartitionHandle {
 
         // TODO: 2.0.0 create config file
 
-        let base_config = lsm_tree::Config::new(path)
+        let mut base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .blob_cache(keyspace.config.blob_cache.clone())
@@ -200,8 +200,12 @@ impl PartitionHandle {
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
             .compression(config.compression)
-            .blob_compression(config.blob_compression)
-            .bloom_bits_per_key(config.bloom_bits_per_key);
+            .blob_compression(config.blob_compression);
+
+        #[cfg(feature = "bloom")]
+        {
+            base_config = base_config.bloom_bits_per_key(config.bloom_bits_per_key);
+        }
 
         let tree = match config.tree_type {
             lsm_tree::TreeType::Standard => AnyTree::Standard(base_config.open()?),
