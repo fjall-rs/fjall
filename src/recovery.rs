@@ -68,6 +68,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
         base_config.data_block_size = recovered_config.data_block_size;
         base_config.index_block_size = recovered_config.index_block_size;
+        base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
         base_config.compression = recovered_config.compression;
         base_config.blob_compression = recovered_config.blob_compression;
         base_config.blob_file_target_size = recovered_config.blob_file_target_size;
