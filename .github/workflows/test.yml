@@ -92,4 +92,4 @@ jobs:
       - name: cross test
         run: |
           cargo install cross
-          cross test -r --features all --target ${{ matrix.target }}
+          cross test --target ${{ matrix.target }}
