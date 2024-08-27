@@ -24,8 +24,8 @@ impl Default for CreateOptions {
         let default_tree_config = lsm_tree::Config::default();
 
         Self {
-            block_size: default_tree_config.inner.data_block_size,
-            level_count: default_tree_config.inner.level_count,
+            block_size: default_tree_config.data_block_size,
+            level_count: default_tree_config.level_count,
             tree_type: TreeType::Standard,
 
             #[cfg(feature = "lz4")]

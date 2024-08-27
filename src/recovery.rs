@@ -14,7 +14,7 @@ use crate::{
 use lsm_tree::{AbstractTree, AnyTree};
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
-const LSM_VERSION_MARKER_FILE: &str = "version";
+const LSM_MANIFEST_FILE: &str = "manifest";
 
 /// Recovers partitions
 pub fn recover_partitions(
@@ -43,7 +43,7 @@ pub fn recover_partitions(
         }
 
         // Check for marker, maybe the partition is not fully initialized
-        if !partition_path.join(LSM_VERSION_MARKER_FILE).try_exists()? {
+        if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
             log::debug!("Deleting uninitialized partition {:?}", partition_name);
             std::fs::remove_dir_all(partition_path)?;
             continue;

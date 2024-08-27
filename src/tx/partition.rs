@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::PartitionHandle;
-use lsm_tree::UserValue;
+use crate::{gc::GarbageCollection, PartitionHandle};
+use lsm_tree::{GcReport, UserValue};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -14,6 +14,26 @@ use std::{
 pub struct TransactionalPartitionHandle {
     pub(crate) inner: PartitionHandle,
     pub(crate) tx_lock: Arc<Mutex<()>>,
+}
+
+impl GarbageCollection for TransactionalPartitionHandle {
+    fn gc_scan(&self) -> crate::Result<GcReport> {
+        crate::gc::GarbageCollector::scan(self.inner())
+    }
+
+    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
+    }
+
+    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
+    }
+
+    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
+        crate::gc::GarbageCollector::drop_stale_segments(self.inner())
+    }
 }
 
 impl TransactionalPartitionHandle {

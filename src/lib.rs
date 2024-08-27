@@ -118,7 +118,7 @@ pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
-    gc::GarbageCollector,
+    gc::GarbageCollection,
     journal::{shard::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
@@ -163,6 +163,3 @@ pub use lsm_tree::AbstractTree;
 pub use lsm_tree::{
     AnyTree, BlobCache, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
 };
-
-/// Alias for `GarbageCollector`
-pub type Gc = GarbageCollector;

@@ -20,14 +20,14 @@ fn main() -> fjall::Result<()> {
     eprintln!("Running GC for partition {:?}", blobs.name);
     let start = Instant::now();
 
-    let report = Gc::scan(&blobs)?;
+    let report = blobs.gc_scan()?;
     assert_eq!(10.0, report.space_amp());
     assert_eq!(0.9, report.stale_ratio());
     assert_eq!(9, report.stale_blobs);
     assert_eq!(9 * BLOB_SIZE as u64, report.stale_bytes);
     assert_eq!(9, report.stale_segment_count);
 
-    let freed_bytes = Gc::with_space_amp_target(&blobs, 1.0)?;
+    let freed_bytes = blobs.gc_with_space_amp_target(1.0)?;
 
     eprintln!("GC done in {:?}, freed {freed_bytes}B", start.elapsed());
     assert_eq!(
@@ -36,7 +36,7 @@ fn main() -> fjall::Result<()> {
         9 * 55
     );
 
-    let report = Gc::scan(&blobs)?;
+    let report = blobs.gc_scan()?;
     assert_eq!(1.0, report.space_amp());
     assert_eq!(0.0, report.stale_ratio());
     assert_eq!(0, report.stale_blobs);

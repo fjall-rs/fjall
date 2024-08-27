@@ -12,6 +12,7 @@ use crate::{
     config::Config as KeyspaceConfig,
     file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
+    gc::GarbageCollection,
     journal::{
         manager::{JournalManager, PartitionSeqNo},
         Journal,
@@ -24,8 +25,8 @@ use crate::{
 };
 use config::CreateOptions;
 use lsm_tree::{
-    compaction::CompactionStrategy, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
-    UserValue,
+    compaction::CompactionStrategy, AbstractTree, AnyTree, GcReport, KvPair, SequenceNumberCounter,
+    UserKey, UserValue,
 };
 use std::{
     ops::RangeBounds,
@@ -151,6 +152,24 @@ impl Eq for PartitionHandle {}
 impl std::hash::Hash for PartitionHandle {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write(self.name.as_bytes());
+    }
+}
+
+impl GarbageCollection for PartitionHandle {
+    fn gc_scan(&self) -> crate::Result<GcReport> {
+        crate::gc::GarbageCollector::scan(self)
+    }
+
+    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
+        crate::gc::GarbageCollector::with_space_amp_target(self, factor)
+    }
+
+    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
+        crate::gc::GarbageCollector::with_staleness_threshold(self, threshold)
+    }
+
+    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
+        crate::gc::GarbageCollector::drop_stale_segments(self)
     }
 }
 
