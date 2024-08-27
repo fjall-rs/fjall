@@ -50,7 +50,7 @@ impl SnapshotTrackerInner {
     pub fn close(&self, seqno: Instant) {
         log::trace!("close snapshot {seqno}");
 
-        self.data.alter(&seqno, |_, v| v - 1);
+        self.data.alter(&seqno, |_, v| v.saturating_sub(1));
 
         if (seqno % self.safety_gap) == 0 {
             self.gc(seqno);

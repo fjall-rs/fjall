@@ -190,6 +190,8 @@ impl PartitionHandle {
             return Err(Error::PartitionDeleted);
         }
 
+        // TODO: 2.0.0 create config file
+
         let base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())

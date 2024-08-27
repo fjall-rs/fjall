@@ -150,13 +150,13 @@ impl Batch {
             partitions_with_possible_stall.insert(partition.clone());
         }
 
-        if !self.keyspace.config.manual_journal_persist {
-            self.keyspace.journal.flush(crate::PersistMode::Buffer)?;
-        }
-
         drop(locked_memtables);
         drop(partitions);
         drop(shard);
+
+        if !self.keyspace.config.manual_journal_persist {
+            self.keyspace.journal.flush(crate::PersistMode::Buffer)?;
+        }
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches

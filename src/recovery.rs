@@ -116,8 +116,8 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::PartitionManifest;
 
-    let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
     let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
+    let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
     let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
 
     let journals_folder = keyspace.config.path.join(JOURNALS_FOLDER);
