@@ -1,4 +1,4 @@
-use fjall::{Config, Gc, PartitionCreateOptions};
+use fjall::{Config, GarbageCollection, PartitionCreateOptions};
 use std::time::Instant;
 
 const BLOB_SIZE: usize = 10_000;
