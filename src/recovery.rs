@@ -20,6 +20,9 @@ const LSM_MANIFEST_FILE: &str = "manifest";
 pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
+    #[allow(clippy::significant_drop_tightening)]
+    let mut partitions_lock = keyspace.partitions.write().expect("lock is poisoned");
+
     for dirent in std::fs::read_dir(&partitions_folder)? {
         let dirent = dirent?;
         let partition_name = dirent.file_name();
@@ -100,11 +103,8 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         let partition = PartitionHandle(partition_inner);
 
         // Add partition to dictionary
-        keyspace
-            .partitions
-            .write()
-            .expect("lock is poisoned")
-            .insert(partition_name.into(), partition.clone());
+
+        partitions_lock.insert(partition_name.into(), partition.clone());
 
         log::trace!("Recovered partition {:?}", partition_name);
     }
@@ -116,8 +116,13 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::PartitionManifest;
 
+    #[allow(clippy::significant_drop_tightening)]
     let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
+
+    #[allow(clippy::significant_drop_tightening)]
     let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
+
+    #[allow(clippy::significant_drop_tightening)]
     let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
 
     let journals_folder = keyspace.config.path.join(JOURNALS_FOLDER);
