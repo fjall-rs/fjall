@@ -1,6 +1,6 @@
 use fjall::{
-    Config, PartitionCreateOptions, PersistMode, TxKeyspace, TxPartition, UserValue,
-    WriteTransaction,
+    Config, GarbageCollection, PartitionCreateOptions, PersistMode, TxKeyspace, TxPartition,
+    UserValue, WriteTransaction,
 };
 use format_bytes::format_bytes;
 use sha2::Digest;
@@ -382,12 +382,12 @@ fn main() -> fjall::Result<()> {
     assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
     log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
 
-    let report = fjall::Gc::scan(cas.blobs.inner())?;
+    let report = cas.blobs.gc_scan()?;
     eprintln!("{report}");
 
-    fjall::Gc::drop_stale_segments(cas.blobs.inner())?;
+    cas.blobs.gc_drop_stale_segments()?;
 
-    let report = fjall::Gc::scan(cas.blobs.inner())?;
+    let report = cas.blobs.gc_scan()?;
     eprintln!("{report}");
 
     Ok(())
