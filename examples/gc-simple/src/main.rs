@@ -1,14 +1,12 @@
-use fjall::{Config, GarbageCollection, PartitionCreateOptions};
+use fjall::{Config, GarbageCollection, PartitionOptions};
 use std::time::Instant;
 
 const BLOB_SIZE: usize = 10_000;
 
 fn main() -> fjall::Result<()> {
     let keyspace = Config::default().temporary(true).open()?;
-    let blobs = keyspace.open_partition(
-        "blobs",
-        PartitionCreateOptions::default().use_kv_separation(true),
-    )?;
+    let blobs =
+        keyspace.open_partition("blobs", PartitionOptions::default().use_kv_separation(true))?;
 
     for _ in 0..10 {
         blobs.insert("a", "a".repeat(BLOB_SIZE))?;

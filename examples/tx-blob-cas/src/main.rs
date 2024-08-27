@@ -1,6 +1,6 @@
 use fjall::{
-    Config, GarbageCollection, PartitionCreateOptions, PersistMode, TxKeyspace, TxPartition,
-    UserValue, WriteTransaction,
+    Config, GarbageCollection, PartitionOptions, PersistMode, TxKeyspace, TxPartition, UserValue,
+    WriteTransaction,
 };
 use format_bytes::format_bytes;
 use sha2::Digest;
@@ -20,7 +20,7 @@ impl Cas {
         let blobs = keyspace.open_partition(
             "blobs",
             // IMPORTANT: Use KV-separation
-            PartitionCreateOptions::default().use_kv_separation(true),
+            PartitionOptions::default().use_kv_separation(true),
         )?;
         blobs.inner().set_max_memtable_size(32_000_000);
 
