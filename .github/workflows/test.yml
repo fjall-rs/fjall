@@ -67,7 +67,7 @@ jobs:
         run: cargo nextest run --features lz4,miniz,single_writer_tx,bloom
       - name: Build & test examples
         run: node compile_examples.mjs
-      - name: Run tests
+      - name: Run doc tests
         run: cargo test --doc
   cross:
     timeout-minutes: 20
