@@ -22,7 +22,9 @@ pub struct Config {
     #[doc(hidden)]
     pub block_cache: Arc<BlockCache>,
 
-    pub(crate) blob_cache: Arc<BlobCache>,
+    /// Blob cache that will be shared between partitions
+    #[doc(hidden)]
+    pub blob_cache: Arc<BlobCache>,
 
     /// Descriptor table that will be shared between partitions
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,

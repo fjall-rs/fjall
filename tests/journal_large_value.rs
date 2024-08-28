@@ -4,7 +4,7 @@ use fjall::{Config, PartitionOptions};
 
 #[test_log::test]
 fn journal_recover_large_value() -> fjall::Result<()> {
-    let folder = ".test";
+    let folder = tempfile::tempdir()?;
 
     let large_value = "a".repeat(128_000);
 

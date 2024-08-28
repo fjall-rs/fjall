@@ -54,21 +54,21 @@ jobs:
             examples/tx-partition-move -> target
       - name: Install cargo-all-features
         run: cargo install cargo-all-features
+      - uses: taiki-e/install-action@nextest
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy
+      - name: Build permutations
+        run: cargo build-all-features
       - name: Run whitebox tests
-        run: cargo test --features __internal_whitebox -- whitebox_ --nocapture --test-threads=1
-        env:
-          RUST_LOG: info
-        # NOTE: Run examples before unit tests, because they are faster to complete
+        run: cargo test --features __internal_whitebox -- whitebox_ --test-threads=1
+      - name: Run tests
+        run: cargo nextest run --features lz4,miniz,single_writer_tx,bloom
       - name: Build & test examples
         run: node compile_examples.mjs
       - name: Run tests
-        run: cargo test-all-features -v -- --nocapture
-        env:
-          RUST_LOG: info
+        run: cargo test --doc
   cross:
     timeout-minutes: 20
     name: cross
