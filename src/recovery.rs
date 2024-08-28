@@ -86,26 +86,8 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             AnyTree::Standard(base_config.open()?)
         };
 
-        let partition_inner = PartitionHandleInner {
-            compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Leveled::default())),
-            name: partition_name.into(),
-            tree,
-            partitions: keyspace.partitions.clone(),
-            keyspace_config: keyspace.config.clone(),
-            flush_manager: keyspace.flush_manager.clone(),
-            flush_semaphore: keyspace.flush_semaphore.clone(),
-            journal_manager: keyspace.journal_manager.clone(),
-            journal: keyspace.journal.clone(),
-            compaction_manager: keyspace.compaction_manager.clone(),
-            seqno: keyspace.seqno.clone(),
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
-            is_deleted: AtomicBool::default(),
-            is_poisoned: keyspace.is_poisoned.clone(),
-            snapshot_tracker: keyspace.snapshot_tracker.clone(),
-            config: recovered_config,
-        };
-        let partition_inner = Arc::new(partition_inner);
-        let partition = PartitionHandle(partition_inner);
+        let partition =
+            PartitionHandle::from_keyspace(keyspace, tree, partition_name.into(), recovered_config);
 
         // Add partition to dictionary
 

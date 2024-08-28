@@ -175,6 +175,32 @@ impl PartitionHandle {
         *lock = strategy;
     }
 
+    pub(crate) fn from_keyspace(
+        keyspace: &Keyspace,
+        tree: AnyTree,
+        name: PartitionKey,
+        config: Options,
+    ) -> Self {
+        Self(Arc::new(PartitionHandleInner {
+            compaction_strategy: RwLock::new(Arc::new(lsm_tree::compaction::Leveled::default())),
+            name,
+            tree,
+            partitions: keyspace.partitions.clone(),
+            keyspace_config: keyspace.config.clone(),
+            flush_manager: keyspace.flush_manager.clone(),
+            flush_semaphore: keyspace.flush_semaphore.clone(),
+            journal_manager: keyspace.journal_manager.clone(),
+            journal: keyspace.journal.clone(),
+            compaction_manager: keyspace.compaction_manager.clone(),
+            seqno: keyspace.seqno.clone(),
+            write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            is_deleted: AtomicBool::default(),
+            is_poisoned: keyspace.is_poisoned.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            config,
+        }))
+    }
+
     /// Creates a new partition.
     pub(crate) fn create_new(
         keyspace: &Keyspace,
