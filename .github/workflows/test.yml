@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       matrix:
         rust_version:
@@ -70,7 +70,7 @@ jobs:
       - name: Build & test examples
         run: node compile_examples.mjs
   cross:
-    timeout-minutes: 20
+    timeout-minutes: 15
     name: cross
     strategy:
       matrix:
