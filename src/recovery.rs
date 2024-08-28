@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
+    batch::PartitionKey,
     file::{
         FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, PARTITIONS_FOLDER,
         PARTITION_DELETED_MARKER,
@@ -164,7 +165,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             partitions_to_consider.len()
         );
 
-        let mut partition_seqno_map = HashMap::default();
+        let mut partition_seqno_map: HashMap<PartitionKey, _> = HashMap::default();
 
         // NOTE: Only get the partitions that have a lower seqno than the journal
         // which means there's still some unflushed data in this sealed journal
@@ -265,7 +266,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
 
         // IMPORTANT: Add sealed journal to journal manager
         journal_manager_lock.enqueue(crate::journal::manager::Item {
-            partition_seqnos: partition_seqno_map,
+            partition_seqnos: partition_seqno_map.into_values().collect(),
             path: journal_path.clone(),
             size_in_bytes: journal_size,
         });

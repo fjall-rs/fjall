@@ -6,6 +6,8 @@ const SPLITS: usize = 1_000;
 const ITEMS_PER_SPLIT: usize = 1_000;
 
 fn main() -> fjall::Result<()> {
+    env_logger::Builder::from_default_env().init();
+
     let keyspace = fjall::Config::default().open()?;
 
     let start = std::time::Instant::now();
@@ -26,7 +28,7 @@ fn main() -> fjall::Result<()> {
         keyspace.persist(fjall::PersistMode::SyncData)?;
 
         // NOTE: Flush memtable because partition becomes immutable
-        // This relaxes the journal GC, making everything faster
+        // This relaxes the journal GC, making everything a bit faster
         split.rotate_memtable()?;
 
         eprintln!(

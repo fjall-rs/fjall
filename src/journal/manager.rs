@@ -4,14 +4,19 @@
 
 use super::shard::JournalShard;
 use crate::{
-    batch::PartitionKey,
     file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
     journal::Journal,
-    HashMap, PartitionHandle,
+    PartitionHandle,
 };
-use lsm_tree::{AbstractTree, SeqNo};
-use std::{fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+use lsm_tree::{AbstractTree, Memtable, SeqNo};
+use std::{
+    fs::File,
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, RwLockWriteGuard},
+};
 
+#[derive(Clone)]
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
     pub(crate) lsn: SeqNo,
@@ -26,7 +31,7 @@ impl std::fmt::Debug for PartitionSeqNo {
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+    pub(crate) partition_seqnos: Vec<PartitionSeqNo>,
 }
 
 impl std::fmt::Debug for Item {
@@ -100,27 +105,39 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
-    /// Enqueues partitions to be flushed so that the oldest journal can be safely evicted
-    pub(crate) fn get_partitions_to_flush_for_oldest_journal_eviction(
+    /// Rotates & lists partitions to be flushed so that the oldest journal can be safely evicted
+    pub(crate) fn rotate_partitions_to_flush_for_oldest_journal_eviction(
         &self,
-    ) -> Vec<PartitionHandle> {
-        let mut items = vec![];
+    ) -> Vec<(PartitionHandle, PartitionSeqNo, u64, Arc<Memtable>)> {
+        let mut v = Vec::new();
 
         if let Some(item) = self.items.first() {
-            for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
-                else {
-                    items.push(item.partition.clone());
-                    continue;
-                };
+            for item in &item.partition_seqnos {
+                let highest_persisted_seqno = item.partition.tree.get_highest_persisted_seqno();
 
-                if partition_seqno < item.lsn {
-                    items.push(item.partition.clone());
+                if highest_persisted_seqno.is_none()
+                    || highest_persisted_seqno.expect("unwrap") < item.lsn
+                {
+                    if let Some((yanked_id, yanked_memtable)) =
+                        item.partition.tree.rotate_memtable()
+                    {
+                        v.push((
+                            item.partition.clone(),
+                            PartitionSeqNo {
+                                partition: item.partition.clone(),
+                                lsn: yanked_memtable
+                                    .get_highest_seqno()
+                                    .expect("memtable should not be empty"),
+                            },
+                            yanked_id,
+                            yanked_memtable,
+                        ));
+                    }
                 }
             }
         }
 
-        items
+        v
     }
 
     /// Performs maintenance, maybe deleting some old journals
@@ -132,7 +149,7 @@ impl JournalManager {
             };
 
             // TODO: unit test: check deleted partition does not prevent journal eviction
-            for item in item.partition_seqnos.values() {
+            for item in &item.partition_seqnos {
                 // Only check partition seqno if not deleted
                 if !item
                     .partition
@@ -172,7 +189,7 @@ impl JournalManager {
     pub(crate) fn rotate_journal(
         &mut self,
         journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
-        seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+        seqnos: Vec<PartitionSeqNo>,
     ) -> crate::Result<()> {
         let old_journal_path = self.active_path.clone();
 
@@ -180,8 +197,8 @@ impl JournalManager {
 
         let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
 
-        for (name, item) in &seqnos {
-            writeln!(file, "{name}:{}", item.lsn)?;
+        for item in &seqnos {
+            writeln!(file, "{}:{}", item.partition.name, item.lsn)?;
         }
         file.sync_all()?;
 

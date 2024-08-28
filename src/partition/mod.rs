@@ -21,7 +21,7 @@ use crate::{
     snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
-    Error, HashMap, Keyspace,
+    Error, Keyspace,
 };
 use lsm_tree::{
     compaction::CompactionStrategy, AbstractTree, AnyTree, GcReport, KvPair, SequenceNumberCounter,
@@ -597,31 +597,25 @@ impl PartitionHandle {
         let seqno_map = {
             let partitions = self.partitions.write().expect("lock is poisoned");
 
-            let mut map = HashMap::with_hasher(xxhash_rust::xxh3::Xxh3Builder::new());
+            let mut seqnos = Vec::with_capacity(partitions.len());
 
-            for (name, partition) in &*partitions {
+            for partition in partitions.values() {
                 if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {
-                    map.insert(
-                        name.clone(),
-                        PartitionSeqNo {
-                            lsn,
-                            partition: partition.clone(),
-                        },
-                    );
+                    seqnos.push(PartitionSeqNo {
+                        lsn,
+                        partition: partition.clone(),
+                    });
                 }
             }
 
-            map.insert(
-                self.name.clone(),
-                PartitionSeqNo {
-                    partition: self.clone(),
-                    lsn: yanked_memtable
-                        .get_highest_seqno()
-                        .expect("sealed memtable is never empty"),
-                },
-            );
+            seqnos.push(PartitionSeqNo {
+                partition: self.clone(),
+                lsn: yanked_memtable
+                    .get_highest_seqno()
+                    .expect("sealed memtable is never empty"),
+            });
 
-            map
+            seqnos
         };
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
@@ -638,8 +632,8 @@ impl PartitionHandle {
             },
         );
 
-        drop(journal_manager);
         drop(flush_manager);
+        drop(journal_manager);
         drop(journal);
 
         // Notify flush worker that new work has arrived
