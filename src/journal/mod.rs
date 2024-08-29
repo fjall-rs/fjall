@@ -46,13 +46,6 @@ impl Drop for Journal {
     }
 }
 
-// TODO: need JournalReader which merges all shards
-// TODO: into a single stream... the stream emitting
-// TODO: valid batches, deprecates Shard::recover_and_repair
-// TODO: need to write the valid batches into a RecoveryThing
-// TODO: that writes into the memtables
-// TODO: the journal shouldn't know about memtables!!!
-
 impl Journal {
     pub fn get_reader<P: AsRef<Path>>(path: P) -> crate::Result<JournalReader> {
         JournalReader::new(path)

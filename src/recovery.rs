@@ -33,21 +33,31 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         log::trace!("Recovering partition {:?}", partition_name);
 
-        // IMPORTANT: Check deletion marker
+        // NOTE: Check deletion marker
         if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
             log::debug!("Deleting deleted partition {:?}", partition_name);
 
-            // TODO: the order in which files here are deleted may cause undefined behaviour?
+            // IMPORTANT: First, delete the manifest,
+            // once that is deleted, the partition is treated as uninitialized
+            // even if the .deleted marker is removed
+            //
+            // This is important, because if somehow `remove_dir_all` ends up
+            // deleting the `.deleted` marker first, we would end up resurrecting
+            // the partition
+            let manifest_file = partition_path.join(LSM_MANIFEST_FILE);
+            if manifest_file.try_exists()? {
+                std::fs::remove_file(manifest_file)?;
+            }
+
             std::fs::remove_dir_all(partition_path)?;
 
             continue;
         }
 
-        // Check for marker, maybe the partition is not fully initialized
+        // NOTE: Check for marker, maybe the partition is not fully initialized
         if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
             log::debug!("Deleting uninitialized partition {:?}", partition_name);
 
-            // TODO: the order in which files here are deleted may cause undefined behaviour?
             std::fs::remove_dir_all(partition_path)?;
 
             continue;

@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::batch::PartitionKey;
+use crate::{batch::PartitionKey, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     serde::{Deserializable, Serializable},
@@ -10,15 +10,13 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
-const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'L', b'2'];
-
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
 /// - The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
 ///
 /// - The end marker contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
-/// - The end marker terminates each batch with the magic u64 value: [`TRAILER_MAGIC`].
+/// - The end marker terminates each batch with the magic string: [`TRAILER_MAGIC`].
 ///
 /// - If a start marker is detected, while inside a batch, the batch is broken.
 #[derive(Debug, Eq, PartialEq)]
@@ -111,7 +109,7 @@ impl Serializable for Marker {
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the checksum value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
-                writer.write_all(TRAILER_MAGIC)?;
+                writer.write_all(MAGIC_BYTES)?;
             }
         }
         Ok(())
@@ -139,10 +137,10 @@ impl Deserializable for Marker {
                 })
             }
             Tag::Item => {
-                let value_type = reader
-                    .read_u8()?
+                let value_type = reader.read_u8()?;
+                let value_type = value_type
                     .try_into()
-                    .expect("invalid value type tag");
+                    .map_err(|()| DeserializeError::InvalidTag(("ValueType", value_type)))?;
 
                 // Read partition key
                 let partition_len = reader.read_u8()?;
@@ -171,10 +169,10 @@ impl Deserializable for Marker {
                 let checksum = reader.read_u64::<BigEndian>()?;
 
                 // Check trailer
-                let mut magic = [0u8; TRAILER_MAGIC.len()];
+                let mut magic = [0u8; MAGIC_BYTES.len()];
                 reader.read_exact(&mut magic)?;
 
-                if magic != TRAILER_MAGIC {
+                if magic != MAGIC_BYTES {
                     return Err(DeserializeError::InvalidTrailer);
                 }
 

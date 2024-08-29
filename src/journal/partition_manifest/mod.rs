@@ -4,14 +4,12 @@
 
 mod error;
 
-use lsm_tree::SeqNo;
-
 pub use error::Error;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Entry<'a> {
     pub(crate) partition_name: &'a str,
-    pub(crate) seqno: SeqNo,
+    pub(crate) seqno: lsm_tree::SeqNo,
 }
 
 #[derive(Debug, Eq, PartialEq)]
