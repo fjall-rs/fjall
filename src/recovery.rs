@@ -2,6 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use std::{fs::DirEntry, path::Path};
+
 use crate::{
     batch::PartitionKey,
     file::{
@@ -105,6 +107,30 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
     Ok(())
 }
 
+fn collected_sealed_journals<P: AsRef<Path>>(base_folder: P) -> crate::Result<Vec<DirEntry>> {
+    let mut dirents = std::fs::read_dir(base_folder)?.collect::<std::io::Result<Vec<_>>>()?;
+
+    dirents.sort_by(|a, b| {
+        let a_num = a
+            .file_name()
+            .into_string()
+            .expect("should be valid string")
+            .parse::<u64>()
+            .expect("should be valid journal name");
+
+        let b_num = b
+            .file_name()
+            .into_string()
+            .expect("should be valid string")
+            .parse::<u64>()
+            .expect("should be valid journal name");
+
+        a_num.cmp(&b_num)
+    });
+
+    Ok(dirents)
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     use crate::journal::partition_manifest::PartitionManifest;
@@ -119,15 +145,14 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
     let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
 
     let journals_folder = keyspace.config.path.join(JOURNALS_FOLDER);
-    let mut dirents = std::fs::read_dir(journals_folder)?.collect::<std::io::Result<Vec<_>>>()?;
-    dirents.sort_by_key(std::fs::DirEntry::file_name);
+    let journal_dirents = collected_sealed_journals(journals_folder)?;
 
     log::trace!(
         "looking for sealed journals in potentially {} found journals",
-        dirents.len()
+        journal_dirents.len()
     );
 
-    for dirent in dirents {
+    for dirent in journal_dirents {
         let journal_path = dirent.path();
 
         assert!(dirent.file_type()?.is_dir(), "journal should be directory");
@@ -142,13 +167,13 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
         let journal_size = fs_extra::dir::get_size(&journal_path)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
 
-        log::trace!("Reading sealed journal at {journal_path:?}");
+        log::debug!("Reading sealed journal at {journal_path:?}");
 
         // Only consider partitions that are registered in the journal
         let file_content = std::fs::read_to_string(journal_path.join(FLUSH_PARTITIONS_LIST))?;
         let partitions_to_consider = PartitionManifest::from_str(&file_content)?;
 
-        log::trace!(
+        log::debug!(
             "Journal contains data of {} partitions",
             partitions_to_consider.len()
         );
@@ -160,7 +185,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
         for entry in partitions_to_consider {
             let Some(partition) = partitions_lock.get(entry.partition_name) else {
                 // Partition was probably deleted
-                log::trace!("Partition {} does not exist", entry.partition_name);
+                log::debug!("Partition {} does not exist", entry.partition_name);
                 continue;
             };
 
@@ -177,14 +202,14 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
                     },
                 );
             } else {
-                log::trace!(
+                log::debug!(
                     "Partition {} has higher seqno ({partition_lsn:?}), skipping",
                     entry.partition_name
                 );
             }
         }
 
-        log::trace!(
+        log::debug!(
             "Recovering sealed memtables for partitions: {:#?}",
             partition_seqno_map.keys()
         );
@@ -212,7 +237,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             }
         }
 
-        log::trace!("Sealing recovered memtables");
+        log::debug!("Sealing recovered memtables");
         let mut recovered_count = 0;
 
         for handle in partition_seqno_map.values() {
@@ -220,6 +245,12 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             let memtable_id = tree.get_next_segment_id();
 
             if let Some((_, sealed_memtable)) = tree.rotate_memtable() {
+                log::trace!(
+                    "sealed memtable of {} has {} items",
+                    handle.partition.name,
+                    sealed_memtable.len()
+                );
+
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
 
@@ -250,7 +281,7 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             };
         }
 
-        log::trace!("Recovered {recovered_count} sealed memtables");
+        log::debug!("Recovered {recovered_count} sealed memtables");
 
         // IMPORTANT: Add sealed journal to journal manager
         journal_manager_lock.enqueue(crate::journal::manager::Item {
@@ -259,8 +290,48 @@ pub fn recover_sealed_memtables(keyspace: &Keyspace) -> crate::Result<()> {
             size_in_bytes: journal_size,
         });
 
-        log::trace!("Requeued sealed journal at {:?}", journal_path);
+        log::debug!("Requeued sealed journal at {:?}", journal_path);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    pub fn recovery_sealed_journal_order() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path();
+
+        std::fs::create_dir_all(path.join("1"))?;
+        std::fs::create_dir_all(path.join("2"))?;
+        std::fs::create_dir_all(path.join("10"))?;
+        std::fs::create_dir_all(path.join("12"))?;
+        std::fs::create_dir_all(path.join("20"))?;
+        std::fs::create_dir_all(path.join("100"))?;
+
+        let dirents = collected_sealed_journals(path)?;
+        let names = dirents
+            .iter()
+            .map(|x| x.file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            [
+                "1".to_owned(),
+                "2".to_owned(),
+                "10".to_owned(),
+                "12".to_owned(),
+                "20".to_owned(),
+                "100".to_owned(),
+            ]
+        );
+
+        Ok(())
+    }
 }
