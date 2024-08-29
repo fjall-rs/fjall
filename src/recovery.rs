@@ -5,17 +5,14 @@
 use crate::{
     batch::PartitionKey,
     file::{
-        FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, PARTITIONS_FOLDER,
+        FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, LSM_MANIFEST_FILE, PARTITIONS_FOLDER,
         PARTITION_DELETED_MARKER,
     },
     journal::Journal,
-    partition::{options::Options as PartitionOptions, PartitionHandleInner},
+    partition::options::Options as PartitionOptions,
     HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree};
-use std::sync::{atomic::AtomicBool, Arc, RwLock};
-
-const LSM_MANIFEST_FILE: &str = "manifest";
 
 /// Recovers partitions
 pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {

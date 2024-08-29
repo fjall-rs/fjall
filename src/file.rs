@@ -16,6 +16,8 @@ pub const PARTITION_CONFIG_FILE: &str = "config";
 pub const FLUSH_PARTITIONS_LIST: &str = ".partitions";
 pub const FLUSH_MARKER: &str = ".flush";
 
+pub const LSM_MANIFEST_FILE: &str = "manifest";
+
 #[cfg(not(target_os = "windows"))]
 pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
     let file = std::fs::File::open(path)?;

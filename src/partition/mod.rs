@@ -10,7 +10,7 @@ use crate::{
     batch::{item::Item as BatchItem, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
-    file::{PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
+    file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER},
     flush::manager::{FlushManager, Task as FlushTask},
     gc::GarbageCollection,
     journal::{
@@ -102,9 +102,35 @@ impl Drop for PartitionHandleInner {
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             let path = &self.tree.tree_config().path;
 
-            if let Err(e) = std::fs::remove_dir_all(path) {
-                log::error!("Failed to cleanup deleted partition's folder at {path:?}: {e}");
-            }
+            // IMPORTANT: First, delete the manifest,
+            // once that is deleted, the partition is treated as uninitialized
+            // even if the .deleted marker is removed
+            //
+            // This is important, because if somehow `remove_dir_all` ends up
+            // deleting the `.deleted` marker first, we would end up resurrecting
+            // the partition
+            let manifest_file = path.join(LSM_MANIFEST_FILE);
+
+            // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
+            #[allow(clippy::collapsible_else_if)]
+            match manifest_file.try_exists() {
+                Ok(exists) => {
+                    if exists {
+                        if let Err(e) = std::fs::remove_file(manifest_file) {
+                            log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
+                        } else {
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                log::error!(
+                                    "Failed to cleanup deleted partition's folder at {path:?}: {e}"
+                                );
+                            };
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
+                }
+            };
         }
 
         #[cfg(feature = "__internal_whitebox")]
