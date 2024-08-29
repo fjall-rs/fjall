@@ -148,25 +148,41 @@ fn tx_partition_delete() -> fjall::Result<()> {
 
 #[test]
 fn partition_deletion_and_reopening_behavior() -> fjall::Result<()> {
+    let partition_name = "default";
     let folder = tempfile::tempdir()?;
 
+    let partition_exists = || -> std::io::Result<bool> {
+        folder
+            .path()
+            .join("partitions")
+            .join(partition_name)
+            .try_exists()
+    };
+
     let keyspace = Config::new(&folder).open()?;
-    let partition = keyspace.open_partition("default", Default::default())?;
+    assert!(!partition_exists()?);
+
+    let partition = keyspace.open_partition(partition_name, Default::default())?;
+    assert!(partition_exists()?);
 
     keyspace.delete_partition(partition.clone())?;
+    assert!(partition_exists()?);
 
     // NOTE: Partition is marked as deleted but still referenced, so it's not cleaned up
     assert!(matches!(
-        keyspace.open_partition("default", Default::default()),
+        keyspace.open_partition(partition_name, Default::default()),
         Err(fjall::Error::PartitionDeleted)
     ));
+    assert!(partition_exists()?);
 
     // NOTE: Remove last handle, will drop partition folder, allowing us to recreate again
     drop(partition);
+    assert!(!partition_exists()?);
 
     assert!(keyspace
         .open_partition("default", Default::default())
         .is_ok());
+    assert!(partition_exists()?);
 
     Ok(())
 }

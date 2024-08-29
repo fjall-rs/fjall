@@ -78,11 +78,11 @@ impl Iterator for JournalShardBatchReader {
         use crate::Error::JournalRecovery;
 
         loop {
-            let Some(maybe_next_item) = self.reader.next() else {
+            let Some(item) = self.reader.next() else {
                 fail_iter!(self.on_close());
                 return None;
             };
-            let item = fail_iter!(maybe_next_item);
+            let item = fail_iter!(item);
 
             let journal_file_pos = self.reader.last_valid_pos;
 
