@@ -618,7 +618,7 @@ impl Keyspace {
         // NOTE: We only need to recover the active journal, if it actually existed before
         // nothing to recover, if we just created it
         if active_journal_id.is_some() {
-            log::trace!("Recovering active memtables");
+            log::trace!("Recovering active memtables from journal {active_journal_id:?}");
 
             let partitions = keyspace.partitions.read().expect("lock is poisoned");
 

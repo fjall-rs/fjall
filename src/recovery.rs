@@ -97,7 +97,6 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             PartitionHandle::from_keyspace(keyspace, tree, partition_name.into(), recovered_config);
 
         // Add partition to dictionary
-
         partitions_lock.insert(partition_name.into(), partition.clone());
 
         log::trace!("Recovered partition {:?}", partition_name);
