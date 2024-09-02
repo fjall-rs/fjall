@@ -121,6 +121,10 @@ impl Writer {
     }
 
     pub fn write_batch(&mut self, items: &[&BatchItem], seqno: SeqNo) -> crate::Result<usize> {
+        if items.is_empty() {
+            return Ok(0);
+        }
+
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
         let item_count = items.len() as u32;
