@@ -13,6 +13,7 @@ use std::{
 };
 
 pub const PRE_ALLOCATED_BYTES: u64 = 8 * 1_024 * 1_024;
+pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
 pub struct Writer {
     file: BufWriter<File>,
@@ -92,14 +93,14 @@ impl Writer {
             file.set_len(PRE_ALLOCATED_BYTES)?;
 
             return Ok(Self {
-                file: BufWriter::new(file),
+                file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             });
         }
 
         let file = OpenOptions::new().append(true).open(path)?;
 
         Ok(Self {
-            file: BufWriter::new(file),
+            file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
         })
     }
 
