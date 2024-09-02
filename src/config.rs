@@ -186,7 +186,9 @@ impl Config {
 
     /// Max size of all memtables in bytes.
     ///
-    /// Similar to `db_write_buffer_size` in `RocksDB`.
+    /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
+    ///
+    /// Set to `u64::MAX` to disable it.
     ///
     /// Default = 64 MiB
     ///
