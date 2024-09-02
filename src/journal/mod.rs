@@ -128,7 +128,10 @@ impl Journal {
         for mut shard in self.full_lock() {
             if shard.should_sync {
                 shard.writer.flush(mode)?;
-                shard.should_sync = false;
+
+                if mode != PersistMode::Buffer {
+                    shard.should_sync = false;
+                }
             }
         }
         Ok(())
