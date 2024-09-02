@@ -195,6 +195,13 @@ impl JournalManager {
 
         log::debug!("Sealing journal at {old_journal_path:?}");
 
+        // NOTE: Sync the journal one last time before rotation
+        //
+        // May be similar to https://github.com/facebook/rocksdb/commit/d5a51d4de3cb71aee0ee4d5578fa9927189fcad2 ?
+        for shard in journal_lock.iter_mut() {
+            shard.writer.flush(crate::PersistMode::SyncAll)?;
+        }
+
         let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
 
         for item in &seqnos {
