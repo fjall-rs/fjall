@@ -21,7 +21,7 @@ pub struct Options {
     /// Bits per key for levels that are not L0, L1, L2
     // NOTE: bloom_bits_per_key is not conditionally compiled,
     // because that would change the file format
-    pub bloom_bits_per_key: i8,
+    pub(crate) bloom_bits_per_key: i8,
 
     /// Tree type, see [`TreeType`].
     pub(crate) tree_type: TreeType,
@@ -41,9 +41,93 @@ pub struct Options {
     pub blob_file_separation_threshold: u32,
 
     pub(crate) manual_journal_persist: bool,
+
+    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
-impl Default for Options {
+impl lsm_tree::serde::Serializable for CreateOptions {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::SerializeError> {
+        writer.write_all(MAGIC_BYTES)?;
+
+        writer.write_u8(self.level_count)?;
+        writer.write_u8(self.tree_type.into())?;
+
+        writer.write_u32::<BigEndian>(self.max_memtable_size)?;
+        writer.write_u32::<BigEndian>(self.data_block_size)?;
+        writer.write_u32::<BigEndian>(self.index_block_size)?;
+
+        self.compression.serialize(writer)?;
+        self.blob_compression.serialize(writer)?;
+
+        writer.write_u64::<BigEndian>(self.blob_file_target_size)?;
+        writer.write_u32::<BigEndian>(self.blob_file_separation_threshold)?;
+
+        writer.write_u8(u8::from(self.manual_journal_persist))?;
+
+        writer.write_i8(self.bloom_bits_per_key)?;
+
+        // TODO: Compaction
+
+        Ok(())
+    }
+}
+
+impl lsm_tree::serde::Deserializable for CreateOptions {
+    fn deserialize<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DeserializeError>
+    where
+        Self: Sized,
+    {
+        let mut header = [0; MAGIC_BYTES.len()];
+        reader.read_exact(&mut header)?;
+
+        if header != MAGIC_BYTES {
+            return Err(lsm_tree::DeserializeError::InvalidHeader(
+                "PartitionCreateOptions",
+            ));
+        }
+
+        let level_count = reader.read_u8()?;
+
+        let tree_type = reader.read_u8()?;
+        let tree_type: TreeType = tree_type
+            .try_into()
+            .map_err(|()| lsm_tree::DeserializeError::InvalidTag(("TreeType", tree_type)))?;
+
+        let max_memtable_size = reader.read_u32::<BigEndian>()?;
+        let data_block_size = reader.read_u32::<BigEndian>()?;
+        let index_block_size = reader.read_u32::<BigEndian>()?;
+
+        let compression = CompressionType::deserialize(reader)?;
+        let blob_compression = CompressionType::deserialize(reader)?;
+
+        let blob_file_target_size = reader.read_u64::<BigEndian>()?;
+        let blob_file_separation_threshold = reader.read_u32::<BigEndian>()?;
+
+        let manual_journal_persist = reader.read_u8()? != 0;
+
+        let bloom_bits_per_key = reader.read_i8()?;
+
+        // TODO: COMPACTION
+        let compaction_strategy = Arc::new(crate::compaction::Leveled::default());
+
+        Ok(Self {
+            max_memtable_size,
+            data_block_size,
+            index_block_size,
+            level_count,
+            bloom_bits_per_key,
+            tree_type,
+            compression,
+            blob_compression,
+            blob_file_target_size,
+            blob_file_separation_threshold,
+            manual_journal_persist,
+            compaction_strategy,
+        })
+    }
+}
+
+impl Default for CreateOptions {
     fn default() -> Self {
         let default_tree_config = lsm_tree::Config::default();
 
@@ -79,22 +163,33 @@ impl Default for Options {
 
             blob_file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
             blob_file_separation_threshold: /* 4 KiB */ 4 * 1_024,
+
+            compaction_strategy: Arc::new(crate::compaction::Leveled::default()),
         }
     }
 }
 
-impl Options {
+impl CreateOptions {
+    /// Sets the compaction strategy.
+    ///
+    /// Default = Leveled
+    #[must_use]
+    pub fn compaction_strategy(mut self) -> Self {
+        unimplemented!();
+        self
+    }
+
     /// Sets the target size of blob files.
     ///
     /// Smaller blob files allow more granular garbage collection
     /// which allows lower space amp for lower write I/O cost.
     ///
-    /// Larger blob files decrease the number of files on disk and maintenance
+    /// Larger blob files decrease the number of files on disk and thus maintenance
     /// overhead.
     ///
     /// Defaults to 64 MiB.
     ///
-    /// This option has no effect when not used for opening a blob tree.
+    /// This option has no effect when not using `use_kv_separation=true`.
     #[must_use]
     pub fn blob_file_target_size(mut self, bytes: u64) -> Self {
         self.blob_file_target_size = bytes;
@@ -108,7 +203,7 @@ impl Options {
     ///
     /// Defaults to 4KiB.
     ///
-    /// This option has no effect when not used for opening a blob tree.
+    /// This option has no effect when not using `use_kv_separation=true`.
     #[must_use]
     pub fn blob_file_separation_threshold(mut self, bytes: u32) -> Self {
         self.blob_file_separation_threshold = bytes;

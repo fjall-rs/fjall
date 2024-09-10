@@ -16,11 +16,8 @@ pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTr
         "compactor: calling compaction strategy for partition {:?}",
         item.0.name
     );
-    let strategy = item
-        .compaction_strategy
-        .read()
-        .expect("lock is poisoned")
-        .clone();
+
+    let strategy = item.config.compaction_strategy.clone();
 
     // TODO: loop if there's more work to do
 

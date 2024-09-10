@@ -55,12 +55,12 @@ impl<'a> WriteTransaction<'a> {
     /// The operation will run wrapped in a transaction.
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let mut tx = keyspace.write_tx();
@@ -95,11 +95,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions, Slice};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let mut tx = keyspace.write_tx();
@@ -115,12 +115,12 @@ impl<'a> WriteTransaction<'a> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let mut tx = keyspace.write_tx();
@@ -165,11 +165,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions, Slice};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let mut tx = keyspace.write_tx();
@@ -185,12 +185,12 @@ impl<'a> WriteTransaction<'a> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let mut tx = keyspace.write_tx();
@@ -233,11 +233,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
@@ -282,11 +282,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "my_value")?;
     /// assert!(keyspace.read_tx().contains_key(&partition, "a")?);
     ///
@@ -332,11 +332,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
     /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "1", "abc");
@@ -364,11 +364,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
     /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "1", "abc");
@@ -395,11 +395,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "my_value")?;
     /// partition.insert("b", "my_value2")?;
     ///
@@ -443,11 +443,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
     /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "a", "abc");
@@ -511,11 +511,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
     /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "a", "abc");
@@ -551,11 +551,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
     /// let mut tx = keyspace.write_tx();
     /// tx.insert(&partition, "a", "abc");
@@ -594,11 +594,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
@@ -643,11 +643,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///

@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -14,7 +14,7 @@ fn partition_delete() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
         path = tree.path().to_path_buf();
 
         assert!(path.try_exists()?);
@@ -39,7 +39,7 @@ fn partition_delete() -> fjall::Result<()> {
     for _ in 0..10 {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
@@ -51,7 +51,7 @@ fn partition_delete() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert!(path.try_exists()?);
 
@@ -80,7 +80,7 @@ fn tx_partition_delete() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open_transactional()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
         path = tree.path();
 
         assert!(path.try_exists()?);
@@ -111,7 +111,7 @@ fn tx_partition_delete() -> fjall::Result<()> {
     for _ in 0..5 {
         let keyspace = Config::new(&folder).open_transactional()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert_eq!(keyspace.read_tx().len(&tree)?, ITEM_COUNT * 2);
         assert_eq!(
@@ -129,7 +129,7 @@ fn tx_partition_delete() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open_transactional()?;
 
-        let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
         assert!(path.try_exists()?);
 

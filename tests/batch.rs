@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
 #[test]
@@ -6,7 +6,7 @@ fn batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let keyspace = Config::new(folder).open()?;
-    let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     let mut batch = keyspace.batch();
 
     assert_eq!(partition.len()?, 0);
@@ -28,7 +28,7 @@ fn blob_batch_simple() -> fjall::Result<()> {
     let keyspace = Config::new(folder).open()?;
     let partition = keyspace.open_partition(
         "default",
-        PartitionOptions::default().use_kv_separation(true),
+        PartitionCreateOptions::default().use_kv_separation(true),
     )?;
 
     let blob = "oxygen".repeat(128_000);

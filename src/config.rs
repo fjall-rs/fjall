@@ -245,7 +245,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?.into_path();
     /// let keyspace = Config::new(&folder).temporary(true).open()?;
     ///

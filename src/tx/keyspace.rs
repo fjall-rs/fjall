@@ -4,7 +4,7 @@
 
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
-    batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionOptions,
+    batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
     PersistMode, TxPartitionHandle,
 };
 use std::sync::{Arc, Mutex};
@@ -57,10 +57,10 @@ impl TxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let keyspace = Config::new(folder).open_transactional()?;
-    /// let items = keyspace.open_partition("my_items", PartitionOptions::default())?;
+    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -88,7 +88,7 @@ impl TxKeyspace {
     pub fn open_partition(
         &self,
         name: &str,
-        create_options: PartitionOptions,
+        create_options: PartitionCreateOptions,
     ) -> crate::Result<TxPartitionHandle> {
         let partition = self.inner.open_partition(name, create_options)?;
 

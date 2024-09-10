@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -16,9 +16,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             .open()?;
 
         let partitions = &[
-            keyspace.open_partition("tree1", PartitionOptions::default())?,
-            keyspace.open_partition("tree2", PartitionOptions::default())?,
-            keyspace.open_partition("tree3", PartitionOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {
@@ -72,9 +72,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             .open()?;
 
         let partitions = &[
-            keyspace.open_partition("tree1", PartitionOptions::default())?,
-            keyspace.open_partition("tree2", PartitionOptions::default())?,
-            keyspace.open_partition("tree3", PartitionOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         {
@@ -114,9 +114,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             .open()?;
 
         let partitions = &[
-            keyspace.open_partition("tree1", PartitionOptions::default())?,
-            keyspace.open_partition("tree2", PartitionOptions::default())?,
-            keyspace.open_partition("tree3", PartitionOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {
@@ -170,9 +170,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             .open()?;
 
         let partitions = &[
-            keyspace.open_partition("tree1", PartitionOptions::default())?,
-            keyspace.open_partition("tree2", PartitionOptions::default())?,
-            keyspace.open_partition("tree3", PartitionOptions::default())?,
+            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
         ];
 
         {

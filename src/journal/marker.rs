@@ -35,6 +35,35 @@ pub enum Marker {
     End(u64),
 }
 
+pub fn serialize_marker_item<W: Write>(
+    writer: &mut W,
+    partition: &str,
+    key: &[u8],
+    value: &[u8],
+    value_type: ValueType,
+) -> Result<(), SerializeError> {
+    writer.write_u8(Tag::Item.into())?;
+
+    writer.write_u8(u8::from(value_type))?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u8(partition.as_bytes().len() as u8)?;
+    writer.write_all(partition.as_bytes())?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u16::<BigEndian>(key.len() as u16)?;
+    writer.write_all(key)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u32::<BigEndian>(value.len() as u32)?;
+    writer.write_all(value)?;
+
+    Ok(())
+}
+
 pub enum Tag {
     Start = 1,
     Item = 2,
@@ -83,24 +112,7 @@ impl Serializable for Marker {
                 value,
                 value_type,
             } => {
-                writer.write_u8(Tag::Item.into())?;
-
-                writer.write_u8(u8::from(*value_type))?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u8(partition.as_bytes().len() as u8)?;
-                writer.write_all(partition.as_bytes())?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u16::<BigEndian>(key.len() as u16)?;
-                writer.write_all(key)?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u32::<BigEndian>(value.len() as u32)?;
-                writer.write_all(value)?;
+                serialize_marker_item(writer, partition, key, value, *value_type)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;

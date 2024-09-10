@@ -1,13 +1,13 @@
 #[test_log::test]
 #[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
-    use fjall::{Config, PartitionOptions};
+    use fjall::{Config, PartitionCreateOptions};
 
     let folder = tempfile::tempdir()?;
 
     let keyspace = Config::new(&folder).open_transactional()?;
 
-    let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+    let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
     let mut tx = keyspace.write_tx();
 

@@ -40,12 +40,12 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
+use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
 
 let keyspace = Config::new(folder).open()?;
 
 // Each partition is its own physical LSM-tree
-let items = keyspace.open_partition("my_items", PartitionOptions::default())?;
+let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
 
 // Write some data
 items.insert("a", "hello")?;

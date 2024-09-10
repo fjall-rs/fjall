@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use lsm_tree::AbstractTree;
 use test_log::test;
 
@@ -9,7 +9,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     let keyspace = Config::new(folder).open()?;
     let partition = keyspace.open_partition(
         "default",
-        PartitionOptions::default().use_kv_separation(true),
+        PartitionCreateOptions::default().use_kv_separation(true),
     )?;
 
     assert_eq!(partition.len()?, 0);

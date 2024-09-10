@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
 #[test]
@@ -7,7 +7,7 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
 
     let keyspace = Config::new(&folder).open()?;
 
-    let tree = keyspace.open_partition("default", PartitionOptions::default())?;
+    let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     assert_eq!(0, keyspace.write_buffer_size());
 
     tree.insert("asd", "def")?;

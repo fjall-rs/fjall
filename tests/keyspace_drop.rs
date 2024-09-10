@@ -51,15 +51,15 @@ fn whitebox_keyspace_drop() -> fjall::Result<()> {
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
 fn whitebox_keyspace_drop_2() -> fjall::Result<()> {
-    use fjall::{Config, PartitionOptions};
+    use fjall::{Config, PartitionCreateOptions};
 
     let folder = tempfile::tempdir()?;
 
     {
         let keyspace = Config::new(&folder).open()?;
 
-        let partition = keyspace.open_partition("tree", PartitionOptions::default())?;
-        let partition2 = keyspace.open_partition("tree1", PartitionOptions::default())?;
+        let partition = keyspace.open_partition("tree", PartitionCreateOptions::default())?;
+        let partition2 = keyspace.open_partition("tree1", PartitionCreateOptions::default())?;
 
         partition.insert("a", "a")?;
         partition2.insert("b", "b")?;

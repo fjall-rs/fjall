@@ -18,7 +18,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker,
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    HashMap, PartitionHandle, PartitionOptions,
+    HashMap, PartitionCreateOptions, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
@@ -155,11 +155,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// let mut batch = keyspace.batch();
     ///
     /// assert_eq!(partition.len()?, 0);
@@ -191,11 +191,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert_eq!(1, keyspace.journal_count());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -222,11 +222,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert!(keyspace.disk_space() >= 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -252,10 +252,10 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let keyspace = Config::new(folder).open()?;
-    /// let items = keyspace.open_partition("my_items", PartitionOptions::default())?;
+    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -406,7 +406,7 @@ impl Keyspace {
     pub fn open_partition(
         &self,
         name: &str,
-        create_options: PartitionOptions,
+        create_options: PartitionCreateOptions,
     ) -> crate::Result<PartitionHandle> {
         assert!(is_valid_partition_name(name));
 
@@ -449,12 +449,12 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// assert!(!keyspace.partition_exists("default"));
-    /// keyspace.open_partition("default", PartitionOptions::default())?;
+    /// keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// assert!(keyspace.partition_exists("default"));
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -474,12 +474,12 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let partition1 = keyspace.open_partition("default", PartitionOptions::default())?;
-    /// let partition2 = keyspace.open_partition("another", PartitionOptions::default())?;
+    /// let partition1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// let partition2 = keyspace.open_partition("another", PartitionCreateOptions::default())?;
     ///
     /// partition1.insert("abc1", "abc")?;
     /// partition2.insert("abc2", "abc")?;

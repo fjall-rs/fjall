@@ -48,12 +48,12 @@ impl TransactionalPartitionHandle {
     /// The operation will run wrapped in a transaction.
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let taken = partition.take("a")?.unwrap();
@@ -81,12 +81,12 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, Slice, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let prev = partition.fetch_update("a", |_| Some(Slice::from(*b"def")))?.unwrap();
@@ -99,12 +99,12 @@ impl TransactionalPartitionHandle {
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let prev = partition.fetch_update("a", |_| None)?.unwrap();
@@ -147,12 +147,12 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, Slice, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let updated = partition.update_fetch("a", |_| Some(Slice::from(*b"def")))?.unwrap();
@@ -165,12 +165,12 @@ impl TransactionalPartitionHandle {
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// let updated = partition.update_fetch("a", |_| None)?;
@@ -216,11 +216,11 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
     /// assert!(!keyspace.read_tx().is_empty(&partition)?);
@@ -246,11 +246,11 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     /// assert!(!keyspace.read_tx().is_empty(&partition)?);
     ///
@@ -275,11 +275,11 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "my_value")?;
     ///
     /// let item = partition.get("a")?;
@@ -302,11 +302,11 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionOptions};
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionOptions::default())?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "my_value")?;
     ///
     /// assert!(partition.contains_key("a")?);

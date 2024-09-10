@@ -2,22 +2,27 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use std::{fs::DirEntry, path::Path};
+use std::{
+    fs::{DirEntry, File},
+    path::Path,
+};
 
 use crate::{
     batch::PartitionKey,
     file::{
         FLUSH_MARKER, FLUSH_PARTITIONS_LIST, JOURNALS_FOLDER, LSM_MANIFEST_FILE, PARTITIONS_FOLDER,
-        PARTITION_DELETED_MARKER,
+        PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER,
     },
     journal::Journal,
-    partition::options::Options as PartitionOptions,
+    partition::options::CreateOptions as PartitionCreateOptions,
     HashMap, Keyspace, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, AnyTree};
 
 /// Recovers partitions
 pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
+    use lsm_tree::serde::Deserializable;
+
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
     #[allow(clippy::significant_drop_tightening)]
@@ -49,16 +54,13 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             }
 
             std::fs::remove_dir_all(partition_path)?;
-
             continue;
         }
 
         // NOTE: Check for marker, maybe the partition is not fully initialized
         if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
             log::debug!("Deleting uninitialized partition {:?}", partition_name);
-
             std::fs::remove_dir_all(partition_path)?;
-
             continue;
         }
 
@@ -68,13 +70,14 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         let path = partitions_folder.join(partition_name);
 
+        let mut config_file = File::open(partition_path.join(PARTITION_CONFIG_FILE))?;
+        let recovered_config = PartitionCreateOptions::deserialize(&mut config_file)?;
+
         let mut base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
             .block_cache(keyspace.config.block_cache.clone())
             .blob_cache(keyspace.config.blob_cache.clone());
 
-        // TODO: 2.0.0 recover
-        let recovered_config = PartitionOptions::default();
         base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
         base_config.data_block_size = recovered_config.data_block_size;
         base_config.index_block_size = recovered_config.index_block_size;

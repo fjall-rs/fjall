@@ -38,6 +38,7 @@ impl Default for CompactionManagerInner {
 /// The semaphore is incremented by the flush worker and optionally
 /// by the individual partitions in case of write halting.
 #[derive(Clone, Default)]
+#[allow(clippy::module_name_repetitions)]
 pub struct CompactionManager(Arc<CompactionManagerInner>);
 
 impl std::ops::Deref for CompactionManager {

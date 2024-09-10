@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionOptions};
+use fjall::{Config, PartitionCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -13,9 +13,9 @@ fn reload_with_partitions() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionOptions::default())?,
-            keyspace.open_partition("default2", PartitionOptions::default())?,
-            keyspace.open_partition("default3", PartitionOptions::default())?,
+            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {
@@ -43,9 +43,9 @@ fn reload_with_partitions() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
 
         let partitions = &[
-            keyspace.open_partition("default1", PartitionOptions::default())?,
-            keyspace.open_partition("default2", PartitionOptions::default())?,
-            keyspace.open_partition("default3", PartitionOptions::default())?,
+            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
+            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
         ];
 
         for tree in partitions {
