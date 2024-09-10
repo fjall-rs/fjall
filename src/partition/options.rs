@@ -2,10 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use lsm_tree::{CompressionType, TreeType};
+use std::sync::Arc;
+
+use crate::file::MAGIC_BYTES;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use lsm_tree::{compaction::CompactionStrategy, CompressionType, TreeType};
 
 /// Options to configure a partition
-pub struct Options {
+#[allow(clippy::module_name_repetitions)]
+pub struct CreateOptions {
     /// Maximum size of this partition's memtable - can be changed during runtime
     pub(crate) max_memtable_size: u32,
 
