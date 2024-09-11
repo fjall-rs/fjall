@@ -17,10 +17,12 @@ pub struct CreateOptions {
     pub(crate) max_memtable_size: u32,
 
     /// Block size of data blocks.
-    pub(crate) data_block_size: u32,
+    #[doc(hidden)]
+    pub data_block_size: u32,
 
     /// Block size of index blocks.
-    pub(crate) index_block_size: u32,
+    #[doc(hidden)]
+    pub index_block_size: u32,
 
     /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
@@ -49,7 +51,8 @@ pub struct CreateOptions {
 
     pub(crate) manual_journal_persist: bool,
 
-    pub(crate) compaction_strategy: CompactionStrategy,
+    #[doc(hidden)]
+    pub compaction_strategy: CompactionStrategy,
 }
 
 impl lsm_tree::coding::Encode for CreateOptions {
@@ -350,7 +353,7 @@ impl CreateOptions {
         self
     }
 
-    /// Sets the level count (depth of the tree).
+    /*   /// Sets the level count (depth of the tree).
     ///
     /// Once set for a partition, this property is not considered in the future.
     ///
@@ -365,7 +368,7 @@ impl CreateOptions {
 
         self.level_count = n;
         self
-    }
+    } */
 
     /// Enables key-value separation for this partition.
     ///

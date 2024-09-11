@@ -45,7 +45,8 @@ pub struct PartitionHandleInner {
     pub name: PartitionKey,
 
     // Partition configuration
-    pub(crate) config: CreateOptions,
+    #[doc(hidden)]
+    pub config: CreateOptions,
 
     /// If `true`, the partition is marked as deleted
     pub(crate) is_deleted: AtomicBool,

@@ -4,6 +4,37 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
+fn reload_partition_config() -> fjall::Result<()> {
+    use lsm_tree::coding::Encode;
+
+    let folder = tempfile::tempdir()?;
+
+    let serialized_config = {
+        let keyspace = Config::new(&folder).open()?;
+        let tree = keyspace.open_partition(
+            "default",
+            PartitionCreateOptions::default()
+                .compaction_strategy(fjall::compaction::Strategy::SizeTiered(
+                    fjall::compaction::SizeTiered::default(),
+                ))
+                .block_size(10_000)
+                .blob_file_separation_threshold(4_000)
+                .blob_file_target_size(150_000_000),
+        )?;
+
+        tree.config.encode_into_vec()?
+    };
+
+    {
+        let keyspace = Config::new(&folder).open()?;
+        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+        assert_eq!(serialized_config, tree.config.encode_into_vec()?);
+    }
+
+    Ok(())
+}
+
+#[test]
 fn reload_with_partitions() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
