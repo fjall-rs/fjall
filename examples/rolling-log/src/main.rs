@@ -1,5 +1,5 @@
 use fjall::{Config, PartitionCreateOptions};
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 const LIMIT: u64 = 16_000_000;
 
@@ -11,8 +11,12 @@ fn main() -> fjall::Result<()> {
         .max_write_buffer_size(4_000_000)
         .open()?;
 
-    let log = keyspace.open_partition("log", PartitionCreateOptions::default())?;
-    log.set_compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)));
+    let log = keyspace.open_partition(
+        "log",
+        PartitionCreateOptions::default().compaction_strategy(fjall::compaction::Strategy::Fifo(
+            fjall::compaction::Fifo::new(LIMIT, None),
+        )),
+    )?;
 
     for x in 0u64..2_500_000 {
         log.insert(x.to_be_bytes(), x.to_be_bytes())?;
