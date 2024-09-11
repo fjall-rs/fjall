@@ -2,11 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use std::sync::Arc;
-
-use crate::file::MAGIC_BYTES;
+use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use lsm_tree::{compaction::CompactionStrategy, CompressionType, TreeType};
+use lsm_tree::{CompressionType, TreeType};
+
+// TODO: 2.0.0 need to differentiate builder and actual config...
+// TODO: when we don't set manual_journal_persist it needs to taken from keyspace
+// TODO: during create_partition...
 
 /// Options to configure a partition
 #[allow(clippy::module_name_repetitions)]
@@ -47,7 +49,7 @@ pub struct CreateOptions {
 
     pub(crate) manual_journal_persist: bool,
 
-    pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
+    pub(crate) compaction_strategy: CompactionStrategy,
 }
 
 impl lsm_tree::coding::Encode for CreateOptions {
@@ -71,7 +73,32 @@ impl lsm_tree::coding::Encode for CreateOptions {
 
         writer.write_i8(self.bloom_bits_per_key)?;
 
-        // TODO: Compaction
+        // TODO: move into compaction module
+        match &self.compaction_strategy {
+            CompactionStrategy::Leveled(s) => {
+                writer.write_u8(0)?;
+                writer.write_u8(s.l0_threshold)?;
+                writer.write_u8(s.level_ratio)?;
+                writer.write_u32::<BigEndian>(s.target_size)?;
+            }
+            CompactionStrategy::SizeTiered(s) => {
+                writer.write_u8(1)?;
+                writer.write_u8(s.level_ratio)?;
+                writer.write_u32::<BigEndian>(s.base_size)?;
+            }
+            CompactionStrategy::Fifo(s) => {
+                writer.write_u8(2)?;
+                writer.write_u64::<BigEndian>(s.limit)?;
+
+                match s.ttl_seconds {
+                    Some(s) => {
+                        writer.write_u8(1)?;
+                        writer.write_u64::<BigEndian>(s)
+                    }
+                    None => writer.write_u8(0),
+                }?;
+            }
+        }
 
         Ok(())
     }
@@ -112,8 +139,48 @@ impl lsm_tree::coding::Decode for CreateOptions {
 
         let bloom_bits_per_key = reader.read_i8()?;
 
-        // TODO: COMPACTION
-        let compaction_strategy = Arc::new(crate::compaction::Leveled::default());
+        // TODO: move into compaction module
+        let compaction_tag = reader.read_u8()?;
+        let compaction_strategy = match compaction_tag {
+            0 => {
+                let l0_threshold = reader.read_u8()?;
+                let level_ratio = reader.read_u8()?;
+                let target_size = reader.read_u32::<BigEndian>()?;
+
+                CompactionStrategy::Leveled(crate::compaction::Leveled {
+                    l0_threshold,
+                    target_size,
+                    level_ratio,
+                })
+            }
+            1 => {
+                let level_ratio = reader.read_u8()?;
+                let base_size = reader.read_u32::<BigEndian>()?;
+
+                CompactionStrategy::SizeTiered(crate::compaction::SizeTiered {
+                    base_size,
+                    level_ratio,
+                })
+            }
+            2 => {
+                let limit = reader.read_u64::<BigEndian>()?;
+
+                let ttl_tag = reader.read_u8()?;
+                let ttl_seconds = match ttl_tag {
+                    0 => None,
+                    1 => Some(reader.read_u64::<BigEndian>()?),
+                    _ => return Err(lsm_tree::DecodeError::InvalidTag(("TtlSeconds", ttl_tag))),
+                };
+
+                CompactionStrategy::Fifo(crate::compaction::Fifo::new(limit, ttl_seconds))
+            }
+            _ => {
+                return Err(lsm_tree::DecodeError::InvalidTag((
+                    "CompactionStrategy",
+                    compaction_tag,
+                )));
+            }
+        };
 
         Ok(Self {
             max_memtable_size,
@@ -169,7 +236,7 @@ impl Default for CreateOptions {
             blob_file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
             blob_file_separation_threshold: /* 4 KiB */ 4 * 1_024,
 
-            compaction_strategy: Arc::new(crate::compaction::Leveled::default()),
+            compaction_strategy: CompactionStrategy::default(),
         }
     }
 }
@@ -179,8 +246,8 @@ impl CreateOptions {
     ///
     /// Default = Leveled
     #[must_use]
-    pub fn compaction_strategy(mut self) -> Self {
-        unimplemented!();
+    pub fn compaction_strategy(mut self, compaction_strategy: CompactionStrategy) -> Self {
+        self.compaction_strategy = compaction_strategy;
         self
     }
 

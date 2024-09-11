@@ -23,7 +23,7 @@ pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTr
 
     if let Err(e) = item
         .tree
-        .compact(strategy, snapshot_tracker.get_seqno_safe_to_gc())
+        .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
     };
