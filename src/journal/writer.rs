@@ -171,14 +171,6 @@ impl Writer {
         self.buf.clear();
 
         for item in items {
-            let item = Marker::Item {
-                partition: item.partition.clone(),
-                key: item.key.clone(),
-                value: item.value.clone(),
-                value_type: item.value_type,
-            };
-            let mut bytes = Vec::new();
-            item.serialize(&mut bytes)?;
             debug_assert!(self.buf.is_empty());
 
             serialize_marker_item(
