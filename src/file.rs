@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', b'2'];
+pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 2];
 
 pub const JOURNALS_FOLDER: &str = "journals";
 pub const PARTITIONS_FOLDER: &str = "partitions";
