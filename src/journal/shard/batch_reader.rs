@@ -4,7 +4,7 @@
 
 use super::reader::JournalShardReader;
 use crate::{batch::item::Item as BatchItem, journal::marker::Marker, RecoveryError};
-use lsm_tree::{serde::Serializable, SeqNo};
+use lsm_tree::{coding::Encode, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
 
 macro_rules! fail_iter {
@@ -173,7 +173,7 @@ impl Iterator for JournalShardBatchReader {
                         value_type,
                     };
                     let mut bytes = Vec::with_capacity(100);
-                    fail_iter!(item.serialize(&mut bytes));
+                    fail_iter!(item.encode_into(&mut bytes));
 
                     self.checksum_builder.update(&bytes);
 

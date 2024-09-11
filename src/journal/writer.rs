@@ -2,9 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::marker::Marker;
+use super::marker::{serialize_marker_item, Marker};
 use crate::batch::item::Item as BatchItem;
-use lsm_tree::{serde::Serializable, SeqNo, SerializeError};
+use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,
@@ -17,33 +17,7 @@ pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
 pub struct Writer {
     file: BufWriter<File>,
-}
-
-/// Writes a batch start marker to the journal
-fn write_start(
-    writer: &mut BufWriter<File>,
-    item_count: u32,
-    seqno: SeqNo,
-) -> Result<usize, SerializeError> {
-    let mut bytes = Vec::new();
-    Marker::Start {
-        item_count,
-        seqno,
-        compression: lsm_tree::CompressionType::None,
-    }
-    .serialize(&mut bytes)?;
-
-    writer.write_all(&bytes)?;
-    Ok(bytes.len())
-}
-
-/// Writes a batch end marker to the journal
-fn write_end(writer: &mut BufWriter<File>, checksum: u64) -> Result<usize, SerializeError> {
-    let mut bytes = Vec::new();
-    Marker::End(checksum).serialize(&mut bytes)?;
-
-    writer.write_all(&bytes)?;
-    Ok(bytes.len())
+    buf: Vec<u8>,
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
@@ -82,6 +56,7 @@ impl Writer {
 
         Ok(Self {
             file: BufWriter::new(file),
+            buf: Vec::new(),
         })
     }
 
@@ -94,6 +69,7 @@ impl Writer {
 
             return Ok(Self {
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
+                buf: Vec::new(),
             });
         }
 
@@ -101,6 +77,7 @@ impl Writer {
 
         Ok(Self {
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
+            buf: Vec::new(),
         })
     }
 
@@ -115,15 +92,73 @@ impl Writer {
         }
     }
 
+    /// Writes a batch start marker to the journal
+    fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, EncodeError> {
+        debug_assert!(self.buf.is_empty());
+
+        Marker::Start {
+            item_count,
+            seqno,
+            compression: lsm_tree::CompressionType::None,
+        }
+        .encode_into(&mut self.buf)?;
+
+        self.file.write_all(&self.buf)?;
+
+        Ok(self.buf.len())
+    }
+
+    /// Writes a batch end marker to the journal
+    fn write_end(&mut self, checksum: u64) -> Result<usize, EncodeError> {
+        debug_assert!(self.buf.is_empty());
+
+        Marker::End(checksum).encode_into(&mut self.buf)?;
+
+        self.file.write_all(&self.buf)?;
+
+        Ok(self.buf.len())
+    }
+
     /// Appends a single item wrapped in a batch to the journal
     pub(crate) fn write(&mut self, item: &BatchItem, seqno: SeqNo) -> crate::Result<usize> {
         self.write_batch(&[item], seqno)
+    }
+
+    pub(crate) fn write_raw(
+        &mut self,
+        partition: &str,
+        key: &[u8],
+        value: &[u8],
+        value_type: ValueType,
+        seqno: u64,
+    ) -> crate::Result<usize> {
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut byte_count = 0;
+
+        self.buf.clear();
+        byte_count += self.write_start(1, seqno)?;
+        self.buf.clear();
+
+        serialize_marker_item(&mut self.buf, partition, key, value, value_type)?;
+
+        self.file.write_all(&self.buf)?;
+
+        hasher.update(&self.buf);
+        byte_count += self.buf.len();
+
+        self.buf.clear();
+        let checksum = hasher.finish();
+        byte_count += self.write_end(checksum)?;
+
+        Ok(byte_count)
     }
 
     pub fn write_batch(&mut self, items: &[&BatchItem], seqno: SeqNo) -> crate::Result<usize> {
         if items.is_empty() {
             return Ok(0);
         }
+
+        self.buf.clear();
 
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
@@ -132,7 +167,8 @@ impl Writer {
         let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut byte_count = 0;
 
-        byte_count += write_start(&mut self.file, item_count, seqno)?;
+        byte_count += self.write_start(item_count, seqno)?;
+        self.buf.clear();
 
         for item in items {
             let item = Marker::Item {
@@ -143,15 +179,26 @@ impl Writer {
             };
             let mut bytes = Vec::new();
             item.serialize(&mut bytes)?;
+            debug_assert!(self.buf.is_empty());
 
-            self.file.write_all(&bytes)?;
+            serialize_marker_item(
+                &mut self.buf,
+                &item.partition,
+                &item.key,
+                &item.value,
+                item.value_type,
+            )?;
 
-            hasher.update(&bytes);
-            byte_count += bytes.len();
+            self.file.write_all(&self.buf)?;
+
+            hasher.update(&self.buf);
+            byte_count += self.buf.len();
+
+            self.buf.clear();
         }
 
         let checksum = hasher.finish();
-        byte_count += write_end(&mut self.file, checksum)?;
+        byte_count += self.write_end(checksum)?;
 
         Ok(byte_count)
     }

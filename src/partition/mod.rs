@@ -221,7 +221,7 @@ impl PartitionHandle {
         name: PartitionKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        use lsm_tree::serde::Serializable;
+        use lsm_tree::coding::Encode;
 
         log::debug!("Creating partition {name:?}");
 
@@ -236,7 +236,7 @@ impl PartitionHandle {
 
         // Write config
         let mut file = File::create(base_folder.join(PARTITION_CONFIG_FILE))?;
-        config.serialize(&mut file)?;
+        config.encode_into(&mut file)?;
         file.sync_all()?;
 
         let mut base_config = lsm_tree::Config::new(base_folder)

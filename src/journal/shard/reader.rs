@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::super::marker::Marker;
-use lsm_tree::{serde::Deserializable, DeserializeError};
+use lsm_tree::{coding::Decode, DecodeError};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
@@ -64,13 +64,13 @@ impl Iterator for JournalShardReader {
     type Item = crate::Result<Marker>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match Marker::deserialize(&mut self.reader) {
+        match Marker::decode_from(&mut self.reader) {
             Ok(item) => {
                 self.last_valid_pos = fail_iter!(self.reader.stream_position());
                 Some(Ok(item))
             }
             Err(e) => {
-                if let DeserializeError::Io(e) = e {
+                if let DecodeError::Io(e) = e {
                     match e.kind() {
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
                             fail_iter!(self.maybe_truncate_file_to_last_valid_pos());

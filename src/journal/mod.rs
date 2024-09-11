@@ -143,7 +143,7 @@ impl Journal {
 mod tests {
     use super::*;
     use crate::batch::item::Item as BatchItem;
-    use lsm_tree::{serde::Serializable, ValueType};
+    use lsm_tree::{coding::Encode, ValueType};
     use marker::Marker;
     use std::io::Write;
     use tempfile::tempdir;
@@ -236,7 +236,7 @@ mod tests {
                 seqno: 64,
                 compression: lsm_tree::CompressionType::None,
             }
-            .serialize(&mut file)?;
+            .encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -256,7 +256,7 @@ mod tests {
                 seqno: 64,
                 compression: lsm_tree::CompressionType::None,
             }
-            .serialize(&mut file)?;
+            .encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -297,7 +297,7 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
-            Marker::End(5432).serialize(&mut file)?;
+            Marker::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -312,7 +312,7 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
-            Marker::End(5432).serialize(&mut file)?;
+            Marker::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -359,7 +359,7 @@ mod tests {
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
             }
-            .serialize(&mut file)?;
+            .encode_into(&mut file)?;
 
             file.sync_all()?;
         }
@@ -381,7 +381,7 @@ mod tests {
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
             }
-            .serialize(&mut file)?;
+            .encode_into(&mut file)?;
 
             file.sync_all()?;
         }

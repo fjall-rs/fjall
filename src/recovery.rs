@@ -21,7 +21,7 @@ use lsm_tree::{AbstractTree, AnyTree};
 
 /// Recovers partitions
 pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
-    use lsm_tree::serde::Deserializable;
+    use lsm_tree::coding::Decode;
 
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
@@ -71,7 +71,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         let path = partitions_folder.join(partition_name);
 
         let mut config_file = File::open(partition_path.join(PARTITION_CONFIG_FILE))?;
-        let recovered_config = PartitionCreateOptions::deserialize(&mut config_file)?;
+        let recovered_config = PartitionCreateOptions::decode_from(&mut config_file)?;
 
         let mut base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())

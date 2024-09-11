@@ -50,8 +50,8 @@ pub struct CreateOptions {
     pub(crate) compaction_strategy: Arc<dyn CompactionStrategy + Send + Sync>,
 }
 
-impl lsm_tree::serde::Serializable for CreateOptions {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::SerializeError> {
+impl lsm_tree::coding::Encode for CreateOptions {
+    fn encode_into<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::EncodeError> {
         writer.write_all(MAGIC_BYTES)?;
 
         writer.write_u8(self.level_count)?;
@@ -61,8 +61,8 @@ impl lsm_tree::serde::Serializable for CreateOptions {
         writer.write_u32::<BigEndian>(self.data_block_size)?;
         writer.write_u32::<BigEndian>(self.index_block_size)?;
 
-        self.compression.serialize(writer)?;
-        self.blob_compression.serialize(writer)?;
+        self.compression.encode_into(writer)?;
+        self.blob_compression.encode_into(writer)?;
 
         writer.write_u64::<BigEndian>(self.blob_file_target_size)?;
         writer.write_u32::<BigEndian>(self.blob_file_separation_threshold)?;
@@ -77,8 +77,8 @@ impl lsm_tree::serde::Serializable for CreateOptions {
     }
 }
 
-impl lsm_tree::serde::Deserializable for CreateOptions {
-    fn deserialize<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DeserializeError>
+impl lsm_tree::coding::Decode for CreateOptions {
+    fn decode_from<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DecodeError>
     where
         Self: Sized,
     {
@@ -86,7 +86,7 @@ impl lsm_tree::serde::Deserializable for CreateOptions {
         reader.read_exact(&mut header)?;
 
         if header != MAGIC_BYTES {
-            return Err(lsm_tree::DeserializeError::InvalidHeader(
+            return Err(lsm_tree::DecodeError::InvalidHeader(
                 "PartitionCreateOptions",
             ));
         }
@@ -96,14 +96,14 @@ impl lsm_tree::serde::Deserializable for CreateOptions {
         let tree_type = reader.read_u8()?;
         let tree_type: TreeType = tree_type
             .try_into()
-            .map_err(|()| lsm_tree::DeserializeError::InvalidTag(("TreeType", tree_type)))?;
+            .map_err(|()| lsm_tree::DecodeError::InvalidTag(("TreeType", tree_type)))?;
 
         let max_memtable_size = reader.read_u32::<BigEndian>()?;
         let data_block_size = reader.read_u32::<BigEndian>()?;
         let index_block_size = reader.read_u32::<BigEndian>()?;
 
-        let compression = CompressionType::deserialize(reader)?;
-        let blob_compression = CompressionType::deserialize(reader)?;
+        let compression = CompressionType::decode_from(reader)?;
+        let blob_compression = CompressionType::decode_from(reader)?;
 
         let blob_file_target_size = reader.read_u64::<BigEndian>()?;
         let blob_file_separation_threshold = reader.read_u32::<BigEndian>()?;

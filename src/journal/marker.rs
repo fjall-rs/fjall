@@ -5,8 +5,8 @@
 use crate::{batch::PartitionKey, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
-    serde::{Deserializable, Serializable},
-    CompressionType, DeserializeError, SeqNo, SerializeError, UserKey, UserValue, ValueType,
+    coding::{Decode, Encode},
+    CompressionType, DecodeError, EncodeError, SeqNo, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
 
@@ -41,7 +41,7 @@ pub fn serialize_marker_item<W: Write>(
     key: &[u8],
     value: &[u8],
     value_type: ValueType,
-) -> Result<(), SerializeError> {
+) -> Result<(), EncodeError> {
     writer.write_u8(Tag::Item.into())?;
 
     writer.write_u8(u8::from(value_type))?;
@@ -71,7 +71,7 @@ pub enum Tag {
 }
 
 impl TryFrom<u8> for Tag {
-    type Error = DeserializeError;
+    type Error = DecodeError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use Tag::{End, Item, Start};
@@ -80,7 +80,7 @@ impl TryFrom<u8> for Tag {
             1 => Ok(Start),
             2 => Ok(Item),
             3 => Ok(End),
-            _ => Err(DeserializeError::InvalidTag(("JournalMarkerTag", value))),
+            _ => Err(DecodeError::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -91,8 +91,8 @@ impl From<Tag> for u8 {
     }
 }
 
-impl Serializable for Marker {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
+impl Encode for Marker {
+    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), EncodeError> {
         use Marker::{End, Item, Start};
 
         match self {
@@ -104,7 +104,7 @@ impl Serializable for Marker {
                 writer.write_u8(Tag::Start.into())?;
                 writer.write_u32::<BigEndian>(*item_count)?;
                 writer.write_u64::<BigEndian>(*seqno)?;
-                compression.serialize(writer)?;
+                compression.encode_into(writer)?;
             }
             Item {
                 partition,
@@ -128,13 +128,13 @@ impl Serializable for Marker {
     }
 }
 
-impl Deserializable for Marker {
-    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
+impl Decode for Marker {
+    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<BigEndian>()?;
                 let seqno = reader.read_u64::<BigEndian>()?;
-                let compression = CompressionType::deserialize(reader)?;
+                let compression = CompressionType::decode_from(reader)?;
 
                 assert_eq!(
                     compression,
@@ -152,7 +152,7 @@ impl Deserializable for Marker {
                 let value_type = reader.read_u8()?;
                 let value_type = value_type
                     .try_into()
-                    .map_err(|()| DeserializeError::InvalidTag(("ValueType", value_type)))?;
+                    .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
 
                 // Read partition key
                 let partition_len = reader.read_u8()?;
@@ -185,7 +185,7 @@ impl Deserializable for Marker {
                 reader.read_exact(&mut magic)?;
 
                 if magic != MAGIC_BYTES {
-                    return Err(DeserializeError::InvalidTrailer);
+                    return Err(DecodeError::InvalidTrailer);
                 }
 
                 Ok(Self::End(checksum))
@@ -208,13 +208,9 @@ mod tests {
             value_type: ValueType::Value,
         };
 
-        // Serialize
-        let mut serialized_data = Vec::new();
-        item.serialize(&mut serialized_data)?;
-
-        // Deserialize
+        let serialized_data = item.encode_into_vec()?;
         let mut reader = &serialized_data[..];
-        let deserialized_item = Marker::deserialize(&mut reader)?;
+        let deserialized_item = Marker::decode_from(&mut reader)?;
 
         assert_eq!(item, deserialized_item);
 
@@ -227,12 +223,12 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::deserialize(&mut reader);
+        let result = Marker::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::Io(error) => match error.kind() {
+                DecodeError::Io(error) => match error.kind() {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
@@ -247,12 +243,12 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::deserialize(&mut reader);
+        let result = Marker::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::InvalidTag(("JournalMarkerTag", 4)) => {}
+                DecodeError::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }
