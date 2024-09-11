@@ -1,7 +1,7 @@
 use fjall::{Config, PartitionCreateOptions};
 use std::path::Path;
 
-const LIMIT: u64 = 16_000_000;
+const LIMIT: u64 = 10_000_000;
 
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
