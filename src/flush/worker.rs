@@ -162,7 +162,7 @@ pub fn run(
         .maintenance()
     {
         log::error!("journal GC failed: {e:?}");
-    };
+    }
 
     log::debug!("fully done");
 }

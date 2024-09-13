@@ -655,13 +655,6 @@ impl PartitionHandle {
                 }
             }
 
-            seqnos.push(PartitionSeqNo {
-                partition: self.clone(),
-                lsn: yanked_memtable
-                    .get_highest_seqno()
-                    .expect("sealed memtable is never empty"),
-            });
-
             seqnos
         };
 
