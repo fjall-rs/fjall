@@ -145,8 +145,11 @@ pub trait GarbageCollection {
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
+    /// assert!(blobs.contains_key("a")?);
+    ///
     /// # blobs.rotate_memtable_and_wait()?;
     /// blobs.remove("a")?;
+    /// assert!(!blobs.contains_key("a")?);
     ///
     /// let report = blobs.gc_scan()?;
     /// assert_eq!(1.0, report.stale_ratio());
