@@ -176,9 +176,11 @@ impl Keyspace {
     #[must_use]
     pub fn batch(&self) -> Batch {
         let mut batch = Batch::new(self.clone());
+
         if !self.config.manual_journal_persist {
             batch = batch.durability(Some(PersistMode::Buffer));
         }
+
         batch
     }
 
