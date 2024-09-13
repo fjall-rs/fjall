@@ -2,13 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{
-    journal::{
-        partition_manifest::Error as PartitionManifestParseError,
-        shard::RecoveryError as JournalRecoveryError,
-    },
-    version::Version,
-};
+use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
 use lsm_tree::{DecodeError, EncodeError};
 
 /// Errors that may occur in the storage engine
@@ -43,9 +37,6 @@ pub enum Error {
 
     /// Partition is deleted
     PartitionDeleted,
-
-    /// Something has gone horribly wrong
-    CorruptPartitionManifest(PartitionManifestParseError),
 }
 
 impl std::fmt::Display for Error {
@@ -69,12 +60,6 @@ impl From<EncodeError> for Error {
 impl From<DecodeError> for Error {
     fn from(value: DecodeError) -> Self {
         Self::Decode(value)
-    }
-}
-
-impl From<PartitionManifestParseError> for Error {
-    fn from(value: PartitionManifestParseError) -> Self {
-        Self::CorruptPartitionManifest(value)
     }
 }
 

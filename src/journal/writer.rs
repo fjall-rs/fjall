@@ -3,19 +3,20 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::marker::{serialize_marker_item, Marker};
-use crate::batch::item::Item as BatchItem;
+use crate::{batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId};
 use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
 use std::{
-    fs::{File, OpenOptions},
+    fs::{rename, File, OpenOptions},
     hash::Hasher,
     io::{BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
-pub const PRE_ALLOCATED_BYTES: u64 = 8 * 1_024 * 1_024;
+pub const PRE_ALLOCATED_BYTES: u64 = 16 * 1_024 * 1_024;
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
 pub struct Writer {
+    pub(crate) path: PathBuf,
     file: BufWriter<File>,
     buf: Vec<u8>,
 }
@@ -40,21 +41,51 @@ pub enum PersistMode {
 }
 
 impl Writer {
-    pub fn rotate<P: AsRef<Path>>(&mut self, path: P) -> crate::Result<()> {
-        let file = File::create(&path)?;
-        file.set_len(PRE_ALLOCATED_BYTES)?;
+    pub fn len(&self) -> crate::Result<u64> {
+        Ok(self.file.get_ref().metadata()?.len())
+    }
 
-        self.file = BufWriter::new(file);
+    pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
+        self.flush(PersistMode::SyncAll)?;
 
-        Ok(())
+        log::debug!("Sealing active journal at {:?}", self.path);
+
+        let folder = self
+            .path
+            .parent()
+            .expect("should have parent")
+            .to_path_buf();
+
+        let journal_id = self
+            .path
+            .file_name()
+            .expect("should be valid file name")
+            .to_str()
+            .expect("should be valid journal file name")
+            .parse::<JournalId>()
+            .expect("should be valid journal ID");
+
+        let sealed_path = folder.join(format!("{journal_id}.sealed"));
+        rename(&self.path, &sealed_path)?;
+
+        let new_path = folder.join((journal_id + 1).to_string());
+        log::debug!("Rotating active journal to {new_path:?}");
+        *self = Self::create_new(&new_path)?;
+
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(&folder)?;
+
+        Ok((sealed_path, new_path))
     }
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
         let file = File::create(path)?;
         file.set_len(PRE_ALLOCATED_BYTES)?;
+        file.sync_all()?;
 
         Ok(Self {
+            path: path.into(),
             file: BufWriter::new(file),
             buf: Vec::new(),
         })
@@ -68,6 +99,7 @@ impl Writer {
             file.set_len(PRE_ALLOCATED_BYTES)?;
 
             return Ok(Self {
+                path: path.into(),
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
                 buf: Vec::new(),
             });
@@ -76,6 +108,7 @@ impl Writer {
         let file = OpenOptions::new().append(true).open(path)?;
 
         Ok(Self {
+            path: path.into(),
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             buf: Vec::new(),
         })
@@ -117,11 +150,6 @@ impl Writer {
         self.file.write_all(&self.buf)?;
 
         Ok(self.buf.len())
-    }
-
-    /// Appends a single item wrapped in a batch to the journal
-    pub(crate) fn write(&mut self, item: &BatchItem, seqno: SeqNo) -> crate::Result<usize> {
-        self.write_batch(&[item], seqno)
     }
 
     pub(crate) fn write_raw(

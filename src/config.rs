@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{journal::shard::RecoveryMode, path::absolute_path, Keyspace};
+use crate::{journal::error::RecoveryMode, path::absolute_path, Keyspace};
 use lsm_tree::{descriptor_table::FileDescriptorTable, BlobCache, BlockCache};
 use std::{
     path::{Path, PathBuf},

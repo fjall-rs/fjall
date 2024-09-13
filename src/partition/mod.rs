@@ -7,7 +7,7 @@ pub mod options;
 mod write_delay;
 
 use crate::{
-    batch::{item::Item as BatchItem, PartitionKey},
+    batch::PartitionKey,
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
     file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
@@ -629,8 +629,8 @@ impl PartitionHandle {
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::debug!("Rotating memtable {:?}", self.name);
 
-        log::trace!("partition: acquiring full write lock");
-        let mut journal = self.journal.full_lock();
+        log::trace!("partition: acquiring journal lock");
+        let mut journal = self.journal.get_writer();
 
         // Rotate memtable
         let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
@@ -837,22 +837,19 @@ impl PartitionHandle {
             return Err(crate::Error::Poisoned);
         }
 
-        let mut shard = self.journal.get_writer();
-
-        let seqno = self.seqno.next();
-
         let key = key.as_ref();
         let value = value.as_ref();
+        let seqno = self.seqno.next();
 
-        shard
-            .writer
-            .write_raw(&self.name, key, value, lsm_tree::ValueType::Value, seqno)?;
+        let mut journal_writer = self.journal.get_writer();
+
+        journal_writer.write_raw(&self.name, key, value, lsm_tree::ValueType::Value, seqno)?;
 
         if !self.config.manual_journal_persist {
-            shard.writer.flush(crate::PersistMode::Buffer)?;
+            journal_writer.flush(crate::PersistMode::Buffer)?;
         }
 
-        drop(shard);
+        drop(journal_writer);
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
@@ -903,24 +900,18 @@ impl PartitionHandle {
             return Err(crate::Error::Poisoned);
         }
 
-        let mut shard = self.journal.get_writer();
-
+        let key = key.as_ref();
         let seqno = self.seqno.next();
 
-        shard.writer.write(
-            &BatchItem {
-                key: key.as_ref().into(),
-                value: [].into(),
-                partition: self.name.clone(),
-                value_type: lsm_tree::ValueType::Tombstone,
-            },
-            seqno,
-        )?;
-        drop(shard);
+        let mut journal_writer = self.journal.get_writer();
+
+        journal_writer.write_raw(&self.name, key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
         if !self.config.manual_journal_persist {
-            self.journal.flush(crate::PersistMode::Buffer)?;
+            journal_writer.flush(crate::PersistMode::Buffer)?;
         }
+
+        drop(journal_writer);
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 

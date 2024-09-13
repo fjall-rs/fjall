@@ -80,7 +80,6 @@ keyspace.persist(PersistMode::SyncAll)?;
 ## Details
 
 - Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
-- Sharded journal for concurrent writes
 - Cross-partition snapshots (MVCC)
 - anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
 

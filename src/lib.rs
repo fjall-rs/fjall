@@ -100,7 +100,6 @@ mod monitor;
 mod partition;
 mod path;
 mod recovery;
-mod sharded;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod tracked_snapshot;
@@ -119,7 +118,7 @@ pub use {
     config::Config,
     error::{Error, Result},
     gc::GarbageCollection,
-    journal::{shard::RecoveryError, writer::PersistMode},
+    journal::{error::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{options::CreateOptions as PartitionCreateOptions, PartitionHandle},
     tracked_snapshot::TrackedSnapshot as Snapshot,

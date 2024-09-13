@@ -2,18 +2,12 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::shard::JournalShard;
-use crate::{
-    file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
-    journal::Journal,
-    PartitionHandle,
-};
+use super::writer::Writer;
+use crate::PartitionHandle;
 use lsm_tree::{AbstractTree, Memtable, SeqNo};
 use std::{
-    fs::File,
-    io::Write,
     path::PathBuf,
-    sync::{Arc, RwLockWriteGuard},
+    sync::{Arc, MutexGuard},
 };
 
 #[derive(Clone)]
@@ -52,7 +46,7 @@ impl std::fmt::Debug for Item {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
-    active_path: PathBuf,
+    active_path: PathBuf, // TODO: remove?
     items: Vec<Item>,
 
     // TODO: should be taking into account active journal, which is preallocated...
@@ -177,7 +171,7 @@ impl JournalManager {
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
             log::trace!("Removing fully flushed journal at {:?}", item.path);
-            std::fs::remove_dir_all(&item.path)?;
+            std::fs::remove_file(&item.path)?;
 
             self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
             self.items.remove(idx);
@@ -188,57 +182,16 @@ impl JournalManager {
 
     pub(crate) fn rotate_journal(
         &mut self,
-        journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
+        journal_writer: &mut MutexGuard<Writer>,
         seqnos: Vec<PartitionSeqNo>,
     ) -> crate::Result<()> {
-        let old_journal_path = self.active_path.clone();
+        let journal_size = journal_writer.len()?;
 
-        log::debug!("Sealing journal at {old_journal_path:?}");
-
-        // NOTE: Sync the journal one last time before rotation
-        //
-        // May be similar to https://github.com/facebook/rocksdb/commit/d5a51d4de3cb71aee0ee4d5578fa9927189fcad2 ?
-        for shard in journal_lock.iter_mut() {
-            shard.writer.flush(crate::PersistMode::SyncAll)?;
-        }
-
-        let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
-
-        for item in &seqnos {
-            writeln!(file, "{}:{}", item.partition.name, item.lsn)?;
-        }
-        file.sync_all()?;
-
-        let marker = File::create(old_journal_path.join(FLUSH_MARKER))?;
-        marker.sync_all()?;
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(&old_journal_path)?;
-
-        let old_journal_id = old_journal_path
-            .file_name()
-            .expect("should have filename")
-            .to_str()
-            .expect("should be valid UTF-8")
-            .parse::<lsm_tree::SegmentId>()
-            .expect("should be valid journal ID");
-
-        let new_journal_path = old_journal_path
-            .parent()
-            .expect("should have parent")
-            .join((old_journal_id + 1).to_string());
-
-        log::trace!("journal manager: acquiring journal full lock");
-        Journal::rotate(&new_journal_path, journal_lock)?;
-
-        self.active_path = new_journal_path;
-
-        // TODO: Journal::disk_space
-        let journal_size = fs_extra::dir::get_size(&old_journal_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+        let (sealed_path, next_journal_path) = journal_writer.rotate()?;
+        self.active_path = next_journal_path;
 
         self.enqueue(Item {
-            path: old_journal_path,
+            path: sealed_path,
             partition_seqnos: seqnos,
             size_in_bytes: journal_size,
         });

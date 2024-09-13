@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::reader::JournalShardReader;
+use super::reader::JournalReader;
 use crate::{batch::item::Item as BatchItem, journal::marker::Marker, RecoveryError};
 use lsm_tree::{coding::Encode, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
@@ -23,8 +23,8 @@ pub struct Batch {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub struct JournalShardBatchReader {
-    reader: JournalShardReader,
+pub struct JournalBatchReader {
+    reader: JournalReader,
     items: Vec<BatchItem>,
     is_in_batch: bool,
     batch_counter: u32,
@@ -33,8 +33,8 @@ pub struct JournalShardBatchReader {
     checksum_builder: xxhash_rust::xxh3::Xxh3,
 }
 
-impl JournalShardBatchReader {
-    pub fn new(reader: JournalShardReader) -> Self {
+impl JournalBatchReader {
+    pub fn new(reader: JournalReader) -> Self {
         Self {
             reader,
             items: Vec::with_capacity(10),
@@ -48,7 +48,7 @@ impl JournalShardBatchReader {
 
     // TODO: reallocate space
     fn truncate_to(&mut self, last_valid_pos: u64) -> crate::Result<()> {
-        log::trace!("Truncating shard to {last_valid_pos}");
+        log::trace!("Truncating journal to {last_valid_pos}");
 
         // TODO: on windows, reading file probably needs to be closed first...?
 
@@ -71,7 +71,7 @@ impl JournalShardBatchReader {
     }
 }
 
-impl Iterator for JournalShardBatchReader {
+impl Iterator for JournalBatchReader {
     type Item = crate::Result<Batch>;
 
     fn next(&mut self) -> Option<Self::Item> {

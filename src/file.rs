@@ -13,9 +13,6 @@ pub const FJALL_MARKER: &str = "version";
 pub const PARTITION_DELETED_MARKER: &str = ".deleted";
 pub const PARTITION_CONFIG_FILE: &str = "config";
 
-pub const FLUSH_PARTITIONS_LIST: &str = ".partitions";
-pub const FLUSH_MARKER: &str = ".flush";
-
 pub const LSM_MANIFEST_FILE: &str = "manifest";
 
 #[cfg(not(target_os = "windows"))]

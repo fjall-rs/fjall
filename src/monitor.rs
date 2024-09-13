@@ -55,7 +55,7 @@ impl Monitor {
             "monitor: try flushing affected partitions because journals have passed 50% of threshold"
         );
 
-        let mut journal = self.journal.full_lock();
+        let mut journal_writer = self.journal.get_writer();
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
@@ -90,7 +90,7 @@ impl Monitor {
                 .any(|x| !partitions_names_with_queued_tasks.contains(&x.partition.name))
             {
                 if journal_manager
-                    .rotate_journal(&mut journal, actual_seqno_map)
+                    .rotate_journal(&mut journal_writer, actual_seqno_map)
                     .is_ok()
                 {
                     let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
@@ -110,7 +110,7 @@ impl Monitor {
 
                     drop(flush_manager);
                     drop(journal_manager);
-                    drop(journal);
+                    drop(journal_writer);
                 }
             } else {
                 self.flush_semaphore.release();

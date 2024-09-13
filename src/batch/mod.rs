@@ -78,8 +78,8 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        log::trace!("batch: Acquiring shard");
-        let mut shard = self.keyspace.journal.get_writer();
+        log::trace!("batch: Acquiring journal writer");
+        let mut journal_writer = self.keyspace.journal.get_writer();
 
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         log::trace!("batch: Acquiring partitions lock");
@@ -119,7 +119,7 @@ impl Batch {
         let batch_seqno = self.keyspace.seqno.next();
 
         let items = self.data.iter().collect::<Vec<_>>();
-        let _ = shard.writer.write_batch(&items, batch_seqno)?;
+        let _ = journal_writer.write_batch(&items, batch_seqno)?;
 
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
@@ -152,7 +152,7 @@ impl Batch {
 
         drop(locked_memtables);
         drop(partitions);
-        drop(shard);
+        drop(journal_writer);
 
         if !self.keyspace.config.manual_journal_persist {
             self.keyspace.journal.flush(crate::PersistMode::Buffer)?;

@@ -2,30 +2,33 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+pub mod batch_reader;
+pub mod error;
 pub mod manager;
-mod marker;
-pub mod partition_manifest;
-mod reader;
-pub mod shard;
+pub mod marker;
+pub mod reader;
+mod recovery;
 pub mod writer;
 
-use self::{shard::JournalShard, writer::PersistMode};
-use crate::{file::fsync_directory, sharded::Sharded};
+use self::writer::PersistMode;
+use crate::file::fsync_directory;
+use batch_reader::JournalBatchReader;
 use reader::JournalReader;
+use recovery::{recover_journals, RecoveryResult};
 use std::{
     path::{Path, PathBuf},
-    sync::{RwLock, RwLockWriteGuard},
+    sync::{Mutex, MutexGuard},
 };
-
-pub const SHARD_COUNT: u8 = 4;
-
-fn get_shard_path<P: AsRef<Path>>(base: P, idx: u8) -> PathBuf {
-    base.as_ref().join(idx.to_string())
-}
+use writer::Writer;
 
 pub struct Journal {
-    pub path: PathBuf,
-    shards: Sharded<JournalShard>,
+    writer: Mutex<Writer>,
+}
+
+impl std::fmt::Debug for Journal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.path())
+    }
 }
 
 impl Drop for Journal {
@@ -47,94 +50,54 @@ impl Drop for Journal {
 }
 
 impl Journal {
-    pub fn get_reader<P: AsRef<Path>>(path: P) -> crate::Result<JournalReader> {
-        JournalReader::new(path)
-    }
-
-    pub fn restore_existing<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let shards = (0..SHARD_COUNT)
-            .map(|idx| {
-                Ok(RwLock::new(JournalShard::from_file(get_shard_path(
-                    &path, idx,
-                ))?))
-            })
-            .collect::<crate::Result<Vec<_>>>()?;
-
+    fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
-            path: path.as_ref().into(),
-            shards: Sharded::new(shards),
+            writer: Mutex::new(Writer::from_file(path)?),
         })
-    }
-
-    pub fn rotate<P: AsRef<Path>>(
-        path: P,
-        shards: &mut [RwLockWriteGuard<'_, JournalShard>],
-    ) -> crate::Result<()> {
-        let path = path.as_ref();
-
-        log::debug!("Rotating active journal to {path:?}");
-
-        std::fs::create_dir_all(path)?;
-
-        for (idx, shard) in shards.iter_mut().enumerate() {
-            shard.rotate(path.join(idx.to_string()))?;
-        }
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(path)?;
-
-        Ok(())
     }
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
+        log::trace!("Creating new journal at {path:?}");
 
-        std::fs::create_dir_all(path)?;
+        let folder = path.parent().expect("parent should exist");
+        std::fs::create_dir_all(folder)?;
 
-        let shards = (0..SHARD_COUNT)
-            .map(|idx| {
-                Ok(RwLock::new(JournalShard::create_new(get_shard_path(
-                    path, idx,
-                ))?))
-            })
-            .collect::<crate::Result<Vec<_>>>()?;
+        let writer = Writer::create_new(path)?;
 
         // IMPORTANT: fsync folder on Unix
-        fsync_directory(path)?;
+        fsync_directory(folder)?;
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Ok(Self {
-            shards: Sharded::new(shards),
-            path: path.to_path_buf(),
+            writer: Mutex::new(writer),
         })
     }
 
-    /// Locks all shards for exclusive control over the journal.
-    pub(crate) fn full_lock(&self) -> Vec<RwLockWriteGuard<'_, JournalShard>> {
-        self.shards.full_lock().expect("lock is poisoned")
+    /// Hands out write access for the journal.
+    pub(crate) fn get_writer(&self) -> MutexGuard<'_, Writer> {
+        self.writer.lock().expect("lock is poisoned")
     }
 
-    /// Locks a shard to write to it.
-    pub(crate) fn get_writer(&self) -> RwLockWriteGuard<'_, JournalShard> {
-        let mut shard = self.shards.write_one();
-        shard.should_sync = true;
-        shard
+    pub fn path(&self) -> PathBuf {
+        self.get_writer().path.clone()
+    }
+
+    pub fn get_reader(&self) -> crate::Result<JournalBatchReader> {
+        let raw_reader = JournalReader::new(self.path())?;
+        Ok(JournalBatchReader::new(raw_reader))
     }
 
     /// Flushes the journal.
     pub fn flush(&self, mode: PersistMode) -> crate::Result<()> {
-        for mut shard in self.full_lock() {
-            if shard.should_sync {
-                shard.writer.flush(mode)?;
+        let mut lock = self.get_writer();
+        lock.flush(mode).map_err(Into::into)
+    }
 
-                if mode != PersistMode::Buffer {
-                    shard.should_sync = false;
-                }
-            }
-        }
-        Ok(())
+    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {
+        recover_journals(path)
     }
 }
 
@@ -150,9 +113,131 @@ mod tests {
     use test_log::test;
 
     #[test]
+    fn journal_rotation() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("0");
+        let path_rotated = dir.path().join("0.sealed");
+        let next_path = dir.path().join("1");
+
+        {
+            let journal = Journal::create_new(&path)?;
+            let mut writer = journal.get_writer();
+
+            writer.write_batch(
+                &[
+                    &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                    &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                ],
+                0,
+            )?;
+            writer.rotate()?;
+        }
+
+        assert!(!path.try_exists()?);
+        assert!(path_rotated.try_exists()?);
+        assert!(next_path.try_exists()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn journal_recovery_active() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("0");
+        let path_rotated = dir.path().join("0.sealed");
+
+        let next_path_rotated = dir.path().join("1.sealed");
+
+        let next_next_path = dir.path().join("2");
+
+        {
+            let journal = Journal::create_new(&path)?;
+            let mut writer = journal.get_writer();
+
+            writer.write_batch(
+                &[
+                    &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                    &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                ],
+                0,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                &[
+                    &BatchItem::new("default2", *b"c", *b"c", ValueType::Value),
+                    &BatchItem::new("default2", *b"d", *b"d", ValueType::Value),
+                ],
+                1,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                &[
+                    &BatchItem::new("default3", *b"c", *b"c", ValueType::Value),
+                    &BatchItem::new("default3", *b"d", *b"d", ValueType::Value),
+                ],
+                1,
+            )?;
+        }
+
+        assert!(!path.try_exists()?);
+        assert!(path_rotated.try_exists()?);
+        assert!(next_path_rotated.try_exists()?);
+        assert!(next_next_path.try_exists()?);
+
+        let journal_recovered = Journal::recover(dir)?;
+        assert_eq!(journal_recovered.active.path(), next_next_path);
+        assert_eq!(
+            journal_recovered.sealed,
+            &[(0, path_rotated), (1, next_path_rotated)]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn journal_recovery_no_active() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("0");
+        let path_rotated = dir.path().join("0.sealed");
+
+        let next_path = dir.path().join("1");
+
+        {
+            let journal = Journal::create_new(&path)?;
+
+            {
+                let mut writer = journal.get_writer();
+
+                writer.write_batch(
+                    &[
+                        &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                        &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    ],
+                    0,
+                )?;
+                writer.rotate()?;
+            }
+
+            std::fs::remove_file(&next_path)?;
+        }
+
+        assert!(!path.try_exists()?);
+        assert!(path_rotated.try_exists()?);
+        assert!(!next_path.try_exists()?);
+
+        let journal_recovered = Journal::recover(dir)?;
+        assert_eq!(journal_recovered.active.path(), next_path);
+        assert_eq!(journal_recovered.sealed, &[(0, path_rotated)]);
+
+        Ok(())
+    }
+
+    #[test]
     fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let dir = tempdir()?;
-        let shard_path = dir.path().join("0");
+        let path = dir.path().join("0");
 
         let values = [
             &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -160,12 +245,14 @@ mod tests {
         ];
 
         {
-            let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.writer.write_batch(&values, 0)?;
+            let journal = Journal::create_new(&path)?;
+            journal.get_writer().write_batch(&values, 0)?;
         }
 
         {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -174,13 +261,15 @@ mod tests {
 
         // Mangle journal
         {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
             file.sync_all()?;
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -189,13 +278,15 @@ mod tests {
 
         // Mangle journal
         for _ in 0..5 {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
             file.sync_all()?;
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -208,7 +299,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let shard_path = dir.path().join("0");
+        let path = dir.path().join("0");
 
         let values = [
             &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -216,12 +307,14 @@ mod tests {
         ];
 
         {
-            let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.writer.write_batch(&values, 0)?;
+            let journal = Journal::create_new(&path)?;
+            journal.get_writer().write_batch(&values, 0)?;
         }
 
         {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -230,7 +323,7 @@ mod tests {
 
         // Mangle journal
         {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
@@ -241,7 +334,9 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -250,7 +345,7 @@ mod tests {
 
         // Mangle journal
         for _ in 0..5 {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
@@ -261,7 +356,9 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -274,7 +371,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let shard_path = dir.path().join("0");
+        let path = dir.path().join("0");
 
         let values = [
             &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -282,12 +379,14 @@ mod tests {
         ];
 
         {
-            let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.writer.write_batch(&values, 0)?;
+            let journal = Journal::create_new(&path)?;
+            journal.get_writer().write_batch(&values, 0)?;
         }
 
         {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -296,13 +395,15 @@ mod tests {
 
         // Mangle journal
         {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -311,13 +412,15 @@ mod tests {
 
         // Mangle journal
         for _ in 0..5 {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -330,7 +433,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let shard_path = dir.path().join("0");
+        let path = dir.path().join("0");
 
         let values = [
             &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -338,12 +441,14 @@ mod tests {
         ];
 
         {
-            let mut shard = JournalShard::create_new(&shard_path)?;
-            shard.writer.write_batch(&values, 0)?;
+            let journal = Journal::create_new(&path)?;
+            journal.get_writer().write_batch(&values, 0)?;
         }
 
         {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -352,7 +457,7 @@ mod tests {
 
         // Mangle journal
         {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
                 partition: "default".into(),
                 key: (*b"zzz").into(),
@@ -365,7 +470,9 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items
@@ -374,7 +481,7 @@ mod tests {
 
         // Mangle journal
         for _ in 0..5 {
-            let mut file = std::fs::OpenOptions::new().append(true).open(&shard_path)?;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
                 partition: "default".into(),
                 key: (*b"zzz").into(),
@@ -387,7 +494,9 @@ mod tests {
         }
 
         for _ in 0..10 {
-            let collected = Journal::get_reader(&dir)?.flatten().collect::<Vec<_>>();
+            let journal = Journal::from_file(&path)?;
+            let reader = journal.get_reader()?;
+            let collected = reader.flatten().collect::<Vec<_>>();
             assert_eq!(
                 values.into_iter().cloned().collect::<Vec<_>>(),
                 collected.first().unwrap().items

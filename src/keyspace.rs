@@ -7,8 +7,7 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        fsync_directory, FJALL_MARKER, FLUSH_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER,
-        PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
@@ -524,39 +523,6 @@ impl Keyspace {
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
-    fn find_active_journal_id<P: AsRef<Path>>(
-        path: P,
-    ) -> crate::Result<(Option<lsm_tree::SegmentId>, Option<lsm_tree::SegmentId>)> {
-        let mut max_journal_id: Option<lsm_tree::SegmentId> = None;
-        let mut active_journal_id = None;
-
-        for dirent in std::fs::read_dir(path)? {
-            let dirent = dirent?;
-
-            assert!(dirent.file_type()?.is_dir(), "journal should be directory");
-
-            let journal_id = dirent
-                .file_name()
-                .to_str()
-                .expect("should be UTF-8")
-                .parse::<lsm_tree::SegmentId>()
-                .expect("should be valid journal ID");
-
-            max_journal_id = match max_journal_id {
-                Some(prev) => Some(prev.max(journal_id)),
-                None => Some(journal_id),
-            };
-
-            if !dirent.path().join(FLUSH_MARKER).try_exists()? {
-                // Is active journal
-                active_journal_id = max_journal_id;
-            }
-        }
-
-        Ok((max_journal_id, active_journal_id))
-    }
-
     /// Recovers existing keyspace from directory.
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
@@ -571,21 +537,13 @@ impl Keyspace {
 
         // Reload active journal
         let journals_folder = config.path.join(JOURNALS_FOLDER);
-        let (max_journal_id, active_journal_id) =
-            Self::find_active_journal_id(config.path.join(JOURNALS_FOLDER))?;
+        let journal_recovery = Journal::recover(journals_folder)?;
+        log::debug!("journal recovery result: {journal_recovery:#?}");
 
-        let active_journal = match active_journal_id {
-            Some(active_journal_id) => {
-                Journal::restore_existing(journals_folder.join(active_journal_id.to_string()))
-            }
-            None => Journal::create_new(
-                journals_folder
-                    .join((max_journal_id.map(|x| x + 1).unwrap_or_default()).to_string()),
-            ),
-        }?;
-        let active_journal = Arc::new(active_journal);
+        let active_journal = Arc::new(journal_recovery.active);
+        let sealed_journals = journal_recovery.sealed;
 
-        let journal_manager = JournalManager::from_active(active_journal.path.clone());
+        let journal_manager = JournalManager::from_active(active_journal.path());
 
         // Construct (empty) keyspace, then fill back with partition data
         let inner = KeyspaceInner {
@@ -613,16 +571,23 @@ impl Keyspace {
         recover_partitions(&keyspace)?;
 
         // Recover sealed memtables by walking through old journals
-        recover_sealed_memtables(&keyspace)?;
+        recover_sealed_memtables(
+            &keyspace,
+            &sealed_journals
+                .into_iter()
+                .map(|(_, x)| x)
+                .collect::<Vec<_>>(),
+        )?;
 
         // NOTE: We only need to recover the active journal, if it actually existed before
         // nothing to recover, if we just created it
-        if active_journal_id.is_some() {
-            log::trace!("Recovering active memtables from journal {active_journal_id:?}");
+        if !journal_recovery.was_active_created {
+            log::trace!("Recovering active memtables from active journal");
 
             let partitions = keyspace.partitions.read().expect("lock is poisoned");
 
-            let reader = Journal::get_reader(&keyspace.journal.path)?;
+            let reader = keyspace.journal.get_reader()?;
+
             for batch in reader {
                 let batch = batch?;
 
