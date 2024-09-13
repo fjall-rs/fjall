@@ -687,9 +687,24 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(self) -> crate::Result<()> {
-        let mut batch = Batch::with_capacity(self.keyspace, 10);
+        let mut batch = Batch::new(self.keyspace);
 
-        for (partition_key, memtable) in &self.memtables {
+        /*
+        for (partition_key, memtable) in self.memtables {
+            let memtable = Arc::into_inner(memtable).expect("should be able to unwrap Arc");
+
+            for (internal_key, value) in memtable.items {
+                batch.data.push(Item::new(
+                    partition_key.clone(),
+                    internal_key.user_key,
+                    value,
+                    internal_key.value_type,
+                ));
+            }
+        }
+        */
+
+        for (partition_key, memtable) in self.memtables {
             for item in memtable.iter() {
                 batch.data.push(Item::new(
                     partition_key.clone(),
@@ -702,6 +717,7 @@ impl<'a> WriteTransaction<'a> {
 
         // TODO: instead of using batch, write batch::commit as a generic function that takes
         // a impl Iterator<BatchItem>
+        // that way, we don't have to move the memtable(s) into the batch first to commit
         batch.commit()
     }
 

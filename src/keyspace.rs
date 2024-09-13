@@ -175,8 +175,7 @@ impl Keyspace {
     /// ```
     #[must_use]
     pub fn batch(&self) -> Batch {
-        // TODO: maybe allow setting a custom capacity
-        Batch::with_capacity(self.clone(), 10)
+        Batch::new(self.clone())
     }
 
     /// Returns the current write buffer size (active + sealed memtables).

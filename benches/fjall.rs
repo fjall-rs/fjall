@@ -9,6 +9,26 @@ use lsm_tree::{
 use rand::Rng;
 use std::sync::Arc;
 
+fn batch_write(c: &mut Criterion) {
+    let dir = tempfile::tempdir().unwrap();
+
+    let keyspace = fjall::Config::new(&dir).open().unwrap();
+    let items = keyspace
+        .open_partition("default", Default::default())
+        .unwrap();
+
+    c.bench_function("Batch commit", |b| {
+        b.iter(|| {
+            let mut batch = keyspace.batch();
+            for item in 'a'..='z' {
+                let item = item.to_string();
+                batch.insert(&items, &item, &item);
+            }
+            batch.commit().unwrap();
+        });
+    });
+}
+
 fn block_cache_insert(c: &mut Criterion) {
     let block_cache = BlockCache::with_capacity_bytes(1_000);
 
@@ -83,5 +103,5 @@ fn block_cache_get(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, block_cache_insert, block_cache_get);
+criterion_group!(benches, batch_write, block_cache_insert, block_cache_get);
 criterion_main!(benches);
