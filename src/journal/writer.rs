@@ -116,6 +116,8 @@ impl Writer {
 
     /// Flushes the journal file.
     pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
+        log::trace!("Flush journal {:?} with mode={mode:?}", self.path);
+
         self.file.flush()?;
 
         match mode {

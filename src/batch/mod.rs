@@ -4,7 +4,7 @@
 
 pub mod item;
 
-use crate::{Keyspace, PartitionHandle};
+use crate::{Keyspace, PartitionHandle, PersistMode};
 use item::Item;
 use lsm_tree::{AbstractTree, ValueType};
 use std::{
@@ -21,6 +21,7 @@ pub type PartitionKey = Arc<str>;
 pub struct Batch {
     pub(crate) data: Vec<Item>,
     keyspace: Keyspace,
+    durability: Option<PersistMode>,
 }
 
 impl Batch {
@@ -31,7 +32,15 @@ impl Batch {
         Self {
             data: Vec::new(),
             keyspace,
+            durability: None,
         }
+    }
+
+    /// Sets the durability level.
+    #[must_use]
+    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+        self.durability = mode;
+        self
     }
 
     /// Inserts a key-value pair into the batch
@@ -147,11 +156,12 @@ impl Batch {
 
         drop(locked_memtables);
         drop(partitions);
-        drop(journal_writer);
 
-        if !self.keyspace.config.manual_journal_persist {
-            self.keyspace.journal.flush(crate::PersistMode::Buffer)?;
+        if let Some(mode) = self.durability {
+            journal_writer.flush(mode)?;
         }
+
+        drop(journal_writer);
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches

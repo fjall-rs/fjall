@@ -5,7 +5,7 @@
 use crate::{
     batch::{item::Item, PartitionKey},
     snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, Keyspace, TxPartitionHandle,
+    Batch, HashMap, Keyspace, PersistMode, TxPartitionHandle,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{
@@ -27,6 +27,8 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 ///
 /// Drop the transaction to rollback changes.
 pub struct WriteTransaction<'a> {
+    durability: Option<PersistMode>,
+
     keyspace: Keyspace,
     memtables: HashMap<PartitionKey, Arc<Memtable>>,
 
@@ -47,7 +49,15 @@ impl<'a> WriteTransaction<'a> {
             memtables: HashMap::default(),
             tx_lock,
             nonce,
+            durability: None,
         }
+    }
+
+    /// Sets the durability level.
+    #[must_use]
+    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+        self.durability = mode;
+        self
     }
 
     /// Removes an item and returns its value if it existed.
@@ -687,7 +697,7 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(self) -> crate::Result<()> {
-        let mut batch = Batch::new(self.keyspace);
+        let mut batch = Batch::new(self.keyspace).durability(self.durability);
 
         /*
         for (partition_key, memtable) in self.memtables {

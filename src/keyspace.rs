@@ -175,7 +175,11 @@ impl Keyspace {
     /// ```
     #[must_use]
     pub fn batch(&self) -> Batch {
-        Batch::new(self.clone())
+        let mut batch = Batch::new(self.clone());
+        if !self.config.manual_journal_persist {
+            batch = batch.durability(Some(PersistMode::Buffer));
+        }
+        batch
     }
 
     /// Returns the current write buffer size (active + sealed memtables).
@@ -278,6 +282,7 @@ impl Keyspace {
             );
             return Err(crate::Error::Poisoned);
         };
+
         Ok(())
     }
 

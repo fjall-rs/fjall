@@ -30,11 +30,17 @@ impl TxKeyspace {
         // IMPORTANT: Get the seqno *after* getting the lock
         let instant = self.inner.instant();
 
-        WriteTransaction::new(
+        let mut write_tx = WriteTransaction::new(
             self.inner.clone(),
             lock,
             SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-        )
+        );
+
+        if !self.inner.config.manual_journal_persist {
+            write_tx = write_tx.durability(Some(PersistMode::Buffer));
+        }
+
+        write_tx
     }
 
     /// Starts a new read-only transaction.
