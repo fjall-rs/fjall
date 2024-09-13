@@ -4,7 +4,7 @@
 
 use super::reader::JournalReader;
 use crate::{batch::item::Item as BatchItem, journal::marker::Marker, RecoveryError};
-use lsm_tree::{coding::Encode, SeqNo};
+use lsm_tree::{coding::Encode, CompressionType, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
 
 macro_rules! fail_iter {
@@ -88,8 +88,16 @@ impl Iterator for JournalBatchReader {
 
             match item {
                 Marker::Start {
-                    item_count, seqno, ..
+                    item_count,
+                    seqno,
+                    compression,
                 } => {
+                    // TODO: journal compression maybe in the future
+                    assert!(
+                        compression == CompressionType::None,
+                        "journal compression not supported"
+                    );
+
                     if self.is_in_batch {
                         log::debug!("Invalid batch: found batch start inside batch");
 
@@ -129,28 +137,6 @@ impl Iterator for JournalBatchReader {
                     // Reset all variables
                     self.is_in_batch = false;
                     self.batch_counter = 0;
-
-                    /*  // NOTE: Clippy says into_iter() is better
-                    // but in this case probably not
-                    #[allow(clippy::iter_with_drain)]
-                    for item in self.items.drain(..) {
-                        /* if let Some(whitelist) = whitelist {
-                            if !whitelist.contains(&item.partition) {
-                                continue;
-                            }
-                        } */
-
-                        let memtable = memtables.entry(item.partition).or_default();
-
-                        let value = lsm_tree::InternalValue::from_components(
-                            item.key,
-                            item.value,
-                            batch_seqno,
-                            item.value_type,
-                        );
-
-                        memtable.insert(value);
-                    } */
 
                     self.last_valid_pos = journal_file_pos;
 
