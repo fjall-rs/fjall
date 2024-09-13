@@ -18,7 +18,9 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
 - Automatic background maintenance
-- Single-writer transactions (optional)
+- Partitions (a.k.a. column families) with cross-partition atomic semantics
+- Built-in compression (default = LZ4)
+- Single-writer, multi-reader transactions (optional)
 - Key-value separation for large blob use cases (optional)
 
 Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single keyspace-level journal, which will be recovered on restart.
@@ -76,14 +78,6 @@ for kv in items.prefix("prefix").rev() {
 keyspace.persist(PersistMode::SyncAll)?;
 ```
 
-## Details
-
-- Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
-- Cross-partition snapshots (MVCC)
-- anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
-
-For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
-
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
@@ -130,6 +124,8 @@ The disk format is stable as of 1.0.0.
 2.0.0 uses a new disk format and needs a manual format migration.
 
 Future breaking changes will result in a major version bump and a migration path.
+
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 
 ## Examples
 
