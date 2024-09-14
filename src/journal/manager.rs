@@ -18,7 +18,7 @@ pub struct PartitionSeqNo {
 
 impl std::fmt::Debug for PartitionSeqNo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.lsn)
+        write!(f, "{}:{}", self.partition.name, self.lsn)
     }
 }
 
@@ -137,9 +137,10 @@ impl JournalManager {
     /// Performs maintenance, maybe deleting some old journals
     pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
         // NOTE: Walk backwards because of shifting indices
-        'outer: for idx in (0..self.items.len()).rev() {
-            let Some(item) = &self.items.get(idx) else {
-                continue 'outer;
+
+        loop {
+            let Some(item) = self.items.first() else {
+                return Ok(());
             };
 
             // TODO: unit test: check deleted partition does not prevent journal eviction
@@ -152,11 +153,11 @@ impl JournalManager {
                 {
                     let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
                     else {
-                        continue 'outer;
+                        return Ok(());
                     };
 
                     if partition_seqno < item.lsn {
-                        continue 'outer;
+                        return Ok(());
                     }
                 }
             }
@@ -174,10 +175,8 @@ impl JournalManager {
             std::fs::remove_file(&item.path)?;
 
             self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
-            self.items.remove(idx);
+            self.items.remove(0);
         }
-
-        Ok(())
     }
 
     pub(crate) fn rotate_journal(
