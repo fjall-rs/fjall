@@ -585,11 +585,7 @@ impl Keyspace {
                 .collect::<Vec<_>>(),
         )?;
 
-        // NOTE: We only need to recover the active journal, if it actually existed before
-        // nothing to recover, if we just created it
-        if !journal_recovery.was_active_created {
-            log::trace!("Recovering active memtables from active journal");
-
+        {
             let partitions = keyspace.partitions.read().expect("lock is poisoned");
 
             #[cfg(debug_assertions)]
@@ -602,7 +598,12 @@ impl Keyspace {
                 );
             }
 
-            let reader = keyspace.journal.get_reader()?;
+            // NOTE: We only need to recover the active journal, if it actually existed before
+            // nothing to recover, if we just created it
+            if !journal_recovery.was_active_created {
+                log::trace!("Recovering active memtables from active journal");
+
+                let reader = keyspace.journal.get_reader()?;
 
             for batch in reader {
                 let batch = batch?;
