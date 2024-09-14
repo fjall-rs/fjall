@@ -876,6 +876,9 @@ mod tests {
         }
 
         {
+            // IMPORTANT: We need to allocate enough flush workers
+            // because on CI there may not be enough cores by default
+            // so the result would be wrong
             let config = Config::new(&folder).flush_workers(16);
             let keyspace = Keyspace::create_or_recover(config)?;
             let db = keyspace.open_partition("default", Default::default())?;
