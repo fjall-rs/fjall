@@ -647,9 +647,10 @@ impl Keyspace {
 
                 keyspace
                     .seqno
-                    .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
+                        .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
 
-                log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+                    log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+                }
             }
         }
 
