@@ -6,10 +6,6 @@ use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
-// TODO: 2.0.0 need to differentiate builder and actual config...
-// TODO: when we don't set manual_journal_persist it needs to taken from keyspace
-// TODO: during create_partition...
-
 /// Options to configure a partition
 #[allow(clippy::module_name_repetitions)]
 pub struct CreateOptions {
