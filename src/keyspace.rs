@@ -876,7 +876,7 @@ mod tests {
         }
 
         {
-            let config = Config::new(&folder);
+            let config = Config::new(&folder).flush_workers(16);
             let keyspace = Keyspace::create_or_recover(config)?;
             let db = keyspace.open_partition("default", Default::default())?;
             let db2 = keyspace.open_partition("default2", Default::default())?;
