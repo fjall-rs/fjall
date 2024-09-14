@@ -605,48 +605,48 @@ impl Keyspace {
 
                 let reader = keyspace.journal.get_reader()?;
 
-            for batch in reader {
-                let batch = batch?;
+                for batch in reader {
+                    let batch = batch?;
 
-                for item in batch.items {
-                    if let Some(partition) = partitions.get(&item.partition) {
-                        let tree = &partition.tree;
+                    for item in batch.items {
+                        if let Some(partition) = partitions.get(&item.partition) {
+                            let tree = &partition.tree;
 
-                        match item.value_type {
-                            lsm_tree::ValueType::Value => {
-                                tree.insert(item.key, item.value, batch.seqno);
-                            }
-                            lsm_tree::ValueType::Tombstone => {
-                                tree.remove(item.key, batch.seqno);
-                            }
-                            lsm_tree::ValueType::WeakTombstone => {
-                                tree.remove_weak(item.key, batch.seqno);
+                            match item.value_type {
+                                lsm_tree::ValueType::Value => {
+                                    tree.insert(item.key, item.value, batch.seqno);
+                                }
+                                lsm_tree::ValueType::Tombstone => {
+                                    tree.remove(item.key, batch.seqno);
+                                }
+                                lsm_tree::ValueType::WeakTombstone => {
+                                    tree.remove_weak(item.key, batch.seqno);
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            for partition in partitions.values() {
-                let size = partition.tree.active_memtable_size().into();
+                for partition in partitions.values() {
+                    let size = partition.tree.active_memtable_size().into();
 
-                log::trace!(
-                    "Recovered active memtable of size {size}B for partition {:?}",
-                    partition.name
-                );
+                    log::trace!(
+                        "Recovered active memtable of size {size}B for partition {:?}",
+                        partition.name
+                    );
 
-                // IMPORTANT: Add active memtable size to current write buffer size
-                keyspace.write_buffer_manager.allocate(size);
+                    // IMPORTANT: Add active memtable size to current write buffer size
+                    keyspace.write_buffer_manager.allocate(size);
 
-                // Recover seqno
-                let maybe_next_seqno = partition
-                    .tree
-                    .get_highest_seqno()
-                    .map(|x| x + 1)
-                    .unwrap_or_default();
+                    // Recover seqno
+                    let maybe_next_seqno = partition
+                        .tree
+                        .get_highest_seqno()
+                        .map(|x| x + 1)
+                        .unwrap_or_default();
 
-                keyspace
-                    .seqno
+                    keyspace
+                        .seqno
                         .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
 
                     log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
