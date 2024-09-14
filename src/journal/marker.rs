@@ -1,20 +1,22 @@
-use crate::batch::PartitionKey;
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::{batch::PartitionKey, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
-    serde::{Deserializable, Serializable},
-    DeserializeError, SeqNo, SerializeError, UserKey, UserValue, ValueType,
+    coding::{Decode, Encode},
+    CompressionType, DecodeError, EncodeError, SeqNo, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
-
-const TRAILER_MAGIC: &[u8] = &[b'F', b'J', b'L', b'L', b'T', b'R', b'L', b'1'];
 
 /// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
 ///
 /// - The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
 ///
-/// - The end marker contains a CRC value. If the CRC of the items doesn't match that, the batch is broken.
+/// - The end marker contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
-/// - The end marker terminates each batch with the magic u64 value: [`TRAILER_MAGIC`].
+/// - The end marker terminates each batch with the magic string: [`TRAILER_MAGIC`].
 ///
 /// - If a start marker is detected, while inside a batch, the batch is broken.
 #[derive(Debug, Eq, PartialEq)]
@@ -22,6 +24,7 @@ pub enum Marker {
     Start {
         item_count: u32,
         seqno: SeqNo,
+        compression: CompressionType,
     },
     Item {
         partition: PartitionKey,
@@ -29,26 +32,55 @@ pub enum Marker {
         value: UserValue,
         value_type: ValueType,
     },
-    End(u32),
+    End(u64),
+}
+
+pub fn serialize_marker_item<W: Write>(
+    writer: &mut W,
+    partition: &str,
+    key: &[u8],
+    value: &[u8],
+    value_type: ValueType,
+) -> Result<(), EncodeError> {
+    writer.write_u8(Tag::Item.into())?;
+
+    writer.write_u8(u8::from(value_type))?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u8(partition.as_bytes().len() as u8)?;
+    writer.write_all(partition.as_bytes())?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u16::<BigEndian>(key.len() as u16)?;
+    writer.write_all(key)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u32::<BigEndian>(value.len() as u32)?;
+    writer.write_all(value)?;
+
+    Ok(())
 }
 
 pub enum Tag {
-    Start = 0,
-    Item = 1,
-    End = 2,
+    Start = 1,
+    Item = 2,
+    End = 3,
 }
 
 impl TryFrom<u8> for Tag {
-    type Error = DeserializeError;
+    type Error = DecodeError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use Tag::{End, Item, Start};
 
         match value {
-            0 => Ok(Start),
-            1 => Ok(Item),
-            2 => Ok(End),
-            _ => Err(DeserializeError::InvalidTag(("JournalMarkerTag", value))),
+            1 => Ok(Start),
+            2 => Ok(Item),
+            3 => Ok(End),
+            _ => Err(DecodeError::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -59,15 +91,20 @@ impl From<Tag> for u8 {
     }
 }
 
-impl Serializable for Marker {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), SerializeError> {
+impl Encode for Marker {
+    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), EncodeError> {
         use Marker::{End, Item, Start};
 
         match self {
-            Start { item_count, seqno } => {
+            Start {
+                item_count,
+                seqno,
+                compression,
+            } => {
                 writer.write_u8(Tag::Start.into())?;
                 writer.write_u32::<BigEndian>(*item_count)?;
                 writer.write_u64::<BigEndian>(*seqno)?;
+                compression.encode_into(writer)?;
             }
             Item {
                 partition,
@@ -75,49 +112,47 @@ impl Serializable for Marker {
                 value,
                 value_type,
             } => {
-                writer.write_u8(Tag::Item.into())?;
-
-                writer.write_u8(u8::from(*value_type))?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u8(partition.as_bytes().len() as u8)?;
-                writer.write_all(partition.as_bytes())?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u16::<BigEndian>(key.len() as u16)?;
-                writer.write_all(key)?;
-
-                // NOTE: Truncation is okay and actually needed
-                #[allow(clippy::cast_possible_truncation)]
-                writer.write_u16::<BigEndian>(value.len() as u16)?;
-                writer.write_all(value)?;
+                serialize_marker_item(writer, partition, key, value, *value_type)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
-                writer.write_u32::<BigEndian>(*val)?;
+                writer.write_u64::<BigEndian>(*val)?;
 
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
-                // Otherwise we couldn't know if the CRC value is maybe mangled
+                // Otherwise we couldn't know if the checksum value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
-                writer.write_all(TRAILER_MAGIC)?;
+                writer.write_all(MAGIC_BYTES)?;
             }
         }
         Ok(())
     }
 }
 
-impl Deserializable for Marker {
-    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DeserializeError> {
+impl Decode for Marker {
+    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<BigEndian>()?;
                 let seqno = reader.read_u64::<BigEndian>()?;
-                Ok(Self::Start { item_count, seqno })
+                let compression = CompressionType::decode_from(reader)?;
+
+                assert_eq!(
+                    compression,
+                    CompressionType::None,
+                    "invalid compression type"
+                );
+
+                Ok(Self::Start {
+                    item_count,
+                    seqno,
+                    compression,
+                })
             }
             Tag::Item => {
-                let value_type = reader.read_u8()?.into();
+                let value_type = reader.read_u8()?;
+                let value_type = value_type
+                    .try_into()
+                    .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
 
                 // Read partition key
                 let partition_len = reader.read_u8()?;
@@ -131,7 +166,7 @@ impl Deserializable for Marker {
                 reader.read_exact(&mut key)?;
 
                 // Read value
-                let value_len = reader.read_u16::<BigEndian>()?;
+                let value_len = reader.read_u32::<BigEndian>()?;
                 let mut value = vec![0; value_len as usize];
                 reader.read_exact(&mut value)?;
 
@@ -143,17 +178,17 @@ impl Deserializable for Marker {
                 })
             }
             Tag::End => {
-                let crc = reader.read_u32::<BigEndian>()?;
+                let checksum = reader.read_u64::<BigEndian>()?;
 
                 // Check trailer
-                let mut magic = [0u8; TRAILER_MAGIC.len()];
+                let mut magic = [0u8; MAGIC_BYTES.len()];
                 reader.read_exact(&mut magic)?;
 
-                if magic != TRAILER_MAGIC {
-                    return Err(DeserializeError::InvalidTrailer);
+                if magic != MAGIC_BYTES {
+                    return Err(DecodeError::InvalidTrailer);
                 }
 
-                Ok(Self::End(crc))
+                Ok(Self::End(checksum))
             }
         }
     }
@@ -173,13 +208,9 @@ mod tests {
             value_type: ValueType::Value,
         };
 
-        // Serialize
-        let mut serialized_data = Vec::new();
-        item.serialize(&mut serialized_data)?;
-
-        // Deserialize
+        let serialized_data = item.encode_into_vec()?;
         let mut reader = &serialized_data[..];
-        let deserialized_item = Marker::deserialize(&mut reader)?;
+        let deserialized_item = Marker::decode_from(&mut reader)?;
 
         assert_eq!(item, deserialized_item);
 
@@ -192,12 +223,12 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::deserialize(&mut reader);
+        let result = Marker::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::Io(error) => match error.kind() {
+                DecodeError::Io(error) => match error.kind() {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
@@ -212,12 +243,12 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::deserialize(&mut reader);
+        let result = Marker::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DeserializeError::InvalidTag(("JournalMarkerTag", 4)) => {}
+                DecodeError::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }

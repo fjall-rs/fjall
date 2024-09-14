@@ -1,13 +1,16 @@
-use super::shard::JournalShard;
-use crate::{
-    batch::PartitionKey,
-    file::{fsync_directory, FLUSH_MARKER, FLUSH_PARTITIONS_LIST},
-    journal::Journal,
-    PartitionHandle,
-};
-use lsm_tree::SeqNo;
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::RwLockWriteGuard};
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
 
+use super::writer::Writer;
+use crate::PartitionHandle;
+use lsm_tree::{AbstractTree, Memtable, SeqNo};
+use std::{
+    path::PathBuf,
+    sync::{Arc, MutexGuard},
+};
+
+#[derive(Clone)]
 pub struct PartitionSeqNo {
     pub(crate) partition: PartitionHandle,
     pub(crate) lsn: SeqNo,
@@ -15,14 +18,14 @@ pub struct PartitionSeqNo {
 
 impl std::fmt::Debug for PartitionSeqNo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.lsn)
+        write!(f, "{}:{}", self.partition.name, self.lsn)
     }
 }
 
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+    pub(crate) partition_seqnos: Vec<PartitionSeqNo>,
 }
 
 impl std::fmt::Debug for Item {
@@ -41,8 +44,9 @@ impl std::fmt::Debug for Item {
 ///
 /// Each journal may contain items of different partitions.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub struct JournalManager {
-    active_path: PathBuf,
+    active_path: PathBuf, // TODO: remove?
     items: Vec<Item>,
 
     // TODO: should be taking into account active journal, which is preallocated...
@@ -53,14 +57,14 @@ impl Drop for JournalManager {
     fn drop(&mut self) {
         log::trace!("Dropping journal manager");
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
 
 impl JournalManager {
-    pub(crate) fn new<P: Into<PathBuf>>(path: P) -> Self {
-        #[cfg(feature = "__internal_integration")]
+    pub(crate) fn from_active<P: Into<PathBuf>>(path: P) -> Self {
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {
@@ -95,50 +99,63 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
-    /// Enqueues partitions to be flushed so that the oldest journal can be safely evicted
-    pub(crate) fn get_partitions_to_flush_for_oldest_journal_eviction(
+    /// Rotates & lists partitions to be flushed so that the oldest journal can be safely evicted
+    pub(crate) fn rotate_partitions_to_flush_for_oldest_journal_eviction(
         &self,
-    ) -> Vec<PartitionHandle> {
-        let mut items = vec![];
+    ) -> Vec<(PartitionHandle, PartitionSeqNo, u64, Arc<Memtable>)> {
+        let mut v = Vec::new();
 
         if let Some(item) = self.items.first() {
-            for item in item.partition_seqnos.values() {
-                let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
-                    items.push(item.partition.clone());
-                    continue;
-                };
+            for item in &item.partition_seqnos {
+                let highest_persisted_seqno = item.partition.tree.get_highest_persisted_seqno();
 
-                if partition_seqno < item.lsn {
-                    items.push(item.partition.clone());
+                if highest_persisted_seqno.is_none()
+                    || highest_persisted_seqno.expect("unwrap") < item.lsn
+                {
+                    if let Some((yanked_id, yanked_memtable)) =
+                        item.partition.tree.rotate_memtable()
+                    {
+                        v.push((
+                            item.partition.clone(),
+                            PartitionSeqNo {
+                                partition: item.partition.clone(),
+                                lsn: yanked_memtable
+                                    .get_highest_seqno()
+                                    .expect("memtable should not be empty"),
+                            },
+                            yanked_id,
+                            yanked_memtable,
+                        ));
+                    }
                 }
             }
         }
 
-        items
+        v
     }
 
     /// Performs maintenance, maybe deleting some old journals
     pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
-        // NOTE: Walk backwards because of shifting indices
-        'outer: for idx in (0..self.items.len()).rev() {
-            let Some(item) = &self.items.get(idx) else {
-                continue 'outer;
+        loop {
+            let Some(item) = self.items.first() else {
+                return Ok(());
             };
 
             // TODO: unit test: check deleted partition does not prevent journal eviction
-            for item in item.partition_seqnos.values() {
+            for item in &item.partition_seqnos {
                 // Only check partition seqno if not deleted
                 if !item
                     .partition
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    let Some(partition_seqno) = item.partition.tree.get_segment_lsn() else {
-                        continue 'outer;
+                    let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                    else {
+                        return Ok(());
                     };
 
                     if partition_seqno < item.lsn {
-                        continue 'outer;
+                        return Ok(());
                     }
                 }
             }
@@ -153,61 +170,25 @@ impl JournalManager {
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
             log::trace!("Removing fully flushed journal at {:?}", item.path);
-            std::fs::remove_dir_all(&item.path)?;
+            std::fs::remove_file(&item.path)?;
 
             self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
-            self.items.remove(idx);
+            self.items.remove(0);
         }
-
-        Ok(())
     }
 
     pub(crate) fn rotate_journal(
         &mut self,
-        journal_lock: &mut [RwLockWriteGuard<'_, JournalShard>],
-        seqnos: HashMap<PartitionKey, PartitionSeqNo>,
+        journal_writer: &mut MutexGuard<Writer>,
+        seqnos: Vec<PartitionSeqNo>,
     ) -> crate::Result<()> {
-        let old_journal_path = self.active_path.clone();
+        let journal_size = journal_writer.len()?;
 
-        log::debug!("Sealing journal at {old_journal_path:?}");
-
-        let mut file = File::create(old_journal_path.join(FLUSH_PARTITIONS_LIST))?;
-
-        for (name, item) in &seqnos {
-            writeln!(file, "{name}:{}", item.lsn)?;
-        }
-        file.sync_all()?;
-
-        let marker = File::create(old_journal_path.join(FLUSH_MARKER))?;
-        marker.sync_all()?;
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(&old_journal_path)?;
-
-        let old_journal_id = old_journal_path
-            .file_name()
-            .expect("should have filename")
-            .to_str()
-            .expect("should be valid utf-8")
-            .parse::<lsm_tree::SegmentId>()
-            .expect("should be valid journal ID");
-
-        let new_journal_path = old_journal_path
-            .parent()
-            .expect("should have parent")
-            .join((old_journal_id + 1).to_string());
-
-        log::trace!("journal manager: acquiring journal full lock");
-        Journal::rotate(&new_journal_path, journal_lock)?;
-
-        self.active_path = new_journal_path;
-
-        // TODO: Journal::disk_space
-        let journal_size = fs_extra::dir::get_size(&old_journal_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e.kind)))?;
+        let (sealed_path, next_journal_path) = journal_writer.rotate()?;
+        self.active_path = next_journal_path;
 
         self.enqueue(Item {
-            path: old_journal_path,
+            path: sealed_path,
             partition_seqnos: seqnos,
             size_in_bytes: journal_size,
         });

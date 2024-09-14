@@ -1,15 +1,19 @@
-use crate::{Instant, TxPartitionHandle};
-use lsm_tree::{KvPair, UserValue};
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::{snapshot_nonce::SnapshotNonce, TxPartitionHandle};
+use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
 pub struct ReadTransaction {
-    instant: Instant,
+    nonce: SnapshotNonce,
 }
 
 impl ReadTransaction {
-    pub(crate) fn new(instant: Instant) -> Self {
-        Self { instant }
+    pub(crate) fn new(nonce: SnapshotNonce) -> Self {
+        Self { nonce }
     }
 
     /// Retrieves an item from the transaction's state.
@@ -45,7 +49,12 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        Ok(partition.inner.snapshot_at(self.instant).get(key)?)
+        partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .get(key)
+            .map_err(Into::into)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -74,7 +83,12 @@ impl ReadTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
-        self.get(partition, key).map(|x| x.is_some())
+        partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .contains_key(key)
+            .map_err(Into::into)
     }
 
     /// Returns the first key-value pair in the transaction's state.
@@ -140,7 +154,7 @@ impl ReadTransaction {
     /// This operation scans the entire partition: O(n) complexity!
     ///
     /// Never, under any circumstances, use .`len()` == 0 to check
-    /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
+    /// if the partition is empty, use [`ReadTransaction::is_empty`] instead.
     ///
     /// # Examples
     ///
@@ -237,7 +251,37 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .create_iter(Some(self.instant), None)
+            .iter_with_seqno(self.nonce.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.nonce.instant, None)
+            .map(|item| Ok(item?))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values<'a>(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -270,7 +314,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .create_range(&range, Some(self.instant), None)
+            .range_with_seqno(range, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 
@@ -303,7 +347,7 @@ impl ReadTransaction {
         partition
             .inner
             .tree
-            .create_prefix(prefix, Some(self.instant), None)
+            .prefix_with_seqno(prefix, self.nonce.instant, None)
             .map(|item| Ok(item?))
     }
 }

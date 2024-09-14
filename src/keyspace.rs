@@ -1,23 +1,26 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::{
     batch::{Batch, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        fsync_directory, FJALL_MARKER, FLUSH_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER,
-        PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, shard::RecoveryMode, writer::PersistMode, Journal},
+    journal::{manager::JournalManager, writer::PersistMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
+    snapshot_tracker::SnapshotTracker,
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    PartitionCreateOptions, PartitionHandle,
+    HashMap, PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{MemTable, SequenceNumberCounter};
+use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
-    collections::HashMap,
     fs::{remove_dir_all, File},
     path::Path,
     sync::{
@@ -39,7 +42,8 @@ pub struct KeyspaceInner {
     pub(crate) journal: Arc<Journal>,
 
     /// Keyspace configuration
-    pub(crate) config: Config,
+    #[doc(hidden)]
+    pub config: Config,
 
     /// Current sequence number
     pub(crate) seqno: SequenceNumberCounter,
@@ -70,6 +74,8 @@ pub struct KeyspaceInner {
 
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
+
+    pub(crate) snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for KeyspaceInner {
@@ -93,6 +99,11 @@ impl Drop for KeyspaceInner {
         self.config.descriptor_table.clear();
 
         if self.config.clean_path_on_drop {
+            log::info!(
+                "Deleting keyspace because temporary=true: {:?}",
+                self.config.path
+            );
+
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
@@ -110,7 +121,7 @@ impl Drop for KeyspaceInner {
             .expect("lock is poisoned")
             .clear();
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
@@ -164,8 +175,13 @@ impl Keyspace {
     /// ```
     #[must_use]
     pub fn batch(&self) -> Batch {
-        // TODO: maybe allow setting a custom capacity
-        Batch::with_capacity(self.clone(), 10)
+        let mut batch = Batch::new(self.clone());
+
+        if !self.config.manual_journal_persist {
+            batch = batch.durability(Some(PersistMode::Buffer));
+        }
+
+        batch
     }
 
     /// Returns the current write buffer size (active + sealed memtables).
@@ -196,6 +212,15 @@ impl Keyspace {
             .journal_count()
     }
 
+    /// Returns the disk space usage of the journal.
+    #[doc(hidden)]
+    pub fn journal_disk_space(&self) -> u64 {
+        self.journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used()
+    }
+
     /// Returns the disk space usage of the entire keyspace.
     ///
     /// # Examples
@@ -211,12 +236,6 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     pub fn disk_space(&self) -> u64 {
-        let journal_size = self
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used();
-
         let partitions_size = self
             .partitions
             .read()
@@ -225,7 +244,7 @@ impl Keyspace {
             .map(PartitionHandle::disk_space)
             .sum::<u64>();
 
-        journal_size + partitions_size
+        self.journal_disk_space() + partitions_size
     }
 
     /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
@@ -251,7 +270,7 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
@@ -265,6 +284,7 @@ impl Keyspace {
             );
             return Err(crate::Error::Poisoned);
         };
+
         Ok(())
     }
 
@@ -272,12 +292,21 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
+        log::debug!(
+            "block cache capacity={}MiB",
+            config.block_cache.capacity() / 1_024 / 1_024,
+        );
+        log::debug!(
+            "blob cache capacity={}MiB",
+            config.blob_cache.capacity() / 1_024 / 1_024,
+        );
+
         let keyspace = Self::create_or_recover(config)?;
         keyspace.start_background_threads();
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Ok(keyspace)
@@ -345,7 +374,7 @@ impl Keyspace {
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
-        fsync_directory(&partition_path)?;
+        fsync_directory(partition_path)?;
 
         handle
             .is_deleted
@@ -374,7 +403,7 @@ impl Keyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     ///
     /// # Panics
     ///
@@ -396,7 +425,7 @@ impl Keyspace {
             let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
             partitions.insert(name, handle.clone());
 
-            #[cfg(feature = "__internal_integration")]
+            #[cfg(feature = "__internal_whitebox")]
             crate::drop::increment_drop_counter();
 
             handle
@@ -490,7 +519,7 @@ impl Keyspace {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
         if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V1 {
+            if version != Version::V2 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -500,74 +529,36 @@ impl Keyspace {
         Ok(())
     }
 
-    // TODO: create struct for return type :!
-    #[allow(clippy::type_complexity)]
-    fn find_active_journal<P: AsRef<Path>>(
-        path: P,
-        recovery_mode: RecoveryMode,
-    ) -> crate::Result<(
-        lsm_tree::SegmentId,
-        Option<(Journal, HashMap<PartitionKey, MemTable>)>,
-    )> {
-        let mut journal = None;
-        let mut max_journal_id = 0;
-
-        for dirent in std::fs::read_dir(path)? {
-            let dirent = dirent?;
-
-            let journal_id = dirent
-                .file_name()
-                .to_str()
-                .expect("should be utf-8")
-                .parse::<lsm_tree::SegmentId>()
-                .expect("should be valid journal ID");
-
-            max_journal_id = max_journal_id.max(journal_id);
-
-            if !dirent.path().join(FLUSH_MARKER).try_exists()? {
-                journal = Some(Journal::recover(dirent.path(), recovery_mode)?);
-            }
-        }
-
-        Ok((max_journal_id, journal))
-    }
-
     /// Recovers existing keyspace from directory.
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
         log::info!("Recovering keyspace at {:?}", config.path);
-        let recovery_mode = config.journal_recovery_mode;
+
+        // TODO:
+        // let recovery_mode = config.journal_recovery_mode;
 
         // Check version
         Self::check_version(&config.path)?;
 
-        // Get active journal if it exists
+        // Reload active journal
         let journals_folder = config.path.join(JOURNALS_FOLDER);
-        let (max_journal_id, active_journal) =
-            Self::find_active_journal(&journals_folder, recovery_mode)?;
+        let journal_recovery = Journal::recover(journals_folder)?;
+        log::debug!("journal recovery result: {journal_recovery:#?}");
 
-        let (journal, mut memtables) = if let Some((journal, memtables)) = active_journal {
-            log::debug!("Recovered active journal at {:?}", journal.path);
-            (journal, memtables)
-        } else {
-            let journal =
-                Journal::create_new(journals_folder.join((max_journal_id + 1).to_string()))?;
+        let active_journal = Arc::new(journal_recovery.active);
+        let sealed_journals = journal_recovery.sealed;
 
-            let memtables = HashMap::default();
-            (journal, memtables)
-        };
-
-        let journal = Arc::new(journal);
-        let journal_path = journal.path.clone();
-
-        let journal_manager = JournalManager::new(journal_path);
+        let journal_manager = JournalManager::from_active(active_journal.path());
 
         // Construct (empty) keyspace, then fill back with partition data
         let inner = KeyspaceInner {
             config,
-            journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
+            journal: active_journal,
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+                10,
+                xxhash_rust::xxh3::Xxh3Builder::new(),
+            ))),
             seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
@@ -577,15 +568,91 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
+            snapshot_tracker: SnapshotTracker::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
 
         // Recover partitions
-        recover_partitions(&keyspace, &mut memtables)?;
+        recover_partitions(&keyspace)?;
 
         // Recover sealed memtables by walking through old journals
-        recover_sealed_memtables(&keyspace)?;
+        recover_sealed_memtables(
+            &keyspace,
+            &sealed_journals
+                .into_iter()
+                .map(|(_, x)| x)
+                .collect::<Vec<_>>(),
+        )?;
+
+        {
+            let partitions = keyspace.partitions.read().expect("lock is poisoned");
+
+            #[cfg(debug_assertions)]
+            for partition in partitions.values() {
+                // NOTE: If this triggers, the last sealed memtable
+                // was not correctly rotated
+                debug_assert!(
+                    partition.tree.lock_active_memtable().is_empty(),
+                    "active memtable is not empty - this is a bug"
+                );
+            }
+
+            // NOTE: We only need to recover the active journal, if it actually existed before
+            // nothing to recover, if we just created it
+            if !journal_recovery.was_active_created {
+                log::trace!("Recovering active memtables from active journal");
+
+                let reader = keyspace.journal.get_reader()?;
+
+                for batch in reader {
+                    let batch = batch?;
+
+                    for item in batch.items {
+                        if let Some(partition) = partitions.get(&item.partition) {
+                            let tree = &partition.tree;
+
+                            match item.value_type {
+                                lsm_tree::ValueType::Value => {
+                                    tree.insert(item.key, item.value, batch.seqno);
+                                }
+                                lsm_tree::ValueType::Tombstone => {
+                                    tree.remove(item.key, batch.seqno);
+                                }
+                                lsm_tree::ValueType::WeakTombstone => {
+                                    tree.remove_weak(item.key, batch.seqno);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for partition in partitions.values() {
+                    let size = partition.tree.active_memtable_size().into();
+
+                    log::trace!(
+                        "Recovered active memtable of size {size}B for partition {:?}",
+                        partition.name
+                    );
+
+                    // IMPORTANT: Add active memtable size to current write buffer size
+                    keyspace.write_buffer_manager.allocate(size);
+
+                    // Recover seqno
+                    let maybe_next_seqno = partition
+                        .tree
+                        .get_highest_seqno()
+                        .map(|x| x + 1)
+                        .unwrap_or_default();
+
+                    keyspace
+                        .seqno
+                        .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
+
+                    log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+                }
+            }
+        }
 
         Ok(keyspace)
     }
@@ -613,22 +680,28 @@ impl Keyspace {
         let inner = KeyspaceInner {
             config,
             journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity(10))),
+            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+                10,
+                xxhash_rust::xxh3::Xxh3Builder::new(),
+            ))),
             seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
-            journal_manager: Arc::new(RwLock::new(JournalManager::new(active_journal_path))),
+            journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
+                active_journal_path,
+            ))),
             flush_semaphore: Arc::new(Semaphore::new(0)),
             compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
+            snapshot_tracker: SnapshotTracker::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
         // -> the keyspace is fully initialized
         let mut file = std::fs::File::create(marker_path)?;
-        Version::V1.write_file_header(&mut file)?;
+        Version::V2.write_file_header(&mut file)?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
@@ -693,6 +766,7 @@ impl Keyspace {
         let compaction_manager = self.compaction_manager.clone();
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
+        let snapshot_tracker = self.snapshot_tracker.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -701,7 +775,7 @@ impl Keyspace {
                 log::trace!("compaction: waiting for work");
                 compaction_manager.wait_for();
 
-                crate::compaction::worker::run(&compaction_manager);
+                crate::compaction::worker::run(&compaction_manager, &snapshot_tracker);
             }
 
             log::trace!("compaction thread: exiting because keyspace is dropping");
@@ -721,6 +795,7 @@ impl Keyspace {
             &self.journal_manager,
             &self.compaction_manager,
             &self.write_buffer_manager,
+            &self.snapshot_tracker,
             parallelism,
         );
     }
@@ -731,6 +806,7 @@ impl Keyspace {
         let compaction_manager = self.compaction_manager.clone();
         let flush_semaphore = self.flush_semaphore.clone();
         let write_buffer_manager = self.write_buffer_manager.clone();
+        let snapshot_tracker = self.snapshot_tracker.clone();
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
@@ -749,6 +825,7 @@ impl Keyspace {
                     &journal_manager,
                     &compaction_manager,
                     &write_buffer_manager,
+                    &snapshot_tracker,
                     parallelism,
                 );
             }
@@ -763,6 +840,113 @@ impl Keyspace {
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    pub fn recover_after_rotation_multiple_partitions() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+            let db2 = keyspace.open_partition("default2", Default::default())?;
+
+            db.insert("a", "a")?;
+            db2.insert("a", "a")?;
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db2.len()?);
+
+            assert_eq!(None, db.tree.get_highest_persisted_seqno());
+            assert_eq!(None, db2.tree.get_highest_persisted_seqno());
+
+            db.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(1, db2.len()?);
+            assert_eq!(0, db2.tree.sealed_memtable_count());
+
+            db2.insert("b", "b")?;
+            db2.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(1, db2.tree.sealed_memtable_count());
+        }
+
+        {
+            // IMPORTANT: We need to allocate enough flush workers
+            // because on CI there may not be enough cores by default
+            // so the result would be wrong
+            let config = Config::new(&folder).flush_workers(16);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+            let db2 = keyspace.open_partition("default2", Default::default())?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(2, db2.tree.sealed_memtable_count());
+
+            assert_eq!(3, keyspace.journal_count());
+
+            keyspace.force_flush();
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(0, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(0, db2.tree.sealed_memtable_count());
+
+            assert_eq!(1, keyspace.journal_count());
+
+            assert_eq!(Some(0), db.tree.get_highest_persisted_seqno());
+            assert_eq!(Some(2), db2.tree.get_highest_persisted_seqno());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn recover_after_rotation() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+
+            db.insert("a", "a")?;
+            assert_eq!(1, db.len()?);
+
+            db.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+        }
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+            assert_eq!(2, keyspace.journal_count());
+
+            keyspace.force_flush();
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(0, db.tree.sealed_memtable_count());
+            assert_eq!(1, keyspace.journal_count());
+        }
+
+        Ok(())
+    }
 
     #[test]
     pub fn force_flush_multiple_partitions() -> crate::Result<()> {

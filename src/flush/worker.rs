@@ -1,33 +1,31 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use super::manager::{FlushManager, Task};
 use crate::{
-    batch::PartitionKey, compaction::manager::CompactionManager, file::SEGMENTS_FOLDER,
-    journal::manager::JournalManager, write_buffer_manager::WriteBufferManager, PartitionHandle,
+    batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, HashMap,
+    PartitionHandle,
 };
-use lsm_tree::Segment;
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use lsm_tree::{AbstractTree, Segment, SeqNo};
+use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
-fn run_flush_worker(task: &Arc<Task>) -> crate::Result<Arc<Segment>> {
-    use lsm_tree::flush::Options;
-
-    let segment = lsm_tree::flush::flush_to_segment(Options {
-        tree_id: task.partition.tree.id,
-
+fn run_flush_worker(
+    task: &Arc<Task>,
+    eviction_threshold: SeqNo,
+) -> crate::Result<Option<Arc<Segment>>> {
+    #[rustfmt::skip]
+    let segment = task.partition.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
-        segment_id: task.id,
+        task.id,
+        &task.sealed_memtable,
+        eviction_threshold,
+    )?;
 
-        memtable: task.sealed_memtable.clone(),
-        folder: task.partition.tree.config.path.join(SEGMENTS_FOLDER),
-        block_size: task.partition.tree.config.inner.block_size,
-        block_cache: task.partition.tree.config.block_cache.clone(),
-        descriptor_table: task.partition.tree.config.descriptor_table.clone(),
-    })?;
-
-    Ok(Arc::new(segment))
+    Ok(segment)
 }
 
 struct MultiFlushResultItem {
@@ -43,11 +41,11 @@ type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
 /// Distributes tasks of multiple partitions over multiple worker threads.
 ///
 /// Each thread is responsible for the tasks of one partition.
-fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) -> MultiFlushResults {
-    log::debug!(
-        "flush worker: spawning {} worker threads",
-        partitioned_tasks.len()
-    );
+fn run_multi_flush(
+    partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>,
+    eviction_threshold: SeqNo,
+) -> MultiFlushResults {
+    log::debug!("spawning {} worker threads", partitioned_tasks.len());
 
     // NOTE: Don't trust clippy
     #[allow(clippy::needless_collect)]
@@ -59,7 +57,7 @@ fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) ->
 
             std::thread::spawn(move || {
                 log::trace!(
-                    "flush thread: flushing {} memtables for partition {partition_name:?}",
+                    "flushing {} memtables for partition {partition_name:?}",
                     tasks.len()
                 );
 
@@ -78,7 +76,9 @@ fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) ->
                 #[allow(clippy::needless_collect)]
                 let flush_workers = tasks
                     .into_iter()
-                    .map(|task| std::thread::spawn(move || run_flush_worker(&task)))
+                    .map(|task| {
+                        std::thread::spawn(move || run_flush_worker(&task, eviction_threshold))
+                    })
                     .collect::<Vec<_>>();
 
                 let created_segments = flush_workers
@@ -88,7 +88,7 @@ fn run_multi_flush(partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>) ->
 
                 Ok(MultiFlushResultItem {
                     partition,
-                    created_segments,
+                    created_segments: created_segments.into_iter().flatten().collect(),
                     size: memtables_size,
                 })
             })
@@ -108,9 +108,10 @@ pub fn run(
     journal_manager: &Arc<RwLock<JournalManager>>,
     compaction_manager: &CompactionManager,
     write_buffer_manager: &WriteBufferManager,
+    snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
 ) {
-    log::debug!("flush worker: write locking flush manager");
+    log::debug!("write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
     let partitioned_tasks = fm.collect_tasks(parallelism);
     drop(fm);
@@ -118,11 +119,11 @@ pub fn run(
     let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
 
     if task_count == 0 {
-        log::debug!("flush worker: No tasks collected");
+        log::debug!("No tasks collected");
         return;
     }
 
-    for result in run_multi_flush(&partitioned_tasks) {
+    for result in run_multi_flush(&partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
         match result {
             Ok(MultiFlushResultItem {
                 partition,
@@ -134,8 +135,14 @@ pub fn run(
                 if let Err(e) = partition.tree.register_segments(&created_segments) {
                     log::error!("Failed to register segments: {e:?}");
                 } else {
-                    log::debug!("flush worker: write locking flush manager to submit results");
+                    log::debug!("write locking flush manager to submit results");
                     let mut flush_manager = flush_manager.write().expect("lock is poisoned");
+
+                    log::debug!(
+                        "Dequeuing flush tasks: {} => {}",
+                        partition.name,
+                        created_segments.len()
+                    );
                     flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
 
                     write_buffer_manager.free(memtables_size);
@@ -148,14 +155,14 @@ pub fn run(
         }
     }
 
-    log::debug!("flush worker: write locking journal manager to maybe do maintenance");
+    log::debug!("write locking journal manager to maybe do maintenance");
     if let Err(e) = journal_manager
         .write()
         .expect("lock is poisoned")
         .maintenance()
     {
         log::error!("journal GC failed: {e:?}");
-    };
+    }
 
-    log::debug!("flush worker: fully done");
+    log::debug!("fully done");
 }

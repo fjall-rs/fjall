@@ -1,7 +1,11 @@
-const VALID_CHARACTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+const VALID_CHARACTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.#";
 
 /// Partition names can be up to 255 characters long, can not be empty and
-/// can only contain alphanumerics, underscore (`_`) and dash (`-`).
+/// can only contain alphanumerics, underscore (`_`), dash (`-`), dot (`.`) and hash tag (`#`).
 #[allow(clippy::module_name_repetitions)]
 pub fn is_valid_partition_name(s: &str) -> bool {
     if s.is_empty() {

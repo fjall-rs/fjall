@@ -1,8 +1,12 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 pub mod item;
 
-use crate::{Keyspace, PartitionHandle};
+use crate::{Keyspace, PartitionHandle, PersistMode};
 use item::Item;
-use lsm_tree::{Value, ValueType};
+use lsm_tree::{AbstractTree, ValueType};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -17,22 +21,26 @@ pub type PartitionKey = Arc<str>;
 pub struct Batch {
     pub(crate) data: Vec<Item>,
     keyspace: Keyspace,
+    durability: Option<PersistMode>,
 }
 
 impl Batch {
-    /*  /// Initializes a new write batch.
+    /// Initializes a new write batch.
     ///
     /// This function is called by [`Keyspace::batch`].
     pub(crate) fn new(keyspace: Keyspace) -> Self {
-        Self::with_capacity(keyspace, 0)
-    } */
-
-    /// Initializes a new write batch with at least 'N' items capacity.
-    pub(crate) fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
         Self {
-            data: Vec::with_capacity(capacity),
+            data: Vec::new(),
             keyspace,
+            durability: None,
         }
+    }
+
+    /// Sets the durability level.
+    #[must_use]
+    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+        self.durability = mode;
+        self
     }
 
     /// Inserts a key-value pair into the batch
@@ -74,8 +82,8 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        log::trace!("batch: Acquiring shard");
-        let mut shard = self.keyspace.journal.get_writer();
+        log::trace!("batch: Acquiring journal writer");
+        let mut journal_writer = self.keyspace.journal.get_writer();
 
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         log::trace!("batch: Acquiring partitions lock");
@@ -115,7 +123,7 @@ impl Batch {
         let batch_seqno = self.keyspace.seqno.next();
 
         let items = self.data.iter().collect::<Vec<_>>();
-        let _ = shard.writer.write_batch(&items, batch_seqno)?;
+        let _ = journal_writer.write_batch(&items, batch_seqno)?;
 
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
@@ -132,14 +140,14 @@ impl Batch {
                 continue;
             };
 
-            let value = Value {
-                key: item.key,
-                value: item.value,
-                seqno: batch_seqno,
-                value_type: item.value_type,
-            };
+            let (item_size, _) = partition.tree.raw_insert_with_lock(
+                active_memtable,
+                item.key,
+                item.value,
+                batch_seqno,
+                item.value_type,
+            );
 
-            let (item_size, _) = active_memtable.insert(value);
             batch_size += u64::from(item_size);
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
@@ -148,7 +156,12 @@ impl Batch {
 
         drop(locked_memtables);
         drop(partitions);
-        drop(shard);
+
+        if let Some(mode) = self.durability {
+            journal_writer.flush(mode)?;
+        }
+
+        drop(journal_writer);
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches

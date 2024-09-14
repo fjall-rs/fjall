@@ -12,7 +12,7 @@ impl<I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> Counter<I> {
 }
 
 #[test]
-fn write_buffer_size_after_insert() -> fjall::Result<()> {
+fn partition_iter_lifetime() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let keyspace = Config::new(&folder).open()?;

@@ -1,5 +1,4 @@
 use fjall::Config;
-use std::time::Duration;
 use test_log::test;
 
 #[test]
@@ -28,11 +27,10 @@ fn recover_from_different_folder() -> fjall::Result<()> {
     std::fs::create_dir_all(".test/def")?;
     std::env::set_current_dir(".test/def")?;
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let _keyspace = Config::new(&absolute_folder)
             .max_write_buffer_size(1_024 * 1_024)
             .open()?;
-        std::thread::sleep(Duration::from_secs(1));
     }
 
     Ok(())

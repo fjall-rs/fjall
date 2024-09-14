@@ -2,7 +2,7 @@
 name = "fjall"
 description = "LSM-based key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "1.5.0"
+version = "2.0.0-pre.0"
 edition = "2021"
 rust-version = "1.74.0"
 readme = "README.md"
@@ -12,28 +12,27 @@ homepage = "https://github.com/fjall-rs/fjall"
 keywords = ["database", "lsmt", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["single_writer_tx"]
-single_writer_tx = []
+default = ["bloom", "single_writer_tx", "lz4"]
+lz4 = ["lsm-tree/lz4"]
+miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
-all = ["single_writer_tx", "bloom"]
-__internal_integration = []
+single_writer_tx = []
+__internal_whitebox = []
 
 [dependencies]
 byteorder = "1.5.0"
-crc32fast = "1.4.2"
-lsm-tree = { version = "1.5.0", default-features = false }
+lsm-tree = { version = "2.0.0-pre.0", default-features = false }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"
-fs_extra = "1.3.0"
 path-absolutize = "3.1.1"
+dashmap = "6.0.1"
+xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
@@ -42,7 +41,7 @@ test-log = "0.2.16"
 rand = "0.8.5"
 
 [package.metadata.cargo-all-features]
-denylist = ["__internal_integration", "all"]
+denylist = ["__internal_whitebox"]
 
 [[bench]]
 name = "lsmt"

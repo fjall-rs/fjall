@@ -1,5 +1,9 @@
-use crate::PartitionHandle;
-use lsm_tree::UserValue;
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::{gc::GarbageCollection, PartitionHandle};
+use lsm_tree::{GcReport, UserValue};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -12,11 +16,31 @@ pub struct TransactionalPartitionHandle {
     pub(crate) tx_lock: Arc<Mutex<()>>,
 }
 
+impl GarbageCollection for TransactionalPartitionHandle {
+    fn gc_scan(&self) -> crate::Result<GcReport> {
+        crate::gc::GarbageCollector::scan(self.inner())
+    }
+
+    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
+    }
+
+    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
+        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
+    }
+
+    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
+        crate::gc::GarbageCollector::drop_stale_segments(self.inner())
+    }
+}
+
 impl TransactionalPartitionHandle {
     /// Returns the underlying LSM-tree's path
     #[must_use]
     pub fn path(&self) -> PathBuf {
-        self.inner.path()
+        self.inner.path().into()
     }
 
     /// Removes an item and returns its value if it existed.
@@ -57,7 +81,7 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -65,7 +89,7 @@ impl TransactionalPartitionHandle {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let prev = partition.fetch_update("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// let prev = partition.fetch_update("a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
     ///
     /// let item = partition.get("a")?;
@@ -123,7 +147,7 @@ impl TransactionalPartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Config, Keyspace, Slice, PartitionCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -131,7 +155,7 @@ impl TransactionalPartitionHandle {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let updated = partition.update_fetch("a", |_| Some(Arc::from(*b"def")))?.unwrap();
+    /// let updated = partition.update_fetch("a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
     ///
     /// let item = partition.get("a")?;
@@ -182,7 +206,7 @@ impl TransactionalPartitionHandle {
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Keys may be up to 65536 bytes long, values up to 65536 bytes.
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
@@ -208,14 +232,6 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let value = value.as_ref();
-
-        // TODO: remove in 2.0.0
-        assert!(
-            u16::try_from(value.len()).is_ok(),
-            "Value should be 65535 bytes or less"
-        );
-
         let _lock = self.tx_lock.lock().expect("lock is poisoned");
         self.inner.insert(key, value)
     }

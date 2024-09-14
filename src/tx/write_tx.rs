@@ -1,15 +1,19 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::{
     batch::{item::Item, PartitionKey},
-    Batch, Instant, Keyspace, TxPartitionHandle,
+    snapshot_nonce::SnapshotNonce,
+    Batch, HashMap, Keyspace, PersistMode, TxPartitionHandle,
 };
-use lsm_tree::{KvPair, MemTable, SeqNo, UserValue, Value};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{
-    collections::HashMap,
     ops::RangeBounds,
     sync::{Arc, MutexGuard},
 };
 
-fn ignore_tombstone_value(item: Value) -> Option<Value> {
+fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
     if item.is_tombstone() {
         None
     } else {
@@ -23,22 +27,213 @@ fn ignore_tombstone_value(item: Value) -> Option<Value> {
 ///
 /// Drop the transaction to rollback changes.
 pub struct WriteTransaction<'a> {
+    durability: Option<PersistMode>,
+
     keyspace: Keyspace,
-    memtables: HashMap<PartitionKey, Arc<MemTable>>,
-    instant: Instant,
+    memtables: HashMap<PartitionKey, Arc<Memtable>>,
+
+    nonce: SnapshotNonce,
 
     #[allow(unused)]
     tx_lock: MutexGuard<'a, ()>,
 }
 
 impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(keyspace: Keyspace, tx_lock: MutexGuard<'a, ()>, instant: Instant) -> Self {
+    pub(crate) fn new(
+        keyspace: Keyspace,
+        tx_lock: MutexGuard<'a, ()>,
+        nonce: SnapshotNonce,
+    ) -> Self {
         Self {
             keyspace,
             memtables: HashMap::default(),
-            instant,
             tx_lock,
+            nonce,
+            durability: None,
         }
+    }
+
+    /// Sets the durability level.
+    #[must_use]
+    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+        self.durability = mode;
+        self
+    }
+
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let taken = tx.take(&partition, "a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn take<K: AsRef<[u8]>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        self.fetch_update(partition, key, |_| None)
+    }
+
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
+    /// assert!(updated.is_none());
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = &updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(updated)
+    }
+
+    /// Atomically updates an item and returns the previous value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+        f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let prev = self.get(partition, &key)?;
+        let updated = f(prev.as_ref());
+
+        if let Some(value) = updated {
+            self.insert(partition, &key, value);
+        } else if prev.is_some() {
+            self.remove(partition, &key);
+        }
+
+        Ok(prev)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -85,7 +280,11 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        Ok(partition.inner.snapshot_at(self.instant).get(key)?)
+        partition
+            .inner
+            .snapshot_at(self.nonce.instant)
+            .get(key)
+            .map_err(Into::into)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -124,7 +323,17 @@ impl<'a> WriteTransaction<'a> {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
-        self.get(partition, key).map(|x| x.is_some())
+        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
+            if let Some(item) = memtable.get(&key, None) {
+                return Ok(!item.key.is_tombstone());
+            }
+        }
+
+        partition
+            .inner
+            .snapshot_at(self.nonce.instant)
+            .contains_key(key)
+            .map_err(Into::into)
     }
 
     /// Returns the first key-value pair in the transaction's state.
@@ -268,11 +477,41 @@ impl<'a> WriteTransaction<'a> {
         partition
             .inner
             .tree
-            .create_iter(
-                Some(self.instant),
+            .iter_with_seqno(
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
+    }
+
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn keys(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        partition
+            .inner
+            .tree
+            .keys_with_seqno(self.nonce.instant, None)
+            .map(|item| item.map_err(Into::into))
+    }
+
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    #[must_use]
+    pub fn values(
+        &'a self,
+        partition: &'a TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        partition
+            .inner
+            .tree
+            .values_with_seqno(self.nonce.instant, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over a range of the transaction's state.
@@ -307,12 +546,12 @@ impl<'a> WriteTransaction<'a> {
         partition
             .inner
             .tree
-            .create_range(
-                &range,
-                Some(self.instant),
+            .range_with_seqno(
+                range,
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Iterates over a range of the transaction's state.
@@ -347,17 +586,17 @@ impl<'a> WriteTransaction<'a> {
         partition
             .inner
             .tree
-            .create_prefix(
+            .prefix_with_seqno(
                 prefix,
-                Some(self.instant),
+                self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| Ok(item?))
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Inserts a key-value pair into the partition.
     ///
-    /// Keys may be up to 65536 bytes long, values up to 65536 bytes.
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
@@ -393,20 +632,12 @@ impl<'a> WriteTransaction<'a> {
         key: K,
         value: V,
     ) {
-        let value = value.as_ref();
-
-        // TODO: remove in 2.0.0
-        assert!(
-            u16::try_from(value.len()).is_ok(),
-            "Value should be 65535 bytes or less"
-        );
-
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
-            .insert(lsm_tree::Value::new(
+            .insert(lsm_tree::InternalValue::from_components(
                 key.as_ref(),
-                value,
+                value.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
                 SeqNo::MAX,
@@ -452,7 +683,7 @@ impl<'a> WriteTransaction<'a> {
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
-            .insert(lsm_tree::Value::new_tombstone(
+            .insert(lsm_tree::InternalValue::new_tombstone(
                 key.as_ref(),
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
@@ -466,21 +697,37 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(self) -> crate::Result<()> {
-        let mut batch = Batch::with_capacity(self.keyspace, 10);
+        let mut batch = Batch::new(self.keyspace).durability(self.durability);
 
-        for (partition_key, memtable) in &self.memtables {
+        /*
+        for (partition_key, memtable) in self.memtables {
+            let memtable = Arc::into_inner(memtable).expect("should be able to unwrap Arc");
+
+            for (internal_key, value) in memtable.items {
+                batch.data.push(Item::new(
+                    partition_key.clone(),
+                    internal_key.user_key,
+                    value,
+                    internal_key.value_type,
+                ));
+            }
+        }
+        */
+
+        for (partition_key, memtable) in self.memtables {
             for item in memtable.iter() {
                 batch.data.push(Item::new(
                     partition_key.clone(),
-                    item.key.clone(),
+                    item.key.user_key.clone(),
                     item.value.clone(),
-                    item.value_type,
+                    item.key.value_type,
                 ));
             }
         }
 
         // TODO: instead of using batch, write batch::commit as a generic function that takes
         // a impl Iterator<BatchItem>
+        // that way, we don't have to move the memtable(s) into the batch first to commit
         batch.commit()
     }
 

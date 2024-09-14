@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::PartitionHandle;
 use std::{
     collections::VecDeque,
@@ -34,6 +38,7 @@ impl Default for CompactionManagerInner {
 /// The semaphore is incremented by the flush worker and optionally
 /// by the individual partitions in case of write halting.
 #[derive(Clone, Default)]
+#[allow(clippy::module_name_repetitions)]
 pub struct CompactionManager(Arc<CompactionManagerInner>);
 
 impl std::ops::Deref for CompactionManager {

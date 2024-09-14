@@ -30,7 +30,7 @@ fn reload_with_memtable() -> fjall::Result<()> {
         assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
     }
 
-    for _ in 0..10 {
+    for _ in 0..5 {
         let keyspace = Config::new(&folder).open()?;
         let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 

@@ -1,6 +1,11 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
-    batch::PartitionKey, Config, Keyspace, PartitionCreateOptions, PersistMode, TxPartitionHandle,
+    batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
+    PersistMode, TxPartitionHandle,
 };
 use std::sync::{Arc, Mutex};
 
@@ -25,14 +30,28 @@ impl TxKeyspace {
         // IMPORTANT: Get the seqno *after* getting the lock
         let instant = self.inner.instant();
 
-        WriteTransaction::new(self.inner.clone(), lock, instant)
+        let mut write_tx = WriteTransaction::new(
+            self.inner.clone(),
+            lock,
+            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
+        );
+
+        if !self.inner.config.manual_journal_persist {
+            write_tx = write_tx.durability(Some(PersistMode::Buffer));
+        }
+
+        write_tx
     }
 
     /// Starts a new read-only transaction.
     #[must_use]
     pub fn read_tx(&self) -> ReadTransaction {
         let instant = self.inner.instant();
-        ReadTransaction::new(instant)
+
+        ReadTransaction::new(SnapshotNonce::new(
+            instant,
+            self.inner.snapshot_tracker.clone(),
+        ))
     }
 
     /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
@@ -58,7 +77,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         self.inner.persist(mode)
     }
@@ -67,7 +86,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     ///
     /// # Panics
     ///
@@ -134,7 +153,7 @@ impl TxKeyspace {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occured.
+    /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         let inner = Keyspace::create_or_recover(config)?;
         inner.start_background_threads();

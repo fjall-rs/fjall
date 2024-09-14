@@ -10,15 +10,18 @@
 [![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
 ![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
 [![Discord](https://img.shields.io/discord/1240426554111164486)](https://discord.com/invite/HvYGp4NFFk)
+[![dependency status](https://deps.rs/repo/github/fjall-rs/fjall/status.svg)](https://deps.rs/repo/github/fjall-rs/fjall)
 
 Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
-- Cross-partition snapshots (MVCC)
 - Automatic background maintenance
-- Single-writer transactions (optional)
+- Partitions (a.k.a. column families) with cross-partition atomic semantics
+- Built-in compression (default = LZ4)
+- Single-writer, multi-reader transactions (optional)
+- Key-value separation for large blob use cases (optional)
 
 Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a single keyspace-level journal, which will be recovered on restart.
 
@@ -28,7 +31,7 @@ It is not:
 - a relational database
 - a wide-column database: it has no notion of columns
 
-Keys are limited to 65536 bytes, values are limited to 65536 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
+Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
 Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
@@ -72,23 +75,13 @@ for kv in items.prefix("prefix").rev() {
 
 // Sync the journal to disk to make sure data is definitely durable
 // When the keyspace is dropped, it will try to persist
-// Also, by default every second the keyspace will be persisted asynchronously
 keyspace.persist(PersistMode::SyncAll)?;
 ```
-
-## Details
-
-- Partitions (a.k.a. column families) with cross-partition atomic semantics (atomic write batches)
-- Sharded journal for concurrent writes
-- Cross-partition snapshots (MVCC)
-- anything else implemented in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree)
-
-For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
-your application needs. After writing data (`insert`, `remove` or committing a write batch), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter. By default every 1000ms data is fsynced *asynchronously*. Also when dropped, the keyspace will try to persist the journal synchronously.
+your application needs. After writing data (`insert`, `remove` or committing a write batch), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter. By default, any operation will flush to OS buffers, but not to disk. This is in line with RocksDB's default durability. Also, when dropped, the keyspace will try to persist the journal synchronously.
 
 ## Multithreading, Async and Multiprocess
 
@@ -100,13 +93,25 @@ A single keyspace may **not** be loaded in parallel from separate *processes* ho
 
 ## Feature flags
 
-#### bloom
+### bloom
 
-Uses bloom filters to reduce disk I/O for non-existing keys. Improves point read performance, but increases memory usage.
+Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
+
+*Enabled by default.*
+
+### lz4
+
+Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
+
+*Enabled by default.*
+
+### miniz
+
+Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://github.com/Frommi/miniz_oxide).
 
 *Disabled by default.*
 
-#### single_writer_tx
+### single_writer_tx
 
 Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 
@@ -114,7 +119,13 @@ Allows opening a transactional Keyspace for single-writer (serialized) transacti
 
 ## Stable disk format
 
-The disk format is stable as of 1.0.0. Future breaking changes will result in a major version bump and a migration path.
+The disk format is stable as of 1.0.0.
+
+2.0.0 uses a new disk format and needs a manual format migration.
+
+Future breaking changes will result in a major version bump and a migration path.
+
+For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 
 ## Examples
 

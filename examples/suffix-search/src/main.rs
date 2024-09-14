@@ -39,7 +39,7 @@ fn main() -> fjall::Result<()> {
     keyspace.persist(PersistMode::SyncAll)?;
 
     let suffix = "west";
-    let test_runs = 10;
+    let test_runs = 5;
 
     let count = items.len()?;
 

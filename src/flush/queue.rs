@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use super::manager::Task;
 use std::sync::Arc;
 
@@ -10,7 +14,7 @@ use std::sync::Arc;
 ///
 /// This only really works because there is one flush thread
 /// that spawns flush workers for each partition it collects tasks for.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushQueue {
     items: Vec<Arc<Task>>,

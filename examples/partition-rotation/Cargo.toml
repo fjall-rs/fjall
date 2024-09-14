@@ -1,0 +1,10 @@
+[package]
+name = "partition-rotation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+env_logger = "0.11.5"
+fjall = { path = "../.." }
+random-string = "1.1.0"
+scru128 = "3.0.2"

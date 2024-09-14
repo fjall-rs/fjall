@@ -1,17 +1,18 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use super::queue::FlushQueue;
-use crate::{batch::PartitionKey, PartitionHandle};
-use lsm_tree::{MemTable, SegmentId};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use crate::{batch::PartitionKey, HashMap, HashSet, PartitionHandle};
+use lsm_tree::{Memtable, SegmentId};
+use std::sync::Arc;
 
 pub struct Task {
     /// ID of memtable
     pub(crate) id: SegmentId,
 
     /// Memtable to flush
-    pub(crate) sealed_memtable: Arc<MemTable>,
+    pub(crate) sealed_memtable: Arc<Memtable>,
 
     /// Partition
     pub(crate) partition: PartitionHandle,
@@ -30,6 +31,7 @@ impl std::fmt::Debug for Task {
 ///
 /// Each flush task references a sealed memtable and the given partition.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub struct FlushManager {
     queues: HashMap<PartitionKey, FlushQueue>,
 }
@@ -38,14 +40,14 @@ impl Drop for FlushManager {
     fn drop(&mut self) {
         log::trace!("Dropping flush manager");
 
-        #[cfg(feature = "__internal_integration")]
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
     }
 }
 
 impl FlushManager {
-    pub fn new() -> Self {
-        #[cfg(feature = "__internal_integration")]
+    pub(crate) fn new() -> Self {
+        #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {
@@ -80,14 +82,14 @@ impl FlushManager {
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     /// Returns the amount of tasks that are queued to be flushed.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.queues.values().map(FlushQueue::len).sum::<usize>()
     }
 
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 

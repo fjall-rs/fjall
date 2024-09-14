@@ -1,18 +1,40 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
-use lsm_tree::segment::{
-    block::header::Header as BlockHeader, meta::CompressionType, value_block::ValueBlock,
+use lsm_tree::{
+    segment::{
+        block::header::Header as BlockHeader, meta::CompressionType, value_block::ValueBlock,
+    },
+    InternalValue,
 };
-use lsm_tree::Value;
 use rand::Rng;
 use std::sync::Arc;
+
+fn batch_write(c: &mut Criterion) {
+    let dir = tempfile::tempdir().unwrap();
+
+    let keyspace = fjall::Config::new(&dir).open().unwrap();
+    let items = keyspace
+        .open_partition("default", Default::default())
+        .unwrap();
+
+    c.bench_function("Batch commit", |b| {
+        b.iter(|| {
+            let mut batch = keyspace.batch();
+            for item in 'a'..='z' {
+                let item = item.to_string();
+                batch.insert(&items, &item, &item);
+            }
+            batch.commit().unwrap();
+        });
+    });
+}
 
 fn block_cache_insert(c: &mut Criterion) {
     let block_cache = BlockCache::with_capacity_bytes(1_000);
 
     let items = (0..100)
         .map(|_| {
-            Value::new(
+            InternalValue::from_components(
                 "a".repeat(16).as_bytes(),
                 "a".repeat(100).as_bytes(),
                 63,
@@ -25,9 +47,10 @@ fn block_cache_insert(c: &mut Criterion) {
         items,
         header: BlockHeader {
             compression: CompressionType::Lz4,
-            crc: 0,
+            checksum: lsm_tree::Checksum::from_raw(0),
             previous_block_offset: 0,
             data_length: 0,
+            uncompressed_length: 0,
         },
     });
 
@@ -46,7 +69,7 @@ fn block_cache_get(c: &mut Criterion) {
 
     let items = (0..100)
         .map(|_| {
-            Value::new(
+            InternalValue::from_components(
                 "a".repeat(16).as_bytes(),
                 "a".repeat(100).as_bytes(),
                 63,
@@ -60,9 +83,10 @@ fn block_cache_get(c: &mut Criterion) {
         items,
         header: BlockHeader {
             compression: CompressionType::Lz4,
-            crc: 0,
+            checksum: lsm_tree::Checksum::from_raw(0),
             previous_block_offset: 0,
             data_length: 0,
+            uncompressed_length: 0,
         },
     });
 
@@ -79,5 +103,5 @@ fn block_cache_get(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, block_cache_insert, block_cache_get);
+criterion_group!(benches, batch_write, block_cache_insert, block_cache_get);
 criterion_main!(benches);

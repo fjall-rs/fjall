@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 //! Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
 //!
 //! - Thread-safe BTreeMap-like API
@@ -6,6 +10,7 @@
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
 //! - Single-writer transactions (optional)
+//! - Key-value separation for large blob use cases (optional)
 //!
 //! Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application.
 //! Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a
@@ -17,7 +22,7 @@
 //! - a relational database
 //! - a wide-column database: it has no notion of columns
 //!
-//! Keys are limited to 65536 bytes, values are limited to 65536 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
+//! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
@@ -57,13 +62,7 @@
 //!
 //! // Sync the journal to disk to make sure data is definitely durable
 //! // When the keyspace is dropped, it will try to persist
-//! // Also, by default every second the keyspace will be persisted asynchronously
 //! keyspace.persist(PersistMode::SyncAll)?;
-//!
-//! // Destroy the partition, removing all data in it.
-//! // This may be useful when using temporary tables or indexes,
-//! // as it is essentially an O(1) operation.
-//! keyspace.delete_partition(items)?;
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
@@ -86,20 +85,23 @@ pub mod compaction;
 
 mod config;
 
-#[cfg(feature = "__internal_integration")]
+#[cfg(feature = "__internal_whitebox")]
 #[doc(hidden)]
 pub mod drop;
 
 mod error;
 mod file;
 mod flush;
+mod gc;
 mod journal;
 mod keyspace;
 mod monitor;
 mod partition;
 mod path;
 mod recovery;
-mod sharded;
+mod snapshot_nonce;
+mod snapshot_tracker;
+mod tracked_snapshot;
 
 #[cfg(feature = "single_writer_tx")]
 mod tx;
@@ -107,13 +109,19 @@ mod tx;
 mod version;
 mod write_buffer_manager;
 
+pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh3::Xxh3Builder>;
+pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh3Builder>;
+
 pub use {
     batch::Batch,
     config::Config,
     error::{Error, Result},
-    journal::{shard::RecoveryError, writer::PersistMode},
+    gc::GarbageCollection,
+    journal::{error::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
-    partition::{config::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    partition::{options::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    tracked_snapshot::TrackedSnapshot as Snapshot,
+    version::Version,
 };
 
 #[cfg(feature = "single_writer_tx")]
@@ -139,10 +147,6 @@ pub type TxPartitionHandle = TransactionalPartitionHandle;
 #[cfg(feature = "single_writer_tx")]
 pub type TransactionalPartition = TransactionalPartitionHandle;
 
-/// Alias for [`PersistMode`]
-#[deprecated(since = "1.1.0", note = "Use `PersistMode` instead")]
-pub type FlushMode = PersistMode;
-
 /// A snapshot moment
 ///
 /// See [`Keyspace::instant`].
@@ -151,4 +155,9 @@ pub type Instant = lsm_tree::SeqNo;
 /// Re-export of [`lsm_tree::Error`]
 pub type LsmError = lsm_tree::Error;
 
-pub use lsm_tree::{BlockCache, KvPair, Snapshot, UserKey, UserValue};
+#[doc(hidden)]
+pub use lsm_tree::AbstractTree;
+
+pub use lsm_tree::{
+    AnyTree, BlobCache, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
+};

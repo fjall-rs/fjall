@@ -1,6 +1,11 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use super::PartitionKey;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
+#[derive(Clone, PartialEq, Eq)]
 pub struct Item {
     /// Partition key - an arbitrary byte array
     ///
@@ -31,6 +36,7 @@ impl std::fmt::Debug for Item {
             match self.value_type {
                 ValueType::Value => "V",
                 ValueType::Tombstone => "T",
+                ValueType::WeakTombstone => "W",
             },
             self.value
         )
@@ -50,11 +56,16 @@ impl Item {
 
         assert!(!p.is_empty());
         assert!(!k.is_empty());
-        assert!(p.len() <= u8::MAX.into());
-        assert!(k.len() <= u16::MAX.into());
 
-        // TODO: u32 in 2.0.0
-        assert!(u16::try_from(v.len()).is_ok());
+        assert!(u8::try_from(p.len()).is_ok(), "Partition name too long");
+        assert!(
+            u16::try_from(k.len()).is_ok(),
+            "Keys can be up to 65535 bytes long"
+        );
+        assert!(
+            u32::try_from(v.len()).is_ok(),
+            "Values can be up to 2^32 bytes long"
+        );
 
         Self {
             partition: p,

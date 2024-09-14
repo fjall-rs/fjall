@@ -1,5 +1,9 @@
-use crate::{journal::shard::RecoveryMode, path::absolute_path, Keyspace};
-use lsm_tree::{descriptor_table::FileDescriptorTable, BlockCache};
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::{journal::error::RecoveryMode, path::absolute_path, Keyspace};
+use lsm_tree::{descriptor_table::FileDescriptorTable, BlobCache, BlockCache};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -15,7 +19,12 @@ pub struct Config {
     pub(crate) clean_path_on_drop: bool,
 
     /// Block cache that will be shared between partitions
-    pub(crate) block_cache: Arc<BlockCache>,
+    #[doc(hidden)]
+    pub block_cache: Arc<BlockCache>,
+
+    /// Blob cache that will be shared between partitions
+    #[doc(hidden)]
+    pub blob_cache: Arc<BlobCache>,
 
     /// Descriptor table that will be shared between partitions
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
@@ -28,6 +37,8 @@ pub struct Config {
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) partitions.
     pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
+
+    pub(crate) manual_journal_persist: bool,
 
     /// Amount of concurrent flush workers
     pub(crate) flush_workers_count: usize,
@@ -67,13 +78,15 @@ impl Default for Config {
             path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
             block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
+            blob_cache: Arc::new(BlobCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
-            max_write_buffer_size_in_bytes: 64 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
-            fsync_ms: Some(1_000),
-            flush_workers_count: cpus,
-            compaction_workers_count: cpus,
+            fsync_ms: None,
+            flush_workers_count: cpus.min(4),
+            compaction_workers_count: cpus.min(4),
             journal_recovery_mode: RecoveryMode::default(),
+            manual_journal_persist: false,
         }
     }
 }
@@ -85,6 +98,17 @@ impl Config {
             path: absolute_path(path),
             ..Default::default()
         }
+    }
+
+    /// If `false`, write batches or transactions automatically flush data to the operating system.
+    ///
+    /// Default = false
+    ///
+    /// Set to `true` to handle persistence manually, e.g. manually using `PersistMode::SyncData` for ACID transactions.
+    #[must_use]
+    pub fn manual_journal_persist(mut self, flag: bool) -> Self {
+        self.manual_journal_persist = flag;
+        self
     }
 
     /// Sets the amount of flush workers
@@ -130,6 +154,16 @@ impl Config {
         self
     }
 
+    /// Sets the blob cache.
+    ///
+    /// Defaults to a block cache with 16 MiB of capacity
+    /// shared between all partitions inside this keyspace.
+    #[must_use]
+    pub fn blob_cache(mut self, blob_cache: Arc<BlobCache>) -> Self {
+        self.blob_cache = blob_cache;
+        self
+    }
+
     /// Max size of all journals in bytes.
     ///
     /// Default = 512 MiB
@@ -152,7 +186,9 @@ impl Config {
 
     /// Max size of all memtables in bytes.
     ///
-    /// Similar to `db_write_buffer_size` in `RocksDB`.
+    /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
+    ///
+    /// Set to `u64::MAX` to disable it.
     ///
     /// Default = 64 MiB
     ///
