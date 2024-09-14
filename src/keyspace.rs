@@ -592,6 +592,16 @@ impl Keyspace {
 
             let partitions = keyspace.partitions.read().expect("lock is poisoned");
 
+            #[cfg(debug_assertions)]
+            for partition in partitions.values() {
+                // NOTE: If this triggers, the last sealed memtable
+                // was not correctly rotated
+                debug_assert!(
+                    partition.tree.lock_active_memtable().is_empty(),
+                    "active memtable is not empty - this is a bug"
+                );
+            }
+
             let reader = keyspace.journal.get_reader()?;
 
             for batch in reader {
@@ -828,6 +838,110 @@ impl Keyspace {
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    pub fn recover_after_rotation_multiple_partitions() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+            let db2 = keyspace.open_partition("default2", Default::default())?;
+
+            db.insert("a", "a")?;
+            db2.insert("a", "a")?;
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db2.len()?);
+
+            assert_eq!(None, db.tree.get_highest_persisted_seqno());
+            assert_eq!(None, db2.tree.get_highest_persisted_seqno());
+
+            db.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(1, db2.len()?);
+            assert_eq!(0, db2.tree.sealed_memtable_count());
+
+            db2.insert("b", "b")?;
+            db2.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(1, db2.tree.sealed_memtable_count());
+        }
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+            let db2 = keyspace.open_partition("default2", Default::default())?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(2, db2.tree.sealed_memtable_count());
+
+            assert_eq!(3, keyspace.journal_count());
+
+            keyspace.force_flush();
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(0, db.tree.sealed_memtable_count());
+
+            assert_eq!(2, db2.len()?);
+            assert_eq!(0, db2.tree.sealed_memtable_count());
+
+            assert_eq!(1, keyspace.journal_count());
+
+            assert_eq!(Some(0), db.tree.get_highest_persisted_seqno());
+            assert_eq!(Some(2), db2.tree.get_highest_persisted_seqno());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn recover_after_rotation() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+
+            db.insert("a", "a")?;
+            assert_eq!(1, db.len()?);
+
+            db.rotate_memtable()?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+        }
+
+        {
+            let config = Config::new(&folder);
+            let keyspace = Keyspace::create_or_recover(config)?;
+            let db = keyspace.open_partition("default", Default::default())?;
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(1, db.tree.sealed_memtable_count());
+            assert_eq!(2, keyspace.journal_count());
+
+            keyspace.force_flush();
+
+            assert_eq!(1, db.len()?);
+            assert_eq!(0, db.tree.sealed_memtable_count());
+            assert_eq!(1, keyspace.journal_count());
+        }
+
+        Ok(())
+    }
 
     #[test]
     pub fn force_flush_multiple_partitions() -> crate::Result<()> {

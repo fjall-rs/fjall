@@ -166,13 +166,35 @@ pub fn recover_sealed_memtables(
 
         for handle in seqno_map.values() {
             let tree = &handle.partition.tree;
-            let memtable_id = tree.get_next_segment_id();
 
-            if let Some((_, sealed_memtable)) = tree.rotate_memtable() {
+            let partition_lsn = tree.get_highest_persisted_seqno();
+
+            // IMPORTANT: Only apply sealed memtables to partitions
+            // that have a lower seqno to avoid double flushing
+            let should_skip_sealed_memtable =
+                partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
+
+            if should_skip_sealed_memtable {
+                handle.partition.tree.lock_active_memtable().clear();
+
+                log::trace!(
+                    "Partition {} has higher seqno ({partition_lsn:?}), skipping",
+                    handle.partition.name
+                );
+                continue;
+            }
+
+            if let Some((memtable_id, sealed_memtable)) = tree.rotate_memtable() {
+                assert_eq!(
+                    Some(handle.lsn),
+                    sealed_memtable.get_highest_seqno(),
+                    "memtable lsn does not match what was recovered - this is a bug"
+                );
+
                 log::trace!(
                     "sealed memtable of {} has {} items",
                     handle.partition.name,
-                    sealed_memtable.len()
+                    sealed_memtable.len(),
                 );
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
