@@ -209,7 +209,7 @@ impl Monitor {
             }
         }
 
-        // NOTE: We cannot flush more stuff if the journal is aleady too large
+        // NOTE: We cannot flush more stuff if the journal is already too large
         if jm_size < max_journal_size {
             let max_write_buffer_size = self.keyspace_config.max_write_buffer_size_in_bytes;
 
