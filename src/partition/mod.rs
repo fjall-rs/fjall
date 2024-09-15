@@ -14,7 +14,7 @@ use crate::{
     flush::manager::{FlushManager, Task as FlushTask},
     gc::GarbageCollection,
     journal::{
-        manager::{JournalManager, PartitionSeqNo},
+        manager::{EvictionWatermark, JournalManager},
         Journal,
     },
     keyspace::Partitions,
@@ -648,7 +648,7 @@ impl PartitionHandle {
 
             for partition in partitions.values() {
                 if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {
-                    seqnos.push(PartitionSeqNo {
+                    seqnos.push(EvictionWatermark {
                         lsn,
                         partition: partition.clone(),
                     });

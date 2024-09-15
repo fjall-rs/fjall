@@ -10,13 +10,14 @@ use std::{
     sync::{Arc, MutexGuard},
 };
 
+/// Stores the highest seqno of a partition found in a journal.
 #[derive(Clone)]
-pub struct PartitionSeqNo {
+pub struct EvictionWatermark {
     pub(crate) partition: PartitionHandle,
     pub(crate) lsn: SeqNo,
 }
 
-impl std::fmt::Debug for PartitionSeqNo {
+impl std::fmt::Debug for EvictionWatermark {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.partition.name, self.lsn)
     }
@@ -25,7 +26,7 @@ impl std::fmt::Debug for PartitionSeqNo {
 pub struct Item {
     pub(crate) path: PathBuf,
     pub(crate) size_in_bytes: u64,
-    pub(crate) partition_seqnos: Vec<PartitionSeqNo>,
+    pub(crate) watermarks: Vec<EvictionWatermark>,
 }
 
 impl std::fmt::Debug for Item {
@@ -33,7 +34,7 @@ impl std::fmt::Debug for Item {
         write!(
             f,
             "JournalManagerItem {:?} => {:#?}",
-            self.path, self.partition_seqnos
+            self.path, self.watermarks
         )
     }
 }
@@ -102,11 +103,11 @@ impl JournalManager {
     /// Rotates & lists partitions to be flushed so that the oldest journal can be safely evicted
     pub(crate) fn rotate_partitions_to_flush_for_oldest_journal_eviction(
         &self,
-    ) -> Vec<(PartitionHandle, PartitionSeqNo, u64, Arc<Memtable>)> {
+    ) -> Vec<(PartitionHandle, EvictionWatermark, u64, Arc<Memtable>)> {
         let mut v = Vec::new();
 
         if let Some(item) = self.items.first() {
-            for item in &item.partition_seqnos {
+            for item in &item.watermarks {
                 let highest_persisted_seqno = item.partition.tree.get_highest_persisted_seqno();
 
                 if highest_persisted_seqno.is_none()
@@ -117,7 +118,7 @@ impl JournalManager {
                     {
                         v.push((
                             item.partition.clone(),
-                            PartitionSeqNo {
+                            EvictionWatermark {
                                 partition: item.partition.clone(),
                                 lsn: yanked_memtable
                                     .get_highest_seqno()
@@ -142,7 +143,7 @@ impl JournalManager {
             };
 
             // TODO: unit test: check deleted partition does not prevent journal eviction
-            for item in &item.partition_seqnos {
+            for item in &item.watermarks {
                 // Only check partition seqno if not deleted
                 if !item
                     .partition
@@ -180,7 +181,7 @@ impl JournalManager {
     pub(crate) fn rotate_journal(
         &mut self,
         journal_writer: &mut MutexGuard<Writer>,
-        seqnos: Vec<PartitionSeqNo>,
+        watermarks: Vec<EvictionWatermark>,
     ) -> crate::Result<()> {
         let journal_size = journal_writer.len()?;
 
@@ -189,7 +190,7 @@ impl JournalManager {
 
         self.enqueue(Item {
             path: sealed_path,
-            partition_seqnos: seqnos,
+            watermarks,
             size_in_bytes: journal_size,
         });
 

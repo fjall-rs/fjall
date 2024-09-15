@@ -5,7 +5,9 @@
 use crate::{
     batch::PartitionKey,
     file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
-    journal::{batch_reader::JournalBatchReader, manager::PartitionSeqNo, reader::JournalReader},
+    journal::{
+        batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
+    },
     partition::options::CreateOptions as PartitionCreateOptions,
     HashMap, Keyspace, PartitionHandle,
 };
@@ -127,7 +129,7 @@ pub fn recover_sealed_memtables(
         let raw_reader = JournalReader::new(journal_path)?;
         let reader = JournalBatchReader::new(raw_reader);
 
-        let mut seqno_map: HashMap<PartitionKey, PartitionSeqNo> = HashMap::default();
+        let mut watermarks: HashMap<PartitionKey, EvictionWatermark> = HashMap::default();
 
         for batch in reader {
             let batch = batch?;
@@ -136,12 +138,12 @@ pub fn recover_sealed_memtables(
                 if let Some(handle) = partitions_lock.get(&item.partition) {
                     let tree = &handle.tree;
 
-                    seqno_map
+                    watermarks
                         .entry(item.partition)
                         .and_modify(|prev| {
                             prev.lsn = prev.lsn.max(batch.seqno);
                         })
-                        .or_insert_with(|| PartitionSeqNo {
+                        .or_insert_with(|| EvictionWatermark {
                             partition: handle.clone(),
                             lsn: batch.seqno,
                         });
@@ -164,7 +166,7 @@ pub fn recover_sealed_memtables(
         log::debug!("Sealing recovered memtables");
         let mut recovered_count = 0;
 
-        for handle in seqno_map.values() {
+        for handle in watermarks.values() {
             let tree = &handle.partition.tree;
 
             let partition_lsn = tree.get_highest_persisted_seqno();
@@ -231,7 +233,7 @@ pub fn recover_sealed_memtables(
 
         // IMPORTANT: Add sealed journal to journal manager
         journal_manager_lock.enqueue(crate::journal::manager::Item {
-            partition_seqnos: seqno_map.into_values().collect(),
+            watermarks: watermarks.into_values().collect(),
             path: journal_path.clone(),
             size_in_bytes: journal_size,
         });

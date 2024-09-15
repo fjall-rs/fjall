@@ -4,7 +4,7 @@
 
 /// Gets the write delay based on L0 segments.
 ///
-/// The write delay increases exponentially as L0 approaches 20 segments.
+/// The write delay increases linearly as L0 approaches 20 segments.
 #[allow(clippy::module_name_repetitions)]
 pub fn get_write_delay(l0_segments: usize) -> u64 {
     match l0_segments {
