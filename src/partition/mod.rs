@@ -428,7 +428,7 @@ impl PartitionHandle {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn approximate_len(&self) -> u64 {
+    pub fn approximate_len(&self) -> usize {
         self.tree.approximate_len()
     }
 
