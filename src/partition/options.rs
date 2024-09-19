@@ -69,7 +69,7 @@ impl Default for KvSeparationOptions {
 
             file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
 
-            separation_threshold: /* 4 KiB */ 4 * 1_024,
+            separation_threshold: /* 1 KiB */ 1_024,
         }
     }
 }
