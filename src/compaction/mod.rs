@@ -23,6 +23,20 @@ pub enum Strategy {
     Fifo(crate::compaction::Fifo),
 }
 
+impl std::fmt::Debug for Strategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::SizeTiered(_) => "SizeTieredStrategy",
+                Self::Leveled(_) => "LeveledStrategy",
+                Self::Fifo(_) => "FifoStrategy",
+            }
+        )
+    }
+}
+
 impl Default for Strategy {
     fn default() -> Self {
         Self::Leveled(crate::compaction::Leveled::default())

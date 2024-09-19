@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
 use test_log::test;
 
 #[test]
@@ -36,7 +36,7 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
 
     let tree = keyspace.open_partition(
         "default",
-        PartitionCreateOptions::default().use_kv_separation(true),
+        PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
     )?;
     assert_eq!(0, keyspace.write_buffer_size());
 

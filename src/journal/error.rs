@@ -26,6 +26,7 @@ pub enum RecoveryMode {
 
 /// Errors that can occur during journal recovery
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::module_name_repetitions)]
 pub enum RecoveryError {
     /// Batch had less items than expected, so it's incomplete
     InsufficientLength,

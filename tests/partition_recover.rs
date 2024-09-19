@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -18,8 +18,11 @@ fn reload_partition_config() -> fjall::Result<()> {
                     fjall::compaction::SizeTiered::default(),
                 ))
                 .block_size(10_000)
-                .blob_file_separation_threshold(4_000)
-                .blob_file_target_size(150_000_000),
+                .with_kv_separation(
+                    KvSeparationOptions::default()
+                        .separation_threshold(4_000)
+                        .file_target_size(150_000_000),
+                ),
         )?;
 
         tree.config.encode_into_vec()?

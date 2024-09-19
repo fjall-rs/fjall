@@ -1,6 +1,6 @@
 // Regression test for https://github.com/fjall-rs/fjall/issues/68
 
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
 
 #[test_log::test]
 fn journal_recover_large_value() -> fjall::Result<()> {
@@ -35,7 +35,7 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
         let partition = keyspace.open_partition(
             "default",
-            PartitionCreateOptions::default().use_kv_separation(true),
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
         partition.insert("a", &large_value)?;
         partition.insert("b", "b")?;
@@ -45,7 +45,7 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
         let keyspace = Config::new(&folder).open()?;
         let partition = keyspace.open_partition(
             "default",
-            PartitionCreateOptions::default().use_kv_separation(true),
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
         assert_eq!(large_value.as_bytes(), &*partition.get("a")?.unwrap());
         assert_eq!(b"b", &*partition.get("b")?.unwrap());

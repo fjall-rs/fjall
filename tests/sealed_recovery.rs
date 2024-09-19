@@ -1,4 +1,4 @@
-use fjall::{Config, Keyspace, PartitionCreateOptions};
+use fjall::{Config, Keyspace, KvSeparationOptions, PartitionCreateOptions};
 use test_log::test;
 
 #[test]
@@ -38,7 +38,7 @@ fn recover_sealed_blob() -> fjall::Result<()> {
             "default",
             PartitionCreateOptions::default()
                 .max_memtable_size(1_000)
-                .use_kv_separation(true),
+                .with_kv_separation(KvSeparationOptions::default()),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());
@@ -69,7 +69,7 @@ fn recover_sealed_pair_1() -> fjall::Result<()> {
             "default2",
             PartitionCreateOptions::default()
                 .max_memtable_size(1_000)
-                .use_kv_separation(true),
+                .with_kv_separation(KvSeparationOptions::default()),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());
@@ -157,7 +157,7 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
             "default2",
             PartitionCreateOptions::default()
                 .max_memtable_size(1_000)
-                .use_kv_separation(true),
+                .with_kv_separation(KvSeparationOptions::default()),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());

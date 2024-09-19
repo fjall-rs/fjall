@@ -119,7 +119,10 @@ pub use {
     gc::GarbageCollection,
     journal::{error::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
-    partition::{options::CreateOptions as PartitionCreateOptions, PartitionHandle},
+    partition::{
+        options::CreateOptions as PartitionCreateOptions, options::KvSeparationOptions,
+        PartitionHandle,
+    },
     tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };

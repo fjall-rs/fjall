@@ -247,10 +247,14 @@ impl PartitionHandle {
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
-            .compression(config.compression)
-            .blob_compression(config.blob_compression)
-            .blob_file_separation_threshold(config.blob_file_separation_threshold)
-            .blob_file_target_size(config.blob_file_target_size);
+            .compression(config.compression);
+
+        if let Some(opts) = &config.kv_separation {
+            base_config = base_config
+                .compression(opts.compression)
+                .blob_file_separation_threshold(opts.separation_threshold)
+                .blob_file_target_size(opts.file_target_size);
+        }
 
         #[cfg(feature = "bloom")]
         {

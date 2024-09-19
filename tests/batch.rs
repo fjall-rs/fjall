@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
 use test_log::test;
 
 #[test]
@@ -28,7 +28,7 @@ fn blob_batch_simple() -> fjall::Result<()> {
     let keyspace = Config::new(folder).open()?;
     let partition = keyspace.open_partition(
         "default",
-        PartitionCreateOptions::default().use_kv_separation(true),
+        PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
     )?;
 
     let blob = "oxygen".repeat(128_000);

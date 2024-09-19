@@ -6,8 +6,102 @@ use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
+/// Configuration options for key-value-separated partitions.
+#[derive(Clone, Debug)]
+#[allow(clippy::module_name_repetitions)]
+pub struct KvSeparationOptions {
+    /// Compression to use for blobs.
+    pub(crate) compression: CompressionType,
+
+    /// Blob file (value log segment) target size in bytes
+    #[doc(hidden)]
+    pub file_target_size: u64,
+
+    /// Key-value separation threshold in bytes
+    #[doc(hidden)]
+    pub separation_threshold: u32,
+}
+
+impl KvSeparationOptions {
+    /// Sets the target size of blob files.
+    ///
+    /// Smaller blob files allow more granular garbage collection
+    /// which allows lower space amp for lower write I/O cost.
+    ///
+    /// Larger blob files decrease the number of files on disk and thus maintenance
+    /// overhead.
+    ///
+    /// Defaults to 64 MiB.
+    ///
+    /// This option has no effect when not using `use_kv_separation=true`.
+    #[must_use]
+    pub fn file_target_size(mut self, bytes: u64) -> Self {
+        self.file_target_size = bytes;
+        self
+    }
+
+    /// Sets the key-value separation threshold in bytes.
+    ///
+    /// Smaller value will reduce compaction overhead and thus write amplification,
+    /// at the cost of lower read performance.
+    ///
+    /// Defaults to 4KiB.
+    ///
+    /// This option has no effect when not using `use_kv_separation=true`.
+    #[must_use]
+    pub fn separation_threshold(mut self, bytes: u32) -> Self {
+        self.separation_threshold = bytes;
+        self
+    }
+}
+
+impl Default for KvSeparationOptions {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "lz4")]
+            compression: CompressionType::Lz4,
+
+            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
+            compression: CompressionType::Miniz(6),
+
+            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            compression: CompressionType::None,
+
+            file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
+
+            separation_threshold: /* 4 KiB */ 4 * 1_024,
+        }
+    }
+}
+
+impl lsm_tree::coding::Encode for KvSeparationOptions {
+    fn encode_into<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::EncodeError> {
+        self.compression.encode_into(writer)?;
+        writer.write_u64::<BigEndian>(self.file_target_size)?;
+        writer.write_u32::<BigEndian>(self.separation_threshold)?;
+        Ok(())
+    }
+}
+
+impl lsm_tree::coding::Decode for KvSeparationOptions {
+    fn decode_from<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DecodeError>
+    where
+        Self: Sized,
+    {
+        let compression = CompressionType::decode_from(reader)?;
+        let file_target_size = reader.read_u64::<BigEndian>()?;
+        let separation_threshold = reader.read_u32::<BigEndian>()?;
+        Ok(Self {
+            compression,
+            file_target_size,
+            separation_threshold,
+        })
+    }
+}
+
 /// Options to configure a partition
 #[allow(clippy::module_name_repetitions)]
+#[derive(Clone, Debug)]
 pub struct CreateOptions {
     /// Maximum size of this partition's memtable - can be changed during runtime
     pub(crate) max_memtable_size: u32,
@@ -34,21 +128,12 @@ pub struct CreateOptions {
     /// Compression to use.
     pub(crate) compression: CompressionType,
 
-    /// Compression to use for blobs.
-    pub(crate) blob_compression: CompressionType,
-
-    /// Blob file (value log segment) target size in bytes
-    #[doc(hidden)]
-    pub blob_file_target_size: u64,
-
-    /// Key-value separation threshold in bytes
-    #[doc(hidden)]
-    pub blob_file_separation_threshold: u32,
-
     pub(crate) manual_journal_persist: bool,
 
     #[doc(hidden)]
     pub compaction_strategy: CompactionStrategy,
+
+    pub(crate) kv_separation: Option<KvSeparationOptions>,
 }
 
 impl lsm_tree::coding::Encode for CreateOptions {
@@ -63,10 +148,6 @@ impl lsm_tree::coding::Encode for CreateOptions {
         writer.write_u32::<BigEndian>(self.index_block_size)?;
 
         self.compression.encode_into(writer)?;
-        self.blob_compression.encode_into(writer)?;
-
-        writer.write_u64::<BigEndian>(self.blob_file_target_size)?;
-        writer.write_u32::<BigEndian>(self.blob_file_separation_threshold)?;
 
         writer.write_u8(u8::from(self.manual_journal_persist))?;
 
@@ -96,6 +177,16 @@ impl lsm_tree::coding::Encode for CreateOptions {
                     }
                     None => writer.write_u8(0),
                 }?;
+            }
+        }
+
+        match &self.kv_separation {
+            Some(opts) => {
+                writer.write_u8(1)?;
+                opts.encode_into(writer)?;
+            }
+            None => {
+                writer.write_u8(0)?;
             }
         }
 
@@ -129,10 +220,6 @@ impl lsm_tree::coding::Decode for CreateOptions {
         let index_block_size = reader.read_u32::<BigEndian>()?;
 
         let compression = CompressionType::decode_from(reader)?;
-        let blob_compression = CompressionType::decode_from(reader)?;
-
-        let blob_file_target_size = reader.read_u64::<BigEndian>()?;
-        let blob_file_separation_threshold = reader.read_u32::<BigEndian>()?;
 
         let manual_journal_persist = reader.read_u8()? != 0;
 
@@ -181,6 +268,18 @@ impl lsm_tree::coding::Decode for CreateOptions {
             }
         };
 
+        let kv_sep_tag = reader.read_u8()?;
+        let kv_separation = match kv_sep_tag {
+            0 => None,
+            1 => Some(KvSeparationOptions::decode_from(reader)?),
+            _ => {
+                return Err(lsm_tree::DecodeError::InvalidTag((
+                    "KvSeparationOptions",
+                    kv_sep_tag,
+                )));
+            }
+        };
+
         Ok(Self {
             max_memtable_size,
             data_block_size,
@@ -189,11 +288,9 @@ impl lsm_tree::coding::Decode for CreateOptions {
             bloom_bits_per_key,
             tree_type,
             compression,
-            blob_compression,
-            blob_file_target_size,
-            blob_file_separation_threshold,
             manual_journal_persist,
             compaction_strategy,
+            kv_separation,
         })
     }
 }
@@ -223,17 +320,7 @@ impl Default for CreateOptions {
             #[cfg(not(any(feature = "lz4", feature = "miniz")))]
             compression: CompressionType::None,
 
-            #[cfg(feature = "lz4")]
-            blob_compression: CompressionType::Lz4,
-
-            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            blob_compression: CompressionType::Miniz(6),
-
-            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
-            blob_compression: CompressionType::None,
-
-            blob_file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
-            blob_file_separation_threshold: /* 4 KiB */ 4 * 1_024,
+            kv_separation: None,
 
             compaction_strategy: CompactionStrategy::default(),
         }
@@ -241,46 +328,6 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
-    /// Sets the compaction strategy.
-    ///
-    /// Default = Leveled
-    #[must_use]
-    pub fn compaction_strategy(mut self, compaction_strategy: CompactionStrategy) -> Self {
-        self.compaction_strategy = compaction_strategy;
-        self
-    }
-
-    /// Sets the target size of blob files.
-    ///
-    /// Smaller blob files allow more granular garbage collection
-    /// which allows lower space amp for lower write I/O cost.
-    ///
-    /// Larger blob files decrease the number of files on disk and thus maintenance
-    /// overhead.
-    ///
-    /// Defaults to 64 MiB.
-    ///
-    /// This option has no effect when not using `use_kv_separation=true`.
-    #[must_use]
-    pub fn blob_file_target_size(mut self, bytes: u64) -> Self {
-        self.blob_file_target_size = bytes;
-        self
-    }
-
-    /// Sets the key-value separation threshold in bytes.
-    ///
-    /// Smaller value will reduce compaction overhead and thus write amplification,
-    /// at the cost of lower read performance.
-    ///
-    /// Defaults to 4KiB.
-    ///
-    /// This option has no effect when not using `use_kv_separation=true`.
-    #[must_use]
-    pub fn blob_file_separation_threshold(mut self, bytes: u32) -> Self {
-        self.blob_file_separation_threshold = bytes;
-        self
-    }
-
     /// Sets the compression method.
     ///
     /// Once set for a partition, this property is not considered in the future.
@@ -289,7 +336,18 @@ impl CreateOptions {
     #[must_use]
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
-        self.blob_compression = compression;
+        if let Some(opts) = &mut self.kv_separation {
+            opts.compression = compression;
+        }
+        self
+    }
+
+    /// Sets the compaction strategy.
+    ///
+    /// Default = Leveled
+    #[must_use]
+    pub fn compaction_strategy(mut self, compaction_strategy: CompactionStrategy) -> Self {
+        self.compaction_strategy = compaction_strategy;
         self
     }
 
@@ -379,12 +437,9 @@ impl CreateOptions {
     ///
     /// Default = disabled
     #[must_use]
-    pub fn use_kv_separation(mut self, enabled: bool) -> Self {
-        self.tree_type = if enabled {
-            TreeType::Blob
-        } else {
-            TreeType::Standard
-        };
+    pub fn with_kv_separation(mut self, opts: KvSeparationOptions) -> Self {
+        self.tree_type = TreeType::Blob;
+        self.kv_separation = Some(opts);
         self
     }
 }
