@@ -32,8 +32,6 @@ impl KvSeparationOptions {
     /// overhead.
     ///
     /// Defaults to 64 MiB.
-    ///
-    /// This option has no effect when not using `use_kv_separation=true`.
     #[must_use]
     pub fn file_target_size(mut self, bytes: u64) -> Self {
         self.file_target_size = bytes;
@@ -46,8 +44,6 @@ impl KvSeparationOptions {
     /// at the cost of lower read performance.
     ///
     /// Defaults to 4KiB.
-    ///
-    /// This option has no effect when not using `use_kv_separation=true`.
     #[must_use]
     pub fn separation_threshold(mut self, bytes: u32) -> Self {
         self.separation_threshold = bytes;

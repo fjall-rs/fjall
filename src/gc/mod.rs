@@ -28,7 +28,7 @@ pub trait GarbageCollection {
     /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
+    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
@@ -81,7 +81,7 @@ pub trait GarbageCollection {
     /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
+    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
@@ -141,7 +141,7 @@ pub trait GarbageCollection {
     /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().use_kv_separation(true);
+    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
     /// let blobs = keyspace.open_partition("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
