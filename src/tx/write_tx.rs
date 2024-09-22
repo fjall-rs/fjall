@@ -25,7 +25,7 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 
 /// A single-writer (serialized) cross-partition transaction
 ///
-/// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
+/// Use [`WriteTransaction::commit`] to commit changes to the keyspace.
 ///
 /// Drop the transaction to rollback changes.
 pub struct WriteTransaction {
