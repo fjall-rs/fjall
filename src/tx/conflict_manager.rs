@@ -33,10 +33,7 @@ pub struct BTreeCm {
 impl BTreeCm {
     #[inline]
     fn push_read(&self, partition: &PartitionKey, read: Read) {
-        let mut map = self
-            .reads
-            .lock()
-            .expect("poisoned conflict manager reads lock");
+        let mut map = self.reads.lock().expect("poisoned reads lock");
         if let Some(tbl) = map.get_mut(partition) {
             tbl.push(read);
         } else {
@@ -46,7 +43,7 @@ impl BTreeCm {
 
     #[inline]
     pub fn mark_read(&self, partition: &PartitionKey, key: &Slice) {
-        self.push_read(partition, Read::Single(key.clone()))
+        self.push_read(partition, Read::Single(key.clone()));
     }
 
     #[inline]
@@ -54,7 +51,7 @@ impl BTreeCm {
         let mut map = self
             .conflict_keys
             .lock()
-            .expect("poisoned conflict manager conflict keys lock");
+            .expect("poisoned conflict keys lock");
         if let Some(tbl) = map.get_mut(partition) {
             tbl.insert(key.clone());
         } else {
@@ -83,7 +80,7 @@ impl BTreeCm {
             Read::Range { start, end }
         };
 
-        self.push_read(partition, read)
+        self.push_read(partition, read);
     }
 }
 
@@ -94,6 +91,7 @@ pub struct ConflictChecker {
 
 impl ConflictChecker {
     #[inline]
+    #[allow(clippy::too_many_lines)]
     pub fn has_conflict(&self, other: &Self) -> bool {
         if self.reads.is_empty() {
             return false;
@@ -101,7 +99,7 @@ impl ConflictChecker {
 
         for (partition, keys) in &self.reads {
             if let Some(other_conflict_keys) = other.conflict_keys.get(partition) {
-                for ro in keys.iter() {
+                for ro in keys {
                     match ro {
                         Read::Single(k) => {
                             if other_conflict_keys.contains(k) {
@@ -177,7 +175,7 @@ impl ConflictChecker {
                             }
                             (Bound::Unbounded, Bound::Included(end)) => {
                                 let range = ..=end;
-                                for write in other_conflict_keys.iter() {
+                                for write in other_conflict_keys {
                                     if range.contains(&write) {
                                         return true;
                                     }
@@ -185,7 +183,7 @@ impl ConflictChecker {
                             }
                             (Bound::Unbounded, Bound::Excluded(end)) => {
                                 let range = ..end;
-                                for write in other_conflict_keys.iter() {
+                                for write in other_conflict_keys {
                                     if range.contains(&write) {
                                         return true;
                                     }
@@ -209,7 +207,7 @@ impl ConflictChecker {
 
 impl From<BTreeCm> for ConflictChecker {
     fn from(value: BTreeCm) -> Self {
-        ConflictChecker {
+        Self {
             reads: std::mem::take(&mut value.reads.lock().expect("reads lock poisoned")),
             conflict_keys: std::mem::take(
                 &mut value
@@ -223,7 +221,7 @@ impl From<BTreeCm> for ConflictChecker {
 
 impl From<ConflictChecker> for BTreeCm {
     fn from(mut value: ConflictChecker) -> Self {
-        BTreeCm {
+        Self {
             reads: Mutex::new(std::mem::take(&mut value.reads)),
             conflict_keys: Mutex::new(std::mem::take(&mut value.conflict_keys)),
         }
