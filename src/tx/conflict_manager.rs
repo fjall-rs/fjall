@@ -31,7 +31,6 @@ pub struct BTreeCm {
 }
 
 impl BTreeCm {
-    #[inline]
     fn push_read(&self, partition: &PartitionKey, read: Read) {
         let mut map = self.reads.lock().expect("poisoned reads lock");
         if let Some(tbl) = map.get_mut(partition) {
@@ -41,12 +40,10 @@ impl BTreeCm {
         }
     }
 
-    #[inline]
     pub fn mark_read(&self, partition: &PartitionKey, key: &Slice) {
         self.push_read(partition, Read::Single(key.clone()));
     }
 
-    #[inline]
     pub fn mark_conflict(&self, partition: &PartitionKey, key: &Slice) {
         let mut map = self
             .conflict_keys
@@ -90,7 +87,6 @@ pub struct ConflictChecker {
 }
 
 impl ConflictChecker {
-    #[inline]
     #[allow(clippy::too_many_lines)]
     pub fn has_conflict(&self, other: &Self) -> bool {
         if self.reads.is_empty() {
