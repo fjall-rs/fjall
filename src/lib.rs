@@ -71,7 +71,7 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/fjall-rs/fjall/main/logo.png")]
 #![forbid(unsafe_code)]
 #![deny(clippy::all, missing_docs, clippy::cargo)]
-// #![deny(clippy::unwrap_used)]
+#![deny(clippy::unwrap_used)]
 #![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
