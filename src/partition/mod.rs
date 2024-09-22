@@ -330,7 +330,7 @@ impl PartitionHandle {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree.iter().map(|item| item.map_err(Into::into))
     }
 
@@ -338,7 +338,7 @@ impl PartitionHandle {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
         self.tree.keys().map(|item| item.map_err(Into::into))
     }
 

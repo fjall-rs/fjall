@@ -510,7 +510,7 @@ impl WriteTransaction {
     pub fn keys(
         &self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
         // TODO: is that what we want here? we're only reading keys, but then again...
         self.conflict_manager
             .mark_range(&partition.inner.name, RangeFull);
@@ -528,7 +528,7 @@ impl WriteTransaction {
     pub fn values(
         &self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
         self.conflict_manager
             .mark_range(&partition.inner.name, RangeFull);
         partition
