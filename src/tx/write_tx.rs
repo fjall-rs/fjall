@@ -873,4 +873,35 @@ mod tests {
 
         tx2.commit().unwrap();
     }
+
+    #[test]
+    fn tx_ssi_swap() -> crate::Result<()> {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let keyspace = Config::new(tmpdir.path()).open_transactional().unwrap();
+    
+        let part = keyspace
+            .open_partition("foo", PartitionCreateOptions::default())
+            .unwrap();
+    
+        part.insert("x", "x")?;
+        part.insert("y", "y")?;
+    
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
+    
+        {
+            let x = tx1.get(&part, "x")?.unwrap();
+            tx1.insert(&part, "y", x);
+        }
+    
+        {
+            let y = tx2.get(&part, "y")?.unwrap();
+            tx2.insert(&part, "x", y);
+        }
+    
+        tx1.commit().unwrap();
+        assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
+    
+        Ok(())
+    }
 }
