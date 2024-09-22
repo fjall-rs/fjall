@@ -135,6 +135,9 @@ pub use tx::{
     write_tx::WriteTransaction,
 };
 
+/// Alias for [`Batch`]
+pub type WriteBatch = Batch;
+
 /// Alias for [`PartitionHandle`]
 pub type Partition = PartitionHandle;
 
