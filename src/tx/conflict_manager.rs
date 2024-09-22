@@ -1,17 +1,11 @@
+use crate::batch::PartitionKey;
 use core::ops::Bound;
-
 use lsm_tree::Slice;
 use std::{
-    collections::{
-        // BTreeMap,
-        BTreeMap,
-        BTreeSet,
-    },
+    collections::{BTreeMap, BTreeSet},
     ops::RangeBounds,
     sync::Mutex,
 };
-
-use crate::batch::PartitionKey;
 
 #[derive(Clone, Debug)]
 enum Read {
@@ -23,14 +17,13 @@ enum Read {
     All,
 }
 
-/// A [`Cm`] conflict manager implementation that based on the [`BTreeSet`](std::collections::BTreeSet).
 #[derive(Default, Debug)]
-pub struct BTreeCm {
+pub struct ConflictManager {
     reads: Mutex<BTreeMap<PartitionKey, Vec<Read>>>,
     conflict_keys: Mutex<BTreeMap<PartitionKey, BTreeSet<Slice>>>,
 }
 
-impl BTreeCm {
+impl ConflictManager {
     fn push_read(&self, partition: &PartitionKey, read: Read) {
         let mut map = self.reads.lock().expect("poisoned reads lock");
         if let Some(tbl) = map.get_mut(partition) {
@@ -201,8 +194,8 @@ impl ConflictChecker {
     }
 }
 
-impl From<BTreeCm> for ConflictChecker {
-    fn from(value: BTreeCm) -> Self {
+impl From<ConflictManager> for ConflictChecker {
+    fn from(value: ConflictManager) -> Self {
         Self {
             reads: std::mem::take(&mut value.reads.lock().expect("reads lock poisoned")),
             conflict_keys: std::mem::take(
@@ -215,7 +208,7 @@ impl From<BTreeCm> for ConflictChecker {
     }
 }
 
-impl From<ConflictChecker> for BTreeCm {
+impl From<ConflictChecker> for ConflictManager {
     fn from(mut value: ConflictChecker) -> Self {
         Self {
             reads: Mutex::new(std::mem::take(&mut value.reads)),

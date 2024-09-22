@@ -3,9 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::{
-    conflict_manager::{BTreeCm, ConflictChecker},
-    oracle::Oracle,
-    read_tx::ReadTransaction,
+    conflict_manager::ConflictChecker, oracle::Oracle, read_tx::ReadTransaction,
     write_tx::WriteTransaction,
 };
 use crate::{

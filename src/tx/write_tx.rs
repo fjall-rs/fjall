@@ -2,6 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use super::conflict_manager::ConflictManager;
 use crate::{
     batch::{item::Item, PartitionKey},
     snapshot_nonce::SnapshotNonce,
@@ -12,8 +13,6 @@ use std::{
     ops::{RangeBounds, RangeFull},
     sync::Arc,
 };
-
-use super::conflict_manager::BTreeCm;
 
 fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
     if item.is_tombstone() {
@@ -35,7 +34,7 @@ pub struct WriteTransaction {
 
     nonce: SnapshotNonce,
 
-    conflict_manager: BTreeCm,
+    conflict_manager: ConflictManager,
     read_ts: u64,
     done_read: bool,
 }
@@ -48,7 +47,7 @@ impl WriteTransaction {
             // tx_manager,
             nonce,
             durability: None,
-            conflict_manager: BTreeCm::default(),
+            conflict_manager: ConflictManager::default(),
             read_ts,
             done_read: false,
         }
@@ -810,27 +809,25 @@ impl WriteTransaction {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{Config, PartitionCreateOptions};
+    use test_log::test;
 
     #[test]
-    fn basic_tx_test() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let keyspace = Config::new(tmpdir.path()).open_transactional().unwrap();
+    fn basic_tx_test() -> crate::Result<()> {
+        let tmpdir = tempfile::tempdir()?;
+        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
 
-        let part = keyspace
-            .open_partition("foo", PartitionCreateOptions::default())
-            .unwrap();
+        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
 
         let mut tx1 = keyspace.write_tx();
         let mut tx2 = keyspace.write_tx();
 
         tx1.insert(&part, "hello", "world");
 
-        tx1.commit().unwrap();
-        assert!(part.contains_key("hello").unwrap());
+        tx1.commit()?;
+        assert!(part.contains_key("hello")?);
 
-        assert_eq!(tx2.get(&part, "hello").unwrap(), None);
+        assert_eq!(tx2.get(&part, "hello")?, None);
 
         tx2.insert(&part, "hello", "world2");
         assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
@@ -842,19 +839,20 @@ mod tests {
         tx2.insert(&part, "hello", "world2");
 
         tx1.insert(&part, "hello2", "world1");
-        tx1.commit().unwrap();
+        tx1.commit()?;
 
-        tx2.commit().unwrap();
+        tx2.commit()?;
+
+        Ok(())
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn tx_ssi_swap() -> crate::Result<()> {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let keyspace = Config::new(tmpdir.path()).open_transactional().unwrap();
+        let tmpdir = tempfile::tempdir()?;
+        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
 
-        let part = keyspace
-            .open_partition("foo", PartitionCreateOptions::default())
-            .unwrap();
+        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
 
         part.insert("x", "x")?;
         part.insert("y", "y")?;
@@ -872,7 +870,7 @@ mod tests {
             tx2.insert(&part, "x", y);
         }
 
-        tx1.commit().unwrap();
+        tx1.commit()?;
         assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
 
         Ok(())

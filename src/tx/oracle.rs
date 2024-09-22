@@ -1,11 +1,8 @@
+use super::conflict_manager::ConflictChecker;
 use core::ops::AddAssign;
 use std::borrow::Cow;
-
 use std::sync::{Mutex, MutexGuard};
-
 use wmark::{Closer, WaterMark};
-
-use super::conflict_manager::ConflictChecker;
 
 #[derive(Debug)]
 pub(super) struct OracleInner<C> {

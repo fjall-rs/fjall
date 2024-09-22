@@ -12,5 +12,4 @@ pub mod read_tx;
 pub mod write_tx;
 
 mod conflict_manager;
-pub(crate) mod oracle;
-// mod write_manager;
+mod oracle;
