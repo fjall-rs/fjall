@@ -618,8 +618,10 @@ impl WriteTransaction {
         partition: &'b TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.conflict_manager
-            .mark_prefix(&partition.inner.name, prefix.as_ref().into());
+        self.conflict_manager.mark_range(
+            &partition.inner.name,
+            lsm_tree::range::prefix_to_range(prefix.as_ref()),
+        );
         partition
             .inner
             .tree

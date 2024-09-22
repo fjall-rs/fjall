@@ -20,7 +20,6 @@ enum Read {
         start: Bound<Slice>,
         end: Bound<Slice>,
     },
-    Prefix(Slice),
     All,
 }
 
@@ -63,10 +62,6 @@ impl BTreeCm {
                 .or_default()
                 .insert(key.clone());
         }
-    }
-
-    pub fn mark_prefix(&self, partition: &PartitionKey, prefix: Slice) {
-        self.push_read(partition, Read::Prefix(prefix))
     }
 
     pub fn mark_range(&self, partition: &PartitionKey, range: impl RangeBounds<Slice>) {
@@ -113,15 +108,6 @@ impl ConflictChecker {
                                 return true;
                             }
                         }
-                        Read::Prefix(prefix) => {
-                            if other_conflict_keys
-                                .iter()
-                                .any(|key| key.starts_with(prefix))
-                            {
-                                return true;
-                            }
-                        }
-
                         Read::Range { start, end } => match (start, end) {
                             (Bound::Included(start), Bound::Included(end)) => {
                                 if other_conflict_keys
