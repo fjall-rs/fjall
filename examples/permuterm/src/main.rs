@@ -1,25 +1,47 @@
 use fjall::{Config, Result};
 
-fn permuterm(term: &str) -> Vec<String> {
-    let mut v = vec![];
+struct Permutermifier {
+    term: String,
+    count: usize,
+    len: usize,
+}
 
-    let term_len = term.len();
-
-    // We need to add $ to the end of the term
-    let mut term = term.to_string();
-    term.push('$');
-
-    // Now we rotate the $ through the term
-    v.push(term.clone());
-
-    for _ in 0..term_len {
-        let head = &term[0..1];
-        let rest = &term[1..];
-        term = format!("{rest}{head}");
-        v.push(term.clone());
+impl Permutermifier {
+    pub fn new(term: &str) -> Self {
+        Self {
+            term: format!("{term}$"),
+            len: term.len(),
+            count: term.len() + 1,
+        }
     }
 
-    v
+    fn rotate(&mut self) {
+        let head = &self.term[0..1];
+        let rest = &self.term[1..];
+        self.term = format!("{rest}{head}");
+    }
+}
+
+impl Iterator for Permutermifier {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.count == 0 {
+            return None;
+        }
+
+        self.count -= 1;
+
+        if self.count < self.len {
+            self.rotate();
+        }
+
+        Some(self.term.clone())
+    }
+}
+
+fn permuterm(term: &str) -> impl Iterator<Item = String> {
+    Permutermifier::new(term)
 }
 
 const WORDS: &[&str] = &[
