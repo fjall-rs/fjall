@@ -3,7 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::{
-    conflict_manager::BTreeCm, oracle::Oracle, read_tx::ReadTransaction, write_tx::WriteTransaction,
+    conflict_manager::{BTreeCm, ConflictChecker},
+    oracle::Oracle,
+    read_tx::ReadTransaction,
+    write_tx::WriteTransaction,
 };
 use crate::{
     batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
@@ -16,7 +19,7 @@ use std::sync::Arc;
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
     pub(crate) inner: Keyspace,
-    pub(crate) orc: Arc<Oracle<BTreeCm>>,
+    pub(crate) orc: Arc<Oracle<ConflictChecker>>,
 }
 
 /// Alias for [`TransactionalKeyspace`]

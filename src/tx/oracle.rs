@@ -5,7 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use wmark::{Closer, WaterMark};
 
-use super::conflict_manager::BTreeCm;
+use super::conflict_manager::ConflictChecker;
 
 #[derive(Debug)]
 pub(super) struct OracleInner<C> {
@@ -41,13 +41,13 @@ pub(super) struct Oracle<C> {
     closer: Closer,
 }
 
-impl Oracle<BTreeCm> {
+impl Oracle<ConflictChecker> {
     pub(super) fn new_commit_ts(
         &self,
         done_read: &mut bool,
         read_ts: u64,
-        conflict_manager: BTreeCm,
-    ) -> CreateCommitTimestampResult<BTreeCm> {
+        conflict_manager: ConflictChecker,
+    ) -> CreateCommitTimestampResult<ConflictChecker> {
         let mut inner = self.inner.lock().expect("lock poisoned");
 
         for committed_txn in inner.committed_txns.iter() {
@@ -61,10 +61,8 @@ impl Oracle<BTreeCm> {
                 continue;
             }
 
-            if let Some(old_conflict_manager) = &committed_txn.conflict_manager {
-                if conflict_manager.has_conflict(old_conflict_manager) {
-                    return CreateCommitTimestampResult::Conflict(Some(conflict_manager));
-                }
+            if conflict_manager.has_conflict(&committed_txn.conflict_manager) {
+                return CreateCommitTimestampResult::Conflict(Some(conflict_manager));
             }
         }
 
@@ -89,7 +87,7 @@ impl Oracle<BTreeCm> {
         // conflict detection is disabled otherwise this slice would keep growing.
         inner.committed_txns.push(CommittedTxn {
             ts,
-            conflict_manager: Some(conflict_manager),
+            conflict_manager,
         });
 
         CreateCommitTimestampResult::Timestamp(ts)
@@ -99,7 +97,7 @@ impl Oracle<BTreeCm> {
     fn cleanup_committed_transactions(
         &self,
         detect_conflicts: bool,
-        inner: &mut MutexGuard<OracleInner<BTreeCm>>,
+        inner: &mut MutexGuard<OracleInner<ConflictChecker>>,
     ) {
         if !detect_conflicts {
             // When detectConflicts is set to false, we do not store any
@@ -208,5 +206,5 @@ impl<S> Drop for Oracle<S> {
 pub(super) struct CommittedTxn<C> {
     ts: u64,
     /// Keeps track of the entries written at timestamp ts.
-    conflict_manager: Option<C>,
+    conflict_manager: C,
 }

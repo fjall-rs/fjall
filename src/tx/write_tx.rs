@@ -5,12 +5,12 @@
 use crate::{
     batch::{item::Item, PartitionKey},
     snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, Keyspace, PersistMode, TxKeyspace, TxPartitionHandle,
+    Batch, HashMap, PersistMode, TxKeyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, Slice, UserKey, UserValue};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{
     ops::{RangeBounds, RangeFull},
-    sync::{Arc, MutexGuard, RwLock},
+    sync::Arc,
 };
 
 use super::conflict_manager::BTreeCm;
@@ -35,7 +35,7 @@ pub struct WriteTransaction {
 
     nonce: SnapshotNonce,
 
-    conflict_manager: Arc<RwLock<BTreeCm>>,
+    conflict_manager: BTreeCm,
     read_ts: u64,
     done_read: bool,
 }
@@ -48,7 +48,7 @@ impl WriteTransaction {
             // tx_manager,
             nonce,
             durability: None,
-            conflict_manager: Default::default(),
+            conflict_manager: BTreeCm::default(),
             read_ts,
             done_read: false,
         }
@@ -159,12 +159,8 @@ impl WriteTransaction {
         let updated = f(prev.as_ref());
 
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_read(&partition.inner.name, &key.as_ref().into());
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
 
         if let Some(value) = &updated {
@@ -238,12 +234,8 @@ impl WriteTransaction {
         let updated = f(prev.as_ref());
 
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_read(&partition.inner.name, &key.as_ref().into());
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
 
         if let Some(value) = updated {
@@ -305,8 +297,6 @@ impl WriteTransaction {
             .get(key.as_ref())?;
 
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_read(&partition.inner.name, &key.as_ref().into());
 
         Ok(res)
@@ -503,8 +493,6 @@ impl WriteTransaction {
         partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
@@ -526,8 +514,6 @@ impl WriteTransaction {
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
         // TODO: is that what we want here? we're only reading keys, but then again...
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
@@ -545,8 +531,6 @@ impl WriteTransaction {
         partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
         self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
             .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
@@ -584,19 +568,16 @@ impl WriteTransaction {
         partition: &'b TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.conflict_manager
-            .write()
-            .expect("poisoned conflict manager lock")
-            .mark_range(
-                &partition.inner.name,
-                (
-                    range
-                        .start_bound()
-                        .map(|start| start.as_ref().into())
-                        .as_ref(),
-                    range.end_bound().map(|end| end.as_ref().into()).as_ref(),
-                ),
-            );
+        self.conflict_manager.mark_range(
+            &partition.inner.name,
+            (
+                range
+                    .start_bound()
+                    .map(|start| start.as_ref().into())
+                    .as_ref(),
+                range.end_bound().map(|end| end.as_ref().into()).as_ref(),
+            ),
+        );
         partition
             .inner
             .tree
@@ -637,8 +618,8 @@ impl WriteTransaction {
         partition: &'b TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        let cm = self.conflict_manager.clone();
-        let name = partition.inner.name.clone();
+        self.conflict_manager
+            .mark_prefix(&partition.inner.name, prefix.as_ref().into());
         partition
             .inner
             .tree
@@ -647,13 +628,7 @@ impl WriteTransaction {
                 self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(move |item| {
-                let item = item?;
-                cm.write()
-                    .expect("poisoned conflict manager lock")
-                    .mark_read(&name, &item.0);
-                Ok(item)
-            })
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Inserts a key-value pair into the partition.
@@ -706,8 +681,6 @@ impl WriteTransaction {
                 lsm_tree::ValueType::Value,
             ));
         self.conflict_manager
-            .write()
-            .expect("conflict manager lock poisoned")
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
@@ -756,8 +729,6 @@ impl WriteTransaction {
                 SeqNo::MAX,
             ));
         self.conflict_manager
-            .write()
-            .expect("conflict manager lock poisoned")
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
@@ -777,12 +748,12 @@ impl WriteTransaction {
             .orc
             .write_serialize_lock
             .lock()
-            .expect("oracle lock is poisoned");
+            .expect("write serialization lock is poisoned");
 
         let cm_res = self.keyspace.orc.new_commit_ts(
             &mut self.done_read,
             self.read_ts,
-            self.conflict_manager.read().expect("poinsoned cm").clone(),
+            self.conflict_manager.into(),
         );
 
         let commit_ts = match cm_res {
@@ -878,30 +849,30 @@ mod tests {
     fn tx_ssi_swap() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir().unwrap();
         let keyspace = Config::new(tmpdir.path()).open_transactional().unwrap();
-    
+
         let part = keyspace
             .open_partition("foo", PartitionCreateOptions::default())
             .unwrap();
-    
+
         part.insert("x", "x")?;
         part.insert("y", "y")?;
-    
+
         let mut tx1 = keyspace.write_tx();
         let mut tx2 = keyspace.write_tx();
-    
+
         {
             let x = tx1.get(&part, "x")?.unwrap();
             tx1.insert(&part, "y", x);
         }
-    
+
         {
             let y = tx2.get(&part, "y")?.unwrap();
             tx2.insert(&part, "x", y);
         }
-    
+
         tx1.commit().unwrap();
         assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
-    
+
         Ok(())
     }
 }

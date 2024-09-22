@@ -8,6 +8,7 @@ use std::{
         BTreeSet,
     },
     ops::RangeBounds,
+    sync::Mutex,
 };
 
 use crate::batch::PartitionKey;
@@ -19,33 +20,84 @@ enum Read {
         start: Bound<Slice>,
         end: Bound<Slice>,
     },
+    Prefix(Slice),
     All,
 }
 
 /// A [`Cm`] conflict manager implementation that based on the [`BTreeSet`](std::collections::BTreeSet).
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug)]
 pub struct BTreeCm {
-    reads: BTreeMap<PartitionKey, Vec<Read>>,
-    conflict_keys: BTreeMap<PartitionKey, BTreeSet<Slice>>,
+    reads: Mutex<BTreeMap<PartitionKey, Vec<Read>>>,
+    conflict_keys: Mutex<BTreeMap<PartitionKey, BTreeSet<Slice>>>,
 }
 
 impl BTreeCm {
     #[inline]
-    pub fn mark_read(&mut self, partition: &PartitionKey, key: &Slice) {
-        self.reads
-            .entry(partition.clone())
-            .or_default()
-            .push(Read::Single(key.clone()));
+    fn push_read(&self, partition: &PartitionKey, read: Read) {
+        let mut map = self
+            .reads
+            .lock()
+            .expect("poisoned conflict manager reads lock");
+        if let Some(tbl) = map.get_mut(partition) {
+            tbl.push(read);
+        } else {
+            map.entry(partition.clone()).or_default().push(read);
+        }
     }
 
     #[inline]
-    pub fn mark_conflict(&mut self, partition: &PartitionKey, key: &Slice) {
-        self.conflict_keys
-            .entry(partition.clone())
-            .or_default()
-            .insert(key.clone());
+    pub fn mark_read(&self, partition: &PartitionKey, key: &Slice) {
+        self.push_read(partition, Read::Single(key.clone()))
     }
 
+    #[inline]
+    pub fn mark_conflict(&self, partition: &PartitionKey, key: &Slice) {
+        let mut map = self
+            .conflict_keys
+            .lock()
+            .expect("poisoned conflict manager conflict keys lock");
+        if let Some(tbl) = map.get_mut(partition) {
+            tbl.insert(key.clone());
+        } else {
+            map.entry(partition.clone())
+                .or_default()
+                .insert(key.clone());
+        }
+    }
+
+    pub fn mark_prefix(&self, partition: &PartitionKey, prefix: Slice) {
+        self.push_read(partition, Read::Prefix(prefix))
+    }
+
+    pub fn mark_range(&self, partition: &PartitionKey, range: impl RangeBounds<Slice>) {
+        let start = match range.start_bound() {
+            Bound::Included(k) => Bound::Included(k.clone()),
+            Bound::Excluded(k) => Bound::Excluded(k.clone()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(k) => Bound::Included(k.clone()),
+            Bound::Excluded(k) => Bound::Excluded(k.clone()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let read = if start == Bound::Unbounded && end == Bound::Unbounded {
+            Read::All
+        } else {
+            Read::Range { start, end }
+        };
+
+        self.push_read(partition, read)
+    }
+}
+
+pub struct ConflictChecker {
+    reads: BTreeMap<PartitionKey, Vec<Read>>,
+    conflict_keys: BTreeMap<PartitionKey, BTreeSet<Slice>>,
+}
+
+impl ConflictChecker {
     #[inline]
     pub fn has_conflict(&self, other: &Self) -> bool {
         if self.reads.is_empty() {
@@ -61,6 +113,15 @@ impl BTreeCm {
                                 return true;
                             }
                         }
+                        Read::Prefix(prefix) => {
+                            if other_conflict_keys
+                                .iter()
+                                .any(|key| key.starts_with(prefix))
+                            {
+                                return true;
+                            }
+                        }
+
                         Read::Range { start, end } => match (start, end) {
                             (Bound::Included(start), Bound::Included(end)) => {
                                 if other_conflict_keys
@@ -158,28 +219,28 @@ impl BTreeCm {
 
         false
     }
+}
 
-    pub fn mark_range(&mut self, partition: &PartitionKey, range: impl RangeBounds<Slice>) {
-        let start = match range.start_bound() {
-            Bound::Included(k) => Bound::Included(k.clone()),
-            Bound::Excluded(k) => Bound::Excluded(k.clone()),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-
-        let end = match range.end_bound() {
-            Bound::Included(k) => Bound::Included(k.clone()),
-            Bound::Excluded(k) => Bound::Excluded(k.clone()),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-
-        let reads = self.reads.entry(partition.clone()).or_default();
-
-        if start == Bound::Unbounded && end == Bound::Unbounded {
-            reads.push(Read::All);
-            return;
+impl From<BTreeCm> for ConflictChecker {
+    fn from(value: BTreeCm) -> Self {
+        ConflictChecker {
+            reads: std::mem::take(&mut value.reads.lock().expect("reads lock poisoned")),
+            conflict_keys: std::mem::take(
+                &mut value
+                    .conflict_keys
+                    .lock()
+                    .expect("conflict_keys lock poisoned"),
+            ),
         }
+    }
+}
 
-        reads.push(Read::Range { start, end });
+impl From<ConflictChecker> for BTreeCm {
+    fn from(mut value: ConflictChecker) -> Self {
+        BTreeCm {
+            reads: Mutex::new(std::mem::take(&mut value.reads)),
+            conflict_keys: Mutex::new(std::mem::take(&mut value.conflict_keys)),
+        }
     }
 }
 
