@@ -2,18 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{gc::GarbageCollection, PartitionHandle};
+use crate::{gc::GarbageCollection, PartitionHandle, TxKeyspace};
 use lsm_tree::{GcReport, UserValue};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
 
 /// Access to a partition of a transactional keyspace
 #[derive(Clone)]
 pub struct TransactionalPartitionHandle {
     pub(crate) inner: PartitionHandle,
-    pub(crate) tx_lock: Arc<Mutex<()>>,
+    pub(crate) keyspace: TxKeyspace,
 }
 
 impl GarbageCollection for TransactionalPartitionHandle {
@@ -22,12 +19,10 @@ impl GarbageCollection for TransactionalPartitionHandle {
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
         crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
         crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
     }
 
@@ -124,16 +119,10 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        let mut tx = self.keyspace.write_tx();
 
-        let prev = self.inner.get(&key)?;
-        let updated = f(prev.as_ref());
-
-        if let Some(value) = updated {
-            self.inner.insert(&key, value)?;
-        } else if prev.is_some() {
-            self.inner.remove(&key)?;
-        }
+        let prev = tx.fetch_update(self, key, f)?;
+        tx.commit()?;
 
         Ok(prev)
     }
@@ -190,16 +179,9 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
-
-        let prev = self.inner.get(&key)?;
-        let updated = f(prev.as_ref());
-
-        if let Some(value) = &updated {
-            self.inner.insert(&key, value)?;
-        } else if prev.is_some() {
-            self.inner.remove(&key)?;
-        }
+        let mut tx = self.keyspace.write_tx();
+        let updated = tx.update_fetch(self, key, f)?;
+        tx.commit()?;
 
         Ok(updated)
     }
@@ -232,8 +214,10 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
-        self.inner.insert(key, value)
+        let mut tx = self.keyspace.write_tx();
+        tx.insert(self, key, value);
+        tx.commit()?;
+        Ok(())
     }
 
     /// Removes an item from the partition.
@@ -264,8 +248,10 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
-        self.inner.remove(key)
+        let mut tx = self.keyspace.write_tx();
+        tx.remove(self, key);
+        tx.commit()?;
+        Ok(())
     }
 
     /// Retrieves an item from the partition.

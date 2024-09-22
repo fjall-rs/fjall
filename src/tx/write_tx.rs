@@ -5,13 +5,15 @@
 use crate::{
     batch::{item::Item, PartitionKey},
     snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, Keyspace, PersistMode, TxPartitionHandle,
+    Batch, HashMap, Keyspace, PersistMode, TxKeyspace, TxPartitionHandle,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, Slice, UserKey, UserValue};
 use std::{
-    ops::RangeBounds,
-    sync::{Arc, MutexGuard},
+    ops::{RangeBounds, RangeFull},
+    sync::{Arc, MutexGuard, RwLock},
 };
+
+use super::conflict_manager::BTreeCm;
 
 fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
     if item.is_tombstone() {
@@ -26,30 +28,29 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 /// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
 ///
 /// Drop the transaction to rollback changes.
-pub struct WriteTransaction<'a> {
+pub struct WriteTransaction {
     durability: Option<PersistMode>,
-
-    keyspace: Keyspace,
+    keyspace: TxKeyspace,
     memtables: HashMap<PartitionKey, Arc<Memtable>>,
 
     nonce: SnapshotNonce,
 
-    #[allow(unused)]
-    tx_lock: MutexGuard<'a, ()>,
+    conflict_manager: Arc<RwLock<BTreeCm>>,
+    read_ts: u64,
+    done_read: bool,
 }
 
-impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(
-        keyspace: Keyspace,
-        tx_lock: MutexGuard<'a, ()>,
-        nonce: SnapshotNonce,
-    ) -> Self {
+impl WriteTransaction {
+    pub(crate) fn new(keyspace: TxKeyspace, nonce: SnapshotNonce, read_ts: u64) -> Self {
         Self {
             keyspace,
             memtables: HashMap::default(),
-            tx_lock,
+            // tx_manager,
             nonce,
             durability: None,
+            conflict_manager: Default::default(),
+            read_ts,
+            done_read: false,
         }
     }
 
@@ -157,6 +158,15 @@ impl<'a> WriteTransaction<'a> {
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
 
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_read(&partition.inner.name, &key.as_ref().into());
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+
         if let Some(value) = &updated {
             self.insert(partition, &key, value);
         } else if prev.is_some() {
@@ -227,6 +237,15 @@ impl<'a> WriteTransaction<'a> {
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
 
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_read(&partition.inner.name, &key.as_ref().into());
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+
         if let Some(value) = updated {
             self.insert(partition, &key, value);
         } else if prev.is_some() {
@@ -280,11 +299,17 @@ impl<'a> WriteTransaction<'a> {
             }
         }
 
-        partition
+        let res = partition
             .inner
             .snapshot_at(self.nonce.instant)
-            .get(key)
-            .map_err(Into::into)
+            .get(key.as_ref())?;
+
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_read(&partition.inner.name, &key.as_ref().into());
+
+        Ok(res)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -365,6 +390,7 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
+        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next().transpose()
     }
 
@@ -397,6 +423,7 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
+        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next_back().transpose()
     }
 
@@ -436,6 +463,7 @@ impl<'a> WriteTransaction<'a> {
     pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
+        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         let iter = self.iter(partition);
 
         for kv in iter {
@@ -470,10 +498,14 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter<'b>(
-        &'b self,
-        partition: &'b TxPartitionHandle,
+    pub fn iter(
+        &self,
+        partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
             .tree
@@ -489,9 +521,14 @@ impl<'a> WriteTransaction<'a> {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(
-        &'a self,
-        partition: &'a TxPartitionHandle,
+        &self,
+        partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+        // TODO: is that what we want here? we're only reading keys, but then again...
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
             .tree
@@ -504,9 +541,13 @@ impl<'a> WriteTransaction<'a> {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(
-        &'a self,
-        partition: &'a TxPartitionHandle,
+        &self,
+        partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_range(&partition.inner.name, RangeFull);
         partition
             .inner
             .tree
@@ -543,6 +584,19 @@ impl<'a> WriteTransaction<'a> {
         partition: &'b TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+        self.conflict_manager
+            .write()
+            .expect("poisoned conflict manager lock")
+            .mark_range(
+                &partition.inner.name,
+                (
+                    range
+                        .start_bound()
+                        .map(|start| start.as_ref().into())
+                        .as_ref(),
+                    range.end_bound().map(|end| end.as_ref().into()).as_ref(),
+                ),
+            );
         partition
             .inner
             .tree
@@ -583,6 +637,8 @@ impl<'a> WriteTransaction<'a> {
         partition: &'b TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+        let cm = self.conflict_manager.clone();
+        let name = partition.inner.name.clone();
         partition
             .inner
             .tree
@@ -591,7 +647,13 @@ impl<'a> WriteTransaction<'a> {
                 self.nonce.instant,
                 self.memtables.get(&partition.inner.name).cloned(),
             )
-            .map(|item| item.map_err(Into::into))
+            .map(move |item| {
+                let item = item?;
+                cm.write()
+                    .expect("poisoned conflict manager lock")
+                    .mark_read(&name, &item.0);
+                Ok(item)
+            })
     }
 
     /// Inserts a key-value pair into the partition.
@@ -643,6 +705,10 @@ impl<'a> WriteTransaction<'a> {
                 SeqNo::MAX,
                 lsm_tree::ValueType::Value,
             ));
+        self.conflict_manager
+            .write()
+            .expect("conflict manager lock poisoned")
+            .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
     /// Removes an item from the partition.
@@ -689,6 +755,10 @@ impl<'a> WriteTransaction<'a> {
                 // that way, the write is definitely always the newest
                 SeqNo::MAX,
             ));
+        self.conflict_manager
+            .write()
+            .expect("conflict manager lock poisoned")
+            .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
     /// Commits the transaction.
@@ -696,8 +766,33 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn commit(self) -> crate::Result<()> {
-        let mut batch = Batch::new(self.keyspace).durability(self.durability);
+    pub fn commit(mut self) -> crate::Result<()> {
+        // skip all the logic if no keys were written to
+        if self.memtables.is_empty() {
+            return Ok(());
+        }
+
+        let _write_lock = self
+            .keyspace
+            .orc
+            .write_serialize_lock
+            .lock()
+            .expect("oracle lock is poisoned");
+
+        let cm_res = self.keyspace.orc.new_commit_ts(
+            &mut self.done_read,
+            self.read_ts,
+            self.conflict_manager.read().expect("poinsoned cm").clone(),
+        );
+
+        let commit_ts = match cm_res {
+            super::oracle::CreateCommitTimestampResult::Timestamp(ts) => ts,
+            super::oracle::CreateCommitTimestampResult::Conflict(_conflict_manager) => {
+                return Err(crate::Error::Conflict);
+            }
+        };
+
+        let mut batch = Batch::new(self.keyspace.inner).durability(self.durability);
 
         /*
         for (partition_key, memtable) in self.memtables {
@@ -728,10 +823,54 @@ impl<'a> WriteTransaction<'a> {
         // TODO: instead of using batch, write batch::commit as a generic function that takes
         // a impl Iterator<BatchItem>
         // that way, we don't have to move the memtable(s) into the batch first to commit
-        batch.commit()
+        batch.commit()?;
+
+        self.keyspace.orc.done_commit(commit_ts);
+
+        Ok(())
     }
 
     /// More explicit alternative to dropping the transaction
     /// to roll it back.
     pub fn rollback(self) {}
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::{Config, PartitionCreateOptions};
+
+    #[test]
+    fn basic_tx_test() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let keyspace = Config::new(tmpdir.path()).open_transactional().unwrap();
+
+        let part = keyspace
+            .open_partition("foo", PartitionCreateOptions::default())
+            .unwrap();
+
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
+
+        tx1.insert(&part, "hello", "world");
+
+        tx1.commit().unwrap();
+        assert!(part.contains_key("hello").unwrap());
+
+        assert_eq!(tx2.get(&part, "hello").unwrap(), None);
+
+        tx2.insert(&part, "hello", "world2");
+        assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
+
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
+
+        tx1.iter(&part).next();
+        tx2.insert(&part, "hello", "world2");
+
+        tx1.insert(&part, "hello2", "world1");
+        tx1.commit().unwrap();
+
+        tx2.commit().unwrap();
+    }
 }

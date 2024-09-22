@@ -37,6 +37,9 @@ pub enum Error {
 
     /// Partition is deleted
     PartitionDeleted,
+
+    /// Transaction conflict
+    Conflict,
 }
 
 impl std::fmt::Display for Error {

@@ -2,19 +2,21 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
+use super::{
+    conflict_manager::BTreeCm, oracle::Oracle, read_tx::ReadTransaction, write_tx::WriteTransaction,
+};
 use crate::{
     batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
     PersistMode, TxPartitionHandle,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Transaction keyspace
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
-    inner: Keyspace,
-    tx_lock: Arc<Mutex<()>>,
+    pub(crate) inner: Keyspace,
+    pub(crate) orc: Arc<Oracle<BTreeCm>>,
 }
 
 /// Alias for [`TransactionalKeyspace`]
@@ -25,15 +27,13 @@ impl TxKeyspace {
     /// Starts a new writeable transaction.
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction {
-        let lock = self.tx_lock.lock().expect("lock is poisoned");
-
         // IMPORTANT: Get the seqno *after* getting the lock
         let instant = self.inner.instant();
 
         let mut write_tx = WriteTransaction::new(
-            self.inner.clone(),
-            lock,
+            self.clone(),
             SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
+            self.orc.read_ts(),
         );
 
         if !self.inner.config.manual_journal_persist {
@@ -100,7 +100,7 @@ impl TxKeyspace {
 
         Ok(TxPartitionHandle {
             inner: partition,
-            tx_lock: self.tx_lock.clone(),
+            keyspace: self.clone(),
         })
     }
 
@@ -155,12 +155,20 @@ impl TxKeyspace {
     ///
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
+        let name = config.path.display().to_string();
         let inner = Keyspace::create_or_recover(config)?;
         inner.start_background_threads();
 
-        Ok(Self {
-            inner,
-            tx_lock: Arc::default(),
-        })
+        let orc = Arc::new(Oracle::new(
+            format!("{name}.pending_reads").into(),
+            format!("{name}.txn_timestamps").into(),
+            0,
+        ));
+
+        orc.read_mark.done(0).unwrap();
+        orc.txn_mark.done(0).unwrap();
+        orc.increment_next_ts();
+
+        Ok(Self { inner, orc })
     }
 }
