@@ -119,7 +119,7 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.keyspace.write_tx()?;
 
         let prev = tx.fetch_update(self, key, f)?;
         tx.commit()?;
@@ -179,7 +179,7 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.keyspace.write_tx()?;
         let updated = tx.update_fetch(self, key, f)?;
         tx.commit()?;
 
@@ -214,7 +214,7 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.keyspace.write_tx()?;
         tx.insert(self, key, value);
         tx.commit()?;
         Ok(())
@@ -248,7 +248,7 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.keyspace.write_tx()?;
         tx.remove(self, key);
         tx.commit()?;
         Ok(())

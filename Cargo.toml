@@ -17,11 +17,12 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["bloom", "single_writer_tx", "lz4"]
+default = ["bloom", "ssi_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
+ssi_tx = ["wmark"]
 __internal_whitebox = []
 
 [dependencies]
@@ -33,7 +34,7 @@ tempfile = "3.10.1"
 path-absolutize = "3.1.1"
 dashmap = "6.0.1"
 xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
-wmark = { version = "0.1.4", default-features = false, features = ["std"] }
+wmark = { version = "0.1.4", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

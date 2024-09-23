@@ -2,22 +2,24 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::{
-    conflict_manager::ConflictChecker, oracle::Oracle, read_tx::ReadTransaction,
-    write_tx::WriteTransaction,
-};
+#[cfg(feature = "ssi_tx")]
+use super::{conflict_manager::ConflictChecker, oracle::Oracle};
+use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
     batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
     PersistMode, TxPartitionHandle,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Transaction keyspace
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
     pub(crate) inner: Keyspace,
-    pub(crate) orc: Arc<Oracle<ConflictChecker>>,
+    #[cfg(feature = "ssi_tx")]
+    pub(super) orc: Arc<Oracle<ConflictChecker>>,
+    #[cfg(feature = "single_writer_tx")]
+    lock: Arc<Mutex<()>>,
 }
 
 /// Alias for [`TransactionalKeyspace`]
@@ -26,15 +28,16 @@ pub type TxKeyspace = TransactionalKeyspace;
 
 impl TxKeyspace {
     /// Starts a new writeable transaction.
+    #[cfg(feature = "single_writer_tx")]
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction {
-        // IMPORTANT: Get the seqno *after* getting the lock
+        let guard = self.lock.lock().expect("poisoned tx lock");
         let instant = self.inner.instant();
 
         let mut write_tx = WriteTransaction::new(
             self.clone(),
             SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-            self.orc.read_ts(),
+            guard,
         );
 
         if !self.inner.config.manual_journal_persist {
@@ -42,6 +45,26 @@ impl TxKeyspace {
         }
 
         write_tx
+    }
+
+    /// Starts a new writeable transaction.
+    #[cfg(feature = "ssi_tx")]
+    pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
+        let instant = self.inner.instant();
+
+        let mut write_tx = WriteTransaction::new(
+            self.clone(),
+            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
+            self.orc
+                .read_ts()
+                .map_err(super::write::ssi::Error::Oracle)?,
+        );
+
+        if !self.inner.config.manual_journal_persist {
+            write_tx = write_tx.durability(Some(PersistMode::Buffer));
+        }
+
+        Ok(write_tx)
     }
 
     /// Starts a new read-only transaction.
@@ -160,16 +183,27 @@ impl TxKeyspace {
         let inner = Keyspace::create_or_recover(config)?;
         inner.start_background_threads();
 
-        let orc = Arc::new(Oracle::new(
-            format!("{name}.pending_reads").into(),
-            format!("{name}.txn_timestamps").into(),
-            0,
-        ));
+        Ok(Self {
+            inner,
+            #[cfg(feature = "ssi_tx")]
+            orc: {
+                let orc = Arc::new(Oracle::new(
+                    format!("{name}.pending_reads").into(),
+                    format!("{name}.txn_timestamps").into(),
+                    0,
+                ));
 
-        orc.read_mark.done(0).unwrap();
-        orc.txn_mark.done(0).unwrap();
-        orc.increment_next_ts();
-
-        Ok(Self { inner, orc })
+                orc.read_mark
+                    .done(0)
+                    .map_err(|e| crate::Error::Ssi(super::oracle::Error::from(e).into()))?;
+                orc.txn_mark
+                    .done(0)
+                    .map_err(|e| crate::Error::Ssi(super::oracle::Error::from(e).into()))?;
+                orc.increment_next_ts();
+                orc
+            },
+            #[cfg(feature = "single_writer_tx")]
+            lock: Default::default(),
+        })
     }
 }

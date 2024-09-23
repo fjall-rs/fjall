@@ -103,7 +103,7 @@ mod snapshot_nonce;
 mod snapshot_tracker;
 mod tracked_snapshot;
 
-#[cfg(feature = "single_writer_tx")]
+#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 mod tx;
 
 mod version;
@@ -127,7 +127,7 @@ pub use {
     version::Version,
 };
 
-#[cfg(feature = "single_writer_tx")]
+#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub use tx::{
     keyspace::{TransactionalKeyspace, TxKeyspace},
     partition::TransactionalPartitionHandle,
@@ -142,15 +142,15 @@ pub type WriteBatch = Batch;
 pub type Partition = PartitionHandle;
 
 /// Alias for [`TransactionalPartitionHandle`]
-#[cfg(feature = "single_writer_tx")]
+#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub type TxPartition = TransactionalPartitionHandle;
 
 /// Alias for [`TransactionalPartitionHandle`]
-#[cfg(feature = "single_writer_tx")]
+#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub type TxPartitionHandle = TransactionalPartitionHandle;
 
 /// Alias for [`TransactionalPartitionHandle`]
-#[cfg(feature = "single_writer_tx")]
+#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub type TransactionalPartition = TransactionalPartitionHandle;
 
 /// A snapshot moment

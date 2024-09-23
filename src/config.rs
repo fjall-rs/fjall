@@ -235,7 +235,7 @@ impl Config {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[cfg(feature = "single_writer_tx")]
+    #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
     pub fn open_transactional(self) -> crate::Result<crate::TxKeyspace> {
         crate::TxKeyspace::open(self)
     }

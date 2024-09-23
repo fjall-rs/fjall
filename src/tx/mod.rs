@@ -11,5 +11,9 @@ pub mod read_tx;
 #[allow(clippy::module_name_repetitions)]
 pub mod write_tx;
 
+#[cfg(feature = "ssi_tx")]
 mod conflict_manager;
+#[cfg(feature = "ssi_tx")]
 mod oracle;
+
+pub(crate) mod write;

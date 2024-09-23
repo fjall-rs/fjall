@@ -1,8 +1,9 @@
 use super::conflict_manager::ConflictChecker;
 use core::ops::AddAssign;
 use std::borrow::Cow;
-use std::sync::{Mutex, MutexGuard};
-use wmark::{Closer, WaterMark};
+use std::fmt;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use wmark::{Closer, WaterMark, WaterMarkError};
 
 #[derive(Debug)]
 pub(super) struct OracleInner<C> {
@@ -18,6 +19,33 @@ pub(super) struct OracleInner<C> {
 pub(super) enum CreateCommitTimestampResult<C> {
     Timestamp(u64),
     Conflict(Option<C>),
+}
+
+#[derive(Debug)]
+pub enum Error {
+    /// Watermark-related error
+    WaterMark(WaterMarkError),
+    /// Poisoned write serialization lock
+    Poisoned,
+}
+
+impl std::error::Error for Error {}
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl From<WaterMarkError> for Error {
+    fn from(value: WaterMarkError) -> Self {
+        Self::WaterMark(value)
+    }
+}
+
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_value: PoisonError<T>) -> Self {
+        Self::Poisoned
+    }
 }
 
 #[derive(Debug)]
@@ -44,76 +72,83 @@ impl Oracle<ConflictChecker> {
         done_read: &mut bool,
         read_ts: u64,
         conflict_manager: ConflictChecker,
-    ) -> CreateCommitTimestampResult<ConflictChecker> {
-        let mut inner = self.inner.lock().expect("lock poisoned");
-
-        for committed_txn in inner.committed_txns.iter() {
-            // If the committed_txn.ts is less than txn.read_ts that implies that the
-            // committed_txn finished before the current transaction started.
-            // We don't need to check for conflict in that case.
-            // This change assumes linearizability. Lack of linearizability could
-            // cause the read ts of a new txn to be lower than the commit ts of
-            // a txn before it (@mrjn).
-            if committed_txn.ts <= read_ts {
-                continue;
-            }
-
-            if conflict_manager.has_conflict(&committed_txn.conflict_manager) {
-                return CreateCommitTimestampResult::Conflict(Some(conflict_manager));
-            }
-        }
-
+    ) -> Result<CreateCommitTimestampResult<ConflictChecker>, Error> {
         let ts = {
-            if !*done_read {
-                self.read_mark.done(read_ts).unwrap();
-                *done_read = true;
+            let mut inner = self.inner.lock()?;
+
+            for committed_txn in &inner.committed_txns {
+                // If the committed_txn.ts is less than txn.read_ts that implies that the
+                // committed_txn finished before the current transaction started.
+                // We don't need to check for conflict in that case.
+                // This change assumes linearizability. Lack of linearizability could
+                // cause the read ts of a new txn to be lower than the commit ts of
+                // a txn before it (@mrjn).
+                if committed_txn.ts <= read_ts {
+                    continue;
+                }
+
+                if conflict_manager.has_conflict(&committed_txn.conflict_manager) {
+                    return Ok(CreateCommitTimestampResult::Conflict(Some(
+                        conflict_manager,
+                    )));
+                }
             }
 
-            self.cleanup_committed_transactions(true, &mut inner);
+            let ts = {
+                if !*done_read {
+                    self.read_mark.done(read_ts)?;
+                    *done_read = true;
+                }
 
-            // This is the general case, when user doesn't specify the read and commit ts.
-            let ts = inner.next_txn_ts;
-            inner.next_txn_ts += 1;
-            self.txn_mark.begin(ts).unwrap();
+                self.cleanup_committed_transactions(true, &mut inner)?;
+
+                // This is the general case, when user doesn't specify the read and commit ts.
+                let ts = inner.next_txn_ts;
+                inner.next_txn_ts += 1;
+                self.txn_mark.begin(ts)?;
+                ts
+            };
+
+            assert!(ts >= inner.last_cleanup_ts);
+
+            // We should ensure that txns are not added to o.committedTxns slice when
+            // conflict detection is disabled otherwise this slice would keep growing.
+            inner.committed_txns.push(CommittedTxn {
+                ts,
+                conflict_manager,
+            });
             ts
         };
 
-        assert!(ts >= inner.last_cleanup_ts);
-
-        // We should ensure that txns are not added to o.committedTxns slice when
-        // conflict detection is disabled otherwise this slice would keep growing.
-        inner.committed_txns.push(CommittedTxn {
-            ts,
-            conflict_manager,
-        });
-
-        CreateCommitTimestampResult::Timestamp(ts)
+        Ok(CreateCommitTimestampResult::Timestamp(ts))
     }
 
     fn cleanup_committed_transactions(
         &self,
         detect_conflicts: bool,
         inner: &mut MutexGuard<OracleInner<ConflictChecker>>,
-    ) {
+    ) -> Result<(), Error> {
         if !detect_conflicts {
             // When detectConflicts is set to false, we do not store any
             // committedTxns and so there's nothing to clean up.
-            return;
+            return Ok(());
         }
 
-        let max_read_ts = self.read_mark.done_until().unwrap();
+        let max_read_ts = self.read_mark.done_until()?;
 
         assert!(max_read_ts >= inner.last_cleanup_ts);
 
         // do not run clean up if the max_read_ts (read timestamp of the
         // oldest transaction that is still in flight) has not increased
         if max_read_ts == inner.last_cleanup_ts {
-            return;
+            return Ok(());
         }
 
         inner.last_cleanup_ts = max_read_ts;
 
         inner.committed_txns.retain(|txn| txn.ts > max_read_ts);
+
+        Ok(())
     }
 }
 
@@ -141,12 +176,13 @@ impl<C> Oracle<C> {
         orc
     }
 
-    pub(super) fn read_ts(&self) -> u64 {
+    pub(super) fn read_ts(&self) -> Result<u64, Error> {
         let read_ts = {
-            let inner = self.inner.lock().expect("lock poisoned");
-
-            let read_ts = inner.next_txn_ts - 1;
-            self.read_mark.begin(read_ts).unwrap();
+            let read_ts = {
+                let inner = self.inner.lock()?;
+                inner.next_txn_ts - 1
+            };
+            self.read_mark.begin(read_ts)?;
             read_ts
         };
 
@@ -154,30 +190,29 @@ impl<C> Oracle<C> {
         // timestamp and are going through the write to value log and LSM tree
         // process. Not waiting here could mean that some txns which have been
         // committed would not be read.
-        if let Err(e) = self.txn_mark.wait_for_mark(read_ts) {
-            panic!("{e}");
-        }
-        read_ts
+        self.txn_mark.wait_for_mark(read_ts)?;
+        Ok(read_ts)
     }
 
-    pub(super) fn increment_next_ts(&self) {
-        self.inner
-            .lock()
-            .expect("lock poisoned")
-            .next_txn_ts
-            .add_assign(1);
+    pub(super) fn increment_next_ts(&self) -> Result<(), Error> {
+        self.inner.lock()?.next_txn_ts.add_assign(1);
+        Ok(())
     }
 
-    pub(super) fn discard_at_or_below(&self) -> u64 {
-        self.read_mark.done_until().unwrap()
-    }
+    // TODO: is this important?
+    // pub(super) fn discard_at_or_below(&self) -> Result<u64, Error> {
+    //     self.read_mark.done_until().map_err(Error::from)
+    // }
 
-    pub(super) fn done_read(&self, read_ts: u64) {
-        self.read_mark.done(read_ts).unwrap();
-    }
+    // TODO: is this important?
+    // pub(super) fn done_read(&self, read_ts: u64) -> Result<(), Error> {
+    //     self.read_mark.done(read_ts).map_err(Error::from)?;
+    //     Ok(())
+    // }
 
-    pub(super) fn done_commit(&self, cts: u64) {
-        self.txn_mark.done(cts).unwrap();
+    pub(super) fn done_commit(&self, cts: u64) -> Result<(), Error> {
+        self.txn_mark.done(cts).map_err(Error::from)?;
+        Ok(())
     }
 
     fn stop(&self) {
