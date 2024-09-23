@@ -71,6 +71,34 @@ impl WriteTransaction {
         self
     }
 
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let taken = tx.take(&partition, "a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn take<K: AsRef<[u8]>>(
         &mut self,
         partition: &TxPartitionHandle,
@@ -79,6 +107,58 @@ impl WriteTransaction {
         self.fetch_update(partition, key, |_| None)
     }
 
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
+    /// assert!(updated.is_none());
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
@@ -95,6 +175,58 @@ impl WriteTransaction {
         Ok(updated)
     }
 
+    /// Atomically updates an item and returns the previous value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    ///
+    /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    /// tx.commit()?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
@@ -111,6 +243,39 @@ impl WriteTransaction {
         Ok(prev)
     }
 
+    /// Retrieves an item from the transaction's state.
+    ///
+    /// The transaction allows reading your own writes (RYOW).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "new_value");
+    ///
+    /// // Read-your-own-write
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(Some("new_value".as_bytes().into()), item);
+    ///
+    /// drop(tx);
+    ///
+    /// // Write was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
         partition: &TxPartitionHandle,
@@ -124,6 +289,37 @@ impl WriteTransaction {
         Ok(res)
     }
 
+    /// Returns `true` if the transaction's state contains the specified key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// assert!(keyspace.read_tx().contains_key(&partition, "a")?);
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// assert!(tx.contains_key(&partition, "a")?);
+    ///
+    /// tx.insert(&partition, "b", "my_value2");
+    /// assert!(tx.contains_key(&partition, "b")?);
+    ///
+    /// // Transaction not committed yet
+    /// assert!(!keyspace.read_tx().contains_key(&partition, "b")?);
+    ///
+    /// tx.commit()?;
+    /// assert!(keyspace.read_tx().contains_key(&partition, "b")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(
         &self,
         partition: &TxPartitionHandle,
@@ -137,16 +333,105 @@ impl WriteTransaction {
         Ok(contains)
     }
 
+    /// Returns the first key-value pair in the transaction's state.
+    /// The key in this pair is the minimum key in the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "1", "abc");
+    /// tx.insert(&partition, "3", "abc");
+    /// tx.insert(&partition, "5", "abc");
+    ///
+    /// let (key, _) = tx.first_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "1".as_bytes());
+    ///
+    /// assert!(keyspace.read_tx().first_key_value(&partition)?.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next().transpose()
     }
 
+    /// Returns the last key-value pair in the transaction's state.
+    /// The key in this pair is the maximum key in the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "1", "abc");
+    /// tx.insert(&partition, "3", "abc");
+    /// tx.insert(&partition, "5", "abc");
+    ///
+    /// let (key, _) = tx.last_key_value(&partition)?.expect("item should exist");
+    /// assert_eq!(&*key, "5".as_bytes());
+    ///
+    /// assert!(keyspace.read_tx().last_key_value(&partition)?.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
         // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next_back().transpose()
     }
 
+    /// Scans the entire partition, returning the amount of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// partition.insert("b", "my_value2")?;
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// assert_eq!(2, tx.len(&partition)?);
+    ///
+    /// tx.insert(&partition, "c", "my_value3");
+    ///
+    /// // read-your-own write
+    /// assert_eq!(3, tx.len(&partition)?);
+    ///
+    /// // Transaction is not committed yet
+    /// assert_eq!(2, keyspace.read_tx().len(&partition)?);
+    ///
+    /// tx.commit()?;
+    /// assert_eq!(3, keyspace.read_tx().len(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
@@ -161,6 +446,29 @@ impl WriteTransaction {
         Ok(count)
     }
 
+    /// Iterates over the transaction's state.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "f", "abc");
+    /// tx.insert(&partition, "g", "abc");
+    ///
+    /// assert_eq!(3, tx.iter(&partition).count());
+    /// assert_eq!(0, keyspace.read_tx().iter(&partition).count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn iter(
         &self,
@@ -171,6 +479,9 @@ impl WriteTransaction {
         self.inner.iter(partition)
     }
 
+    /// Iterates over the transaction's state, returning keys only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(
         &self,
@@ -181,6 +492,9 @@ impl WriteTransaction {
         self.inner.keys(partition)
     }
 
+    /// Iterates over the transaction's state, returning values only.
+    ///
+    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(
         &self,
@@ -191,6 +505,29 @@ impl WriteTransaction {
         self.inner.values(partition)
     }
 
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "f", "abc");
+    /// tx.insert(&partition, "g", "abc");
+    ///
+    /// assert_eq!(2, tx.range(&partition, "a"..="f").count());
+    /// assert_eq!(0, keyspace.read_tx().range(&partition, "a"..="f").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
@@ -214,6 +551,29 @@ impl WriteTransaction {
         self.inner.range(partition, range)
     }
 
+    /// Iterates over a range of the transaction's state.
+    ///
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// #
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "abc");
+    /// tx.insert(&partition, "ab", "abc");
+    /// tx.insert(&partition, "abc", "abc");
+    ///
+    /// assert_eq!(2, tx.prefix(&partition, "ab").count());
+    /// assert_eq!(0, keyspace.read_tx().prefix(&partition, "ab").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
@@ -228,6 +588,38 @@ impl WriteTransaction {
         self.inner.prefix(partition, prefix)
     }
 
+    /// Inserts a key-value pair into the partition.
+    ///
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
+    /// Shorter keys and values result in better performance.
+    ///
+    /// If the key already exists, the item will be overwritten.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "new_value");
+    ///
+    /// drop(tx);
+    ///
+    /// // Write was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &mut self,
         partition: &TxPartitionHandle,
@@ -240,6 +632,40 @@ impl WriteTransaction {
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
+    /// Removes an item from the partition.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.remove(&partition, "a");
+    ///
+    /// // Read-your-own-write
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(None, item);
+    ///
+    /// drop(tx);
+    ///
+    /// // Deletion was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&mut self, partition: &TxPartitionHandle, key: K) {
         self.inner.remove(partition, key.as_ref());
 
@@ -247,6 +673,11 @@ impl WriteTransaction {
             .mark_conflict(&partition.inner.name, &key.as_ref().into());
     }
 
+    /// Commits the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn commit(mut self) -> crate::Result<Result<(), Conflict>> {
         // skip all the logic if no keys were written to
         if self.inner.memtables.is_empty() {
@@ -283,6 +714,8 @@ impl WriteTransaction {
         Ok(Ok(()))
     }
 
+    /// More explicit alternative to dropping the transaction
+    /// to roll it back.
     pub fn rollback(self) {
         self.inner.rollback();
     }
@@ -290,7 +723,11 @@ impl WriteTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tx::write::ssi::Conflict, Config, PartitionCreateOptions};
+    use crate::{
+        tx::write::ssi::Conflict, Config, PartitionCreateOptions, TransactionalPartitionHandle,
+        TxKeyspace,
+    };
+    use tempfile::TempDir;
     use test_log::test;
 
     #[test]
@@ -353,6 +790,104 @@ mod tests {
 
         tx1.commit()??;
         assert!(matches!(tx2.commit()?, Err(Conflict)));
+
+        Ok(())
+    }
+
+    struct TestEnv {
+        ks: TxKeyspace,
+        part: TransactionalPartitionHandle,
+        tmpdir: TempDir,
+    }
+
+    fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
+        let tmpdir = tempfile::tempdir()?;
+        let ks = Config::new(tmpdir.path()).open_transactional()?;
+
+        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
+
+        part.insert([1u8], [10u8])?;
+        part.insert([2u8], [20u8])?;
+
+        Ok(TestEnv { ks, part, tmpdir })
+    }
+
+    #[test]
+    fn write_cycles() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        t1.insert(&env.part, [1u8], [11u8]);
+        t2.insert(&env.part, [1u8], [12u8]);
+        t1.insert(&env.part, [2u8], [21u8]);
+        t1.commit()??;
+
+        assert_eq!(env.part.get([1u8])?, Some([11u8].into()));
+
+        t2.insert(&env.part, [2u8], [22u8]);
+        t2.commit()??;
+
+        assert_eq!(env.part.get([1u8])?, Some([12u8].into()));
+        assert_eq!(env.part.get([2u8])?, Some([22u8].into()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn aborted_reads() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        let t2 = env.ks.write_tx()?;
+
+        t1.insert(&env.part, [1u8], [101u8]);
+
+        assert_eq!(t2.get(&env.part, [1u8])?, Some([10u8].into()));
+
+        t1.rollback();
+
+        assert_eq!(t2.get(&env.part, [1u8])?, Some([10u8].into()));
+
+        t2.commit()??;
+
+        Ok(())
+    }
+
+    #[allow(clippy::unwrap_used)]
+    #[test]
+    fn anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        {
+            let mut iter = t1.iter(&env.part);
+            assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
+            assert_eq!(iter.next().unwrap()?, ([2u8].into(), [20u8].into()));
+            assert!(iter.next().is_none());
+        }
+
+        let mut t2 = env.ks.write_tx()?;
+        let new = t2.update_fetch(&env.part, [2u8], |v| {
+            v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
+        })?;
+        assert_eq!(new, Some([25u8].into()));
+        t2.commit()??;
+
+        let t3 = env.ks.write_tx()?;
+        {
+            let mut iter = t3.iter(&env.part);
+            assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
+            assert_eq!(iter.next().unwrap()?, ([2u8].into(), [25u8].into())); // changed here
+            assert!(iter.next().is_none());
+        }
+
+        t3.commit()??;
+
+        t1.insert(&env.part, [1u8], [0u8]);
+
+        assert!(matches!(t1.commit()?, Err(Conflict)));
 
         Ok(())
     }

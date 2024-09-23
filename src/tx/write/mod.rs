@@ -81,7 +81,7 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn take<K: AsRef<[u8]>>(
+    fn take<K: AsRef<[u8]>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -723,75 +723,54 @@ impl WriteTransaction {
 
     /// More explicit alternative to dropping the transaction
     /// to roll it back.
+    #[allow(clippy::unused_self)]
     pub fn rollback(self) {}
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{Config, PartitionCreateOptions};
-//     use test_log::test;
+#[cfg(test)]
+mod tests {
+    use crate::{
+        snapshot_nonce::SnapshotNonce, Config, PartitionCreateOptions,
+        TransactionalPartitionHandle, TxKeyspace,
+    };
+    use tempfile::TempDir;
 
-//     #[test]
-//     fn basic_tx_test() -> crate::Result<()> {
-//         let tmpdir = tempfile::tempdir()?;
-//         let keyspace = Config::new(tmpdir.path()).open_transactional()?;
+    struct TestEnv {
+        ks: TxKeyspace,
+        part: TransactionalPartitionHandle,
+        tmpdir: TempDir,
+    }
 
-//         let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
+    fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
+        let tmpdir = tempfile::tempdir()?;
+        let ks = Config::new(tmpdir.path()).open_transactional()?;
 
-//         let mut tx1 = keyspace.write_tx();
-//         let mut tx2 = keyspace.write_tx();
+        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
 
-//         tx1.insert(&part, "hello", "world");
+        part.insert([1u8], [10u8])?;
+        part.insert([2u8], [20u8])?;
 
-//         tx1.commit()?;
-//         assert!(part.contains_key("hello")?);
+        Ok(TestEnv { ks, part, tmpdir })
+    }
 
-//         assert_eq!(tx2.get(&part, "hello")?, None);
+    #[test]
+    fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
 
-//         tx2.insert(&part, "hello", "world2");
-//         assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
+        let mut tx = super::WriteTransaction::new(
+            env.ks.clone(),
+            SnapshotNonce::new(
+                env.ks.inner.instant(),
+                env.ks.inner.snapshot_tracker.clone(),
+            ),
+        );
 
-//         let mut tx1 = keyspace.write_tx();
-//         let mut tx2 = keyspace.write_tx();
+        let new = tx.update_fetch(&env.part, [2u8], |v| {
+            v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
+        })?;
+        assert_eq!(new, Some([25u8].into()));
+        tx.commit()?;
 
-//         tx1.iter(&part).next();
-//         tx2.insert(&part, "hello", "world2");
-
-//         tx1.insert(&part, "hello2", "world1");
-//         tx1.commit()?;
-
-//         tx2.commit()?;
-
-//         Ok(())
-//     }
-
-//     #[test]
-//     #[allow(clippy::unwrap_used)]
-//     fn tx_ssi_swap() -> crate::Result<()> {
-//         let tmpdir = tempfile::tempdir()?;
-//         let keyspace = Config::new(tmpdir.path()).open_transactional()?;
-
-//         let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
-
-//         part.insert("x", "x")?;
-//         part.insert("y", "y")?;
-
-//         let mut tx1 = keyspace.write_tx();
-//         let mut tx2 = keyspace.write_tx();
-
-//         {
-//             let x = tx1.get(&part, "x")?.unwrap();
-//             tx1.insert(&part, "y", x);
-//         }
-
-//         {
-//             let y = tx2.get(&part, "y")?.unwrap();
-//             tx2.insert(&part, "x", y);
-//         }
-
-//         tx1.commit()?;
-//         assert!(matches!(tx2.commit(), Err(crate::Error::Conflict)));
-
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
