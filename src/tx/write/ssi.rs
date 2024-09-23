@@ -9,7 +9,7 @@ use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{
         conflict_manager::ConflictManager,
-        oracle::{self, CreateCommitTimestampResult},
+        oracle::{self, CommitOutcome},
     },
     PersistMode, TxKeyspace, TxPartitionHandle,
 };
@@ -50,17 +50,13 @@ impl fmt::Display for Conflict {
 pub struct WriteTransaction {
     inner: InnerWriteTransaction,
     cm: ConflictManager,
-    read_ts: u64,
-    done_read: bool,
 }
 
 impl WriteTransaction {
-    pub(crate) fn new(keyspace: TxKeyspace, nonce: SnapshotNonce, read_ts: u64) -> Self {
+    pub(crate) fn new(keyspace: TxKeyspace, nonce: SnapshotNonce) -> Self {
         Self {
             inner: InnerWriteTransaction::new(keyspace, nonce),
             cm: ConflictManager::default(),
-            read_ts,
-            done_read: false,
         }
     }
 
@@ -685,33 +681,16 @@ impl WriteTransaction {
         }
 
         let orc = self.inner.keyspace.orc.clone();
-        let _write_lock = orc
-            .write_serialize_lock
-            .lock()
-            .map_err(oracle::Error::from)
-            .map_err(Error::from)?;
-
-        let cm_res = self.inner.keyspace.orc.new_commit_ts(
-            &mut self.done_read,
-            self.read_ts,
-            self.cm.into(),
-        );
-
-        let commit_ts = match cm_res {
-            Err(e) => {
-                return Err(crate::Error::Ssi(e.into()));
-            }
-            Ok(CreateCommitTimestampResult::Timestamp(ts)) => ts,
-            Ok(CreateCommitTimestampResult::Conflict(_conflict_manager)) => {
-                return Ok(Err(Conflict));
-            }
-        };
-
-        self.inner.commit()?;
-
-        orc.done_commit(commit_ts).map_err(Error::from)?;
-
-        Ok(Ok(()))
+        match orc
+            .with_commit(self.inner.nonce.instant, self.cm.into(), move || {
+                self.inner.commit()
+            })
+            .map_err(Error::from)?
+        {
+            CommitOutcome::Ok => Ok(Ok(())),
+            CommitOutcome::Aborted(e) => Err(e),
+            CommitOutcome::Conflicted => Ok(Err(Conflict)),
+        }
     }
 
     /// More explicit alternative to dropping the transaction

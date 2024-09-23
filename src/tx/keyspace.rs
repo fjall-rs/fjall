@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 pub struct TransactionalKeyspace {
     pub(crate) inner: Keyspace,
     #[cfg(feature = "ssi_tx")]
-    pub(super) orc: Arc<Oracle<ConflictChecker>>,
+    pub(super) orc: Arc<Oracle>,
     #[cfg(feature = "single_writer_tx")]
     lock: Arc<Mutex<()>>,
 }
@@ -58,9 +58,6 @@ impl TxKeyspace {
         let mut write_tx = WriteTransaction::new(
             self.clone(),
             SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-            self.orc
-                .read_ts()
-                .map_err(super::write::ssi::Error::Oracle)?,
         );
 
         if !self.inner.config.manual_journal_persist {
@@ -182,29 +179,17 @@ impl TxKeyspace {
     ///
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
-        let name = config.path.display().to_string();
         let inner = Keyspace::create_or_recover(config)?;
         inner.start_background_threads();
 
         Ok(Self {
-            inner,
             #[cfg(feature = "ssi_tx")]
-            orc: {
-                let orc = Arc::new(Oracle::new(
-                    format!("{name}.pending_reads").into(),
-                    format!("{name}.txn_timestamps").into(),
-                    0,
-                ));
-
-                orc.read_mark
-                    .done(0)
-                    .map_err(|e| crate::Error::Ssi(super::oracle::Error::from(e).into()))?;
-                orc.txn_mark
-                    .done(0)
-                    .map_err(|e| crate::Error::Ssi(super::oracle::Error::from(e).into()))?;
-                orc.increment_next_ts();
-                orc
-            },
+            orc: Arc::new(Oracle {
+                write_serialize_lock: Mutex::default(),
+                seqno: inner.seqno.clone(),
+                snapshot_tracker: inner.snapshot_tracker.clone(),
+            }),
+            inner,
             #[cfg(feature = "single_writer_tx")]
             lock: Default::default(),
         })
