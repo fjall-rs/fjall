@@ -119,12 +119,23 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let mut tx = self.keyspace.write_tx();
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
 
-        let prev = tx.fetch_update(self, key, f)?;
-        tx.commit()?;
+            let prev = tx.fetch_update(self, key, f)?;
+            tx.commit()?;
 
-        Ok(prev)
+            Ok(prev)
+        }
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.keyspace.write_tx()?;
+            let prev = tx.fetch_update(self, key.as_ref(), &f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(prev);
+            }
+        }
     }
 
     /// Atomically updates an item and returns the new value.
@@ -179,11 +190,22 @@ impl TransactionalPartitionHandle {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let mut tx = self.keyspace.write_tx();
-        let updated = tx.update_fetch(self, key, f)?;
-        tx.commit()?;
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            let updated = tx.update_fetch(self, key, f)?;
+            tx.commit()?;
 
-        Ok(updated)
+            Ok(updated)
+        }
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.keyspace.write_tx()?;
+            let updated = tx.update_fetch(self, key.as_ref(), &f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(updated);
+            }
+        }
     }
 
     /// Inserts a key-value pair into the partition.
@@ -214,10 +236,20 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let mut tx = self.keyspace.write_tx();
-        tx.insert(self, key, value);
-        tx.commit()?;
-        Ok(())
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            tx.insert(self, key, value);
+            tx.commit()?;
+            Ok(())
+        }
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.keyspace.write_tx()?;
+            tx.insert(self, key.as_ref(), value.as_ref());
+            tx.commit()?.expect("blind insert should not conflict ever");
+            Ok(())
+        }
     }
 
     /// Removes an item from the partition.
@@ -248,10 +280,20 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let mut tx = self.keyspace.write_tx();
-        tx.remove(self, key);
-        tx.commit()?;
-        Ok(())
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            tx.remove(self, key);
+            tx.commit()?;
+            Ok(())
+        }
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.keyspace.write_tx()?;
+            tx.remove(self, key.as_ref());
+            tx.commit()?.expect("blind remove should not conflict ever");
+            Ok(())
+        }
     }
 
     /// Retrieves an item from the partition.
