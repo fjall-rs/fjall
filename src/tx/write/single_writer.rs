@@ -8,7 +8,7 @@ use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxKeyspace};
 use super::WriteTransaction as InnerWriteTransaction;
 
 pub struct WriteTransaction<'a> {
-    guard: MutexGuard<'a, ()>,
+    _guard: MutexGuard<'a, ()>,
     inner: InnerWriteTransaction,
 }
 
@@ -19,7 +19,7 @@ impl<'a> WriteTransaction<'a> {
         guard: MutexGuard<'a, ()>,
     ) -> Self {
         Self {
-            guard,
+            _guard: guard,
             inner: InnerWriteTransaction::new(keyspace, nonce),
         }
     }
@@ -36,12 +36,12 @@ impl<'a> WriteTransaction<'a> {
     }
 
     pub fn rollback(self) {
-        self.inner.rollback()
+        self.inner.rollback();
     }
 }
 
 impl<'a> Deref for WriteTransaction<'a> {
-    type Target = WriteTransaction;
+    type Target = super::WriteTransaction;
 
     fn deref(&self) -> &Self::Target {
         &self.inner

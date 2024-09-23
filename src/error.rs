@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
+#[cfg(feature = "ssi_tx")]
 use crate::tx::write::ssi::Error as SsiError;
 use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
 use lsm_tree::{DecodeError, EncodeError};

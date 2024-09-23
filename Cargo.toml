@@ -17,7 +17,7 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["bloom", "ssi_tx", "lz4"]
+default = ["bloom", "single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
 bloom = ["lsm-tree/bloom"]

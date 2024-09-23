@@ -49,7 +49,7 @@ impl TxKeyspace {
 
     /// Starts a new writeable transaction.
     #[cfg(feature = "ssi_tx")]
-    pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
+    pub fn write_tx(&self) -> WriteTransaction {
         let instant = self.inner.instant();
 
         let mut write_tx = WriteTransaction::new(
@@ -57,14 +57,14 @@ impl TxKeyspace {
             SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
             self.orc
                 .read_ts()
-                .map_err(super::write::ssi::Error::Oracle)?,
+                .expect("ssi tx oracle failed to read timestamp"),
         );
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
         }
 
-        Ok(write_tx)
+        write_tx
     }
 
     /// Starts a new read-only transaction.
