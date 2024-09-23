@@ -84,7 +84,7 @@ impl WriteTransaction {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     ///
     /// let taken = tx.take(&partition, "a")?.unwrap();
     /// assert_eq!(b"abc", &*taken);
@@ -123,7 +123,7 @@ impl WriteTransaction {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     ///
     /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
@@ -144,7 +144,7 @@ impl WriteTransaction {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     ///
     /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
     /// assert!(updated.is_none());
@@ -191,7 +191,7 @@ impl WriteTransaction {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     ///
     /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
@@ -212,7 +212,7 @@ impl WriteTransaction {
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// partition.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     ///
     /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
     /// assert_eq!(b"abc", &*prev);
@@ -258,7 +258,7 @@ impl WriteTransaction {
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "a", "new_value");
     ///
     /// // Read-your-own-write
@@ -302,7 +302,7 @@ impl WriteTransaction {
     /// partition.insert("a", "my_value")?;
     /// assert!(keyspace.read_tx().contains_key(&partition, "a")?);
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// assert!(tx.contains_key(&partition, "a")?);
     ///
     /// tx.insert(&partition, "b", "my_value2");
@@ -345,7 +345,7 @@ impl WriteTransaction {
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "1", "abc");
     /// tx.insert(&partition, "3", "abc");
     /// tx.insert(&partition, "5", "abc");
@@ -378,7 +378,7 @@ impl WriteTransaction {
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "1", "abc");
     /// tx.insert(&partition, "3", "abc");
     /// tx.insert(&partition, "5", "abc");
@@ -412,7 +412,7 @@ impl WriteTransaction {
     /// partition.insert("a", "my_value")?;
     /// partition.insert("b", "my_value2")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// assert_eq!(2, tx.len(&partition)?);
     ///
     /// tx.insert(&partition, "c", "my_value3");
@@ -459,7 +459,7 @@ impl WriteTransaction {
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "f", "abc");
     /// tx.insert(&partition, "g", "abc");
@@ -518,7 +518,7 @@ impl WriteTransaction {
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "f", "abc");
     /// tx.insert(&partition, "g", "abc");
@@ -564,7 +564,7 @@ impl WriteTransaction {
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "a", "abc");
     /// tx.insert(&partition, "ab", "abc");
     /// tx.insert(&partition, "abc", "abc");
@@ -606,7 +606,7 @@ impl WriteTransaction {
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.insert(&partition, "a", "new_value");
     ///
     /// drop(tx);
@@ -648,7 +648,7 @@ impl WriteTransaction {
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.remove(&partition, "a");
     ///
     /// // Read-your-own-write
@@ -737,8 +737,8 @@ mod tests {
 
         let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
 
-        let mut tx1 = keyspace.write_tx();
-        let mut tx2 = keyspace.write_tx();
+        let mut tx1 = keyspace.write_tx()?;
+        let mut tx2 = keyspace.write_tx()?;
 
         tx1.insert(&part, "hello", "world");
 
@@ -750,8 +750,8 @@ mod tests {
         tx2.insert(&part, "hello", "world2");
         assert!(matches!(tx2.commit()?, Err(Conflict)));
 
-        let mut tx1 = keyspace.write_tx();
-        let mut tx2 = keyspace.write_tx();
+        let mut tx1 = keyspace.write_tx()?;
+        let mut tx2 = keyspace.write_tx()?;
 
         tx1.iter(&part).next();
         tx2.insert(&part, "hello", "world2");
@@ -772,8 +772,8 @@ mod tests {
         let keyspace = Config::new(tmpdir.path()).open_transactional()?;
         let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
 
-        let mut tx1 = keyspace.write_tx();
-        let mut tx2 = keyspace.write_tx();
+        let mut tx1 = keyspace.write_tx()?;
+        let mut tx2 = keyspace.write_tx()?;
 
         tx1.insert(&part, "a", "a");
         tx2.insert(&part, "b", "c");
@@ -800,8 +800,8 @@ mod tests {
         part.insert("x", "x")?;
         part.insert("y", "y")?;
 
-        let mut tx1 = keyspace.write_tx();
-        let mut tx2 = keyspace.write_tx();
+        let mut tx1 = keyspace.write_tx()?;
+        let mut tx2 = keyspace.write_tx()?;
 
         {
             let x = tx1.get(&part, "x")?.unwrap();
@@ -843,8 +843,8 @@ mod tests {
     fn tx_ssi_write_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx();
-        let mut t2 = env.ks.write_tx();
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
 
         t1.insert(&env.part, [1u8], [11u8]);
         t2.insert(&env.part, [1u8], [12u8]);
@@ -866,8 +866,8 @@ mod tests {
     fn tx_ssi_aborted_reads() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx();
-        let t2 = env.ks.write_tx();
+        let mut t1 = env.ks.write_tx()?;
+        let t2 = env.ks.write_tx()?;
 
         t1.insert(&env.part, [1u8], [101u8]);
 
@@ -887,7 +887,7 @@ mod tests {
     fn tx_ssi_anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx();
+        let mut t1 = env.ks.write_tx()?;
         {
             let mut iter = t1.iter(&env.part);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
@@ -895,14 +895,14 @@ mod tests {
             assert!(iter.next().is_none());
         }
 
-        let mut t2 = env.ks.write_tx();
+        let mut t2 = env.ks.write_tx()?;
         let new = t2.update_fetch(&env.part, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
         t2.commit()??;
 
-        let t3 = env.ks.write_tx();
+        let t3 = env.ks.write_tx()?;
         {
             let mut iter = t3.iter(&env.part);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
