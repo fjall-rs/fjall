@@ -65,6 +65,8 @@ jobs:
         run: cargo test --features __internal_whitebox -- whitebox_ --test-threads=1
       - name: Run tests
         run: cargo nextest run --features lz4,miniz,single_writer_tx,bloom
+      - name: Run SSI tests
+        run: cargo nextest run --no-default-features --features ssi_tx tx_ssi_
       - name: Run doc tests
         run: cargo test --doc
       - name: Build & test examples

@@ -731,14 +731,14 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn basic_tx_test() -> Result<(), Box<dyn std::error::Error>> {
+    fn tx_ssi_basic() -> Result<(), Box<dyn std::error::Error>> {
         let tmpdir = tempfile::tempdir()?;
         let keyspace = Config::new(tmpdir.path()).open_transactional()?;
 
         let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
 
         tx1.insert(&part, "hello", "world");
 
@@ -750,8 +750,8 @@ mod tests {
         tx2.insert(&part, "hello", "world2");
         assert!(matches!(tx2.commit()?, Err(Conflict)));
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
 
         tx1.iter(&part).next();
         tx2.insert(&part, "hello", "world2");
@@ -760,6 +760,31 @@ mod tests {
         tx1.commit()??;
 
         tx2.commit()??;
+
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tx_ssi_ww() -> Result<(), Box<dyn std::error::Error>> {
+        // https://en.wikipedia.org/wiki/Write%E2%80%93write_conflict
+        let tmpdir = tempfile::tempdir()?;
+        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
+        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
+
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
+
+        tx1.insert(&part, "a", "a");
+        tx2.insert(&part, "b", "c");
+        tx1.insert(&part, "b", "b");
+        tx1.commit()??;
+
+        tx2.insert(&part, "a", "c");
+
+        tx2.commit()??;
+        assert_eq!(b"c", &*part.get("a")?.unwrap());
+        assert_eq!(b"c", &*part.get("b")?.unwrap());
 
         Ok(())
     }
@@ -775,8 +800,8 @@ mod tests {
         part.insert("x", "x")?;
         part.insert("y", "y")?;
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = keyspace.write_tx();
+        let mut tx2 = keyspace.write_tx();
 
         {
             let x = tx1.get(&part, "x")?.unwrap();
@@ -797,6 +822,8 @@ mod tests {
     struct TestEnv {
         ks: TxKeyspace,
         part: TransactionalPartitionHandle,
+
+        #[allow(unused)]
         tmpdir: TempDir,
     }
 
@@ -813,11 +840,11 @@ mod tests {
     }
 
     #[test]
-    fn write_cycles() -> Result<(), Box<dyn std::error::Error>> {
+    fn tx_ssi_write_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx()?;
-        let mut t2 = env.ks.write_tx()?;
+        let mut t1 = env.ks.write_tx();
+        let mut t2 = env.ks.write_tx();
 
         t1.insert(&env.part, [1u8], [11u8]);
         t2.insert(&env.part, [1u8], [12u8]);
@@ -836,11 +863,11 @@ mod tests {
     }
 
     #[test]
-    fn aborted_reads() -> Result<(), Box<dyn std::error::Error>> {
+    fn tx_ssi_aborted_reads() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx()?;
-        let t2 = env.ks.write_tx()?;
+        let mut t1 = env.ks.write_tx();
+        let t2 = env.ks.write_tx();
 
         t1.insert(&env.part, [1u8], [101u8]);
 
@@ -857,10 +884,10 @@ mod tests {
 
     #[allow(clippy::unwrap_used)]
     #[test]
-    fn anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
+    fn tx_ssi_anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        let mut t1 = env.ks.write_tx()?;
+        let mut t1 = env.ks.write_tx();
         {
             let mut iter = t1.iter(&env.part);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
@@ -868,14 +895,14 @@ mod tests {
             assert!(iter.next().is_none());
         }
 
-        let mut t2 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx();
         let new = t2.update_fetch(&env.part, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
         t2.commit()??;
 
-        let t3 = env.ks.write_tx()?;
+        let t3 = env.ks.write_tx();
         {
             let mut iter = t3.iter(&env.part);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
