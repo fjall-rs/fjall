@@ -674,7 +674,7 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn commit(mut self) -> crate::Result<Result<(), Conflict>> {
+    pub fn commit(self) -> crate::Result<Result<(), Conflict>> {
         // skip all the logic if no keys were written to
         if self.inner.memtables.is_empty() {
             return Ok(Ok(()));
@@ -709,33 +709,55 @@ mod tests {
     use tempfile::TempDir;
     use test_log::test;
 
+    struct TestEnv {
+        ks: TxKeyspace,
+        part: TransactionalPartitionHandle,
+
+        #[allow(unused)]
+        tmpdir: TempDir,
+    }
+
+    impl TestEnv {
+        fn seed_hermitage_data(&self) -> crate::Result<()> {
+            self.part.insert([1u8], [10u8])?;
+            self.part.insert([2u8], [20u8])?;
+            Ok(())
+        }
+    }
+
+    fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
+        let tmpdir = tempfile::tempdir()?;
+        let ks = Config::new(tmpdir.path()).open_transactional()?;
+
+        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
+
+        Ok(TestEnv { ks, part, tmpdir })
+    }
+
     #[test]
     fn tx_ssi_basic() -> Result<(), Box<dyn std::error::Error>> {
-        let tmpdir = tempfile::tempdir()?;
-        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
+        let env = setup()?;
 
-        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
+        let mut tx1 = env.ks.write_tx()?;
+        let mut tx2 = env.ks.write_tx()?;
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
-
-        tx1.insert(&part, "hello", "world");
+        tx1.insert(&env.part, "hello", "world");
 
         tx1.commit()??;
-        assert!(part.contains_key("hello")?);
+        assert!(env.part.contains_key("hello")?);
 
-        assert_eq!(tx2.get(&part, "hello")?, None);
+        assert_eq!(tx2.get(&env.part, "hello")?, None);
 
-        tx2.insert(&part, "hello", "world2");
+        tx2.insert(&env.part, "hello", "world2");
         assert!(matches!(tx2.commit()?, Err(Conflict)));
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = env.ks.write_tx()?;
+        let mut tx2 = env.ks.write_tx()?;
 
-        tx1.iter(&part).next();
-        tx2.insert(&part, "hello", "world2");
+        tx1.iter(&env.part).next();
+        tx2.insert(&env.part, "hello", "world2");
 
-        tx1.insert(&part, "hello2", "world1");
+        tx1.insert(&env.part, "hello2", "world1");
         tx1.commit()??;
 
         tx2.commit()??;
@@ -747,23 +769,21 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn tx_ssi_ww() -> Result<(), Box<dyn std::error::Error>> {
         // https://en.wikipedia.org/wiki/Write%E2%80%93write_conflict
-        let tmpdir = tempfile::tempdir()?;
-        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
-        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
+        let env = setup()?;
 
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = env.ks.write_tx()?;
+        let mut tx2 = env.ks.write_tx()?;
 
-        tx1.insert(&part, "a", "a");
-        tx2.insert(&part, "b", "c");
-        tx1.insert(&part, "b", "b");
+        tx1.insert(&env.part, "a", "a");
+        tx2.insert(&env.part, "b", "c");
+        tx1.insert(&env.part, "b", "b");
         tx1.commit()??;
 
-        tx2.insert(&part, "a", "c");
+        tx2.insert(&env.part, "a", "c");
 
         tx2.commit()??;
-        assert_eq!(b"c", &*part.get("a")?.unwrap());
-        assert_eq!(b"c", &*part.get("b")?.unwrap());
+        assert_eq!(b"c", &*env.part.get("a")?.unwrap());
+        assert_eq!(b"c", &*env.part.get("b")?.unwrap());
 
         Ok(())
     }
@@ -771,25 +791,22 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
-        let tmpdir = tempfile::tempdir()?;
-        let keyspace = Config::new(tmpdir.path()).open_transactional()?;
+        let env = setup()?;
 
-        let part = keyspace.open_partition("foo", PartitionCreateOptions::default())?;
+        env.part.insert("x", "x")?;
+        env.part.insert("y", "y")?;
 
-        part.insert("x", "x")?;
-        part.insert("y", "y")?;
-
-        let mut tx1 = keyspace.write_tx()?;
-        let mut tx2 = keyspace.write_tx()?;
+        let mut tx1 = env.ks.write_tx()?;
+        let mut tx2 = env.ks.write_tx()?;
 
         {
-            let x = tx1.get(&part, "x")?.unwrap();
-            tx1.insert(&part, "y", x);
+            let x = tx1.get(&env.part, "x")?.unwrap();
+            tx1.insert(&env.part, "y", x);
         }
 
         {
-            let y = tx2.get(&part, "y")?.unwrap();
-            tx2.insert(&part, "x", y);
+            let y = tx2.get(&env.part, "y")?.unwrap();
+            tx2.insert(&env.part, "x", y);
         }
 
         tx1.commit()??;
@@ -798,29 +815,10 @@ mod tests {
         Ok(())
     }
 
-    struct TestEnv {
-        ks: TxKeyspace,
-        part: TransactionalPartitionHandle,
-
-        #[allow(unused)]
-        tmpdir: TempDir,
-    }
-
-    fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
-        let tmpdir = tempfile::tempdir()?;
-        let ks = Config::new(tmpdir.path()).open_transactional()?;
-
-        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
-
-        part.insert([1u8], [10u8])?;
-        part.insert([2u8], [20u8])?;
-
-        Ok(TestEnv { ks, part, tmpdir })
-    }
-
     #[test]
     fn tx_ssi_write_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
+        env.seed_hermitage_data()?;
 
         let mut t1 = env.ks.write_tx()?;
         let mut t2 = env.ks.write_tx()?;
@@ -844,6 +842,7 @@ mod tests {
     #[test]
     fn tx_ssi_aborted_reads() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
+        env.seed_hermitage_data()?;
 
         let mut t1 = env.ks.write_tx()?;
         let t2 = env.ks.write_tx()?;
@@ -865,6 +864,7 @@ mod tests {
     #[test]
     fn tx_ssi_anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
+        env.seed_hermitage_data()?;
 
         let mut t1 = env.ks.write_tx()?;
         {
@@ -894,6 +894,102 @@ mod tests {
         t1.insert(&env.part, [1u8], [0u8]);
 
         assert!(matches!(t1.commit()?, Err(Conflict)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn tx_ssi_update_fetch_update() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        let new = t1.update_fetch(&env.part, "hello", |_| Some("world".into()))?;
+        assert_eq!(new, Some("world".into()));
+        let old = t2.fetch_update(&env.part, "hello", |_| Some("world2".into()))?;
+        assert_eq!(old, None);
+
+        t1.commit()??;
+        assert!(matches!(t2.commit()?, Err(Conflict)));
+
+        assert_eq!(env.part.get("hello")?, Some("world".into()));
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        let old = t1.fetch_update(&env.part, "hello", |_| Some("world3".into()))?;
+        assert_eq!(old, Some("world".into()));
+        let new = t2.update_fetch(&env.part, "hello2", |_| Some("world2".into()))?;
+        assert_eq!(new, Some("world2".into()));
+
+        t1.commit()??;
+        t2.commit()??;
+
+        assert_eq!(env.part.get("hello")?, Some("world3".into()));
+        assert_eq!(env.part.get("hello2")?, Some("world2".into()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn tx_ssi_range() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        _ = t1.range(&env.part, "h"..="hello");
+        t1.insert(&env.part, "foo", "bar");
+
+        // insert a key INSIDE the range read by t1
+        t2.insert(&env.part, "hello", "world");
+
+        t2.commit()??;
+        assert!(matches!(t1.commit()?, Err(Conflict)));
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        _ = t1.range(&env.part, "h"..="hello");
+        t1.insert(&env.part, "foo", "bar");
+
+        // insert a key OUTSIDE the range read by t1
+        t2.insert(&env.part, "hello2", "world");
+
+        t2.commit()??;
+        t1.commit()??;
+
+        Ok(())
+    }
+
+    #[test]
+    fn tx_ssi_prefix() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        _ = t1.prefix(&env.part, "hello");
+        t1.insert(&env.part, "foo", "bar");
+
+        // insert a key MATCHING the prefix read by t1
+        t2.insert(&env.part, "hello", "world");
+
+        t2.commit()??;
+        assert!(matches!(t1.commit()?, Err(Conflict)));
+
+        let mut t1 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
+
+        _ = t1.prefix(&env.part, "hello");
+        t1.insert(&env.part, "foo", "bar");
+
+        // insert a key NOT MATCHING the range read by t1
+        t2.insert(&env.part, "foobar", "world");
+
+        t2.commit()??;
+        t1.commit()??;
 
         Ok(())
     }

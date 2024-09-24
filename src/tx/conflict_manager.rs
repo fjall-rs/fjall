@@ -74,6 +74,7 @@ impl ConflictManager {
     }
 }
 
+#[derive(Debug)]
 pub struct ConflictChecker {
     reads: BTreeMap<PartitionKey, Vec<Read>>,
     conflict_keys: BTreeMap<PartitionKey, BTreeSet<Slice>>,
