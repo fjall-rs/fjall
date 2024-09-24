@@ -738,6 +738,8 @@ mod tests {
     struct TestEnv {
         ks: TxKeyspace,
         part: TransactionalPartitionHandle,
+
+        #[allow(unused)]
         tmpdir: TempDir,
     }
 
@@ -747,15 +749,14 @@ mod tests {
 
         let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
 
-        part.insert([1u8], [10u8])?;
-        part.insert([2u8], [20u8])?;
-
         Ok(TestEnv { ks, part, tmpdir })
     }
 
     #[test]
     fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
+
+        env.part.insert([2u8], [20u8])?;
 
         let mut tx = super::WriteTransaction::new(
             env.ks.clone(),
