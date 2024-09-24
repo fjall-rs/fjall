@@ -69,6 +69,8 @@ jobs:
         run: cargo nextest run --no-default-features --features ssi_tx tx_ssi_
       - name: Run doc tests
         run: cargo test --doc
+      - name: Run SSI doc tests
+        run: cargo test --no-default-features --features ssi_tx --doc
       - name: Build & test examples
         run: node compile_examples.mjs
   cross:
