@@ -47,7 +47,6 @@ impl Oracle {
         self.snapshot_tracker.close(instant);
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
 
-        // TODO: maybe there's a better method here making use of BTreeMap properties
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 
         if let Err(e) = f() {

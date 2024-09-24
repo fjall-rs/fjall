@@ -358,7 +358,6 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next().transpose()
     }
 
@@ -391,7 +390,6 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         self.iter(partition).next_back().transpose()
     }
 
@@ -431,7 +429,6 @@ impl WriteTransaction {
     pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
         let iter = self.iter(partition);
 
         for kv in iter {
