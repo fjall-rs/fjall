@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 /// Keeps track of open snapshots
 #[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
-    data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
+    data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>, // TODO: maybe use rustc_hash or ahash
     safety_gap: u64,
     lowest_freed_instant: RwLock<Instant>,
 }
