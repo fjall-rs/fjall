@@ -13,6 +13,7 @@ compile_error!("Either single_writer_tx or ssi_tx can be enabled at once");
 /// Drop the transaction to rollback changes.
 pub type WriteTransaction<'a> = super::write::single_writer::WriteTransaction<'a>;
 #[cfg(feature = "ssi_tx")]
+
 /// A SSI (Serializable Snapshot Isolation) cross-partition transaction
 ///
 /// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
