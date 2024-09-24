@@ -81,7 +81,7 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    fn take<K: AsRef<[u8]>>(
+    pub fn take<K: AsRef<[u8]>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
