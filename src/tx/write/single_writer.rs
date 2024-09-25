@@ -392,10 +392,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter<'a>(
-        &'a self,
+    pub fn iter<'b>(
+        &'b self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         self.inner.iter(partition)
     }
 
@@ -403,10 +403,10 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn keys<'a>(
-        &'a self,
+    pub fn keys<'b>(
+        &'b self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'b {
         self.inner.keys(partition)
     }
 
@@ -414,10 +414,10 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn values<'a>(
-        &'a self,
+    pub fn values<'b>(
+        &'b self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'b {
         self.inner.values(partition)
     }
 
