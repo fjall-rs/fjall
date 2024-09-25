@@ -4,6 +4,7 @@
 
 #[cfg(feature = "single_writer_tx")]
 pub mod single_writer;
+
 #[cfg(feature = "ssi_tx")]
 pub mod ssi;
 

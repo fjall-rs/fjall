@@ -1,10 +1,4 @@
-use std::{
-    fmt,
-    ops::{Bound, RangeBounds, RangeFull},
-};
-
-use lsm_tree::{KvPair, Slice, UserKey, UserValue};
-
+use super::BaseTransaction;
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{
@@ -13,8 +7,11 @@ use crate::{
     },
     PersistMode, TxKeyspace, TxPartitionHandle,
 };
-
-use super::BaseTransaction;
+use lsm_tree::{KvPair, Slice, UserKey, UserValue};
+use std::{
+    fmt,
+    ops::{Bound, RangeBounds, RangeFull},
+};
 
 #[derive(Debug)]
 pub enum Error {

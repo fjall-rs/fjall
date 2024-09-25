@@ -1,10 +1,7 @@
-use std::{ops::RangeBounds, sync::MutexGuard};
-
-use lsm_tree::{KvPair, UserKey, UserValue};
-
-use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxKeyspace, TxPartitionHandle};
-
 use super::BaseTransaction as InnerWriteTransaction;
+use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxKeyspace, TxPartitionHandle};
+use lsm_tree::{KvPair, UserKey, UserValue};
+use std::{ops::RangeBounds, sync::MutexGuard};
 
 /// A single-writer (serialized) cross-partition transaction
 ///

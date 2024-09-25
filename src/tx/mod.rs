@@ -13,6 +13,7 @@ pub mod write_tx;
 
 #[cfg(feature = "ssi_tx")]
 mod conflict_manager;
+
 #[cfg(feature = "ssi_tx")]
 mod oracle;
 
