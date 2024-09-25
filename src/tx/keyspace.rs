@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 #[cfg(feature = "ssi_tx")]
-use super::{conflict_manager::ConflictChecker, oracle::Oracle};
+use super::oracle::Oracle;
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
     batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,

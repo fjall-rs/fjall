@@ -690,7 +690,7 @@ impl WriteTransaction {
 
         let orc = self.inner.keyspace.orc.clone();
         match orc
-            .with_commit(self.inner.nonce.instant, self.cm.into(), move || {
+            .with_commit(self.inner.nonce.instant, self.cm, move || {
                 self.inner.commit()
             })
             .map_err(Error::from)?

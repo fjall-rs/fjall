@@ -1,7 +1,7 @@
 use crate::snapshot_tracker::SnapshotTracker;
 use crate::Instant;
 
-use super::conflict_manager::ConflictChecker;
+use super::conflict_manager::ConflictManager;
 use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -14,7 +14,7 @@ pub enum CommitOutcome<E> {
 }
 
 pub struct Oracle {
-    pub(super) write_serialize_lock: Mutex<BTreeMap<u64, ConflictChecker>>,
+    pub(super) write_serialize_lock: Mutex<BTreeMap<u64, ConflictManager>>,
     pub(super) seqno: SequenceNumberCounter,
     pub(super) snapshot_tracker: SnapshotTracker,
 }
@@ -24,7 +24,7 @@ impl Oracle {
     pub(super) fn with_commit<E, F: FnOnce() -> Result<(), E>>(
         &self,
         instant: Instant,
-        conflict_checker: ConflictChecker,
+        conflict_checker: ConflictManager,
         f: F,
     ) -> Result<CommitOutcome<E>, Error> {
         let mut committed_txns = self
@@ -64,7 +64,7 @@ impl Oracle {
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> Result<MutexGuard<BTreeMap<u64, ConflictChecker>>, Error> {
+    ) -> Result<MutexGuard<BTreeMap<u64, ConflictManager>>, Error> {
         self.write_serialize_lock.lock().map_err(Error::from)
     }
 }

@@ -67,15 +67,7 @@ impl ConflictManager {
 
         self.push_read(partition, read);
     }
-}
 
-#[derive(Debug)]
-pub struct ConflictChecker {
-    reads: BTreeMap<PartitionKey, Vec<Read>>,
-    conflict_keys: BTreeMap<PartitionKey, BTreeSet<Slice>>,
-}
-
-impl ConflictChecker {
     #[allow(clippy::too_many_lines)]
     pub fn has_conflict(&self, other: &Self) -> bool {
         if self.reads.is_empty() {
@@ -187,23 +179,5 @@ impl ConflictChecker {
         }
 
         false
-    }
-}
-
-impl From<ConflictManager> for ConflictChecker {
-    fn from(value: ConflictManager) -> Self {
-        Self {
-            reads: value.reads,
-            conflict_keys: value.conflict_keys,
-        }
-    }
-}
-
-impl From<ConflictChecker> for ConflictManager {
-    fn from(value: ConflictChecker) -> Self {
-        Self {
-            reads: value.reads,
-            conflict_keys: value.conflict_keys,
-        }
     }
 }
