@@ -4,7 +4,6 @@ use lsm_tree::Slice;
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::RangeBounds,
-    sync::Mutex,
 };
 
 #[derive(Clone, Debug)]
@@ -19,39 +18,35 @@ enum Read {
 
 #[derive(Default, Debug)]
 pub struct ConflictManager {
-    reads: Mutex<BTreeMap<PartitionKey, Vec<Read>>>,
-    conflict_keys: Mutex<BTreeMap<PartitionKey, BTreeSet<Slice>>>,
+    reads: BTreeMap<PartitionKey, Vec<Read>>,
+    conflict_keys: BTreeMap<PartitionKey, BTreeSet<Slice>>,
 }
 
 impl ConflictManager {
-    fn push_read(&self, partition: &PartitionKey, read: Read) {
-        let mut map = self.reads.lock().expect("poisoned reads lock");
-        if let Some(tbl) = map.get_mut(partition) {
+    fn push_read(&mut self, partition: &PartitionKey, read: Read) {
+        if let Some(tbl) = self.reads.get_mut(partition) {
             tbl.push(read);
         } else {
-            map.entry(partition.clone()).or_default().push(read);
+            self.reads.entry(partition.clone()).or_default().push(read);
         }
     }
 
-    pub fn mark_read(&self, partition: &PartitionKey, key: &Slice) {
+    pub fn mark_read(&mut self, partition: &PartitionKey, key: &Slice) {
         self.push_read(partition, Read::Single(key.clone()));
     }
 
-    pub fn mark_conflict(&self, partition: &PartitionKey, key: &Slice) {
-        let mut map = self
-            .conflict_keys
-            .lock()
-            .expect("poisoned conflict keys lock");
-        if let Some(tbl) = map.get_mut(partition) {
-            tbl.insert(key.clone());
+    pub fn mark_conflict(&mut self, partition: &PartitionKey, key: &[u8]) {
+        if let Some(tbl) = self.conflict_keys.get_mut(partition) {
+            tbl.insert(key.into());
         } else {
-            map.entry(partition.clone())
+            self.conflict_keys
+                .entry(partition.clone())
                 .or_default()
-                .insert(key.clone());
+                .insert(key.into());
         }
     }
 
-    pub fn mark_range(&self, partition: &PartitionKey, range: impl RangeBounds<Slice>) {
+    pub fn mark_range(&mut self, partition: &PartitionKey, range: impl RangeBounds<Slice>) {
         let start = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.clone()),
             Bound::Excluded(k) => Bound::Excluded(k.clone()),
@@ -198,22 +193,17 @@ impl ConflictChecker {
 impl From<ConflictManager> for ConflictChecker {
     fn from(value: ConflictManager) -> Self {
         Self {
-            reads: std::mem::take(&mut value.reads.lock().expect("reads lock poisoned")),
-            conflict_keys: std::mem::take(
-                &mut value
-                    .conflict_keys
-                    .lock()
-                    .expect("conflict_keys lock poisoned"),
-            ),
+            reads: value.reads,
+            conflict_keys: value.conflict_keys,
         }
     }
 }
 
 impl From<ConflictChecker> for ConflictManager {
-    fn from(mut value: ConflictChecker) -> Self {
+    fn from(value: ConflictChecker) -> Self {
         Self {
-            reads: Mutex::new(std::mem::take(&mut value.reads)),
-            conflict_keys: Mutex::new(std::mem::take(&mut value.conflict_keys)),
+            reads: value.reads,
+            conflict_keys: value.conflict_keys,
         }
     }
 }

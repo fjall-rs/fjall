@@ -166,12 +166,12 @@ impl WriteTransaction {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let updated = self.inner.update_fetch(partition, key.as_ref(), f)?;
+        let key = key.as_ref();
 
-        self.cm
-            .mark_read(&partition.inner.name, &key.as_ref().into());
-        self.cm
-            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+        let updated = self.inner.update_fetch(partition, key, f)?;
+
+        self.cm.mark_read(&partition.inner.name, &key.into());
+        self.cm.mark_conflict(&partition.inner.name, key);
 
         Ok(updated)
     }
@@ -234,12 +234,12 @@ impl WriteTransaction {
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let prev = self.inner.fetch_update(partition, key.as_ref(), f)?;
+        let key = key.as_ref();
 
-        self.cm
-            .mark_read(&partition.inner.name, &key.as_ref().into());
-        self.cm
-            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+        let prev = self.inner.fetch_update(partition, key, f)?;
+
+        self.cm.mark_read(&partition.inner.name, &key.into());
+        self.cm.mark_conflict(&partition.inner.name, key);
 
         Ok(prev)
     }
@@ -278,7 +278,7 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
-        &self,
+        &mut self,
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
@@ -322,7 +322,7 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(
-        &self,
+        &mut self,
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
@@ -362,7 +362,10 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
+    pub fn first_key_value(
+        &mut self,
+        partition: &TxPartitionHandle,
+    ) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next().transpose()
     }
 
@@ -394,7 +397,10 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
+    pub fn last_key_value(
+        &mut self,
+        partition: &TxPartitionHandle,
+    ) -> crate::Result<Option<KvPair>> {
         self.iter(partition).next_back().transpose()
     }
 
@@ -431,7 +437,7 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
+    pub fn len(&mut self, partition: &TxPartitionHandle) -> crate::Result<usize> {
         let mut count = 0;
 
         let iter = self.iter(partition);
@@ -469,7 +475,7 @@ impl WriteTransaction {
     /// ```
     #[must_use]
     pub fn iter(
-        &self,
+        &mut self,
         partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.cm.mark_range(&partition.inner.name, RangeFull);
@@ -482,7 +488,7 @@ impl WriteTransaction {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(
-        &self,
+        &mut self,
         partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
         self.cm.mark_range(&partition.inner.name, RangeFull);
@@ -495,7 +501,7 @@ impl WriteTransaction {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(
-        &self,
+        &mut self,
         partition: &TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
         self.cm.mark_range(&partition.inner.name, RangeFull);
@@ -528,7 +534,7 @@ impl WriteTransaction {
     /// ```
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
-        &'b self,
+        &'b mut self,
         partition: &'b TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
@@ -574,7 +580,7 @@ impl WriteTransaction {
     /// ```
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
-        &'b self,
+        &'b mut self,
         partition: &'b TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
@@ -624,10 +630,10 @@ impl WriteTransaction {
         key: K,
         value: V,
     ) {
-        self.inner.insert(partition, key.as_ref(), value);
+        let key = key.as_ref();
 
-        self.cm
-            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+        self.inner.insert(partition, key, value);
+        self.cm.mark_conflict(&partition.inner.name, key);
     }
 
     /// Removes an item from the partition.
@@ -665,10 +671,10 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&mut self, partition: &TxPartitionHandle, key: K) {
-        self.inner.remove(partition, key.as_ref());
+        let key = key.as_ref();
 
-        self.cm
-            .mark_conflict(&partition.inner.name, &key.as_ref().into());
+        self.inner.remove(partition, key);
+        self.cm.mark_conflict(&partition.inner.name, key);
     }
 
     /// Commits the transaction.
@@ -847,7 +853,7 @@ mod tests {
         env.seed_hermitage_data()?;
 
         let mut t1 = env.ks.write_tx()?;
-        let t2 = env.ks.write_tx()?;
+        let mut t2 = env.ks.write_tx()?;
 
         t1.insert(&env.part, [1u8], [101u8]);
 
@@ -883,7 +889,7 @@ mod tests {
         assert_eq!(new, Some([25u8].into()));
         t2.commit()??;
 
-        let t3 = env.ks.write_tx()?;
+        let mut t3 = env.ks.write_tx()?;
         {
             let mut iter = t3.iter(&env.part);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
