@@ -94,13 +94,11 @@ mod tests {
 
     #[allow(clippy::unwrap_used)]
     #[test]
-    fn oracle_committed_txns_does_not_leak() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let ks = Config::new(tmpdir.path()).open_transactional().unwrap();
+    fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
+        let tmpdir = tempfile::tempdir()?;
+        let ks = Config::new(tmpdir.path()).open_transactional()?;
 
-        let part = ks
-            .open_partition("foo", PartitionCreateOptions::default())
-            .unwrap();
+        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
 
         for _ in 0..250 {
             run_tx(&ks, &part).unwrap();
@@ -113,6 +111,8 @@ mod tests {
         }
 
         assert!(dbg!(ks.orc.write_serialize_lock.lock().unwrap().len()) < 200);
+
+        Ok(())
     }
 
     fn run_tx(ks: &TxKeyspace, part: &TxPartitionHandle) -> Result<(), Box<dyn std::error::Error>> {
