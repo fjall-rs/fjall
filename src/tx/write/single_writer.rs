@@ -6,6 +6,11 @@ use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxKeyspace, TxPartitionH
 
 use super::BaseTransaction as InnerWriteTransaction;
 
+/// A single-writer (serialized) cross-partition transaction
+///
+/// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
+///
+/// Drop the transaction to rollback changes.
 pub struct WriteTransaction<'a> {
     _guard: MutexGuard<'a, ()>,
     inner: InnerWriteTransaction,

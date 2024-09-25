@@ -47,6 +47,11 @@ impl fmt::Display for Conflict {
     }
 }
 
+/// A SSI (Serializable Snapshot Isolation) cross-partition transaction
+///
+/// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
+///
+/// Drop the transaction to rollback changes.
 pub struct WriteTransaction {
     inner: BaseTransaction,
     cm: ConflictManager,
