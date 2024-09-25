@@ -16,8 +16,10 @@ use std::sync::{Arc, Mutex};
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
     pub(crate) inner: Keyspace,
+
     #[cfg(feature = "ssi_tx")]
     pub(super) orc: Arc<Oracle>,
+
     #[cfg(feature = "single_writer_tx")]
     lock: Arc<Mutex<()>>,
 }
