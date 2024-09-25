@@ -120,7 +120,7 @@ Allows opening a transactional Keyspace for single-writer (serialized) transacti
 ### ssi_tx
 
 Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
-Conflict checking is done using opimistic concurrency control.
+Conflict checking is done using optimistic concurrency control.
 
 *Disabled by default.*
 
