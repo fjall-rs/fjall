@@ -134,6 +134,7 @@ impl TransactionalPartitionHandle {
 
             Ok(prev)
         }
+
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
@@ -210,6 +211,7 @@ impl TransactionalPartitionHandle {
 
             Ok(updated)
         }
+
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
@@ -255,6 +257,7 @@ impl TransactionalPartitionHandle {
             tx.commit()?;
             Ok(())
         }
+
         #[cfg(feature = "ssi_tx")]
         {
             let mut tx = self.keyspace.write_tx()?;
@@ -299,6 +302,7 @@ impl TransactionalPartitionHandle {
             tx.commit()?;
             Ok(())
         }
+
         #[cfg(feature = "ssi_tx")]
         {
             let mut tx = self.keyspace.write_tx()?;
