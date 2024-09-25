@@ -73,11 +73,14 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub(super) fn update_fetch<
+        K: AsRef<[u8]>,
+        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+    >(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
@@ -98,11 +101,14 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub(super) fn fetch_update<
+        K: AsRef<[u8]>,
+        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+    >(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());

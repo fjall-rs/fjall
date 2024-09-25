@@ -37,8 +37,6 @@ impl<'a> WriteTransaction<'a> {
 
     /// Removes an item and returns its value if it existed.
     ///
-    /// The operation will run wrapped in a transaction.
-    ///
     /// ```
     /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
     /// # use std::sync::Arc;
@@ -74,8 +72,6 @@ impl<'a> WriteTransaction<'a> {
     /// Atomically updates an item and returns the new value.
     ///
     /// Returning `None` removes the item if it existed before.
-    ///
-    /// The operation will run wrapped in a transaction.
     ///
     /// # Examples
     ///
@@ -123,7 +119,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -135,8 +131,6 @@ impl<'a> WriteTransaction<'a> {
     /// Atomically updates an item and returns the previous value.
     ///
     /// Returning `None` removes the item if it existed before.
-    ///
-    /// The operation will run wrapped in a transaction.
     ///
     /// # Examples
     ///
@@ -184,7 +178,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,

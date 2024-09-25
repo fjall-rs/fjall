@@ -73,6 +73,12 @@ impl TransactionalPartitionHandle {
     ///
     /// The operation will run wrapped in a transaction.
     ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
+    ///
     /// # Examples
     ///
     /// ```
@@ -114,10 +120,10 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         #[cfg(feature = "single_writer_tx")]
         {
@@ -131,7 +137,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
-            let prev = tx.fetch_update(self, key.as_ref(), &f)?;
+            let prev = tx.fetch_update(self, key.as_ref(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(prev);
             }
@@ -143,6 +149,12 @@ impl TransactionalPartitionHandle {
     /// Returning `None` removes the item if it existed before.
     ///
     /// The operation will run wrapped in a transaction.
+    ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
     ///
     /// # Examples
     ///
@@ -185,10 +197,10 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         #[cfg(feature = "single_writer_tx")]
         {
@@ -201,7 +213,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
-            let updated = tx.update_fetch(self, key.as_ref(), &f)?;
+            let updated = tx.update_fetch(self, key.as_ref(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(updated);
             }
