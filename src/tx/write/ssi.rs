@@ -674,7 +674,8 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(self) -> crate::Result<Result<(), Conflict>> {
-        // skip all the logic if no keys were written to
+        // NOTE: We have no write set, so we are basically
+        // a read-only transaction, so nothing to do here
         if self.inner.memtables.is_empty() {
             return Ok(Ok(()));
         }
