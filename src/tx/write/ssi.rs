@@ -679,8 +679,9 @@ impl WriteTransaction {
             return Ok(Ok(()));
         }
 
-        let orc = self.inner.keyspace.orc.clone();
-        match orc
+        let oracle = self.inner.keyspace.oracle.clone();
+
+        match oracle
             .with_commit(self.inner.nonce.instant, self.cm, move || {
                 self.inner.commit()
             })

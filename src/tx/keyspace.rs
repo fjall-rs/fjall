@@ -18,7 +18,7 @@ pub struct TransactionalKeyspace {
     pub(crate) inner: Keyspace,
 
     #[cfg(feature = "ssi_tx")]
-    pub(super) orc: Arc<Oracle>,
+    pub(super) oracle: Arc<Oracle>,
 
     #[cfg(feature = "single_writer_tx")]
     lock: Arc<Mutex<()>>,
@@ -60,7 +60,7 @@ impl TxKeyspace {
             // this will drain at least part of the commit queue, but ordering
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self
-                .orc
+                .oracle
                 .write_serialize_lock()
                 .map_err(super::write::ssi::Error::from)?;
             self.inner.instant()
@@ -195,7 +195,7 @@ impl TxKeyspace {
 
         Ok(Self {
             #[cfg(feature = "ssi_tx")]
-            orc: Arc::new(Oracle {
+            oracle: Arc::new(Oracle {
                 write_serialize_lock: Mutex::default(),
                 seqno: inner.seqno.clone(),
                 snapshot_tracker: inner.snapshot_tracker.clone(),

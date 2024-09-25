@@ -104,13 +104,13 @@ mod tests {
             run_tx(&ks, &part).unwrap();
         }
 
-        assert!(dbg!(ks.orc.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         for _ in 0..200 {
             run_tx(&ks, &part).unwrap();
         }
 
-        assert!(dbg!(ks.orc.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         Ok(())
     }
