@@ -736,6 +736,129 @@ mod tests {
         Ok(TestEnv { ks, part, tmpdir })
     }
 
+    // Adapted from https://github.com/al8n/skipdb/issues/10
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tx_ssi_arthur_1() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut tx = env.ks.write_tx()?;
+        tx.insert(&env.part, "a1", 10u64.to_be_bytes());
+        tx.insert(&env.part, "b1", 100u64.to_be_bytes());
+        tx.insert(&env.part, "b2", 200u64.to_be_bytes());
+        tx.commit()??;
+
+        let mut tx1 = env.ks.write_tx()?;
+        let val = tx1
+            .range(&env.part, "a".."b")
+            .map(|kv| {
+                let (_, v) = kv.unwrap();
+
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                u64::from_be_bytes(buf)
+            })
+            .sum::<u64>();
+        tx1.insert(&env.part, "b3", 10u64.to_be_bytes());
+        assert_eq!(10, val);
+
+        let mut tx2 = env.ks.write_tx()?;
+        let val = tx2
+            .range(&env.part, "b".."c")
+            .map(|kv| {
+                let (_, v) = kv.unwrap();
+
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                u64::from_be_bytes(buf)
+            })
+            .sum::<u64>();
+        tx2.insert(&env.part, "a3", 300u64.to_be_bytes());
+        assert_eq!(300, val);
+        tx2.commit()??;
+        assert!(matches!(tx1.commit()?, Err(Conflict)));
+
+        let mut tx3 = env.ks.write_tx()?;
+        let val = tx3
+            .iter(&env.part)
+            .filter_map(|kv| {
+                let (k, v) = kv.unwrap();
+
+                if k.starts_with(b"a") {
+                    let mut buf = [0u8; 8];
+                    buf.copy_from_slice(&v);
+                    Some(u64::from_be_bytes(buf))
+                } else {
+                    None
+                }
+            })
+            .sum::<u64>();
+        assert_eq!(310, val);
+
+        Ok(())
+    }
+
+    // Adapted from https://github.com/al8n/skipdb/issues/10
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tx_ssi_arthur_2() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+
+        let mut tx = env.ks.write_tx()?;
+        tx.insert(&env.part, "b1", 100u64.to_be_bytes());
+        tx.insert(&env.part, "b2", 200u64.to_be_bytes());
+        tx.commit()??;
+
+        let mut tx1 = env.ks.write_tx()?;
+        let val = tx1
+            .range(&env.part, "a".."b")
+            .map(|kv| {
+                let (_, v) = kv.unwrap();
+
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                u64::from_be_bytes(buf)
+            })
+            .sum::<u64>();
+        tx1.insert(&env.part, "b3", 0u64.to_be_bytes());
+        assert_eq!(0, val);
+
+        let mut tx2 = env.ks.write_tx()?;
+        let val = tx2
+            .range(&env.part, "b".."c")
+            .map(|kv| {
+                let (_, v) = kv.unwrap();
+
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                u64::from_be_bytes(buf)
+            })
+            .sum::<u64>();
+        tx2.insert(&env.part, "a3", 300u64.to_be_bytes());
+        assert_eq!(300, val);
+        tx2.commit()??;
+        assert!(matches!(tx1.commit()?, Err(Conflict)));
+
+        let mut tx3 = env.ks.write_tx()?;
+        let val = tx3
+            .iter(&env.part)
+            .filter_map(|kv| {
+                let (k, v) = kv.unwrap();
+
+                if k.starts_with(b"a") {
+                    let mut buf = [0u8; 8];
+                    buf.copy_from_slice(&v);
+                    Some(u64::from_be_bytes(buf))
+                } else {
+                    None
+                }
+            })
+            .sum::<u64>();
+        assert_eq!(300, val);
+
+        Ok(())
+    }
+
     #[test]
     fn tx_ssi_basic() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
