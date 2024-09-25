@@ -468,10 +468,10 @@ impl WriteTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(
-        &mut self,
+    pub fn iter<'a>(
+        &'a mut self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
         self.cm.mark_range(&partition.inner.name, RangeFull);
 
         self.inner.iter(partition)
@@ -481,10 +481,10 @@ impl WriteTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn keys(
-        &mut self,
+    pub fn keys<'a>(
+        &'a mut self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'a {
         self.cm.mark_range(&partition.inner.name, RangeFull);
 
         self.inner.keys(partition)
@@ -494,10 +494,10 @@ impl WriteTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn values(
-        &mut self,
+    pub fn values<'a>(
+        &'a mut self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'a {
         self.cm.mark_range(&partition.inner.name, RangeFull);
 
         self.inner.values(partition)
@@ -531,7 +531,7 @@ impl WriteTransaction {
         &'b mut self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         // TODO: Bound::map 1.77
         let start: Bound<Slice> = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.as_ref().into()),
@@ -577,7 +577,7 @@ impl WriteTransaction {
         &'b mut self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         self.cm.mark_range(
             &partition.inner.name,
             lsm_tree::range::prefix_to_range(prefix.as_ref()),

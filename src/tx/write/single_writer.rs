@@ -392,10 +392,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(
-        &self,
+    pub fn iter<'a>(
+        &'a self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
         self.inner.iter(partition)
     }
 
@@ -403,10 +403,10 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn keys(
-        &self,
+    pub fn keys<'a>(
+        &'a self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'a {
         self.inner.keys(partition)
     }
 
@@ -414,10 +414,10 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn values(
-        &self,
+    pub fn values<'a>(
+        &'a self,
         partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'a {
         self.inner.values(partition)
     }
 
@@ -449,7 +449,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         self.inner.range(partition, range)
     }
 
@@ -481,7 +481,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         self.inner.prefix(partition, prefix)
     }
 
