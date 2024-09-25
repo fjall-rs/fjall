@@ -17,4 +17,4 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
-tower = "0.4"
+tower = "0.5"
