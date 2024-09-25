@@ -5,7 +5,7 @@ use super::conflict_manager::ConflictChecker;
 use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub enum CommitOutcome<E> {
     Ok,
@@ -60,6 +60,12 @@ impl Oracle {
         committed_txns.insert(self.seqno.get(), conflict_checker);
 
         Ok(CommitOutcome::Ok)
+    }
+
+    pub(super) fn write_serialize_lock(
+        &self,
+    ) -> Result<MutexGuard<BTreeMap<u64, ConflictChecker>>, Error> {
+        self.write_serialize_lock.lock().map_err(Error::from)
     }
 }
 

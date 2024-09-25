@@ -53,7 +53,16 @@ impl TxKeyspace {
     /// Will return `Err` if creating a SSI transaction fails
     #[cfg(feature = "ssi_tx")]
     pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
-        let instant = self.inner.instant();
+        let instant = {
+            // acquire a lock here to prevent geting a stale snapshot seqno
+            // this will drain at least part of the commit queue, but ordering
+            // is platform-dependent since we use std::sync::Mutex
+            let _guard = self
+                .orc
+                .write_serialize_lock()
+                .map_err(super::write::ssi::Error::from)?;
+            self.inner.instant()
+        };
 
         let mut write_tx = WriteTransaction::new(
             self.clone(),
