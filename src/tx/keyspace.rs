@@ -63,6 +63,7 @@ impl TxKeyspace {
                 .oracle
                 .write_serialize_lock()
                 .map_err(super::write::ssi::Error::from)?;
+
             self.inner.instant()
         };
 
