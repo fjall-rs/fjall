@@ -14,7 +14,7 @@ use crate::{
     PersistMode, TxKeyspace, TxPartitionHandle,
 };
 
-use super::WriteTransaction as InnerWriteTransaction;
+use super::BaseTransaction;
 
 #[derive(Debug)]
 pub enum Error {
@@ -48,14 +48,14 @@ impl fmt::Display for Conflict {
 }
 
 pub struct WriteTransaction {
-    inner: InnerWriteTransaction,
+    inner: BaseTransaction,
     cm: ConflictManager,
 }
 
 impl WriteTransaction {
     pub(crate) fn new(keyspace: TxKeyspace, nonce: SnapshotNonce) -> Self {
         Self {
-            inner: InnerWriteTransaction::new(keyspace, nonce),
+            inner: BaseTransaction::new(keyspace, nonce),
             cm: ConflictManager::default(),
         }
     }
