@@ -2,14 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-#[cfg(feature = "ssi_tx")]
-use super::oracle::Oracle;
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
     batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
     PersistMode, TxPartitionHandle,
 };
 use std::sync::{Arc, Mutex};
+
+#[cfg(feature = "ssi_tx")]
+use super::oracle::Oracle;
 
 /// Transaction keyspace
 #[derive(Clone)]
