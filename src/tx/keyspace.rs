@@ -59,10 +59,7 @@ impl TxKeyspace {
             // acquire a lock here to prevent getting a stale snapshot seqno
             // this will drain at least part of the commit queue, but ordering
             // is platform-dependent since we use std::sync::Mutex
-            let _guard = self
-                .oracle
-                .write_serialize_lock()
-                .map_err(super::write::ssi::Error::from)?;
+            let _guard = self.oracle.write_serialize_lock()?;
 
             self.inner.instant()
         };

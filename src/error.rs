@@ -5,9 +5,6 @@
 use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
 use lsm_tree::{DecodeError, EncodeError};
 
-#[cfg(feature = "ssi_tx")]
-use crate::tx::write::ssi::Error as SsiError;
-
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
 pub enum Error {
@@ -29,7 +26,7 @@ pub enum Error {
     /// Invalid or unparsable data format version
     InvalidVersion(Option<Version>),
 
-    /// A previous flush operation failed, indicating a hardware-related failure
+    /// A previous flush / commit operation failed, indicating a hardware-related failure
     ///
     /// Future writes will not be accepted as consistency cannot be guaranteed.
     ///
@@ -40,10 +37,6 @@ pub enum Error {
 
     /// Partition is deleted
     PartitionDeleted,
-
-    #[cfg(feature = "ssi_tx")]
-    /// SSI transaction-related error
-    Ssi(SsiError),
 }
 
 impl std::fmt::Display for Error {
@@ -73,13 +66,6 @@ impl From<DecodeError> for Error {
 impl From<lsm_tree::Error> for Error {
     fn from(inner: lsm_tree::Error) -> Self {
         Self::Storage(inner)
-    }
-}
-
-#[cfg(feature = "ssi_tx")]
-impl From<SsiError> for Error {
-    fn from(value: SsiError) -> Self {
-        Self::Ssi(value)
     }
 }
 

@@ -26,11 +26,11 @@ impl Oracle {
         instant: Instant,
         conflict_checker: ConflictManager,
         f: F,
-    ) -> Result<CommitOutcome<E>, Error> {
+    ) -> crate::Result<CommitOutcome<E>> {
         let mut committed_txns = self
             .write_serialize_lock
             .lock()
-            .map_err(|_| Error::Poisoned)?;
+            .map_err(|_| crate::Error::Poisoned)?;
 
         // If the committed_txn.ts is less than Instant that implies that the
         // committed_txn finished before the current transaction started.
@@ -64,27 +64,10 @@ impl Oracle {
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> Result<MutexGuard<BTreeMap<u64, ConflictManager>>, Error> {
-        self.write_serialize_lock.lock().map_err(Error::from)
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    /// Poisoned write serialization lock
-    Poisoned,
-}
-
-impl std::error::Error for Error {}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl<T> From<PoisonError<T>> for Error {
-    fn from(_value: PoisonError<T>) -> Self {
-        Self::Poisoned
+    ) -> crate::Result<MutexGuard<BTreeMap<u64, ConflictManager>>> {
+        self.write_serialize_lock
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)
     }
 }
 
