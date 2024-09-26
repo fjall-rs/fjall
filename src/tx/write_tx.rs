@@ -10,3 +10,11 @@ pub use super::write::single_writer::WriteTransaction;
 
 #[cfg(feature = "ssi_tx")]
 pub use super::write::ssi::WriteTransaction;
+
+// TODO:
+// use https://github.com/rust-lang/rust/issues/43781
+// when stable
+//
+// #[doc(cfg(feature = "single_writer_tx"))]
+//
+// #[doc(cfg(feature = "ssi_tx"))]
