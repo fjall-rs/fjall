@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "ssi_tx")]
 use super::oracle::Oracle;
 
-/// Transaction keyspace
+/// Transactional keyspace
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
@@ -51,9 +51,10 @@ impl TxKeyspace {
     }
 
     /// Starts a new writeable transaction.
+    ///
     /// # Errors
     ///
-    /// Will return `Err` if creating a SSI transaction fails
+    /// Will return `Err` if creation failed.
     #[cfg(feature = "ssi_tx")]
     pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
         let instant = {
