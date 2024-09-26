@@ -262,7 +262,7 @@ impl ReadTransaction {
     pub fn keys<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
         partition
             .inner
             .tree
@@ -277,7 +277,7 @@ impl ReadTransaction {
     pub fn values<'a>(
         &'a self,
         partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
         partition
             .inner
             .tree
