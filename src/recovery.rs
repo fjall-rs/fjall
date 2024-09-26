@@ -79,11 +79,11 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
         base_config.compression = recovered_config.compression;
 
-        if let Some(opts) = &recovered_config.kv_separation {
+        if let Some(kv_opts) = &recovered_config.kv_separation {
             base_config = base_config
-                .compression(opts.compression)
-                .blob_file_separation_threshold(opts.separation_threshold)
-                .blob_file_target_size(opts.file_target_size);
+                .blob_compression(kv_opts.compression)
+                .blob_file_separation_threshold(kv_opts.separation_threshold)
+                .blob_file_target_size(kv_opts.file_target_size);
         }
 
         let is_blob_tree = partition_path

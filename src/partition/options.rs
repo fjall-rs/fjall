@@ -332,9 +332,6 @@ impl CreateOptions {
     #[must_use]
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
-        if let Some(opts) = &mut self.kv_separation {
-            opts.compression = compression;
-        }
         self
     }
 
