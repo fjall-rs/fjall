@@ -56,7 +56,7 @@ impl TxKeyspace {
     #[cfg(feature = "ssi_tx")]
     pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
         let instant = {
-            // acquire a lock here to prevent geting a stale snapshot seqno
+            // acquire a lock here to prevent getting a stale snapshot seqno
             // this will drain at least part of the commit queue, but ordering
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self
