@@ -81,7 +81,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         if let Some(opts) = &recovered_config.kv_separation {
             base_config = base_config
-                .compression(opts.compression)
+                .blob_compression(opts.compression)
                 .blob_file_separation_threshold(opts.separation_threshold)
                 .blob_file_target_size(opts.file_target_size);
         }
