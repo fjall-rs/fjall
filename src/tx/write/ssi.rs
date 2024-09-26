@@ -555,12 +555,7 @@ impl WriteTransaction {
         partition: &'b TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
-        self.cm.mark_range(
-            &partition.inner.name,
-            lsm_tree::range::prefix_to_range(prefix.as_ref()),
-        );
-
-        self.inner.prefix(partition, prefix)
+        self.range(partition, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 
     /// Inserts a key-value pair into the partition.
