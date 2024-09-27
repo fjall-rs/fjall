@@ -131,8 +131,6 @@ impl Config {
 
     /// Sets the upper limit for open file descriptors.
     ///
-    /// Default = 960
-    ///
     /// # Panics
     ///
     /// Panics if n < 2.
