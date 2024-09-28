@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
 /// Configuration options for key-value-separated partitions.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct KvSeparationOptions {
     /// Compression to use for blobs.
@@ -332,6 +332,11 @@ impl CreateOptions {
     #[must_use]
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
+
+        if let Some(opts) = &mut self.kv_separation {
+            opts.compression = compression;
+        }
+
         self
     }
 
@@ -430,9 +435,103 @@ impl CreateOptions {
     ///
     /// Default = disabled
     #[must_use]
-    pub fn with_kv_separation(mut self, opts: KvSeparationOptions) -> Self {
+    pub fn with_kv_separation(mut self, mut opts: KvSeparationOptions) -> Self {
         self.tree_type = TreeType::Blob;
+
+        opts.compression = self.compression;
         self.kv_separation = Some(opts);
+
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+    fn partition_opts_compression_none() {
+        let mut c = CreateOptions::default();
+        assert_eq!(c.compression, CompressionType::None);
+        assert_eq!(c.kv_separation, None);
+
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(
+            c.kv_separation.as_ref().unwrap().compression,
+            CompressionType::None,
+        );
+
+        c = c.compression(CompressionType::None);
+        assert_eq!(c.compression, CompressionType::None);
+        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    #[cfg(feature = "lz4")]
+    fn partition_opts_compression_default() {
+        let mut c = CreateOptions::default();
+        assert_eq!(c.compression, CompressionType::Lz4);
+        assert_eq!(c.kv_separation, None);
+
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(
+            c.kv_separation.as_ref().unwrap().compression,
+            CompressionType::Lz4,
+        );
+
+        c = c.compression(CompressionType::None);
+        assert_eq!(c.compression, CompressionType::None);
+        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    #[cfg(not(feature = "lz4"))]
+    #[cfg(feature = "miniz")]
+    fn partition_opts_compression_miniz() {
+        let mut c = CreateOptions::default();
+        assert_eq!(c.compression, CompressionType::Miniz(6));
+        assert_eq!(c.kv_separation, None);
+
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(
+            c.kv_separation.as_ref().unwrap().compression,
+            CompressionType::Miniz(6),
+        );
+
+        c = c.compression(CompressionType::None);
+        assert_eq!(c.compression, CompressionType::None);
+        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
+    }
+
+    #[test]
+    #[cfg(all(feature = "miniz", feature = "lz4"))]
+    fn partition_opts_compression_all() {
+        let mut c = CreateOptions::default();
+        assert_eq!(c.compression, CompressionType::Lz4);
+        assert_eq!(c.kv_separation, None);
+
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(
+            c.kv_separation.as_ref().unwrap().compression,
+            CompressionType::Lz4,
+        );
+
+        c = c.compression(CompressionType::None);
+        assert_eq!(c.compression, CompressionType::None);
+        assert_eq!(
+            c.kv_separation.as_ref().unwrap().compression,
+            CompressionType::None
+        );
+
+        c = c.compression(CompressionType::Miniz(3));
+        assert_eq!(c.compression, CompressionType::Miniz(3));
+        assert_eq!(
+            c.kv_separation.unwrap().compression,
+            CompressionType::Miniz(3)
+        );
     }
 }
