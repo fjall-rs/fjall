@@ -89,7 +89,7 @@ impl TxKeyspace {
         ))
     }
 
-    /// Flushes the active journal to OS buffers. The durability depends on the [`PersistMode`]
+    /// Flushes the active journal. The durability depends on the [`PersistMode`]
     /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
