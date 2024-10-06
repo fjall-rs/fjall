@@ -2,8 +2,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
 use lsm_tree::{
     segment::{
-        block::header::Header as BlockHeader, meta::CompressionType, value_block::BlockOffset,
-        value_block::ValueBlock,
+        block::header::Header as BlockHeader,
+        meta::CompressionType,
+        value_block::{BlockOffset, ValueBlock},
     },
     InternalValue,
 };
