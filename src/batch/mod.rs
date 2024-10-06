@@ -159,7 +159,17 @@ impl Batch {
         drop(partitions);
 
         if let Some(mode) = self.durability {
-            journal_writer.flush(mode)?;
+            if let Err(e) = journal_writer.flush(mode) {
+                self.keyspace
+                    .is_poisoned
+                    .store(true, std::sync::atomic::Ordering::Release);
+
+                log::error!(
+                    "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                );
+
+                return Err(crate::Error::Poisoned);
+            }
         }
 
         drop(journal_writer);
