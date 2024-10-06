@@ -279,9 +279,11 @@ impl Keyspace {
         if let Err(e) = self.journal.flush(mode) {
             self.is_poisoned
                 .store(true, std::sync::atomic::Ordering::Release);
+
             log::error!(
                 "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
             );
+
             return Err(crate::Error::Poisoned);
         };
 
