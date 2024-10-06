@@ -2,7 +2,8 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
 use lsm_tree::{
     segment::{
-        block::header::Header as BlockHeader, meta::CompressionType, value_block::ValueBlock,
+        block::header::Header as BlockHeader, meta::CompressionType, value_block::BlockOffset,
+        value_block::ValueBlock,
     },
     InternalValue,
 };
@@ -48,7 +49,7 @@ fn block_cache_insert(c: &mut Criterion) {
         header: BlockHeader {
             compression: CompressionType::Lz4,
             checksum: lsm_tree::Checksum::from_raw(0),
-            previous_block_offset: 0,
+            previous_block_offset: BlockOffset(0),
             data_length: 0,
             uncompressed_length: 0,
         },
@@ -58,7 +59,7 @@ fn block_cache_insert(c: &mut Criterion) {
 
     c.bench_function("BlockCache::insert_disk_block", |b| {
         b.iter(|| {
-            block_cache.insert_disk_block((0, id).into(), 40, block.clone());
+            block_cache.insert_disk_block((0, id).into(), BlockOffset(40), block.clone());
             id += 1;
         });
     });
@@ -84,13 +85,14 @@ fn block_cache_get(c: &mut Criterion) {
         header: BlockHeader {
             compression: CompressionType::Lz4,
             checksum: lsm_tree::Checksum::from_raw(0),
-            previous_block_offset: 0,
+            previous_block_offset: BlockOffset(0),
             data_length: 0,
             uncompressed_length: 0,
         },
     });
 
-    (0u64..100_000).for_each(|idx| block_cache.insert_disk_block(seg_id, idx, block.clone()));
+    (0u64..100_000)
+        .for_each(|idx| block_cache.insert_disk_block(seg_id, BlockOffset(idx), block.clone()));
     assert_eq!(100_000, block_cache.len());
 
     let mut rng = rand::thread_rng();
@@ -98,7 +100,9 @@ fn block_cache_get(c: &mut Criterion) {
     c.bench_function("BlockCache::get_disk_block", |b| {
         b.iter(|| {
             let key = rng.gen_range(0u64..100_000);
-            block_cache.get_disk_block(seg_id, key).unwrap();
+            block_cache
+                .get_disk_block(seg_id, BlockOffset(key))
+                .unwrap();
         });
     });
 }
