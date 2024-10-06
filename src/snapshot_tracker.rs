@@ -29,7 +29,7 @@ impl Default for SnapshotTrackerInner {
     fn default() -> Self {
         Self {
             data: DashMap::default(),
-            safety_gap: 100,
+            safety_gap: 50,
             lowest_freed_instant: RwLock::default(),
         }
     }
