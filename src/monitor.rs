@@ -7,10 +7,11 @@ use crate::{
     flush::manager::{FlushManager, Task as FlushTask},
     journal::{manager::JournalManager, Journal},
     keyspace::Partitions,
+    snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
     Keyspace,
 };
-use lsm_tree::AbstractTree;
+use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::sync::{Arc, RwLock};
 use std_semaphore::Semaphore;
 
@@ -23,6 +24,8 @@ pub struct Monitor {
     pub(crate) partitions: Arc<RwLock<Partitions>>,
     pub(crate) journal: Arc<Journal>,
     pub(crate) flush_semaphore: Arc<Semaphore>,
+    pub(crate) seqno: SequenceNumberCounter,
+    pub(crate) snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for Monitor {
@@ -47,6 +50,8 @@ impl Monitor {
             partitions: keyspace.partitions.clone(),
             journal: keyspace.journal.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            seqno: keyspace.seqno.clone(),
+            snapshot_tracker: keyspace.snapshot_tracker.clone(),
         }
     }
 
@@ -172,6 +177,28 @@ impl Monitor {
 
     pub fn run(&self) -> bool {
         let mut idle = true;
+
+        // TODO: don't do this too often
+        let current_seqno = self.seqno.get();
+        let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
+
+        // NOTE: If the difference between watermark if too large, and
+        // we never opened a snapshot, we need to pull the watermark up
+        //
+        // https://github.com/fjall-rs/fjall/discussions/85
+        if (current_seqno - gc_seqno_watermark) > 100
+            && self
+                .snapshot_tracker
+                .freed_count
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 0
+        {
+            *self
+                .snapshot_tracker
+                .lowest_freed_instant
+                .write()
+                .expect("lock is poisoned") = current_seqno.saturating_sub(100);
+        }
 
         let jm_size = self
             .journal_manager
