@@ -75,7 +75,8 @@ pub struct KeyspaceInner {
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    pub(crate) snapshot_tracker: SnapshotTracker,
+    #[doc(hidden)]
+    pub snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for KeyspaceInner {
