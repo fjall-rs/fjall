@@ -401,7 +401,7 @@ impl Keyspace {
     /// Creates or opens a keyspace partition.
     ///
     /// Partition names can be up to 255 characters long, can not be empty and
-    /// can only contain alphanumerics, underscore (`_`) and dash (`-`).
+    /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
     ///
     /// # Errors
     ///
