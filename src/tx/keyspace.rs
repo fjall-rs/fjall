@@ -48,10 +48,10 @@ impl TxKeyspace {
     pub fn read_tx(&self) -> ReadTransaction {
         let instant = self.inner.instant();
 
-        ReadTransaction::new(SnapshotNonce::new(
-            instant,
-            self.inner.snapshot_tracker.clone(),
-        ))
+        ReadTransaction::new(
+            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
+            &self.inner,
+        )
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]
