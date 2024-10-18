@@ -15,7 +15,6 @@ pub struct SnapshotTrackerInner {
     pub(crate) freed_count: AtomicU64,
     safety_gap: u64,
 
-    // TODO: use atomic
     #[doc(hidden)]
     pub(crate) lowest_freed_instant: RwLock<Instant>,
 }
