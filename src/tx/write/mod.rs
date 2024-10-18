@@ -87,7 +87,10 @@ impl BaseTransaction {
         let updated = f(prev.as_ref());
 
         if let Some(value) = &updated {
-            self.insert(partition, &key, value);
+            // NOTE: Skip insert if the value hasn't changed
+            if updated != prev {
+                self.insert(partition, &key, value);
+            }
         } else if prev.is_some() {
             self.remove(partition, &key);
         }
@@ -114,8 +117,11 @@ impl BaseTransaction {
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
 
-        if let Some(value) = updated {
-            self.insert(partition, &key, value);
+        if let Some(value) = &updated {
+            // NOTE: Skip insert if the value hasn't changed
+            if updated != prev {
+                self.insert(partition, &key, value);
+            }
         } else if prev.is_some() {
             self.remove(partition, &key);
         }
