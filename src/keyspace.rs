@@ -859,6 +859,26 @@ mod tests {
     use super::*;
     use test_log::test;
 
+    // TODO: 3.0.0 if we store the partition as a monotonic integer
+    // and the partition's name inside the partition options/manifest
+    // we could allow all UTF-8 characters for partition names
+    //
+    // https://github.com/fjall-rs/fjall/issues/89
+    #[test]
+    pub fn test_exotic_partition_names() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let config = Config::new(&folder);
+        let keyspace = Keyspace::create_or_recover(config)?;
+
+        for name in ["hello$world", "hello#world", "hello.world", "hello_world"] {
+            let db = keyspace.open_partition(name, Default::default())?;
+            db.insert("a", "a")?;
+            assert_eq!(1, db.len()?);
+        }
+
+        Ok(())
+    }
+
     #[test]
     pub fn recover_after_rotation_multiple_partitions() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
