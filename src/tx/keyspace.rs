@@ -156,7 +156,7 @@ impl TxKeyspace {
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         let inner = Keyspace::create_or_recover(config)?;
-        inner.start_background_threads();
+        inner.start_background_threads()?;
 
         Ok(Self {
             inner,
