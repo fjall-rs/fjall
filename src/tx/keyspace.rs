@@ -22,7 +22,7 @@ pub struct TransactionalKeyspace {
     pub(super) oracle: Arc<Oracle>,
 
     #[cfg(feature = "single_writer_tx")]
-    lock: Arc<Mutex<()>>,
+    single_writer_lock: Arc<Mutex<()>>,
 }
 
 /// Alias for [`TransactionalKeyspace`]
@@ -34,7 +34,7 @@ impl TxKeyspace {
     #[cfg(feature = "single_writer_tx")]
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction {
-        let guard = self.lock.lock().expect("poisoned tx lock");
+        let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
         let instant = self.inner.instant();
 
         let mut write_tx = WriteTransaction::new(
@@ -202,7 +202,7 @@ impl TxKeyspace {
             }),
             inner,
             #[cfg(feature = "single_writer_tx")]
-            lock: Default::default(),
+            single_writer_lock: Default::default(),
         })
     }
 }
