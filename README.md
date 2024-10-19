@@ -20,7 +20,7 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - Automatic background maintenance
 - Partitions (a.k.a. column families) with cross-partition atomic semantics
 - Built-in compression (default = LZ4)
-- Single-writer, multi-reader transactions (optional)
+- Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 
 Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection (a persistent, sorted map); however, write operations across partitions are atomic as they are persisted in a single keyspace-level journal, which will be recovered on restart.
@@ -116,6 +116,13 @@ Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://gith
 Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 
 *Enabled by default.*
+
+### ssi_tx
+
+Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
+Conflict checking is done using optimistic concurrency control.
+
+*Disabled by default.*
 
 ## Stable disk format
 

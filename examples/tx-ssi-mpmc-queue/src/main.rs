@@ -39,6 +39,8 @@ fn main() -> fjall::Result<()> {
                     std::thread::sleep(std::time::Duration::from_millis(ms));
                 }
 
+                println!("producer {idx} done");
+
                 Ok::<_, fjall::Error>(())
             })
         })
@@ -56,7 +58,7 @@ fn main() -> fjall::Result<()> {
                 let mut rng = rand::thread_rng();
 
                 loop {
-                    let mut tx = keyspace.write_tx();
+                    let mut tx = keyspace.write_tx().unwrap();
 
                     // TODO: NOTE:
                     // Tombstones will add up over time, making first KV slower
@@ -65,12 +67,12 @@ fn main() -> fjall::Result<()> {
                     if let Some((key, _)) = tx.first_key_value(&tasks)? {
                         tx.remove(&tasks, &key);
 
-                        tx.commit()?;
+                        if tx.commit()?.is_ok() {
+                            counter.fetch_add(1, Relaxed);
+                        }
 
                         let task_id = std::str::from_utf8(&key).unwrap();
                         println!("consumer {idx} completed task {task_id}");
-
-                        counter.fetch_add(1, Relaxed);
 
                         let ms = rng.gen_range(50..200);
                         std::thread::sleep(std::time::Duration::from_millis(ms));

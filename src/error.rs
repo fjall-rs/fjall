@@ -26,7 +26,7 @@ pub enum Error {
     /// Invalid or unparsable data format version
     InvalidVersion(Option<Version>),
 
-    /// A previous flush operation failed, indicating a hardware-related failure
+    /// A previous flush / commit operation failed, indicating a hardware-related failure
     ///
     /// Future writes will not be accepted as consistency cannot be guaranteed.
     ///

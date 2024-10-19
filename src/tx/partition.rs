@@ -2,18 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{gc::GarbageCollection, PartitionHandle};
+use crate::{gc::GarbageCollection, PartitionHandle, TxKeyspace};
 use lsm_tree::{GcReport, UserValue};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
 
 /// Access to a partition of a transactional keyspace
 #[derive(Clone)]
 pub struct TransactionalPartitionHandle {
     pub(crate) inner: PartitionHandle,
-    pub(crate) tx_lock: Arc<Mutex<()>>,
+    pub(crate) keyspace: TxKeyspace,
 }
 
 impl GarbageCollection for TransactionalPartitionHandle {
@@ -22,12 +19,10 @@ impl GarbageCollection for TransactionalPartitionHandle {
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
         crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
         crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
     }
 
@@ -78,6 +73,12 @@ impl TransactionalPartitionHandle {
     ///
     /// The operation will run wrapped in a transaction.
     ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
+    ///
     /// # Examples
     ///
     /// ```
@@ -119,23 +120,30 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    #[allow(unused_mut)]
+    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
 
-        let prev = self.inner.get(&key)?;
-        let updated = f(prev.as_ref());
+            let prev = tx.fetch_update(self, key, f)?;
+            tx.commit()?;
 
-        if let Some(value) = updated {
-            self.inner.insert(&key, value)?;
-        } else if prev.is_some() {
-            self.inner.remove(&key)?;
+            Ok(prev)
         }
 
-        Ok(prev)
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.keyspace.write_tx()?;
+            let prev = tx.fetch_update(self, key.as_ref(), &mut f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(prev);
+            }
+        }
     }
 
     /// Atomically updates an item and returns the new value.
@@ -143,6 +151,12 @@ impl TransactionalPartitionHandle {
     /// Returning `None` removes the item if it existed before.
     ///
     /// The operation will run wrapped in a transaction.
+    ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
     ///
     /// # Examples
     ///
@@ -185,23 +199,29 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: Fn(Option<&UserValue>) -> Option<UserValue>>(
+    #[allow(unused_mut)]
+    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        f: F,
+        mut f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            let updated = tx.update_fetch(self, key, f)?;
+            tx.commit()?;
 
-        let prev = self.inner.get(&key)?;
-        let updated = f(prev.as_ref());
-
-        if let Some(value) = &updated {
-            self.inner.insert(&key, value)?;
-        } else if prev.is_some() {
-            self.inner.remove(&key)?;
+            Ok(updated)
         }
 
-        Ok(updated)
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.keyspace.write_tx()?;
+            let updated = tx.update_fetch(self, key.as_ref(), &mut f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(updated);
+            }
+        }
     }
 
     /// Inserts a key-value pair into the partition.
@@ -232,8 +252,21 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
-        self.inner.insert(key, value)
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            tx.insert(self, key, value);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.keyspace.write_tx()?;
+            tx.insert(self, key.as_ref(), value.as_ref());
+            tx.commit()?.expect("blind insert should not conflict ever");
+            Ok(())
+        }
     }
 
     /// Removes an item from the partition.
@@ -264,8 +297,21 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        let _lock = self.tx_lock.lock().expect("lock is poisoned");
-        self.inner.remove(key)
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            tx.remove(self, key);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.keyspace.write_tx()?;
+            tx.remove(self, key.as_ref());
+            tx.commit()?.expect("blind remove should not conflict ever");
+            Ok(())
+        }
     }
 
     /// Retrieves an item from the partition.
