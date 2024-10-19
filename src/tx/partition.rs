@@ -123,7 +123,7 @@ impl TransactionalPartitionHandle {
     pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         #[cfg(feature = "single_writer_tx")]
         {
@@ -201,7 +201,7 @@ impl TransactionalPartitionHandle {
     pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         #[cfg(feature = "single_writer_tx")]
         {
