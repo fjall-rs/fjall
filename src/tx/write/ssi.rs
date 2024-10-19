@@ -1,10 +1,7 @@
 use super::BaseTransaction;
 use crate::{
     snapshot_nonce::SnapshotNonce,
-    tx::{
-        conflict_manager::ConflictManager,
-        oracle::{self, CommitOutcome},
-    },
+    tx::{conflict_manager::ConflictManager, oracle::CommitOutcome},
     PersistMode, TxKeyspace, TxPartitionHandle,
 };
 use lsm_tree::{KvPair, Slice, UserKey, UserValue};
@@ -676,8 +673,8 @@ impl WriteTransaction {
 #[cfg(test)]
 mod tests {
     use crate::{
-        tx::write::ssi::Conflict, Config, PartitionCreateOptions, TransactionalPartitionHandle,
-        TxKeyspace,
+        tx::write::ssi::Conflict, Config, GarbageCollection, KvSeparationOptions,
+        PartitionCreateOptions, TransactionalPartitionHandle, TxKeyspace,
     };
     use tempfile::TempDir;
     use test_log::test;
@@ -1086,6 +1083,50 @@ mod tests {
 
         t2.commit()??;
         t1.commit()??;
+
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tx_ssi_gc_shadowing() -> Result<(), Box<dyn std::error::Error>> {
+        let tmpdir = tempfile::tempdir()?;
+        let ks = Config::new(tmpdir.path()).open_transactional()?;
+
+        let part = ks.open_partition(
+            "foo",
+            PartitionCreateOptions::default().with_kv_separation(
+                KvSeparationOptions::default()
+                    .separation_threshold(/* IMPORTANT: always separate */ 1),
+            ),
+        )?;
+
+        part.insert("a", "a")?;
+        part.inner().rotate_memtable_and_wait()?; // blob file #0
+
+        part.insert("a", "b")?;
+        part.inner().rotate_memtable_and_wait()?; // blob file #1
+
+        // NOTE: a->a is now stale
+
+        let mut t1 = ks.write_tx()?;
+        t1.insert(&part, "a", "tx");
+
+        log::info!("running GC");
+        part.gc_scan()?;
+        part.gc_with_staleness_threshold(0.0)?;
+        // NOTE: The GC has now added a new value handle to the memtable
+        // because a->b was written into blob file #2
+
+        log::info!("committing tx");
+        t1.commit()??;
+
+        // NOTE: We should see the transaction's write
+        assert_eq!(b"tx", &*part.get("a")?.unwrap());
+
+        // NOTE: We should still see the transaction's write
+        part.inner().rotate_memtable_and_wait()?;
+        assert_eq!(b"tx", &*part.get("a")?.unwrap());
 
         Ok(())
     }
