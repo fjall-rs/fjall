@@ -1109,8 +1109,8 @@ mod tests {
 
         // NOTE: a->a is now stale
 
-        let mut t1 = ks.write_tx()?;
-        t1.insert(&part, "a", "tx");
+        let mut tx = ks.write_tx()?;
+        tx.insert(&part, "a", "tx");
 
         log::info!("running GC");
         part.gc_scan()?;
@@ -1119,7 +1119,7 @@ mod tests {
         // because a->b was written into blob file #2
 
         log::info!("committing tx");
-        t1.commit()??;
+        tx.commit()??;
 
         // NOTE: We should see the transaction's write
         assert_eq!(b"tx", &*part.get("a")?.unwrap());
