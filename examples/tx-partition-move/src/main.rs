@@ -37,7 +37,6 @@ fn main() -> fjall::Result<()> {
                         tx.insert(&dst, &key, &value);
 
                         tx.commit()?;
-                        keyspace.persist(PersistMode::Buffer)?;
 
                         let task_id = std::str::from_utf8(&key).unwrap();
                         println!("consumer {idx} moved {task_id}");

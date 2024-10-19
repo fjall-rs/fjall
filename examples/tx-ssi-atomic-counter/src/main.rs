@@ -22,7 +22,7 @@ fn main() -> fjall::Result<()> {
                 let mut rng = rand::thread_rng();
 
                 loop {
-                    let mut write_tx = keyspace.write_tx();
+                    let mut write_tx = keyspace.write_tx().unwrap();
 
                     let item = write_tx.get(&counters, "c1")?.unwrap();
 

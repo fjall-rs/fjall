@@ -32,7 +32,6 @@ fn main() -> fjall::Result<()> {
                     let task_id = scru128::new_string();
 
                     tasks.insert(&task_id, &task_id)?;
-                    keyspace.persist(PersistMode::Buffer)?;
 
                     println!("producer {idx} created task {task_id}");
 
@@ -67,7 +66,6 @@ fn main() -> fjall::Result<()> {
                         tx.remove(&tasks, &key);
 
                         tx.commit()?;
-                        keyspace.persist(PersistMode::Buffer)?;
 
                         let task_id = std::str::from_utf8(&key).unwrap();
                         println!("consumer {idx} completed task {task_id}");
