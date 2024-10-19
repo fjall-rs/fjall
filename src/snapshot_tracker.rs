@@ -9,7 +9,8 @@ use std::sync::{atomic::AtomicU64, Arc, RwLock};
 /// Keeps track of open snapshots
 #[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
-    data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>, // TODO: maybe use rustc_hash or ahash
+    // TODO: maybe use rustc_hash or ahash
+    pub(crate) data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
 
     #[doc(hidden)]
     pub(crate) freed_count: AtomicU64,

@@ -186,13 +186,7 @@ impl Monitor {
         // we never opened a snapshot, we need to pull the watermark up
         //
         // https://github.com/fjall-rs/fjall/discussions/85
-        if (current_seqno - gc_seqno_watermark) > 100
-            && self
-                .snapshot_tracker
-                .freed_count
-                .load(std::sync::atomic::Ordering::Relaxed)
-                == 0
-        {
+        if (current_seqno - gc_seqno_watermark) > 100 && self.snapshot_tracker.data.is_empty() {
             *self
                 .snapshot_tracker
                 .lowest_freed_instant
