@@ -120,6 +120,7 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[allow(unused_mut)]
     pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
@@ -198,6 +199,7 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[allow(unused_mut)]
     pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
