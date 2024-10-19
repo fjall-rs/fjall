@@ -4,14 +4,20 @@
 
 use crate::Instant;
 use dashmap::DashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Keeps track of open snapshots
 #[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
-    data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>, // TODO: maybe use rustc_hash or ahash
+    // TODO: maybe use rustc_hash or ahash
+    pub(crate) data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
+
+    #[doc(hidden)]
+    pub(crate) freed_count: AtomicU64,
     safety_gap: u64,
-    lowest_freed_instant: RwLock<Instant>,
+
+    #[doc(hidden)]
+    pub(crate) lowest_freed_instant: RwLock<Instant>,
 }
 
 #[derive(Clone, Default)]
@@ -30,6 +36,7 @@ impl Default for SnapshotTrackerInner {
         Self {
             data: DashMap::default(),
             safety_gap: 50,
+            freed_count: AtomicU64::default(),
             lowest_freed_instant: RwLock::default(),
         }
     }
@@ -52,7 +59,12 @@ impl SnapshotTrackerInner {
 
         self.data.alter(&seqno, |_, v| v.saturating_sub(1));
 
-        if (seqno % self.safety_gap) == 0 {
+        let freed = self
+            .freed_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+
+        if (freed % self.safety_gap) == 0 {
             self.gc(seqno);
         }
     }

@@ -75,7 +75,8 @@ pub struct KeyspaceInner {
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    pub(crate) snapshot_tracker: SnapshotTracker,
+    #[doc(hidden)]
+    pub snapshot_tracker: SnapshotTracker,
 }
 
 impl Drop for KeyspaceInner {
@@ -306,7 +307,7 @@ impl Keyspace {
         );
 
         let keyspace = Self::create_or_recover(config)?;
-        keyspace.start_background_threads();
+        keyspace.start_background_threads()?;
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
@@ -334,9 +335,9 @@ impl Keyspace {
     ///
     /// Should not be called, unless in [`Keyspace::open`]
     /// and should definitely not be user-facing.
-    pub(crate) fn start_background_threads(&self) {
+    pub(crate) fn start_background_threads(&self) -> crate::Result<()> {
         if self.config.flush_workers_count > 0 {
-            self.spawn_flush_worker();
+            self.spawn_flush_worker()?;
 
             for _ in 0..self
                 .flush_manager
@@ -354,14 +355,14 @@ impl Keyspace {
         );
 
         for _ in 0..self.config.compaction_workers_count {
-            self.spawn_compaction_worker();
+            self.spawn_compaction_worker()?;
         }
 
         if let Some(ms) = self.config.fsync_ms {
-            self.spawn_fsync_thread(ms.into());
+            self.spawn_fsync_thread(ms.into())?;
         }
 
-        self.spawn_monitor_thread();
+        self.spawn_monitor_thread()
     }
 
     /// Destroys the partition, removing all data associated with it.
@@ -714,28 +715,32 @@ impl Keyspace {
         Ok(Self(Arc::new(inner)))
     }
 
-    fn spawn_monitor_thread(&self) {
+    fn spawn_monitor_thread(&self) -> crate::Result<()> {
         let monitor = Monitor::new(self);
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || {
-            while !stop_signal.is_stopped() {
-                let idle = monitor.run();
+        std::thread::Builder::new()
+            .name("monitor".into())
+            .spawn(move || {
+                while !stop_signal.is_stopped() {
+                    let idle = monitor.run();
 
-                if idle {
-                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    if idle {
+                        std::thread::sleep(std::time::Duration::from_millis(250));
+                    }
                 }
-            }
 
-            log::trace!("monitor: exiting because keyspace is dropping");
-            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        });
+                log::trace!("monitor: exiting because keyspace is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            })
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
-    fn spawn_fsync_thread(&self, ms: usize) {
+    fn spawn_fsync_thread(&self, ms: usize) -> crate::Result<()> {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
         let is_poisoned = self.is_poisoned.clone();
@@ -743,7 +748,9 @@ impl Keyspace {
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || {
+        std::thread::Builder::new()
+        .name("syncer".into())
+        .spawn(move || {
             while !stop_signal.is_stopped() {
                 log::trace!("fsync thread: sleeping {ms}ms");
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
@@ -761,10 +768,12 @@ impl Keyspace {
             log::trace!("fsync thread: exiting because keyspace is dropping");
 
             thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        });
+        })
+.map(|_| ())
+        .map_err(Into::into)
     }
 
-    fn spawn_compaction_worker(&self) {
+    fn spawn_compaction_worker(&self) -> crate::Result<()> {
         let compaction_manager = self.compaction_manager.clone();
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
@@ -772,17 +781,21 @@ impl Keyspace {
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || {
-            while !stop_signal.is_stopped() {
-                log::trace!("compaction: waiting for work");
-                compaction_manager.wait_for();
+        std::thread::Builder::new()
+            .name("compaction".into())
+            .spawn(move || {
+                while !stop_signal.is_stopped() {
+                    log::trace!("compaction: waiting for work");
+                    compaction_manager.wait_for();
 
-                crate::compaction::worker::run(&compaction_manager, &snapshot_tracker);
-            }
+                    crate::compaction::worker::run(&compaction_manager, &snapshot_tracker);
+                }
 
-            log::trace!("compaction thread: exiting because keyspace is dropping");
-            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        });
+                log::trace!("compaction thread: exiting because keyspace is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            })
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     /// Only used for internal testing.
@@ -802,7 +815,7 @@ impl Keyspace {
         );
     }
 
-    fn spawn_flush_worker(&self) {
+    fn spawn_flush_worker(&self) -> crate::Result<()> {
         let flush_manager = self.flush_manager.clone();
         let journal_manager = self.journal_manager.clone();
         let compaction_manager = self.compaction_manager.clone();
@@ -817,24 +830,28 @@ impl Keyspace {
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        std::thread::spawn(move || {
-            while !stop_signal.is_stopped() {
-                log::trace!("flush worker: acquiring flush semaphore");
-                flush_semaphore.acquire();
+        std::thread::Builder::new()
+            .name("flusher".into())
+            .spawn(move || {
+                while !stop_signal.is_stopped() {
+                    log::trace!("flush worker: acquiring flush semaphore");
+                    flush_semaphore.acquire();
 
-                crate::flush::worker::run(
-                    &flush_manager,
-                    &journal_manager,
-                    &compaction_manager,
-                    &write_buffer_manager,
-                    &snapshot_tracker,
-                    parallelism,
-                );
-            }
+                    crate::flush::worker::run(
+                        &flush_manager,
+                        &journal_manager,
+                        &compaction_manager,
+                        &write_buffer_manager,
+                        &snapshot_tracker,
+                        parallelism,
+                    );
+                }
 
-            log::trace!("flush worker: exiting because keyspace is dropping");
-            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        });
+                log::trace!("flush worker: exiting because keyspace is dropping");
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            })
+            .map(|_| ())
+            .map_err(Into::into)
     }
 }
 
