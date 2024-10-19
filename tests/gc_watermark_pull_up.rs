@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use fjall::Config;
+use std::time::Duration;
 use test_log::test;
 
 #[test]
