@@ -37,7 +37,7 @@ fn main() -> fjall::Result<()> {
                     let next = prev + 1;
 
                     write_tx.insert(&counters, "c1", next.to_be_bytes());
-                    write_tx.commit()?;
+                    write_tx.commit()?.ok();
 
                     println!("worker {idx} incremented to {next}");
 
