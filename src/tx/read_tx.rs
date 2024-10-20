@@ -2,18 +2,19 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{snapshot_nonce::SnapshotNonce, TxPartitionHandle};
+use crate::{snapshot_nonce::SnapshotNonce, Keyspace, TxPartitionHandle};
 use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-partition, read-only transaction (snapshot)
-pub struct ReadTransaction {
+pub struct ReadTransaction<'a> {
     nonce: SnapshotNonce,
+    keyspace: &'a Keyspace,
 }
 
-impl ReadTransaction {
-    pub(crate) fn new(nonce: SnapshotNonce) -> Self {
-        Self { nonce }
+impl<'a> ReadTransaction<'a> {
+    pub(crate) fn new(nonce: SnapshotNonce, keyspace: &'a Keyspace) -> Self {
+        Self { nonce, keyspace }
     }
 
     /// Retrieves an item from the transaction's state.
@@ -244,10 +245,10 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter<'a>(
-        &'a self,
-        partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    pub fn iter<'b>(
+        &'b self,
+        partition: &'b TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         partition
             .inner
             .tree
@@ -259,10 +260,10 @@ impl ReadTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn keys<'a>(
-        &'a self,
-        partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
+    pub fn keys<'b>(
+        &'b self,
+        partition: &'b TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'b {
         partition
             .inner
             .tree
@@ -274,10 +275,10 @@ impl ReadTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub fn values<'a>(
-        &'a self,
-        partition: &'a TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
+    pub fn values<'b>(
+        &'b self,
+        partition: &'b TxPartitionHandle,
+    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'b {
         partition
             .inner
             .tree
@@ -306,11 +307,11 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &'a self,
-        partition: &'a TxPartitionHandle,
+    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
+        &'b self,
+        partition: &'b TxPartitionHandle,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         partition
             .inner
             .tree
@@ -339,11 +340,11 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &'a self,
-        partition: &'a TxPartitionHandle,
+    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
+        &'b self,
+        partition: &'b TxPartitionHandle,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
         partition
             .inner
             .tree
