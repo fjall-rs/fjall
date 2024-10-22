@@ -12,7 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const PRE_ALLOCATED_BYTES: u64 = 16 * 1_024 * 1_024;
+// TODO: this should be a keyspace configuration
+pub const PRE_ALLOCATED_BYTES: u64 = 32 * 1_024 * 1_024;
+
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
 pub struct Writer {
@@ -48,7 +50,11 @@ impl Writer {
     pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
         self.flush(PersistMode::SyncAll)?;
 
-        log::debug!("Sealing active journal at {:?}", self.path);
+        log::debug!(
+            "Sealing active journal at {:?}, len={}B",
+            self.path,
+            self.path.metadata()?.len()
+        );
 
         let folder = self
             .path
@@ -70,6 +76,10 @@ impl Writer {
 
         let new_path = folder.join((journal_id + 1).to_string());
         log::debug!("Rotating active journal to {new_path:?}");
+
+        // TODO: we clone the path on every rotation...
+        // TODO: we shouldn't create + assign a new writer
+        // TODO: but just change ourselves accordingly
         *self = Self::create_new(&new_path)?;
 
         // IMPORTANT: fsync folder on Unix
@@ -97,6 +107,7 @@ impl Writer {
         if !path.try_exists()? {
             let file = OpenOptions::new().create_new(true).write(true).open(path)?;
             file.set_len(PRE_ALLOCATED_BYTES)?;
+            file.sync_all()?;
 
             return Ok(Self {
                 path: path.into(),
