@@ -93,6 +93,7 @@ mod error;
 mod file;
 mod flush;
 mod gc;
+mod iter;
 mod journal;
 mod keyspace;
 mod monitor;

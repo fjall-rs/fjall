@@ -248,11 +248,13 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
+        let iter = partition
             .inner
             .tree
             .iter_with_seqno(self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| Ok(item?));
+
+        crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over the transaction's state, returning keys only.
@@ -263,11 +265,13 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        partition
+        let iter = partition
             .inner
             .tree
             .keys_with_seqno(self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| Ok(item?));
+
+        crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over the transaction's state, returning values only.
@@ -278,11 +282,13 @@ impl ReadTransaction {
         &'a self,
         partition: &'a TxPartitionHandle,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        partition
+        let iter = partition
             .inner
             .tree
             .values_with_seqno(self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| Ok(item?));
+
+        crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -311,11 +317,13 @@ impl ReadTransaction {
         partition: &'a TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
+        let iter = partition
             .inner
             .tree
             .range_with_seqno(range, self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| Ok(item?));
+
+        crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -344,10 +352,12 @@ impl ReadTransaction {
         partition: &'a TxPartitionHandle,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
+        let iter = partition
             .inner
             .tree
             .prefix_with_seqno(prefix, self.nonce.instant, None)
-            .map(|item| Ok(item?))
+            .map(|item| Ok(item?));
+
+        crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 }

@@ -10,6 +10,18 @@ pub struct SnapshotNonce {
     tracker: SnapshotTracker,
 }
 
+impl Clone for SnapshotNonce {
+    fn clone(&self) -> Self {
+        // IMPORTANT: Increment snapshot count in tracker
+        self.tracker.open(self.instant);
+
+        Self {
+            instant: self.instant,
+            tracker: self.tracker.clone(),
+        }
+    }
+}
+
 impl Drop for SnapshotNonce {
     fn drop(&mut self) {
         self.tracker.close(self.instant);

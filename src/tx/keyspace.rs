@@ -16,7 +16,8 @@ use super::oracle::Oracle;
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
-    pub(crate) inner: Keyspace,
+    #[doc(hidden)]
+    pub inner: Keyspace,
 
     #[cfg(feature = "ssi_tx")]
     pub(super) oracle: Arc<Oracle>,
