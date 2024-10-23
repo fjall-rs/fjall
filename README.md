@@ -1,8 +1,5 @@
 <p align="center">
-  <img src="/logo.png" height="160">
-</p>
-<p align="center>
-  (temporary logo)
+  <img src="/kawaii.png" height="200">
 </p>
 
 [![CI](https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test.yml)
