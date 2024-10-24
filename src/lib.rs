@@ -31,7 +31,10 @@
 //!
 //! # let folder = tempfile::tempdir()?;
 //! #
-//! let keyspace = Config::new(folder).open()?;
+//! // A keyspace is a database, which may contain multiple collections ("partitions")
+//! // You should probably only use a single keyspace for your application
+//! //
+//! let keyspace = Config::new(folder).open()?; // or open_transactional for transactional semantics
 //!
 //! // Each partition is its own physical LSM-tree
 //! let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
@@ -61,7 +64,7 @@
 //! }
 //!
 //! // Sync the journal to disk to make sure data is definitely durable
-//! // When the keyspace is dropped, it will try to persist
+//! // When the keyspace is dropped, it will try to persist with `PersistMode::SyncAll` as well
 //! keyspace.persist(PersistMode::SyncAll)?;
 //! #
 //! # Ok::<_, fjall::Error>(())

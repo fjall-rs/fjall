@@ -2,14 +2,26 @@
   <img src="/kawaii.png" height="200">
 </p>
 
-[![CI](https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg)](https://github.com/fjall-rs/fjall/actions/workflows/test.yml)
-[![docs.rs](https://img.shields.io/docsrs/fjall?color=green)](https://docs.rs/fjall)
-[![Crates.io](https://img.shields.io/crates/v/fjall?color=blue)](https://crates.io/crates/fjall)
-![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
-[![Discord](https://img.shields.io/discord/1240426554111164486)](https://discord.com/invite/HvYGp4NFFk)
-[![dependency status](https://deps.rs/repo/github/fjall-rs/fjall/status.svg)](https://deps.rs/repo/github/fjall-rs/fjall)
+<p align="center">
+  <a href="https://github.com/fjall-rs/fjall/actions/workflows/test.yml">
+    <img src="https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg" alt="CI" />
+  </a>
+  <a href="https://docs.rs/fjall">
+    <img src="https://img.shields.io/docsrs/fjall?color=green" alt="docs.rs" />
+  </a>
+  <a href="https://crates.io/crates/fjall">
+    <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
+  </a>
+  <img src="https://img.shields.io/badge/MSRV-1.74.0-blue" alt="MSRV" />
+  <a href="https://discord.com/invite/HvYGp4NFFk">
+    <img src="https://img.shields.io/discord/1240426554111164486" alt="Discord" />
+  </a>
+  <a href="https://deps.rs/repo/github/fjall-rs/fjall">
+    <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
+  </a>
+</p>
 
-Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
+*Fjall* is an LSM-based embeddable key-value storage engine written in Rust. It features:
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
@@ -20,13 +32,11 @@ Fjall is an LSM-based embeddable key-value storage engine written in Rust. It fe
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 
-Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application. Each partition is physically a single LSM-tree and its own logical collection (a persistent, sorted map); however, write operations across partitions are atomic as they are persisted in a single keyspace-level journal, which will be recovered on restart.
-
 It is not:
 
 - a standalone server
 - a relational database
-- a wide-column database: it has no notion of columns
+- a wide-column database: it has no built-in notion of columns
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
@@ -41,7 +51,10 @@ cargo add fjall
 ```rust
 use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
 
-let keyspace = Config::new(folder).open()?;
+// A keyspace is a database, which may contain multiple collections ("partitions")
+// You should probably only use a single keyspace for your application
+//
+let keyspace = Config::new(folder).open()?; // or open_transactional for transactional semantics
 
 // Each partition is its own physical LSM-tree
 let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
@@ -71,22 +84,26 @@ for kv in items.prefix("prefix").rev() {
 }
 
 // Sync the journal to disk to make sure data is definitely durable
-// When the keyspace is dropped, it will try to persist
+// When the keyspace is dropped, it will try to persist with `PersistMode::SyncAll` as well
 keyspace.persist(PersistMode::SyncAll)?;
 ```
 
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
-your application needs. After writing data (`insert`, `remove` or committing a write batch), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter. By default, any operation will flush to OS buffers, but not to disk. This is in line with RocksDB's default durability. Also, when dropped, the keyspace will try to persist the journal synchronously.
+your application needs.
+After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
+By default, any operation will flush to OS buffers, but **not** to disk.
+This is in line with RocksDB's default durability.
+Also, when dropped, the keyspace will try to persist the journal *to disk* synchronously.
 
 ## Multithreading, Async and Multiprocess
 
-Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself. Common operations like inserting and reading are generally lock free.
+> !!! A single keyspace may **not** be loaded in parallel from separate *processes*.
+
+However, Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
-
-A single keyspace may **not** be loaded in parallel from separate *processes* however.
 
 ## Feature flags
 
