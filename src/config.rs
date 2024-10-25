@@ -202,13 +202,13 @@ impl Config {
     }
 
     /// If Some, starts an fsync thread that asynchronously
-    /// persists data.
+    /// persists data to disk (using fsync).
     ///
-    /// Default = 1 second
+    /// Default = off
     ///
     /// # Panics
     ///
-    /// Panics if ms is 0
+    /// Panics if ms is 0.
     #[must_use]
     pub fn fsync_ms(mut self, ms: Option<u16>) -> Self {
         if let Some(ms) = ms {
