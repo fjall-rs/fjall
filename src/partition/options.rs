@@ -31,7 +31,7 @@ impl KvSeparationOptions {
     /// Larger blob files decrease the number of files on disk and thus maintenance
     /// overhead.
     ///
-    /// Defaults to 64 MiB.
+    /// Defaults to 128 MiB.
     #[must_use]
     pub fn file_target_size(mut self, bytes: u64) -> Self {
         self.file_target_size = bytes;
@@ -43,7 +43,7 @@ impl KvSeparationOptions {
     /// Smaller value will reduce compaction overhead and thus write amplification,
     /// at the cost of lower read performance.
     ///
-    /// Defaults to 4KiB.
+    /// Defaults to 1 KiB.
     #[must_use]
     pub fn separation_threshold(mut self, bytes: u32) -> Self {
         self.separation_threshold = bytes;
@@ -63,7 +63,7 @@ impl Default for KvSeparationOptions {
             #[cfg(not(any(feature = "lz4", feature = "miniz")))]
             compression: CompressionType::None,
 
-            file_target_size: /* 64 MiB */ 64 * 1_024 * 1_024,
+            file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
 
             separation_threshold: /* 1 KiB */ 1_024,
         }
@@ -87,6 +87,7 @@ impl lsm_tree::coding::Decode for KvSeparationOptions {
         let compression = CompressionType::decode_from(reader)?;
         let file_target_size = reader.read_u64::<BigEndian>()?;
         let separation_threshold = reader.read_u32::<BigEndian>()?;
+
         Ok(Self {
             compression,
             file_target_size,
