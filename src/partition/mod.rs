@@ -174,6 +174,7 @@ impl std::hash::Hash for PartitionHandle {
 
 impl GarbageCollection for PartitionHandle {
     fn gc_scan(&self) -> crate::Result<GcReport> {
+        let _nonce = SnapshotNonce::new(self.seqno.get(), self.snapshot_tracker.clone());
         crate::gc::GarbageCollector::scan(self)
     }
 

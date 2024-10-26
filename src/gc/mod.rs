@@ -185,7 +185,10 @@ impl GarbageCollector {
     pub fn scan(partition: &PartitionHandle) -> crate::Result<GcReport> {
         if let AnyTree::Blob(tree) = &partition.tree {
             return tree
-                .gc_scan_stats(partition.seqno.get())
+                .gc_scan_stats(
+                    partition.seqno.get(),
+                    partition.snapshot_tracker.get_seqno_safe_to_gc(),
+                )
                 .map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");

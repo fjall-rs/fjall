@@ -325,6 +325,13 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
+    #[must_use]
+    #[doc(hidden)]
+    pub fn use_bloom_filters(mut self, flag: bool) -> Self {
+        self.bloom_bits_per_key = if flag { 10 } else { 0 };
+        self
+    }
+
     /// Sets the compression method.
     ///
     /// Once set for a partition, this property is not considered in the future.
