@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::PartitionHandle;
-use lsm_tree::{AnyTree, GcReport};
+use lsm_tree::{gc::Report as GcReport, AnyTree};
 
 /// Functions for garbage collection strategies
 ///
@@ -196,7 +196,7 @@ impl GarbageCollector {
 
     pub fn with_space_amp_target(partition: &PartitionHandle, factor: f32) -> crate::Result<u64> {
         if let AnyTree::Blob(tree) = &partition.tree {
-            let strategy = lsm_tree::SpaceAmpStrategy::new(factor);
+            let strategy = lsm_tree::gc::SpaceAmpStrategy::new(factor);
 
             tree.apply_gc_strategy(&strategy, partition.seqno.next())
                 .map_err(Into::into)
@@ -210,7 +210,7 @@ impl GarbageCollector {
         threshold: f32,
     ) -> crate::Result<u64> {
         if let AnyTree::Blob(tree) = &partition.tree {
-            let strategy = lsm_tree::StaleThresholdStrategy::new(threshold);
+            let strategy = lsm_tree::gc::StaleThresholdStrategy::new(threshold);
 
             return tree
                 .apply_gc_strategy(&strategy, partition.seqno.next())

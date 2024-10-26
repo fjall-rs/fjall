@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{gc::GarbageCollection, PartitionHandle, TxKeyspace};
-use lsm_tree::{GcReport, UserValue};
+use lsm_tree::{gc::Report as GcReport, UserValue};
 use std::path::PathBuf;
 
 /// Access to a partition of a transactional keyspace

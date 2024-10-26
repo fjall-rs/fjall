@@ -24,7 +24,8 @@ use crate::{
     Error, Keyspace,
 };
 use lsm_tree::{
-    AbstractTree, AnyTree, GcReport, KvPair, SequenceNumberCounter, UserKey, UserValue,
+    gc::Report as GcReport, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
+    UserValue,
 };
 use options::CreateOptions;
 use std::{
