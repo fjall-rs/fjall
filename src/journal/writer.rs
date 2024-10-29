@@ -21,6 +21,8 @@ pub struct Writer {
     pub(crate) path: PathBuf,
     file: BufWriter<File>,
     buf: Vec<u8>,
+
+    is_buffer_dirty: bool,
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
@@ -98,6 +100,7 @@ impl Writer {
             path: path.into(),
             file: BufWriter::new(file),
             buf: Vec::new(),
+            is_buffer_dirty: false,
         })
     }
 
@@ -113,6 +116,7 @@ impl Writer {
                 path: path.into(),
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
                 buf: Vec::new(),
+                is_buffer_dirty: false,
             });
         }
 
@@ -122,6 +126,7 @@ impl Writer {
             path: path.into(),
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             buf: Vec::new(),
+            is_buffer_dirty: false,
         })
     }
 
@@ -129,7 +134,10 @@ impl Writer {
     pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
         log::trace!("Flush journal {:?} with mode={mode:?}", self.path);
 
-        self.file.flush()?;
+        if self.is_buffer_dirty {
+            self.file.flush()?;
+            self.is_buffer_dirty = false;
+        }
 
         match mode {
             PersistMode::SyncAll => self.file.get_mut().sync_all(),
@@ -173,6 +181,8 @@ impl Writer {
         value_type: ValueType,
         seqno: u64,
     ) -> crate::Result<usize> {
+        self.is_buffer_dirty = true;
+
         let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut byte_count = 0;
 
@@ -198,6 +208,8 @@ impl Writer {
         if items.is_empty() {
             return Ok(0);
         }
+
+        self.is_buffer_dirty = true;
 
         self.buf.clear();
 
