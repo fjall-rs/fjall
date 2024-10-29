@@ -16,8 +16,7 @@ use super::oracle::Oracle;
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct TransactionalKeyspace {
-    #[doc(hidden)]
-    pub inner: Keyspace,
+    pub(crate) inner: Keyspace,
 
     #[cfg(feature = "ssi_tx")]
     pub(super) oracle: Arc<Oracle>,
@@ -31,6 +30,12 @@ pub struct TransactionalKeyspace {
 pub type TxKeyspace = TransactionalKeyspace;
 
 impl TxKeyspace {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn inner(&self) -> &Keyspace {
+        &self.inner
+    }
+
     /// Starts a new writeable transaction.
     #[cfg(feature = "single_writer_tx")]
     #[must_use]
