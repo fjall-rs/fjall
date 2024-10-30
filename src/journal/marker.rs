@@ -208,7 +208,7 @@ mod tests {
             value_type: ValueType::Value,
         };
 
-        let serialized_data = item.encode_into_vec()?;
+        let serialized_data = item.encode_into_vec();
         let mut reader = &serialized_data[..];
         let deserialized_item = Marker::decode_from(&mut reader)?;
 

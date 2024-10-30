@@ -23,9 +23,18 @@ fn run_flush_worker(
         task.id,
         &task.sealed_memtable,
         eviction_threshold,
-    )?;
+    );
 
-    Ok(segment)
+    // TODO: test this after a failed flush
+    if segment.is_err() {
+        // IMPORTANT: Need to decrement pending segments counter
+        if let crate::AnyTree::Blob(tree) = &task.partition.tree {
+            tree.pending_segments
+                .fetch_sub(1, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    Ok(segment?)
 }
 
 struct MultiFlushResultItem {

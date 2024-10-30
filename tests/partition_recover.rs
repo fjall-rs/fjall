@@ -25,13 +25,13 @@ fn reload_partition_config() -> fjall::Result<()> {
                 ),
         )?;
 
-        tree.config.encode_into_vec()?
+        tree.config.encode_into_vec()
     };
 
     {
         let keyspace = Config::new(&folder).open()?;
         let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-        assert_eq!(serialized_config, tree.config.encode_into_vec()?);
+        assert_eq!(serialized_config, tree.config.encode_into_vec());
     }
 
     Ok(())
