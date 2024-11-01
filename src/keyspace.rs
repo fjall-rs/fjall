@@ -215,7 +215,8 @@ impl Keyspace {
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
-    #[must_use] pub fn journal_disk_space(&self) -> u64 {
+    #[must_use]
+    pub fn journal_disk_space(&self) -> u64 {
         self.journal_manager
             .read()
             .expect("lock is poisoned")
