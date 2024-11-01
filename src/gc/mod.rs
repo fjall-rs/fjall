@@ -179,7 +179,7 @@ pub trait GarbageCollection {
     fn gc_drop_stale_segments(&self) -> crate::Result<u64>;
 }
 
-pub(crate) struct GarbageCollector;
+pub struct GarbageCollector;
 
 impl GarbageCollector {
     pub fn scan(partition: &PartitionHandle) -> crate::Result<GcReport> {

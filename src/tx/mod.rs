@@ -17,4 +17,4 @@ mod conflict_manager;
 #[cfg(feature = "ssi_tx")]
 mod oracle;
 
-pub(crate) mod write;
+pub mod write;
