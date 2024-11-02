@@ -12,10 +12,7 @@ use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
-fn run_flush_worker(
-    task: &Arc<Task>,
-    eviction_threshold: SeqNo,
-) -> crate::Result<Option<Arc<Segment>>> {
+fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Result<Option<Segment>> {
     #[rustfmt::skip]
     let segment = task.partition.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
@@ -39,7 +36,7 @@ fn run_flush_worker(
 
 struct MultiFlushResultItem {
     partition: PartitionHandle,
-    created_segments: Vec<Arc<Segment>>,
+    created_segments: Vec<Segment>,
 
     /// Size sum of sealed memtables that have been flushed
     size: u64,
