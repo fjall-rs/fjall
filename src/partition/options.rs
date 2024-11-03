@@ -328,7 +328,7 @@ impl CreateOptions {
     #[must_use]
     #[doc(hidden)]
     pub fn use_bloom_filters(mut self, flag: bool) -> Self {
-        self.bloom_bits_per_key = if flag { 10 } else { 0 };
+        self.bloom_bits_per_key = if flag { 10 } else { -1 };
         self
     }
 
