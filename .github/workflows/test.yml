@@ -12,6 +12,44 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  examples:
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        rust_version:
+          - stable
+          - "1.74.0" # MSRV
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust_version }}
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ runner.os }}-cargo
+          workspaces: >
+            . -> target
+            examples/actix-kv -> target
+            examples/axum-kv -> target
+            examples/partition-rotation -> target
+            examples/rolling-log -> target
+            examples/secondary-index -> target
+            examples/structured -> target
+            examples/suffix-search -> target
+            examples/tokio -> target
+            examples/triplestore -> target
+            examples/tx-atomic-counter -> target
+            examples/tx-mpmc-queue -> target
+            examples/tx-partition-move -> target
+      - name: Build & test examples
+        run: node compile_examples.mjs
   test:
     timeout-minutes: 20
     strategy:
