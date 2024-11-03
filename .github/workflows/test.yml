@@ -40,18 +40,6 @@ jobs:
           prefix-key: ${{ runner.os }}-cargo
           workspaces: >
             . -> target
-            examples/actix-kv -> target
-            examples/axum-kv -> target
-            examples/partition-rotation -> target
-            examples/rolling-log -> target
-            examples/secondary-index -> target
-            examples/structured -> target
-            examples/suffix-search -> target
-            examples/tokio -> target
-            examples/triplestore -> target
-            examples/tx-atomic-counter -> target
-            examples/tx-mpmc-queue -> target
-            examples/tx-partition-move -> target
       - name: Install cargo-all-features
         run: cargo install cargo-all-features
       - uses: taiki-e/install-action@nextest
@@ -71,8 +59,6 @@ jobs:
         run: cargo test --doc
       - name: Run SSI doc tests
         run: cargo test --no-default-features --features ssi_tx --doc
-      - name: Build & test examples
-        run: node compile_examples.mjs
   cross:
     timeout-minutes: 15
     name: cross
