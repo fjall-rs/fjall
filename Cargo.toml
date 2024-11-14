@@ -24,6 +24,7 @@ bloom = ["lsm-tree/bloom"]
 single_writer_tx = []
 ssi_tx = []
 __internal_whitebox = []
+bytes = ["lsm-tree/bytes"]
 
 [dependencies]
 byteorder = "1.5.0"
