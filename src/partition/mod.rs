@@ -558,6 +558,31 @@ impl PartitionHandle {
         Ok(self.tree.get(key)?)
     }
 
+    /// Retrieves the size of an item from the partition.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let len = partition.size_of("a")?.unwrap_or_default();
+    /// assert_eq!("my_value".len() as u32, len);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
+        Ok(self.tree.size_of(key)?)
+    }
+
     /// Returns the first key-value pair in the partition.
     /// The key in this pair is the minimum key in the partition.
     ///

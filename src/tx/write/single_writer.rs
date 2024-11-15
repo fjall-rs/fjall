@@ -225,6 +225,47 @@ impl<'a> WriteTransaction<'a> {
         self.inner.get(partition, key)
     }
 
+    /// Retrieves an item from the transaction's state.
+    ///
+    /// The transaction allows reading your own writes (RYOW).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.insert(&partition, "a", "new_value");
+    ///
+    /// // Read-your-own-write
+    /// let len = tx.size_of(&partition, "a")?.unwrap_or_default();
+    /// assert_eq!("new_value".len() as u32, len);
+    ///
+    /// drop(tx);
+    ///
+    /// // Write was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn size_of<K: AsRef<[u8]>>(
+        &self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        self.inner.size_of(partition, key)
+    }
+
     /// Returns `true` if the transaction's state contains the specified key.
     ///
     /// # Examples

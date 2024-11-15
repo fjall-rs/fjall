@@ -57,6 +57,47 @@ impl ReadTransaction {
             .map_err(Into::into)
     }
 
+    /// Retrieves the size of an item from the transaction's state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let tx = keyspace.read_tx();
+    /// let item = tx.size_of(&partition, "a")?.unwrap_or_default();
+    /// assert_eq!("my_value".len() as u32, item);
+    ///
+    /// partition.insert("b", "my_updated_value")?;
+    ///
+    /// // Repeatable read
+    /// let item = tx.size_of(&partition, "a")?.unwrap_or_default();
+    /// assert_eq!("my_value".len() as u32, item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn size_of<K: AsRef<[u8]>>(
+        &self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        partition
+            .inner
+            .tree
+            .snapshot_at(self.nonce.instant)
+            .size_of(key)
+            .map_err(Into::into)
+    }
+
     /// Returns `true` if the transaction's state contains the specified key.
     ///
     /// # Examples

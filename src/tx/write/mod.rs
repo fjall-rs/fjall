@@ -155,6 +155,32 @@ impl BaseTransaction {
         Ok(res)
     }
 
+    /// Retrieves the size of an item from the transaction's state.
+    ///
+    /// The transaction allows reading your own writes (RYOW).
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub(super) fn size_of<K: AsRef<[u8]>>(
+        &self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
+            if let Some(item) = memtable.get(&key, None) {
+                return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
+            }
+        }
+
+        let res = partition
+            .inner
+            .snapshot_at(self.nonce.instant)
+            .size_of(key.as_ref())?;
+
+        Ok(res)
+    }
+
     /// Returns `true` if the transaction's state contains the specified key.
     ///
     /// # Errors
