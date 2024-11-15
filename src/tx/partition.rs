@@ -341,6 +341,33 @@ impl TransactionalPartitionHandle {
         self.inner.get(key)
     }
 
+    /// Retrieves the size of an item from the partition.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    ///
+    /// let len = partition.size_of("a")?.unwrap_or_default();
+    /// assert_eq!("my_value".len() as u32, len);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
+        self.inner.size_of(key)
+    }
+
     /// Returns `true` if the partition contains the specified key.
     ///
     /// The operation will run wrapped in a read snapshot.

@@ -258,7 +258,7 @@ impl WriteTransaction {
         Ok(res)
     }
 
-    /// Retrieves an item from the transaction's state.
+    /// Retrieves the size of an item from the transaction's state.
     ///
     /// The transaction allows reading your own writes (RYOW).
     ///
