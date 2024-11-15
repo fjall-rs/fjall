@@ -134,10 +134,15 @@ async fn get_item(
     let item = web::block(move || state.db.get(key)).await.unwrap()?;
 
     match item {
-        Some(item) => Ok(HttpResponse::Ok()
-            .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
-            .content_type("application/json; utf-8")
-            .body(item.to_vec())),
+        Some(item) => {
+            // TODO: Not sure if this can be more elegant
+            let body = actix_web::body::BoxBody::new(actix_web::web::Bytes::from(item));
+
+            Ok(HttpResponse::Ok()
+                .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+                .content_type("application/json; utf-8")
+                .body(body))
+        }
         None => {
             let body = json!(null);
 
