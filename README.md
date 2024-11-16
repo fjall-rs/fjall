@@ -139,6 +139,10 @@ Conflict checking is done using optimistic concurrency control.
 
 *Disabled by default.*
 
+### bytes
+
+Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
+
 ## Stable disk format
 
 The disk format is stable as of 1.0.0.
