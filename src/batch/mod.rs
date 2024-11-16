@@ -37,6 +37,16 @@ impl Batch {
         }
     }
 
+    /// Initializes a new write batch with preallocated capacity.
+    #[must_use]
+    pub fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+            keyspace,
+            durability: None,
+        }
+    }
+
     /// Sets the durability level.
     #[must_use]
     pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
