@@ -27,11 +27,11 @@ It features:
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
 - Range & prefix searching with forward and reverse iteration
-- Automatic background maintenance
 - Partitions (a.k.a. column families) with cross-partition atomic semantics
 - Built-in compression (default = LZ4)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
+- Automatic background maintenance
 
 It is not:
 
@@ -39,9 +39,11 @@ It is not:
 - a relational database
 - a wide-column database: it has no built-in notion of columns
 
-Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
+Keys are limited to 65536 bytes, values are limited to 2^32 bytes.
+As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
-Like any typical key-value store, keys are stored in lexicographic order. If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
+Like any typical key-value store, keys are stored in lexicographic order.
+If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
 ## Basic usage
 
@@ -159,7 +161,7 @@ For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-t
 
 [See here](https://github.com/fjall-rs/fjall/tree/main/examples) for practical examples.
 
-And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired mini wide-column database using `fjall` as its storage engine.
+And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired toy wide-column database using `fjall` as its storage engine.
 
 ## Contributing
 
