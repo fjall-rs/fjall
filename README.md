@@ -19,6 +19,9 @@
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
+  <a href="https://bsky.app/profile/fjallrs.bsky.social">
+    <img src="https://img.shields.io/badge/bluesky-blue" alt="Bluesky" />
+  </a>
 </p>
 
 *Fjall* is an LSM-based embeddable key-value storage engine written in Rust.
