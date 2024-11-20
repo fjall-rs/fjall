@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{gc::GarbageCollection, PartitionHandle, TxKeyspace};
-use lsm_tree::{gc::Report as GcReport, UserValue};
+use lsm_tree::{gc::Report as GcReport, KvPair, UserValue};
 use std::path::PathBuf;
 
 /// Access to a partition of a transactional keyspace
@@ -366,6 +366,64 @@ impl TransactionalPartitionHandle {
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
         self.inner.size_of(key)
+    }
+
+    /// Returns the first key-value pair in the partition.
+    /// The key in this pair is the minimum key in the partition.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// partition.insert("b", "my_value")?;
+    ///
+    /// assert_eq!(b"a", &*partition.first_key_value()?.unwrap().0);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
+        let read_tx = self.keyspace.read_tx();
+        read_tx.first_key_value(self)
+    }
+
+    /// Returns the last key-value pair in the partition.
+    /// The key in this pair is the maximum key in the partition.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "my_value")?;
+    /// partition.insert("b", "my_value")?;
+    ///
+    /// assert_eq!(b"b", &*partition.last_key_value()?.unwrap().0);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
+        let read_tx = self.keyspace.read_tx();
+        read_tx.last_key_value(self)
     }
 
     /// Returns `true` if the partition contains the specified key.
