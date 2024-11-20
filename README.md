@@ -13,11 +13,14 @@
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
   <img src="https://img.shields.io/badge/MSRV-1.74.0-blue" alt="MSRV" />
-  <a href="https://discord.com/invite/HvYGp4NFFk">
-    <img src="https://img.shields.io/discord/1240426554111164486" alt="Discord" />
-  </a>
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://discord.com/invite/HvYGp4NFFk">
+    <img src="https://img.shields.io/discord/1240426554111164486" alt="Discord" />
   </a>
   <a href="https://bsky.app/profile/fjallrs.bsky.social">
     <img src="https://img.shields.io/badge/bluesky-blue" alt="Bluesky" />
