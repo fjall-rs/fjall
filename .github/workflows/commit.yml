@@ -1,0 +1,22 @@
+name: Report commit
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hustcer/setup-nu@main
+        with:
+          version: "*"
+      - run: nu commit.nu
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BENCH_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BENCH_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: eu-central-1
+          TABLE_NAME: ${{ secrets.BENCH_TABLE_NAME }}
+          COMMIT: ${{ github.sha }}
