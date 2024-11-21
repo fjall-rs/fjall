@@ -51,7 +51,7 @@ let commit = $env.COMMIT
 
 print $"Queuing ($commit)"
 
-for machine in machines {
+for machine in $machines {
   let q_pk = $"q#($machine)"
   
   print $"Adding queue item for ($machine)"
