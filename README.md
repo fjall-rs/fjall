@@ -116,12 +116,6 @@ For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/m
 
 ## Feature flags
 
-### bloom
-
-Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
-
-*Enabled by default.*
-
 ### lz4
 
 Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
@@ -152,6 +146,15 @@ Conflict checking is done using optimistic concurrency control.
 Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
 
 *Disabled by default.*
+
+### bloom [deprecated]
+
+Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
+
+*Enabled by default.*
+
+> Will be removed in the future.
+> If you are absolutely, 100% sure you do not need bloom filters: they can be disabled on a per-partition basis.
 
 ## Stable disk format
 
