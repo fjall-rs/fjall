@@ -147,14 +147,14 @@ Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type
 
 *Disabled by default.*
 
-### bloom [deprecated]
+### bloom *[deprecated]*
 
 Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
 
 *Enabled by default.*
 
 > Will be removed in the future.
-> If you are absolutely, 100% sure you do not need bloom filters: they can be disabled on a per-partition basis.
+> If you are absolutely, 100% sure you do not need bloom filters: they will be togglable on a per-partition basis.
 
 ## Stable disk format
 
@@ -177,10 +177,11 @@ And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalon
 How can you help?
 
 - [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
-  - or join the Discord server: https://discord.com/invite/HvYGp4NFFk
+  - or join the Discord server: [https://discord.com/invite/HvYGp4NFFk](https://discord.com/invite/HvYGp4NFFk)
 - [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
+- [Open a PR](https://github.com/fjall-rs/fjall/compare), 
+  - [See open issues to pick up here](https://github.com/search?q=org%3Afjall-rs+label%3A%22help+wanted%22+state%3Aopen+&type=issues)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
-- [Open a PR](https://github.com/fjall-rs/fjall/compare)
 
 ## License
 
