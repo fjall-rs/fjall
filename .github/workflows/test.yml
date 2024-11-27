@@ -38,7 +38,10 @@ jobs:
             . -> target
             examples/actix-kv -> target
             examples/axum-kv -> target
+            examples/basic -> target
+            examples/gc-simple -> target
             examples/partition-rotation -> target
+            examples/permuterm -> target
             examples/rolling-log -> target
             examples/secondary-index -> target
             examples/structured -> target
@@ -46,8 +49,12 @@ jobs:
             examples/tokio -> target
             examples/triplestore -> target
             examples/tx-atomic-counter -> target
+            examples/tx-blob-cas
             examples/tx-mpmc-queue -> target
             examples/tx-partition-move -> target
+            examples/tx-ssi-cc -> target
+            examples/tx-ssi-mpmc-queue -> target
+            examples/tx-ssi-partition-move -> target
       - name: Build & test examples
         run: node compile_examples.mjs
   test:
