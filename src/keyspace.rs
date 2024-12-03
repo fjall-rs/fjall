@@ -217,10 +217,13 @@ impl Keyspace {
     #[doc(hidden)]
     #[must_use]
     pub fn journal_disk_space(&self) -> u64 {
-        self.journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used()
+        // TODO: 3.0.0 error is not handled because that would break the API...
+        self.journal.get_writer().len().unwrap_or_default()
+            + self
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .disk_space_used()
     }
 
     /// Returns the disk space usage of the entire keyspace.
@@ -233,7 +236,7 @@ impl Keyspace {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(keyspace.disk_space() >= 0);
+    /// assert!(keyspace.disk_space() > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
