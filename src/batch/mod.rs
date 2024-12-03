@@ -6,7 +6,7 @@ pub mod item;
 
 use crate::{Keyspace, PartitionHandle, PersistMode};
 use item::Item;
-use lsm_tree::{AbstractTree, ValueType};
+use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -55,18 +55,14 @@ impl Batch {
     }
 
     /// Inserts a key-value pair into the batch
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         p: &PartitionHandle,
         key: K,
         value: V,
     ) {
-        self.data.push(Item::new(
-            p.name.clone(),
-            key.as_ref(),
-            value.as_ref(),
-            ValueType::Value,
-        ));
+        self.data
+            .push(Item::new(p.name.clone(), key, value, ValueType::Value));
     }
 
     /// Adds a tombstone marker for a key
