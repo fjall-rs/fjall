@@ -66,13 +66,9 @@ impl Batch {
     }
 
     /// Adds a tombstone marker for a key
-    pub fn remove<K: AsRef<[u8]>>(&mut self, p: &PartitionHandle, key: K) {
-        self.data.push(Item::new(
-            p.name.clone(),
-            key.as_ref(),
-            vec![],
-            ValueType::Tombstone,
-        ));
+    pub fn remove<K: Into<UserKey>>(&mut self, p: &PartitionHandle, key: K) {
+        self.data
+            .push(Item::new(p.name.clone(), key, vec![], ValueType::Tombstone));
     }
 
     /// Commits the batch to the [`Keyspace`] atomically
