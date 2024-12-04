@@ -72,7 +72,7 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn take<K: AsRef<[u8]>>(
+    pub fn take<K: Into<UserKey>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -130,17 +130,17 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let key = key.as_ref();
+        let key: UserKey = key.into();
 
-        let updated = self.inner.update_fetch(partition, key, f)?;
+        let updated = self.inner.update_fetch(partition, key.clone(), f)?;
 
-        self.cm.mark_read(&partition.inner.name, &key.into());
+        self.cm.mark_read(&partition.inner.name, key.clone());
         self.cm.mark_conflict(&partition.inner.name, key);
 
         Ok(updated)
@@ -196,17 +196,17 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let key = key.as_ref();
+        let key = key.into();
 
-        let prev = self.inner.fetch_update(partition, key, f)?;
+        let prev = self.inner.fetch_update(partition, key.clone(), f)?;
 
-        self.cm.mark_read(&partition.inner.name, &key.into());
+        self.cm.mark_read(&partition.inner.name, key.clone());
         self.cm.mark_conflict(&partition.inner.name, key);
 
         Ok(prev)
@@ -253,7 +253,7 @@ impl WriteTransaction {
         let res = self.inner.get(partition, key.as_ref())?;
 
         self.cm
-            .mark_read(&partition.inner.name, &key.as_ref().into());
+            .mark_read(&partition.inner.name, key.as_ref().into());
 
         Ok(res)
     }
@@ -338,7 +338,7 @@ impl WriteTransaction {
         let contains = self.inner.contains_key(partition, key.as_ref())?;
 
         self.cm
-            .mark_read(&partition.inner.name, &key.as_ref().into());
+            .mark_read(&partition.inner.name, key.as_ref().into());
 
         Ok(contains)
     }
@@ -628,15 +628,15 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
         value: V,
     ) {
-        let key = key.as_ref();
+        let key: UserKey = key.into();
 
-        self.inner.insert(partition, key, value);
+        self.inner.insert(partition, key.clone(), value);
         self.cm.mark_conflict(&partition.inner.name, key);
     }
 
@@ -674,10 +674,10 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: AsRef<[u8]>>(&mut self, partition: &TxPartitionHandle, key: K) {
-        let key = key.as_ref();
+    pub fn remove<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+        let key: UserKey = key.into();
 
-        self.inner.remove(partition, key);
+        self.inner.remove(partition, key.clone());
         self.cm.mark_conflict(&partition.inner.name, key);
     }
 

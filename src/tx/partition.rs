@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{gc::GarbageCollection, PartitionHandle, TxKeyspace};
-use lsm_tree::{gc::Report as GcReport, KvPair, UserValue};
+use lsm_tree::{gc::Report as GcReport, KvPair, UserKey, UserValue};
 use std::path::PathBuf;
 
 /// Access to a partition of a transactional keyspace
@@ -63,7 +63,7 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn take<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<UserValue>> {
+    pub fn take<K: Into<UserKey>>(&self, key: K) -> crate::Result<Option<UserValue>> {
         self.fetch_update(key, |_| None)
     }
 
@@ -121,11 +121,13 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     #[allow(unused_mut)]
-    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let key: UserKey = key.into();
+
         #[cfg(feature = "single_writer_tx")]
         {
             let mut tx = self.keyspace.write_tx();
@@ -139,7 +141,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
-            let prev = tx.fetch_update(self, key.as_ref(), &mut f)?;
+            let prev = tx.fetch_update(self, key.clone(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(prev);
             }
@@ -200,11 +202,13 @@ impl TransactionalPartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     #[allow(unused_mut)]
-    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let key = key.into();
+
         #[cfg(feature = "single_writer_tx")]
         {
             let mut tx = self.keyspace.write_tx();
@@ -217,7 +221,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.keyspace.write_tx()?;
-            let updated = tx.update_fetch(self, key.as_ref(), &mut f)?;
+            let updated = tx.update_fetch(self, key.clone(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(updated);
             }
@@ -251,7 +255,11 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        key: K,
+        value: V,
+    ) -> crate::Result<()> {
         #[cfg(feature = "single_writer_tx")]
         {
             let mut tx = self.keyspace.write_tx();
@@ -263,7 +271,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         {
             let mut tx = self.keyspace.write_tx()?;
-            tx.insert(self, key.as_ref(), value.as_ref());
+            tx.insert(self, key, value);
             tx.commit()?.expect("blind insert should not conflict ever");
             Ok(())
         }
@@ -296,7 +304,7 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+    pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
         #[cfg(feature = "single_writer_tx")]
         {
             let mut tx = self.keyspace.write_tx();
@@ -308,7 +316,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         {
             let mut tx = self.keyspace.write_tx()?;
-            tx.remove(self, key.as_ref());
+            tx.remove(self, key);
             tx.commit()?.expect("blind remove should not conflict ever");
             Ok(())
         }

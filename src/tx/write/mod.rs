@@ -59,7 +59,7 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn take<K: AsRef<[u8]>>(
+    pub(super) fn take<K: Into<UserKey>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -75,7 +75,7 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn update_fetch<
-        K: AsRef<[u8]>,
+        K: Into<UserKey>,
         F: FnMut(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
@@ -83,16 +83,17 @@ impl BaseTransaction {
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let key = key.into();
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
 
-        if let Some(value) = &updated {
+        if let Some(value) = updated.clone() {
             // NOTE: Skip insert if the value hasn't changed
-            if updated != prev {
-                self.insert(partition, &key, value);
+            if prev.as_ref() != Some(&value) {
+                self.insert(partition, key, value);
             }
         } else if prev.is_some() {
-            self.remove(partition, &key);
+            self.remove(partition, key);
         }
 
         Ok(updated)
@@ -106,7 +107,7 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn fetch_update<
-        K: AsRef<[u8]>,
+        K: Into<UserKey>,
         F: FnMut(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
@@ -114,16 +115,17 @@ impl BaseTransaction {
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let key = key.into();
         let prev = self.get(partition, &key)?;
         let updated = f(prev.as_ref());
 
-        if let Some(value) = &updated {
+        if let Some(value) = updated {
             // NOTE: Skip insert if the value hasn't changed
-            if updated != prev {
-                self.insert(partition, &key, value);
+            if prev.as_ref() != Some(&value) {
+                self.insert(partition, key, value);
             }
         } else if prev.is_some() {
-            self.remove(partition, &key);
+            self.remove(partition, key);
         }
 
         Ok(prev)
@@ -350,7 +352,7 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub(super) fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -361,8 +363,8 @@ impl BaseTransaction {
             .entry(partition.inner.name.clone())
             .or_default()
             .insert(lsm_tree::InternalValue::from_components(
-                key.as_ref(),
-                value.as_ref(),
+                key,
+                value,
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
                 SeqNo::MAX,
@@ -378,13 +380,13 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn remove<K: AsRef<[u8]>>(&mut self, partition: &TxPartitionHandle, key: K) {
+    pub(super) fn remove<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
         // TODO: PERF: slow??
         self.memtables
             .entry(partition.inner.name.clone())
             .or_default()
             .insert(lsm_tree::InternalValue::new_tombstone(
-                key.as_ref(),
+                key,
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
                 SeqNo::MAX,
