@@ -81,10 +81,7 @@ impl Writer {
         rename(&self.path, &sealed_path)?;
 
         // IMPORTANT: fsync moved file
-        {
-            let file = File::open(&sealed_path)?;
-            file.sync_all()?;
-        }
+        self.file.get_mut().sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&folder)?;
