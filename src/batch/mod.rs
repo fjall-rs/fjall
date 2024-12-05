@@ -85,16 +85,15 @@ impl Batch {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn commit(mut self) -> crate::Result<()> {
-        if self
-            .keyspace
-            .is_poisoned
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return Err(crate::Error::Poisoned);
-        }
+        use std::sync::atomic::Ordering;
 
         log::trace!("batch: Acquiring journal writer");
         let mut journal_writer = self.keyspace.journal.get_writer();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.keyspace.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
 
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         log::trace!("batch: Acquiring partitions lock");
@@ -115,10 +114,7 @@ impl Batch {
                     continue;
                 };
 
-                if partition
-                    .is_deleted
-                    .load(std::sync::atomic::Ordering::Relaxed)
-                {
+                if partition.is_deleted.load(Ordering::Relaxed) {
                     return Err(crate::Error::PartitionDeleted);
                 }
 
@@ -170,9 +166,7 @@ impl Batch {
 
         if let Some(mode) = self.durability {
             if let Err(e) = journal_writer.flush(mode) {
-                self.keyspace
-                    .is_poisoned
-                    .store(true, std::sync::atomic::Ordering::Release);
+                self.keyspace.is_poisoned.store(true, Ordering::Release);
 
                 log::error!(
                     "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"

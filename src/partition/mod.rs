@@ -773,7 +773,13 @@ impl PartitionHandle {
 
     pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable()?;
+            self.rotate_memtable().map_err(|e| {
+                self.is_poisoned
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+
+                e
+            })?;
+
             self.check_journal_size();
             self.check_write_halt();
         }
@@ -855,12 +861,10 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
-        if self.is_deleted.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(crate::Error::PartitionDeleted);
-        }
+        use std::sync::atomic::Ordering;
 
-        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(crate::Error::Poisoned);
+        if self.is_deleted.load(Ordering::Relaxed) {
+            return Err(crate::Error::PartitionDeleted);
         }
 
         let key = key.as_ref();
@@ -868,6 +872,11 @@ impl PartitionHandle {
         let seqno = self.seqno.next();
 
         let mut journal_writer = self.journal.get_writer();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
 
         journal_writer.write_raw(&self.name, key, value, lsm_tree::ValueType::Value, seqno)?;
 
@@ -918,18 +927,21 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
-        if self.is_deleted.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(crate::Error::PartitionDeleted);
-        }
+        use std::sync::atomic::Ordering;
 
-        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(crate::Error::Poisoned);
+        if self.is_deleted.load(Ordering::Relaxed) {
+            return Err(crate::Error::PartitionDeleted);
         }
 
         let key = key.as_ref();
         let seqno = self.seqno.next();
 
         let mut journal_writer = self.journal.get_writer();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
 
         journal_writer.write_raw(&self.name, key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 

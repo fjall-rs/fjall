@@ -55,7 +55,7 @@ impl Writer {
         log::debug!(
             "Sealing active journal at {:?}, len={}B",
             self.path,
-            self.path.metadata()?.len()
+            self.path.metadata()?.len(),
         );
 
         let folder = self
@@ -73,8 +73,21 @@ impl Writer {
             .parse::<JournalId>()
             .expect("should be valid journal ID");
 
+        // TODO: 3.0.0 we don't really need to rename the file
+        // because journal IDs are monotonically increasing
+        // on journal recovery, we can just either treat the
+        // highest number as active journal
         let sealed_path = folder.join(format!("{journal_id}.sealed"));
         rename(&self.path, &sealed_path)?;
+
+        // IMPORTANT: fsync moved file
+        {
+            let file = File::open(&sealed_path)?;
+            file.sync_all()?;
+        }
+
+        // IMPORTANT: fsync folder on Unix
+        fsync_directory(&folder)?;
 
         let new_path = folder.join((journal_id + 1).to_string());
         log::debug!("Rotating active journal to {new_path:?}");
