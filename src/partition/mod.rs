@@ -869,9 +869,10 @@ impl PartitionHandle {
 
         let key = key.as_ref();
         let value = value.as_ref();
-        let seqno = self.seqno.next();
 
         let mut journal_writer = self.journal.get_writer();
+
+        let seqno = self.seqno.next();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -942,9 +943,10 @@ impl PartitionHandle {
         }
 
         let key = key.as_ref();
-        let seqno = self.seqno.next();
 
         let mut journal_writer = self.journal.get_writer();
+
+        let seqno = self.seqno.next();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
