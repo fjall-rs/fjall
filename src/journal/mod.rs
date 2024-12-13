@@ -124,10 +124,12 @@ mod tests {
             let mut writer = journal.get_writer();
 
             writer.write_batch(
-                &[
-                    &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
-                ],
+                [
+                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                ]
+                .iter(),
+                2,
                 0,
             )?;
             writer.rotate()?;
@@ -155,28 +157,34 @@ mod tests {
             let mut writer = journal.get_writer();
 
             writer.write_batch(
-                &[
-                    &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
-                ],
+                [
+                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                ]
+                .iter(),
+                2,
                 0,
             )?;
             writer.rotate()?;
 
             writer.write_batch(
-                &[
-                    &BatchItem::new("default2", *b"c", *b"c", ValueType::Value),
-                    &BatchItem::new("default2", *b"d", *b"d", ValueType::Value),
-                ],
+                [
+                    BatchItem::new("default2", *b"c", *b"c", ValueType::Value),
+                    BatchItem::new("default2", *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
                 1,
             )?;
             writer.rotate()?;
 
             writer.write_batch(
-                &[
-                    &BatchItem::new("default3", *b"c", *b"c", ValueType::Value),
-                    &BatchItem::new("default3", *b"d", *b"d", ValueType::Value),
-                ],
+                [
+                    BatchItem::new("default3", *b"c", *b"c", ValueType::Value),
+                    BatchItem::new("default3", *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
                 1,
             )?;
         }
@@ -211,10 +219,12 @@ mod tests {
                 let mut writer = journal.get_writer();
 
                 writer.write_batch(
-                    &[
-                        &BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                        &BatchItem::new("default", *b"b", *b"b", ValueType::Value),
-                    ],
+                    [
+                        BatchItem::new("default", *b"a", *b"a", ValueType::Value),
+                        BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    ]
+                    .iter(),
+                    2,
                     0,
                 )?;
                 writer.rotate()?;
@@ -240,23 +250,22 @@ mod tests {
         let path = dir.path().join("0");
 
         let values = [
-            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let journal = Journal::create_new(&path)?;
-            journal.get_writer().write_batch(&values, 0)?;
+            journal
+                .get_writer()
+                .write_batch(values.iter(), values.len(), 0)?;
         }
 
         {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -270,10 +279,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -287,10 +293,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         Ok(())
@@ -302,23 +305,22 @@ mod tests {
         let path = dir.path().join("0");
 
         let values = [
-            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let journal = Journal::create_new(&path)?;
-            journal.get_writer().write_batch(&values, 0)?;
+            journal
+                .get_writer()
+                .write_batch(values.iter(), values.len(), 0)?;
         }
 
         {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -337,10 +339,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -359,10 +358,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         Ok(())
@@ -374,23 +370,22 @@ mod tests {
         let path = dir.path().join("0");
 
         let values = [
-            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let journal = Journal::create_new(&path)?;
-            journal.get_writer().write_batch(&values, 0)?;
+            journal
+                .get_writer()
+                .write_batch(values.iter(), values.len(), 0)?;
         }
 
         {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -404,10 +399,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -421,10 +413,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         Ok(())
@@ -436,23 +425,22 @@ mod tests {
         let path = dir.path().join("0");
 
         let values = [
-            &BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            &BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
+            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
             let journal = Journal::create_new(&path)?;
-            journal.get_writer().write_batch(&values, 0)?;
+            journal
+                .get_writer()
+                .write_batch(values.iter(), values.len(), 0)?;
         }
 
         {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -473,10 +461,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         // Mangle journal
@@ -497,10 +482,7 @@ mod tests {
             let journal = Journal::from_file(&path)?;
             let reader = journal.get_reader()?;
             let collected = reader.flatten().collect::<Vec<_>>();
-            assert_eq!(
-                values.into_iter().cloned().collect::<Vec<_>>(),
-                collected.first().unwrap().items
-            );
+            assert_eq!(values.to_vec(), collected.first().unwrap().items);
         }
 
         Ok(())
