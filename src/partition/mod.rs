@@ -881,7 +881,15 @@ impl PartitionHandle {
         journal_writer.write_raw(&self.name, key, value, lsm_tree::ValueType::Value, seqno)?;
 
         if !self.config.manual_journal_persist {
-            journal_writer.flush(crate::PersistMode::Buffer)?;
+            journal_writer
+                .persist(crate::PersistMode::Buffer)
+                .map_err(|e| {
+                    log::error!(
+                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                );
+                    self.is_poisoned.store(true, Ordering::Relaxed);
+                    e
+                })?;
         }
 
         drop(journal_writer);
@@ -946,7 +954,15 @@ impl PartitionHandle {
         journal_writer.write_raw(&self.name, key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
         if !self.config.manual_journal_persist {
-            journal_writer.flush(crate::PersistMode::Buffer)?;
+            journal_writer
+                .persist(crate::PersistMode::Buffer)
+                .map_err(|e| {
+                    log::error!(
+                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                    );
+                    self.is_poisoned.store(true, Ordering::Relaxed);
+                    e
+                })?;
         }
 
         drop(journal_writer);
