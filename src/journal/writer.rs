@@ -50,7 +50,7 @@ impl Writer {
     }
 
     pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
-        self.flush(PersistMode::SyncAll)?;
+        self.persist(PersistMode::SyncAll)?;
 
         log::debug!(
             "Sealing active journal at {:?}, len={}B",
@@ -143,9 +143,9 @@ impl Writer {
         })
     }
 
-    /// Flushes the journal file.
-    pub(crate) fn flush(&mut self, mode: PersistMode) -> std::io::Result<()> {
-        log::trace!("Flush journal {:?} with mode={mode:?}", self.path);
+    /// Persists the journal file.
+    pub(crate) fn persist(&mut self, mode: PersistMode) -> std::io::Result<()> {
+        log::trace!("Persist journal {:?} with mode={mode:?}", self.path);
 
         if self.is_buffer_dirty {
             self.file.flush()?;
