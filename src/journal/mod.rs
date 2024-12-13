@@ -35,7 +35,7 @@ impl Drop for Journal {
     fn drop(&mut self) {
         log::trace!("Dropping journal, trying to flush");
 
-        match self.flush(PersistMode::SyncAll) {
+        match self.persist(PersistMode::SyncAll) {
             Ok(()) => {
                 log::trace!("Flushed journal successfully");
             }
@@ -90,10 +90,10 @@ impl Journal {
         Ok(JournalBatchReader::new(raw_reader))
     }
 
-    /// Flushes the journal.
-    pub fn flush(&self, mode: PersistMode) -> crate::Result<()> {
+    /// Persists the journal.
+    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         let mut lock = self.get_writer();
-        lock.flush(mode).map_err(Into::into)
+        lock.persist(mode).map_err(Into::into)
     }
 
     pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {

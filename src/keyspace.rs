@@ -281,7 +281,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        if let Err(e) = self.journal.flush(mode) {
+        if let Err(e) = self.journal.persist(mode) {
             self.is_poisoned
                 .store(true, std::sync::atomic::Ordering::Release);
 
@@ -760,7 +760,7 @@ impl Keyspace {
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
                 log::trace!("fsync thread: fsyncing journal");
-                if let Err(e) = journal.flush(PersistMode::SyncAll) {
+                if let Err(e) = journal.persist(PersistMode::SyncAll) {
                     is_poisoned.store(true, std::sync::atomic::Ordering::Release);
                     log::error!(
                         "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
