@@ -95,6 +95,24 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
+        let batch_seqno = self.keyspace.seqno.next();
+
+        let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
+
+        if let Some(mode) = self.durability {
+            if let Err(e) = journal_writer.persist(mode) {
+                self.keyspace.is_poisoned.store(true, Ordering::Release);
+
+                log::error!(
+                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                );
+
+                return Err(crate::Error::Poisoned);
+            }
+        }
+
+        drop(journal_writer);
+
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         log::trace!("batch: Acquiring partitions lock");
         let partitions = self.keyspace.partitions.write().expect("lock is poisoned");
@@ -127,11 +145,6 @@ impl Batch {
             lock_map
         };
 
-        let batch_seqno = self.keyspace.seqno.next();
-
-        let items = self.data.iter().collect::<Vec<_>>();
-        let _ = journal_writer.write_batch(&items, batch_seqno)?;
-
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
 
@@ -163,20 +176,6 @@ impl Batch {
 
         drop(locked_memtables);
         drop(partitions);
-
-        if let Some(mode) = self.durability {
-            if let Err(e) = journal_writer.flush(mode) {
-                self.keyspace.is_poisoned.store(true, Ordering::Release);
-
-                log::error!(
-                    "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                );
-
-                return Err(crate::Error::Poisoned);
-            }
-        }
-
-        drop(journal_writer);
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches

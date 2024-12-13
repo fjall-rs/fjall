@@ -214,8 +214,13 @@ impl Writer {
         Ok(byte_count)
     }
 
-    pub fn write_batch(&mut self, items: &[&BatchItem], seqno: SeqNo) -> crate::Result<usize> {
-        if items.is_empty() {
+    pub fn write_batch<'a>(
+        &mut self,
+        items: impl Iterator<Item = &'a BatchItem>,
+        batch_size: usize,
+        seqno: SeqNo,
+    ) -> crate::Result<usize> {
+        if batch_size == 0 {
             return Ok(0);
         }
 
@@ -225,7 +230,7 @@ impl Writer {
 
         // NOTE: entries.len() is surely never > u32::MAX
         #[allow(clippy::cast_possible_truncation)]
-        let item_count = items.len() as u32;
+        let item_count = batch_size as u32;
 
         let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut byte_count = 0;
