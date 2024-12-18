@@ -893,9 +893,9 @@ impl PartitionHandle {
                 })?;
         }
 
-        drop(journal_writer);
-
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
+
+        drop(journal_writer);
 
         let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
 
@@ -967,9 +967,9 @@ impl PartitionHandle {
                 })?;
         }
 
-        drop(journal_writer);
-
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
+
+        drop(journal_writer);
 
         let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
 

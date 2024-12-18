@@ -60,7 +60,26 @@ impl Monitor {
             "monitor: try flushing affected partitions because journals have passed 50% of threshold"
         );
 
-        let mut journal_writer = self.journal.get_writer();
+        let partitions = self.partitions.read().expect("lock is poisoned");
+
+        let lowest_persisted_partition = partitions
+            .values()
+            .min_by(|a, b| {
+                a.tree
+                    .get_highest_persisted_seqno()
+                    .cmp(&b.tree.get_highest_persisted_seqno())
+            })
+            .cloned();
+
+        drop(partitions);
+
+        if let Some(lowest_persisted_partition) = lowest_persisted_partition {
+            lowest_persisted_partition
+                .rotate_memtable_and_wait()
+                .expect("oh no"); // TODO: handle error!
+        }
+
+        /* let mut journal_writer = self.journal.get_writer();
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
@@ -124,7 +143,7 @@ impl Monitor {
                     log::error!("journal GC failed: {e:?}");
                 }
             }
-        }
+        } */
     }
 
     fn try_reduce_write_buffer_size(&self) {
