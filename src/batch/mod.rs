@@ -111,8 +111,6 @@ impl Batch {
             }
         }
 
-        drop(journal_writer);
-
         // NOTE: Fully (write) lock, so the batch can be committed atomically
         log::trace!("batch: Acquiring partitions lock");
         let partitions = self.keyspace.partitions.write().expect("lock is poisoned");
@@ -173,6 +171,8 @@ impl Batch {
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
             partitions_with_possible_stall.insert(partition.clone());
         }
+
+        drop(journal_writer);
 
         drop(locked_memtables);
         drop(partitions);
