@@ -3,17 +3,12 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    config::Config as KeyspaceConfig,
-    flush::manager::{FlushManager, Task as FlushTask},
-    journal::{manager::JournalManager, Journal},
-    keyspace::Partitions,
-    snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager,
-    Keyspace,
+    config::Config as KeyspaceConfig, flush::manager::FlushManager,
+    journal::manager::JournalManager, keyspace::Partitions, snapshot_tracker::SnapshotTracker,
+    write_buffer_manager::WriteBufferManager, Keyspace,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
-use std::sync::{Arc, RwLock};
-use std_semaphore::Semaphore;
+use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
@@ -22,10 +17,9 @@ pub struct Monitor {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) partitions: Arc<RwLock<Partitions>>,
-    pub(crate) journal: Arc<Journal>,
-    pub(crate) flush_semaphore: Arc<Semaphore>,
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) snapshot_tracker: SnapshotTracker,
+    pub(crate) keyspace_poison: Arc<AtomicBool>,
 }
 
 impl Drop for Monitor {
@@ -48,10 +42,9 @@ impl Monitor {
             keyspace_config: keyspace.config.clone(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             partitions: keyspace.partitions.clone(),
-            journal: keyspace.journal.clone(),
-            flush_semaphore: keyspace.flush_semaphore.clone(),
             seqno: keyspace.seqno.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            keyspace_poison: keyspace.is_poisoned.clone(),
         }
     }
 
@@ -60,70 +53,43 @@ impl Monitor {
             "monitor: try flushing affected partitions because journals have passed 50% of threshold"
         );
 
-        let mut journal_writer = self.journal.get_writer();
-        let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
+        let partitions = self.partitions.read().expect("lock is poisoned");
 
-        let seqno_map = journal_manager.rotate_partitions_to_flush_for_oldest_journal_eviction();
+        // TODO: this may not scale well for many partitions
+        let lowest_persisted_partition = partitions
+            .values()
+            .min_by(|a, b| {
+                a.tree
+                    .get_highest_persisted_seqno()
+                    .cmp(&b.tree.get_highest_persisted_seqno())
+            })
+            .cloned();
 
-        if seqno_map.is_empty() {
-            self.flush_semaphore.release();
+        drop(partitions);
 
-            if let Err(e) = journal_manager.maintenance() {
-                log::error!("journal GC failed: {e:?}");
-            };
-        } else {
-            log::debug!(
-                "monitor: need to flush {} partitions to evict oldest journal",
-                seqno_map.len()
-            );
-
+        if let Some(lowest_persisted_partition) = lowest_persisted_partition {
             let partitions_names_with_queued_tasks = self
                 .flush_manager
                 .read()
                 .expect("lock is poisoned")
                 .get_partitions_with_tasks();
 
-            let actual_seqno_map = seqno_map
-                .iter()
-                .map(|(_, seqno, _, _)| seqno)
-                .cloned()
-                .collect::<Vec<_>>();
-
-            #[allow(clippy::collapsible_if)]
-            if actual_seqno_map
-                .iter()
-                .any(|x| !partitions_names_with_queued_tasks.contains(&x.partition.name))
-            {
-                if journal_manager
-                    .rotate_journal(&mut journal_writer, actual_seqno_map)
-                    .is_ok()
-                {
-                    let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
-
-                    for (partition, _, yanked_id, yanked_memtable) in seqno_map {
-                        flush_manager.enqueue_task(
-                            partition.name.clone(),
-                            FlushTask {
-                                id: yanked_id,
-                                partition,
-                                sealed_memtable: yanked_memtable,
-                            },
-                        );
-                    }
-
-                    self.flush_semaphore.release();
-
-                    drop(flush_manager);
-                    drop(journal_manager);
-                    drop(journal_writer);
-                }
-            } else {
-                self.flush_semaphore.release();
-
-                if let Err(e) = journal_manager.maintenance() {
-                    log::error!("journal GC failed: {e:?}");
-                }
+            if partitions_names_with_queued_tasks.contains(&lowest_persisted_partition.name) {
+                return;
             }
+
+            match lowest_persisted_partition.rotate_memtable() {
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!(
+                        "monitor: memtable rotation failed for {:?}: {e:?}",
+                        lowest_persisted_partition.name
+                    );
+
+                    self.keyspace_poison
+                        .store(true, std::sync::atomic::Ordering::Release);
+                }
+            };
         }
     }
 
@@ -170,6 +136,9 @@ impl Monitor {
                         "monitor: memtable rotation failed for {:?}: {e:?}",
                         partition.name
                     );
+
+                    self.keyspace_poison
+                        .store(true, std::sync::atomic::Ordering::Release);
                 }
             };
         }
