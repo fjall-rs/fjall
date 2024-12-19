@@ -58,6 +58,7 @@ impl Monitor {
         // TODO: this may not scale well for many partitions
         let lowest_persisted_partition = partitions
             .values()
+            .filter(|x| x.tree.active_memtable_size() > 0)
             .min_by(|a, b| {
                 a.tree
                     .get_highest_persisted_seqno()
