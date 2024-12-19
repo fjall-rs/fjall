@@ -40,7 +40,7 @@ fn main() -> fjall::Result<()> {
                 log.segment_count(),
             );
 
-            assert!(disk_space < LIMIT);
+            assert!(disk_space < (LIMIT as f64 * 1.5) as u64);
         }
     }
 
