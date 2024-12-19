@@ -4,11 +4,8 @@
 
 use super::writer::Writer;
 use crate::PartitionHandle;
-use lsm_tree::{AbstractTree, Memtable, SeqNo};
-use std::{
-    path::PathBuf,
-    sync::{Arc, MutexGuard},
-};
+use lsm_tree::{AbstractTree, SeqNo};
+use std::{path::PathBuf, sync::MutexGuard};
 
 /// Stores the highest seqno of a partition found in a journal.
 #[derive(Clone)]
@@ -98,41 +95,6 @@ impl JournalManager {
     /// Returns the amount of bytes used on disk by journals
     pub(crate) fn disk_space_used(&self) -> u64 {
         self.disk_space_in_bytes
-    }
-
-    /// Rotates & lists partitions to be flushed so that the oldest journal can be safely evicted
-    pub(crate) fn rotate_partitions_to_flush_for_oldest_journal_eviction(
-        &self,
-    ) -> Vec<(PartitionHandle, EvictionWatermark, u64, Arc<Memtable>)> {
-        let mut v = Vec::new();
-
-        if let Some(item) = self.items.first() {
-            for item in &item.watermarks {
-                let highest_persisted_seqno = item.partition.tree.get_highest_persisted_seqno();
-
-                if highest_persisted_seqno.is_none()
-                    || highest_persisted_seqno.expect("unwrap") < item.lsn
-                {
-                    if let Some((yanked_id, yanked_memtable)) =
-                        item.partition.tree.rotate_memtable()
-                    {
-                        v.push((
-                            item.partition.clone(),
-                            EvictionWatermark {
-                                partition: item.partition.clone(),
-                                lsn: yanked_memtable
-                                    .get_highest_seqno()
-                                    .expect("memtable should not be empty"),
-                            },
-                            yanked_id,
-                            yanked_memtable,
-                        ));
-                    }
-                }
-            }
-        }
-
-        v
     }
 
     /// Performs maintenance, maybe deleting some old journals
