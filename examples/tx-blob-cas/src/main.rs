@@ -125,7 +125,7 @@ impl Cas {
             let rc = self.decrement_ref_count(&mut tx, &prev_content_hash)?;
             if rc == 0 {
                 // No more references
-                tx.remove(&self.blobs, &prev_content_hash);
+                tx.remove(&self.blobs, prev_content_hash);
             }
         }
 
@@ -156,7 +156,7 @@ impl Cas {
             let rc = self.decrement_ref_count(&mut tx, &content_hash)?;
             if rc == 0 {
                 // No more references
-                tx.remove(&self.blobs, &content_hash);
+                tx.remove(&self.blobs, content_hash);
             }
 
             tx.commit()?;
