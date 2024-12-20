@@ -58,7 +58,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn take<K: AsRef<[u8]>>(
+    pub fn take<K: Into<UserKey>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -116,7 +116,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -175,7 +175,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: AsRef<[u8]>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -555,7 +555,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         partition: &TxPartitionHandle,
         key: K,
@@ -598,7 +598,7 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: AsRef<[u8]>>(&mut self, partition: &TxPartitionHandle, key: K) {
+    pub fn remove<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
         self.inner.remove(partition, key);
     }
 
