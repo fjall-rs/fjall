@@ -860,7 +860,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: Into<UserKey>, V: Into<UserKey>>(
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &self,
         key: K,
         value: V,
