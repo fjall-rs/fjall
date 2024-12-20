@@ -80,7 +80,7 @@ fn main() -> Result<()> {
 
     for word in WORDS {
         for term in permuterm(word) {
-            db.insert(format!("{term}#{word}"), word).unwrap();
+            db.insert(format!("{term}#{word}"), *word).unwrap();
         }
     }
 
