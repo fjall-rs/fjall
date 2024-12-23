@@ -90,6 +90,10 @@ pub struct PartitionHandleInner {
     #[doc(hidden)]
     pub seqno: SequenceNumberCounter,
 
+    /// Visible sequence number of keyspace
+    #[doc(hidden)]
+    pub visible_seqno: SequenceNumberCounter,
+
     /// Snapshot tracker
     pub(crate) snapshot_tracker: SnapshotTracker,
 }
@@ -210,6 +214,7 @@ impl PartitionHandle {
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
+            visible_seqno: keyspace.visible_seqno.clone(),
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
@@ -279,6 +284,7 @@ impl PartitionHandle {
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
+            visible_seqno: keyspace.visible_seqno.clone(),
             tree,
             write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
@@ -895,6 +901,8 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
+        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+
         drop(journal_writer);
 
         let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
@@ -968,6 +976,8 @@ impl PartitionHandle {
         }
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
+
+        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
 
         drop(journal_writer);
 
