@@ -48,6 +48,9 @@ pub struct KeyspaceInner {
     /// Current sequence number
     pub(crate) seqno: SequenceNumberCounter,
 
+    /// Current visible sequence number
+    pub(crate) visible_seqno: SequenceNumberCounter,
+
     /// Caps write buffer size by flushing
     /// memtables to disk segments
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
@@ -519,7 +522,7 @@ impl Keyspace {
     /// ```
     #[must_use]
     pub fn instant(&self) -> crate::Instant {
-        self.seqno.get()
+        self.visible_seqno.get()
     }
 
     fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
@@ -567,6 +570,7 @@ impl Keyspace {
                 xxhash_rust::xxh3::Xxh3Builder::new(),
             ))),
             seqno: SequenceNumberCounter::default(),
+            visible_seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             flush_semaphore: Arc::new(Semaphore::new(0)),
@@ -661,6 +665,11 @@ impl Keyspace {
             }
         }
 
+        keyspace.visible_seqno.store(
+            keyspace.seqno.load(std::sync::atomic::Ordering::Acquire),
+            std::sync::atomic::Ordering::Release,
+        );
+
         Ok(keyspace)
     }
 
@@ -692,6 +701,7 @@ impl Keyspace {
                 xxhash_rust::xxh3::Xxh3Builder::new(),
             ))),
             seqno: SequenceNumberCounter::default(),
+            visible_seqno: SequenceNumberCounter::default(),
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
                 active_journal_path,
@@ -753,28 +763,28 @@ impl Keyspace {
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::Builder::new()
-        .name("syncer".into())
-        .spawn(move || {
-            while !stop_signal.is_stopped() {
-                log::trace!("fsync thread: sleeping {ms}ms");
-                std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+            .name("syncer".into())
+            .spawn(move || {
+                while !stop_signal.is_stopped() {
+                    log::trace!("fsync thread: sleeping {ms}ms");
+                    std::thread::sleep(std::time::Duration::from_millis(ms as u64));
 
-                log::trace!("fsync thread: fsyncing journal");
-                if let Err(e) = journal.persist(PersistMode::SyncAll) {
-                    is_poisoned.store(true, std::sync::atomic::Ordering::Release);
-                    log::error!(
-                        "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
-                    return;
+                    log::trace!("fsync thread: fsyncing journal");
+                    if let Err(e) = journal.persist(PersistMode::SyncAll) {
+                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                        log::error!(
+                            "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                        );
+                        return;
+                    }
                 }
-            }
 
-            log::trace!("fsync thread: exiting because keyspace is dropping");
+                log::trace!("fsync thread: exiting because keyspace is dropping");
 
-            thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        })
-.map(|_| ())
-        .map_err(Into::into)
+                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            })
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     fn spawn_compaction_worker(&self) -> crate::Result<()> {

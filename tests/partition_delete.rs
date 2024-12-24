@@ -100,11 +100,11 @@ fn tx_partition_delete() -> fjall::Result<()> {
         assert_eq!(keyspace.read_tx().len(&tree)?, ITEM_COUNT * 2);
         assert_eq!(
             keyspace.read_tx().iter(&tree).flatten().count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
         assert_eq!(
             keyspace.read_tx().iter(&tree).rev().flatten().count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
     }
 
@@ -116,11 +116,11 @@ fn tx_partition_delete() -> fjall::Result<()> {
         assert_eq!(keyspace.read_tx().len(&tree)?, ITEM_COUNT * 2);
         assert_eq!(
             keyspace.read_tx().iter(&tree).flatten().count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
         assert_eq!(
             keyspace.read_tx().iter(&tree).rev().flatten().count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
 
         assert!(path.try_exists()?);

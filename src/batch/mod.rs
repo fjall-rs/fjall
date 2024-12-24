@@ -103,60 +103,25 @@ impl Batch {
             }
         }
 
-        // NOTE: Fully (write) lock, so the batch can be committed atomically
-        log::trace!("batch: Acquiring partitions lock");
-        let partitions = self.keyspace.partitions.write().expect("lock is poisoned");
-
-        // IMPORTANT: Need to WRITE lock all affected partition's memtables
-        // Otherwise, there may be read skew
-        log::trace!("batch: Acquiring memtable locks");
-        let locked_memtables = {
-            let mut lock_map = HashMap::new();
-
-            for item in &self.data {
-                if lock_map.contains_key(&item.partition) {
-                    continue;
-                }
-
-                let Some(partition) = partitions.get(&item.partition) else {
-                    continue;
-                };
-
-                if partition.is_deleted.load(Ordering::Relaxed) {
-                    return Err(crate::Error::PartitionDeleted);
-                }
-
-                lock_map.insert(
-                    item.partition.clone(),
-                    partition.tree.lock_active_memtable(),
-                );
-            }
-
-            lock_map
-        };
-
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
+        let partitions = self.keyspace.partitions.read().expect("lock is poisoned");
 
         let mut batch_size = 0u64;
 
         log::trace!("Applying {} batched items to memtable(s)", self.data.len());
+
         for item in std::mem::take(&mut self.data) {
             let Some(partition) = partitions.get(&item.partition) else {
                 continue;
             };
 
-            let Some(active_memtable) = locked_memtables.get(&item.partition) else {
-                continue;
+            // TODO: need a better, generic write op
+            let (item_size, _) = match item.value_type {
+                ValueType::Value => partition.tree.insert(item.key, item.value, batch_seqno),
+                ValueType::Tombstone => partition.tree.remove(item.key, batch_seqno),
+                ValueType::WeakTombstone => partition.tree.remove_weak(item.key, batch_seqno),
             };
-
-            let (item_size, _) = partition.tree.raw_insert_with_lock(
-                active_memtable,
-                item.key,
-                item.value,
-                batch_seqno,
-                item.value_type,
-            );
 
             batch_size += u64::from(item_size);
 
@@ -164,9 +129,11 @@ impl Batch {
             partitions_with_possible_stall.insert(partition.clone());
         }
 
-        drop(journal_writer);
+        self.keyspace
+            .visible_seqno
+            .fetch_max(batch_seqno + 1, Ordering::AcqRel);
 
-        drop(locked_memtables);
+        drop(journal_writer);
         drop(partitions);
 
         // IMPORTANT: Add batch size to current write buffer size
