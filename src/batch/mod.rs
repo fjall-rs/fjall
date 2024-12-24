@@ -7,10 +7,7 @@ pub mod item;
 use crate::{Keyspace, PartitionHandle, PersistMode};
 use item::Item;
 use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 /// Partition key (a.k.a. column family, locality group)
 pub type PartitionKey = Arc<str>;
