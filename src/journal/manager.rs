@@ -57,13 +57,11 @@ impl JournalItemQueue {
         }
     }
 
-    #[inline]
     #[track_caller]
     fn items_read_lock(&self) -> RwLockReadGuard<'_, Vec<Item>> {
         self.items.read().expect("lock is poisoned")
     }
 
-    #[inline]
     #[track_caller]
     fn items_write_lock(&self) -> RwLockWriteGuard<'_, Vec<Item>> {
         self.items.write().expect("lock is poisoned")
@@ -94,8 +92,8 @@ impl JournalItemQueue {
     }
 
     /// Returns the amount of bytes used on disk by journals
-    pub fn disk_space_used(&self) -> u64 {
-        self.disk_space.get()
+    pub fn disk_space(&self) -> &SpaceTracker {
+        &self.disk_space
     }
 
     /// Performs maintenance, maybe deleting some old journals

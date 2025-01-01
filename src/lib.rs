@@ -103,7 +103,6 @@ mod keyspace;
 mod monitor;
 mod partition;
 mod path;
-mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod tracked_snapshot;

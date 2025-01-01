@@ -1,16 +1,19 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, MutexGuard},
-};
-
 use crate::{
     batch::PartitionKey,
     flush::manager::{FlushTaskQueues, Task},
     journal::{
+        batch_reader::JournalBatchReader,
         manager::{EvictionWatermark, Item, JournalItemQueue},
+        reader::JournalReader,
         writer::Writer,
     },
+    keyspace::Partitions,
     HashMap, HashSet,
+};
+use lsm_tree::{AbstractTree, SequenceNumberCounter};
+use std::{
+    path::PathBuf,
+    sync::{Arc, MutexGuard, RwLock},
 };
 
 /// Keeps track of and flushes sealed journals and memtables
@@ -42,6 +45,138 @@ impl FlushTracker {
             task_queues: FlushTaskQueues::new(),
             item_queue: JournalItemQueue::from_active(active_path),
         }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    #[track_caller]
+    pub fn recover_sealed_memtables(
+        &self,
+        partitions: &RwLock<Partitions>,
+        seqno: &SequenceNumberCounter,
+        sealed_journal_paths: impl Iterator<Item = PathBuf>,
+    ) -> crate::Result<()> {
+        #[allow(clippy::significant_drop_tightening)]
+        let partitions_lock = partitions.read().expect("lock is poisoned");
+
+        for journal_path in sealed_journal_paths {
+            log::debug!("Recovering sealed journal: {journal_path:?}");
+
+            let journal_size = journal_path.metadata()?.len();
+
+            log::debug!("Reading sealed journal at {journal_path:?}");
+
+            let raw_reader = JournalReader::new(&journal_path)?;
+            let reader = JournalBatchReader::new(raw_reader);
+
+            let mut watermarks: HashMap<PartitionKey, EvictionWatermark> = HashMap::default();
+
+            for batch in reader {
+                let batch = batch?;
+
+                for item in batch.items {
+                    if let Some(handle) = partitions_lock.get(&item.partition) {
+                        let tree = &handle.tree;
+
+                        watermarks
+                            .entry(item.partition)
+                            .and_modify(|prev| {
+                                prev.lsn = prev.lsn.max(batch.seqno);
+                            })
+                            .or_insert_with(|| EvictionWatermark {
+                                partition: handle.clone(),
+                                lsn: batch.seqno,
+                            });
+
+                        match item.value_type {
+                            lsm_tree::ValueType::Value => {
+                                tree.insert(item.key, item.value, batch.seqno);
+                            }
+                            lsm_tree::ValueType::Tombstone => {
+                                tree.remove(item.key, batch.seqno);
+                            }
+                            lsm_tree::ValueType::WeakTombstone => {
+                                tree.remove_weak(item.key, batch.seqno);
+                            }
+                        }
+                    }
+                }
+            }
+
+            log::debug!("Sealing recovered memtables");
+            let mut recovered_count = 0;
+
+            for handle in watermarks.values() {
+                let tree = &handle.partition.tree;
+
+                let partition_lsn = tree.get_highest_persisted_seqno();
+
+                // IMPORTANT: Only apply sealed memtables to partitions
+                // that have a lower seqno to avoid double flushing
+                let should_skip_sealed_memtable =
+                    partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
+
+                if should_skip_sealed_memtable {
+                    handle.partition.tree.lock_active_memtable().clear();
+
+                    log::trace!(
+                        "Partition {} has higher seqno ({partition_lsn:?}), skipping",
+                        handle.partition.name
+                    );
+                    continue;
+                }
+
+                if let Some((memtable_id, sealed_memtable)) = tree.rotate_memtable() {
+                    assert_eq!(
+                        Some(handle.lsn),
+                        sealed_memtable.get_highest_seqno(),
+                        "memtable lsn does not match what was recovered - this is a bug"
+                    );
+
+                    log::trace!(
+                        "sealed memtable of {} has {} items",
+                        handle.partition.name,
+                        sealed_memtable.len(),
+                    );
+
+                    // Maybe the memtable has a higher seqno, so try to set to maximum
+                    let maybe_next_seqno =
+                        tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
+
+                    seqno.fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
+
+                    log::debug!("Keyspace seqno is now {}", seqno.get());
+
+                    // IMPORTANT: Add sealed memtable size to current write buffer size
+                    self.task_queues
+                        .buffer_size()
+                        .allocate(sealed_memtable.size().into());
+
+                    // TODO: unit test write buffer size after recovery
+
+                    // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
+                    self.task_queues.enqueue(Task {
+                        id: memtable_id,
+                        sealed_memtable,
+                        partition: handle.partition.clone(),
+                    });
+
+                    recovered_count += 1;
+                };
+            }
+
+            log::debug!("Recovered {recovered_count} sealed memtables");
+
+            // IMPORTANT: Add sealed journal to journal manager
+            self.item_queue.enqueue(Item {
+                watermarks: watermarks.into_values().collect(),
+                path: journal_path.clone(),
+                size_in_bytes: journal_size,
+            });
+
+            log::debug!("Requeued sealed journal at {:?}", journal_path);
+        }
+
+        Ok(())
     }
 }
 
@@ -96,11 +231,6 @@ impl FlushTracker {
         self.task_queues.enqueue(task);
     }
 
-    #[inline(always)]
-    pub fn enqueue_recovery_tasks(&self, recovery_tasks: impl Iterator<Item = Task>) -> usize {
-        self.task_queues.enqueue_recovery_tasks(recovery_tasks)
-    }
-
     /// Returns a list of tasks per partition.
     #[inline(always)]
     pub fn collect_tasks(&self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
@@ -120,11 +250,6 @@ impl FlushTracker {
         self.item_queue.clear();
     }
 
-    #[inline(always)]
-    pub fn enqueue_item(&self, item: Item) {
-        self.item_queue.enqueue(item);
-    }
-
     /// Returns the amount of journals
     #[inline(always)]
     pub fn journal_count(&self) -> usize {
@@ -140,8 +265,9 @@ impl FlushTracker {
     }
 
     /// Returns the amount of bytes used on disk by journals
+    #[inline(always)]
     pub fn disk_space_used(&self) -> u64 {
-        self.item_queue.disk_space_used()
+        self.item_queue.disk_space().get()
     }
 
     /// Performs maintenance, maybe deleting some old journals
@@ -164,16 +290,16 @@ impl FlushTracker {
 impl FlushTracker {
     #[inline(always)]
     pub fn buffer_size(&self) -> u64 {
-        self.task_queues.buffer_size()
+        self.task_queues.buffer_size().get()
     }
 
     #[inline(always)]
     pub fn grow_buffer(&self, n: u64) -> u64 {
-        self.task_queues.grow_buffer(n)
+        self.task_queues.buffer_size().allocate(n)
     }
 
     #[inline(always)]
     pub fn shrink_buffer(&self, n: u64) -> u64 {
-        self.task_queues.shrink_buffer(n)
+        self.task_queues.buffer_size().free(n)
     }
 }

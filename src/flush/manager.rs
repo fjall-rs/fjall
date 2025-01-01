@@ -46,28 +46,18 @@ impl FlushTaskQueues {
         }
     }
 
-    #[inline]
     #[track_caller]
     fn queues_read_lock(&self) -> RwLockReadGuard<'_, HashMap<Arc<str>, FlushQueue>> {
         self.queues.read().expect("lock is poisoned")
     }
 
-    #[inline]
     #[track_caller]
     fn queues_write_lock(&self) -> RwLockWriteGuard<'_, HashMap<Arc<str>, FlushQueue>> {
         self.queues.write().expect("lock is poisoned")
     }
 
-    pub fn buffer_size(&self) -> u64 {
-        self.buffer_size.get()
-    }
-
-    pub fn grow_buffer(&self, n: u64) -> u64 {
-        self.buffer_size.allocate(n)
-    }
-
-    pub fn shrink_buffer(&self, n: u64) -> u64 {
-        self.buffer_size.free(n)
+    pub fn buffer_size(&self) -> &SpaceTracker {
+        &self.buffer_size
     }
 
     #[track_caller]
@@ -138,36 +128,6 @@ impl FlushTaskQueues {
             .entry(partition_name)
             .or_default()
             .enqueue(Arc::new(task));
-    }
-
-    pub fn enqueue_recovery_tasks(&self, recovery_tasks: impl Iterator<Item = Task>) -> usize {
-        let mut queues = self.queues_write_lock();
-        let mut count = 0;
-
-        for task in recovery_tasks {
-            // IMPORTANT: Add sealed memtable size to current write buffer size
-            self.grow_buffer(task.sealed_memtable.size().into());
-
-            // TODO: unit test write buffer size after recovery
-
-            // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-            let partition_name = task.partition.name.clone();
-
-            log::debug!(
-                "Enqueuing {partition_name}:{} for flushing ({} B)",
-                task.id,
-                task.sealed_memtable.size()
-            );
-
-            queues
-                .entry(partition_name)
-                .or_default()
-                .enqueue(Arc::new(task));
-
-            count += 1;
-        }
-
-        count
     }
 
     /// Returns a list of tasks per partition.
