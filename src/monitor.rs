@@ -3,23 +3,20 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    config::Config as KeyspaceConfig, flush::manager::FlushManager,
-    journal::manager::JournalManager, keyspace::Partitions, snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager, Keyspace,
+    config::Config as KeyspaceConfig, flush_tracker::FlushTracker, keyspace::Partitions,
+    snapshot_tracker::SnapshotTracker, Keyspace,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-    pub(crate) keyspace_config: KeyspaceConfig,
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) write_buffer_manager: WriteBufferManager,
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
-    pub(crate) seqno: SequenceNumberCounter,
-    pub(crate) snapshot_tracker: SnapshotTracker,
-    pub(crate) keyspace_poison: Arc<AtomicBool>,
+    keyspace_config: KeyspaceConfig,
+    flush_tracker: Arc<FlushTracker>,
+    partitions: Arc<RwLock<Partitions>>,
+    seqno: SequenceNumberCounter,
+    snapshot_tracker: Arc<SnapshotTracker>,
+    keyspace_poison: Arc<AtomicBool>,
 }
 
 impl Drop for Monitor {
@@ -37,10 +34,8 @@ impl Monitor {
         crate::drop::increment_drop_counter();
 
         Self {
-            flush_manager: keyspace.flush_manager.clone(),
-            journal_manager: keyspace.journal_manager.clone(),
             keyspace_config: keyspace.config.clone(),
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            flush_tracker: keyspace.flush_tracker.clone(),
             partitions: keyspace.partitions.clone(),
             seqno: keyspace.seqno.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
@@ -69,11 +64,7 @@ impl Monitor {
         drop(partitions);
 
         if let Some(lowest_persisted_partition) = lowest_persisted_partition {
-            let partitions_names_with_queued_tasks = self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .get_partitions_with_tasks();
+            let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
 
             if partitions_names_with_queued_tasks.contains(&lowest_persisted_partition.name) {
                 return;
@@ -113,11 +104,7 @@ impl Monitor {
                 .cmp(&a.tree.active_memtable_size())
         });
 
-        let partitions_names_with_queued_tasks = self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .get_partitions_with_tasks();
+        let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
 
         let partitions = partitions
             .into_iter()
@@ -164,11 +151,7 @@ impl Monitor {
                 .expect("lock is poisoned") = current_seqno.saturating_sub(100);
         }
 
-        let jm_size = self
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used();
+        let jm_size = self.flush_tracker.disk_space_used();
 
         let max_journal_size = self.keyspace_config.max_journaling_size_in_bytes;
 
@@ -177,13 +160,9 @@ impl Monitor {
             idle = false;
         }
 
-        let write_buffer_size = self.write_buffer_manager.get();
+        let write_buffer_size = self.flush_tracker.buffer_size();
 
-        let queued_size = self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .queued_size();
+        let queued_size = self.flush_tracker.queued_size();
 
         // TODO: This should never ever overflow
         // TODO: because that is definitely a logic error

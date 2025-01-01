@@ -95,6 +95,7 @@ pub mod drop;
 mod error;
 mod file;
 mod flush;
+mod flush_tracker;
 mod gc;
 mod iter;
 mod journal;

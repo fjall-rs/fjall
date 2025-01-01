@@ -2,44 +2,48 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Keeps track of the size of the keyspace's write buffer
-#[derive(Clone, Default, Debug)]
-pub struct WriteBufferManager(Arc<AtomicU64>);
+/// Keeps track of disk space or buffer size in bytes
+#[derive(Debug)]
+pub struct SpaceTracker(AtomicU64);
 
-impl std::ops::Deref for WriteBufferManager {
-    type Target = AtomicU64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl SpaceTracker {
+    pub fn new() -> SpaceTracker {
+        Self(AtomicU64::new(0))
     }
-}
 
-impl WriteBufferManager {
     pub fn get(&self) -> u64 {
-        self.load(std::sync::atomic::Ordering::Acquire)
+        self.0.load(Ordering::Acquire)
     }
 
-    // Adds some bytes to the write buffer counter.
+    // Adds some bytes to the space counter.
     //
     // Returns the counter *after* incrementing.
     pub fn allocate(&self, n: u64) -> u64 {
-        let before = self.fetch_add(n, std::sync::atomic::Ordering::AcqRel);
-        before + n
+        use Ordering::{Acquire, SeqCst};
+
+        loop {
+            let now = self.0.load(Acquire);
+            let added = now.saturating_add(n);
+
+            if self.0.compare_exchange(now, added, SeqCst, SeqCst).is_ok() {
+                return added;
+            }
+        }
     }
 
-    // Frees some bytes from the write buffer counter.
+    // Frees some bytes from the space counter.
     //
     // Returns the counter *after* decrementing.
     pub fn free(&self, n: u64) -> u64 {
-        use std::sync::atomic::Ordering::{Acquire, SeqCst};
+        use Ordering::{Acquire, SeqCst};
 
         loop {
-            let now = self.load(Acquire);
+            let now = self.0.load(Acquire);
             let subbed = now.saturating_sub(n);
 
-            if self.compare_exchange(now, subbed, SeqCst, SeqCst).is_ok() {
+            if self.0.compare_exchange(now, subbed, SeqCst, SeqCst).is_ok() {
                 return subbed;
             }
         }
@@ -52,8 +56,8 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn write_buffer_manager_increment() {
-        let m = WriteBufferManager::default();
+    fn space_tracker_increment() {
+        let m = SpaceTracker::new();
         m.allocate(5);
         assert_eq!(m.get(), 5);
 
@@ -62,8 +66,8 @@ mod tests {
     }
 
     #[test]
-    fn write_buffer_manager_decrement() {
-        let m = WriteBufferManager::default();
+    fn space_tracker_decrement() {
+        let m = SpaceTracker::new();
         m.allocate(20);
         assert_eq!(m.get(), 20);
 

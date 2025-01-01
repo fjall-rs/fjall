@@ -116,11 +116,7 @@ pub fn recover_sealed_memtables(
     keyspace: &Keyspace,
     sealed_journal_paths: &[PathBuf],
 ) -> crate::Result<()> {
-    #[allow(clippy::significant_drop_tightening)]
-    let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
-
-    #[allow(clippy::significant_drop_tightening)]
-    let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
+    let flush_tracker = keyspace.flush_tracker.as_ref();
 
     #[allow(clippy::significant_drop_tightening)]
     let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
@@ -170,29 +166,28 @@ pub fn recover_sealed_memtables(
         }
 
         log::debug!("Sealing recovered memtables");
-        let mut recovered_count = 0;
+        let recovered_count =
+            flush_tracker.enqueue_recovery_tasks(watermarks.values().filter_map(|handle| {
+                let tree = &handle.partition.tree;
 
-        for handle in watermarks.values() {
-            let tree = &handle.partition.tree;
+                let partition_lsn = tree.get_highest_persisted_seqno();
 
-            let partition_lsn = tree.get_highest_persisted_seqno();
+                // IMPORTANT: Only apply sealed memtables to partitions
+                // that have a lower seqno to avoid double flushing
+                let should_skip_sealed_memtable =
+                    partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
 
-            // IMPORTANT: Only apply sealed memtables to partitions
-            // that have a lower seqno to avoid double flushing
-            let should_skip_sealed_memtable =
-                partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
+                if should_skip_sealed_memtable {
+                    handle.partition.tree.lock_active_memtable().clear();
 
-            if should_skip_sealed_memtable {
-                handle.partition.tree.lock_active_memtable().clear();
+                    log::trace!(
+                        "Partition {} has higher seqno ({partition_lsn:?}), skipping",
+                        handle.partition.name
+                    );
+                    return None;
+                }
 
-                log::trace!(
-                    "Partition {} has higher seqno ({partition_lsn:?}), skipping",
-                    handle.partition.name
-                );
-                continue;
-            }
-
-            if let Some((memtable_id, sealed_memtable)) = tree.rotate_memtable() {
+                let (memtable_id, sealed_memtable) = tree.rotate_memtable()?;
                 assert_eq!(
                     Some(handle.lsn),
                     sealed_memtable.get_highest_seqno(),
@@ -214,31 +209,17 @@ pub fn recover_sealed_memtables(
 
                 log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
 
-                // IMPORTANT: Add sealed memtable size to current write buffer size
-                keyspace
-                    .write_buffer_manager
-                    .allocate(sealed_memtable.size().into());
-
-                // TODO: unit test write buffer size after recovery
-
-                // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                flush_manager_lock.enqueue_task(
-                    handle.partition.name.clone(),
-                    crate::flush::manager::Task {
-                        id: memtable_id,
-                        sealed_memtable,
-                        partition: handle.partition.clone(),
-                    },
-                );
-
-                recovered_count += 1;
-            };
-        }
+                Some(crate::flush::manager::Task {
+                    id: memtable_id,
+                    sealed_memtable,
+                    partition: handle.partition.clone(),
+                })
+            }));
 
         log::debug!("Recovered {recovered_count} sealed memtables");
 
         // IMPORTANT: Add sealed journal to journal manager
-        journal_manager_lock.enqueue(crate::journal::manager::Item {
+        flush_tracker.enqueue_item(crate::journal::manager::Item {
             watermarks: watermarks.into_values().collect(),
             path: journal_path.clone(),
             size_in_bytes: journal_size,

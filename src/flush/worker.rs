@@ -2,14 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::manager::{FlushManager, Task};
+use super::manager::Task;
 use crate::{
-    batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, HashMap,
-    PartitionHandle,
+    batch::PartitionKey, compaction::manager::CompactionManager, flush_tracker::FlushTracker,
+    snapshot_tracker::SnapshotTracker, HashMap, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, Segment, SeqNo};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// Flushes a single segment.
 fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Result<Option<Segment>> {
@@ -110,17 +109,13 @@ fn run_multi_flush(
 /// Runs flush logic.
 #[allow(clippy::too_many_lines)]
 pub fn run(
-    flush_manager: &Arc<RwLock<FlushManager>>,
-    journal_manager: &Arc<RwLock<JournalManager>>,
+    flush_tracker: &FlushTracker,
     compaction_manager: &CompactionManager,
-    write_buffer_manager: &WriteBufferManager,
     snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
 ) {
-    log::debug!("write locking flush manager");
-    let mut fm = flush_manager.write().expect("lock is poisoned");
-    let partitioned_tasks = fm.collect_tasks(parallelism);
-    drop(fm);
+    log::debug!("read locking flush manager");
+    let partitioned_tasks = flush_tracker.collect_tasks(parallelism);
 
     let task_count = partitioned_tasks.iter().map(|x| x.1.len()).sum::<usize>();
 
@@ -142,16 +137,14 @@ pub fn run(
                     log::error!("Failed to register segments: {e:?}");
                 } else {
                     log::debug!("write locking flush manager to submit results");
-                    let mut flush_manager = flush_manager.write().expect("lock is poisoned");
-
                     log::debug!(
                         "Dequeuing flush tasks: {} => {}",
                         partition.name,
                         created_segments.len()
                     );
-                    flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
+                    flush_tracker.dequeue_tasks(partition.name.clone(), created_segments.len());
 
-                    write_buffer_manager.free(memtables_size);
+                    flush_tracker.shrink_buffer(memtables_size);
                     compaction_manager.notify(partition);
                 }
             }
@@ -162,11 +155,7 @@ pub fn run(
     }
 
     log::debug!("write locking journal manager to maybe do maintenance");
-    if let Err(e) = journal_manager
-        .write()
-        .expect("lock is poisoned")
-        .maintenance()
-    {
+    if let Err(e) = flush_tracker.maintenance() {
         log::error!("journal GC failed: {e:?}");
     }
 
