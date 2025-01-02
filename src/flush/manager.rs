@@ -3,9 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::queue::FlushQueue;
-use crate::{
-    batch::PartitionKey, write_buffer_manager::SpaceTracker, HashMap, HashSet, PartitionHandle,
-};
+use crate::{batch::PartitionKey, write_buffer_manager::SpaceTracker, HashMap, PartitionHandle};
 use lsm_tree::{Memtable, SegmentId};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -67,7 +65,7 @@ impl FlushTaskQueues {
 
     /// Gets the names of partitions that have queued tasks.
     #[track_caller]
-    pub fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
+    pub fn get_partitions_with_tasks(&self) -> Vec<PartitionKey> {
         self.queues_read_lock()
             .iter()
             .filter(|(_, v)| !v.is_empty())
@@ -132,9 +130,8 @@ impl FlushTaskQueues {
 
     /// Returns a list of tasks per partition.
     #[track_caller]
-    pub fn collect_tasks(&self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
-        let mut collected: HashMap<_, Vec<_>> = HashMap::default();
-        let mut cnt = 0;
+    pub fn collect_tasks(&self, limit: usize) -> Vec<Vec<Arc<Task>>> {
+        let mut collected = Vec::new();
 
         // NOTE: Returning multiple tasks per partition is fine and will
         // help with flushing very active partitions.
@@ -143,18 +140,26 @@ impl FlushTaskQueues {
         // we will never cover up a lower seqno of some other segment.
         // For this to work, all tasks need to be successful and atomically
         // applied (all-or-nothing).
-        'outer: for (partition_name, queue) in self.queues_read_lock().iter() {
-            for item in queue.iter() {
-                if cnt == limit {
-                    break 'outer;
+        for (partition_name, item) in self
+            .queues_read_lock()
+            .iter()
+            .flat_map(|(partition_name, queue)| {
+                queue.iter().map(move |item| (partition_name, item))
+            })
+            .take(limit)
+        {
+            match collected.last_mut() {
+                None => collected.push(vec![item.clone()]),
+                Some(items) => {
+                    if items
+                        .last()
+                        .map_or(true, |item| &item.partition.name == partition_name)
+                    {
+                        items.push(item.clone());
+                    } else {
+                        collected.push(vec![item.clone()]);
+                    }
                 }
-
-                collected
-                    .entry(partition_name.clone())
-                    .or_default()
-                    .push(item.clone());
-
-                cnt += 1;
             }
         }
 
@@ -162,10 +167,9 @@ impl FlushTaskQueues {
     }
 
     #[track_caller]
-    pub fn dequeue(&self, partition_name: PartitionKey, cnt: usize) {
-        self.queues_write_lock()
-            .entry(partition_name)
-            .or_default()
-            .dequeue(cnt);
+    pub fn dequeue(&self, partition_name: &PartitionKey, cnt: usize) {
+        if let Some(queue) = self.queues_write_lock().get_mut(partition_name) {
+            queue.dequeue(cnt)
+        }
     }
 }

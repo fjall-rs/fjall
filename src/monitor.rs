@@ -48,10 +48,11 @@ impl Monitor {
             "monitor: try flushing affected partitions because journals have passed 50% of threshold"
         );
 
-        let partitions = self.partitions.read().expect("lock is poisoned");
-
         // TODO: this may not scale well for many partitions
-        let lowest_persisted_partition = partitions
+        let lowest_persisted_partition = self
+            .partitions
+            .read()
+            .expect("lock is poisoned")
             .values()
             .filter(|x| x.tree.active_memtable_size() > 0)
             .min_by(|a, b| {
@@ -60,8 +61,6 @@ impl Monitor {
                     .cmp(&b.tree.get_highest_persisted_seqno())
             })
             .cloned();
-
-        drop(partitions);
 
         if let Some(lowest_persisted_partition) = lowest_persisted_partition {
             let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
@@ -89,12 +88,15 @@ impl Monitor {
         log::trace!(
             "monitor: flush inactive partition because write buffer has passed 50% of threshold"
         );
+        let mut partitions_with_tasks = self.flush_tracker.get_partitions_with_tasks();
+        partitions_with_tasks.sort();
 
         let mut partitions = self
             .partitions
             .read()
             .expect("lock is poisoned")
             .values()
+            .filter(|x| partitions_with_tasks.binary_search(&x.name).is_err())
             .cloned()
             .collect::<Vec<_>>();
 
@@ -103,12 +105,6 @@ impl Monitor {
                 .active_memtable_size()
                 .cmp(&a.tree.active_memtable_size())
         });
-
-        let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
-
-        let partitions = partitions
-            .into_iter()
-            .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
 
         for partition in partitions {
             log::debug!("monitor: WB rotating {:?}", partition.name);

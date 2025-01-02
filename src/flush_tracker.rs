@@ -8,7 +8,6 @@ use crate::{
         writer::Writer,
     },
     keyspace::Partitions,
-    HashMap, HashSet,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
@@ -68,7 +67,7 @@ impl FlushTracker {
             let raw_reader = JournalReader::new(&journal_path)?;
             let reader = JournalBatchReader::new(raw_reader);
 
-            let mut watermarks: HashMap<PartitionKey, EvictionWatermark> = HashMap::default();
+            let mut watermarks: Vec<EvictionWatermark> = Vec::new();
 
             for batch in reader {
                 let batch = batch?;
@@ -77,15 +76,23 @@ impl FlushTracker {
                     if let Some(handle) = partitions_lock.get(&item.partition) {
                         let tree = &handle.tree;
 
-                        watermarks
-                            .entry(item.partition)
-                            .and_modify(|prev| {
+                        match watermarks.binary_search_by(|watermark| {
+                            watermark.partition.name.cmp(&item.partition)
+                        }) {
+                            Ok(index) => {
+                                let prev = &mut watermarks[index];
                                 prev.lsn = prev.lsn.max(batch.seqno);
-                            })
-                            .or_insert_with(|| EvictionWatermark {
-                                partition: handle.clone(),
-                                lsn: batch.seqno,
-                            });
+                            }
+                            Err(index) => {
+                                watermarks.insert(
+                                    index,
+                                    EvictionWatermark {
+                                        partition: handle.clone(),
+                                        lsn: batch.seqno,
+                                    },
+                                );
+                            }
+                        };
 
                         match item.value_type {
                             lsm_tree::ValueType::Value => {
@@ -105,7 +112,7 @@ impl FlushTracker {
             log::debug!("Sealing recovered memtables");
             let mut recovered_count = 0;
 
-            for handle in watermarks.values() {
+            for handle in &watermarks {
                 let tree = &handle.partition.tree;
 
                 let partition_lsn = tree.get_highest_persisted_seqno();
@@ -168,7 +175,7 @@ impl FlushTracker {
 
             // IMPORTANT: Add sealed journal to journal manager
             self.item_queue.enqueue(Item {
-                watermarks: watermarks.into_values().collect(),
+                watermarks,
                 path: journal_path.clone(),
                 size_in_bytes: journal_size,
             });
@@ -189,7 +196,7 @@ impl FlushTracker {
 
     /// Gets the names of partitions that have queued tasks.
     #[inline(always)]
-    pub fn get_partitions_with_tasks(&self) -> HashSet<PartitionKey> {
+    pub fn get_partitions_with_tasks(&self) -> Vec<PartitionKey> {
         self.task_queues.get_partitions_with_tasks()
     }
 
@@ -233,12 +240,12 @@ impl FlushTracker {
 
     /// Returns a list of tasks per partition.
     #[inline(always)]
-    pub fn collect_tasks(&self, limit: usize) -> HashMap<PartitionKey, Vec<Arc<Task>>> {
+    pub fn collect_tasks(&self, limit: usize) -> Vec<Vec<Arc<Task>>> {
         self.task_queues.collect_tasks(limit)
     }
 
     #[inline(always)]
-    pub fn dequeue_tasks(&self, partition_name: PartitionKey, cnt: usize) {
+    pub fn dequeue_tasks(&self, partition_name: &PartitionKey, cnt: usize) {
         self.task_queues.dequeue(partition_name, cnt);
     }
 }

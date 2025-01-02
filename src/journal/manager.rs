@@ -101,11 +101,7 @@ impl JournalItemQueue {
     pub fn maintenance(&self) -> crate::Result<()> {
         let mut items = self.items_write_lock();
 
-        loop {
-            let Some(item) = items.first() else {
-                return Ok(());
-            };
-
+        while let Some(item) = items.first() {
             // TODO: unit test: check deleted partition does not prevent journal eviction
             for item in &item.watermarks {
                 // Only check partition seqno if not deleted
@@ -113,15 +109,9 @@ impl JournalItemQueue {
                     .partition
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
+                    && item.partition.tree.get_highest_persisted_seqno() < Some(item.lsn)
                 {
-                    let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
-                    else {
-                        return Ok(());
-                    };
-
-                    if partition_seqno < item.lsn {
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
             }
 
@@ -141,6 +131,8 @@ impl JournalItemQueue {
 
             items.remove(0);
         }
+
+        Ok(())
     }
 
     #[track_caller]
