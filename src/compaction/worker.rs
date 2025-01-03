@@ -17,7 +17,7 @@ pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTr
         item.0.name
     );
 
-    let strategy = item.config.compaction_strategy.clone();
+    let strategy = &item.config.compaction_strategy;
 
     // TODO: loop if there's more work to do
 
