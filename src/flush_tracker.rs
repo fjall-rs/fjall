@@ -83,8 +83,9 @@ impl FlushTracker {
                             watermark.partition.name.cmp(&item.partition)
                         }) {
                             Ok(index) => {
-                                let prev = &mut watermarks[index];
-                                prev.lsn = prev.lsn.max(batch.seqno);
+                                if let Some(prev) = watermarks.get_mut(index) {
+                                    prev.lsn = prev.lsn.max(batch.seqno);
+                                }
                             }
                             Err(index) => {
                                 watermarks.insert(
