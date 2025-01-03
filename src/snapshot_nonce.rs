@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use std::sync::Arc;
-
 use crate::{snapshot_tracker::SnapshotTracker, Instant};
 
 /// Holds a snapshot instant and automatically frees it from the snapshot tracker when dropped
