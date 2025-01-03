@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::writer::Writer;
-use crate::{write_buffer_manager::SpaceTracker, PartitionHandle};
+use crate::{space_tracker::SpaceTracker, PartitionHandle};
 use lsm_tree::{AbstractTree, SeqNo};
 use std::{
     path::PathBuf,
@@ -38,7 +38,6 @@ impl std::fmt::Debug for Item {
 /// The [`JournalItemQueue`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different partitions.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalItemQueue {
     active_path: Mutex<PathBuf>, // TODO: remove?

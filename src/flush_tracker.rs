@@ -1,6 +1,6 @@
 use crate::{
     batch::PartitionKey,
-    flush::manager::{FlushTaskQueues, Task},
+    flush::manager::{FlushTaskQueue, Task},
     journal::{
         batch_reader::JournalBatchReader,
         manager::{EvictionWatermark, Item, JournalItemQueue},
@@ -20,10 +20,10 @@ use std::{
 #[derive(Debug)]
 pub struct FlushTracker {
     /// It caps the write buffer size by flushing memtables to disk segments.
-    task_queues: FlushTaskQueues,
+    tasks: FlushTaskQueue,
     /// It checks on-disk journal size and flushes memtables if needed, to
     /// garbage collect sealed journals.
-    item_queue: JournalItemQueue,
+    items: JournalItemQueue,
 }
 
 impl Drop for FlushTracker {
@@ -41,13 +41,12 @@ impl FlushTracker {
         crate::drop::increment_drop_counter();
 
         Self {
-            task_queues: FlushTaskQueues::new(),
-            item_queue: JournalItemQueue::from_active(active_path),
+            tasks: FlushTaskQueue::new(),
+            items: JournalItemQueue::from_active(active_path),
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    #[track_caller]
     pub fn recover_sealed_memtables(
         &self,
         partitions: &RwLock<Partitions>,
@@ -154,14 +153,14 @@ impl FlushTracker {
                     log::debug!("Keyspace seqno is now {}", seqno.get());
 
                     // IMPORTANT: Add sealed memtable size to current write buffer size
-                    self.task_queues
+                    self.tasks
                         .buffer_size()
                         .allocate(sealed_memtable.size().into());
 
                     // TODO: unit test write buffer size after recovery
 
                     // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                    self.task_queues.enqueue(Task {
+                    self.tasks.enqueue(Task {
                         id: memtable_id,
                         sealed_memtable,
                         partition: handle.partition.clone(),
@@ -174,7 +173,7 @@ impl FlushTracker {
             log::debug!("Recovered {recovered_count} sealed memtables");
 
             // IMPORTANT: Add sealed journal to journal manager
-            self.item_queue.enqueue(Item {
+            self.items.enqueue(Item {
                 watermarks,
                 path: journal_path.clone(),
                 size_in_bytes: journal_size,
@@ -191,25 +190,25 @@ impl FlushTracker {
 impl FlushTracker {
     #[inline(always)]
     pub fn clear_queues(&self) {
-        self.task_queues.clear();
+        self.tasks.clear();
     }
 
     /// Gets the names of partitions that have queued tasks.
     #[inline(always)]
     pub fn get_partitions_with_tasks(&self) -> Vec<PartitionKey> {
-        self.task_queues.get_partitions_with_tasks()
+        self.tasks.get_partitions_with_tasks()
     }
 
     /// Returns the amount of queues.
     #[inline(always)]
     pub fn queue_count(&self) -> usize {
-        self.task_queues.queue_count()
+        self.tasks.queue_count()
     }
 
     /// Returns the amount of bytes queued.
     #[inline(always)]
     pub fn queued_size(&self) -> u64 {
-        self.task_queues.queued_size()
+        self.tasks.queued_size()
     }
 
     // NOTE: is actually used in tests
@@ -217,7 +216,7 @@ impl FlushTracker {
     /// Returns the amount of tasks that are queued to be flushed.
     #[inline(always)]
     pub fn task_count(&self) -> usize {
-        self.task_queues.task_count()
+        self.tasks.task_count()
     }
 
     // NOTE: is actually used in tests
@@ -225,28 +224,28 @@ impl FlushTracker {
     #[must_use]
     #[inline(always)]
     pub fn is_task_queue_empty(&self) -> bool {
-        self.task_queues.is_empty()
+        self.tasks.is_empty()
     }
 
     #[inline(always)]
     pub fn remove_partition(&self, name: &str) {
-        self.task_queues.remove_partition(name);
+        self.tasks.remove_partition(name);
     }
 
     #[inline(always)]
     pub fn enqueue_task(&self, task: Task) {
-        self.task_queues.enqueue(task);
+        self.tasks.enqueue(task);
     }
 
     /// Returns a list of tasks per partition.
     #[inline(always)]
     pub fn collect_tasks(&self, limit: usize) -> Vec<Vec<Arc<Task>>> {
-        self.task_queues.collect_tasks(limit)
+        self.tasks.collect_tasks(limit)
     }
 
     #[inline(always)]
     pub fn dequeue_tasks(&self, partition_name: &PartitionKey, cnt: usize) {
-        self.task_queues.dequeue(partition_name, cnt);
+        self.tasks.dequeue(partition_name, cnt);
     }
 }
 
@@ -254,13 +253,13 @@ impl FlushTracker {
 impl FlushTracker {
     #[inline(always)]
     pub fn clear_items(&self) {
-        self.item_queue.clear();
+        self.items.clear();
     }
 
     /// Returns the amount of journals
     #[inline(always)]
     pub fn journal_count(&self) -> usize {
-        self.item_queue.journal_count()
+        self.items.journal_count()
     }
 
     // NOTE: is actually used in tests
@@ -268,19 +267,19 @@ impl FlushTracker {
     /// Returns the amount of sealed journals
     #[inline(always)]
     pub fn sealed_journal_count(&self) -> usize {
-        self.item_queue.sealed_journal_count()
+        self.items.sealed_journal_count()
     }
 
     /// Returns the amount of bytes used on disk by journals
     #[inline(always)]
     pub fn disk_space_used(&self) -> u64 {
-        self.item_queue.disk_space().get()
+        self.items.disk_space().get()
     }
 
     /// Performs maintenance, maybe deleting some old journals
     #[inline(always)]
     pub fn maintenance(&self) -> crate::Result<()> {
-        self.item_queue.maintenance()
+        self.items.maintenance()
     }
 
     #[inline(always)]
@@ -289,7 +288,7 @@ impl FlushTracker {
         journal_writer: &mut MutexGuard<Writer>,
         watermarks: Vec<EvictionWatermark>,
     ) -> crate::Result<()> {
-        self.item_queue.rotate_journal(journal_writer, watermarks)
+        self.items.rotate_journal(journal_writer, watermarks)
     }
 }
 
@@ -297,16 +296,16 @@ impl FlushTracker {
 impl FlushTracker {
     #[inline(always)]
     pub fn buffer_size(&self) -> u64 {
-        self.task_queues.buffer_size().get()
+        self.tasks.buffer_size().get()
     }
 
     #[inline(always)]
     pub fn grow_buffer(&self, n: u64) -> u64 {
-        self.task_queues.buffer_size().allocate(n)
+        self.tasks.buffer_size().allocate(n)
     }
 
     #[inline(always)]
     pub fn shrink_buffer(&self, n: u64) -> u64 {
-        self.task_queues.buffer_size().free(n)
+        self.tasks.buffer_size().free(n)
     }
 }

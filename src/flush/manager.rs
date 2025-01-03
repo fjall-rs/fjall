@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::queue::FlushQueue;
-use crate::{batch::PartitionKey, write_buffer_manager::SpaceTracker, HashMap, PartitionHandle};
+use crate::{batch::PartitionKey, space_tracker::SpaceTracker, HashMap, PartitionHandle};
 use lsm_tree::{Memtable, SegmentId};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -28,15 +28,14 @@ impl std::fmt::Debug for Task {
 /// containing some flush tasks.
 ///
 /// Each flush task references a sealed memtable and the given partition.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
-pub struct FlushTaskQueues {
+pub struct FlushTaskQueue {
     queues: RwLock<HashMap<PartitionKey, FlushQueue>>,
     /// Keeps track of write buffer size
     buffer_size: SpaceTracker,
 }
 
-impl FlushTaskQueues {
+impl FlushTaskQueue {
     pub fn new() -> Self {
         Self {
             queues: RwLock::default(),
