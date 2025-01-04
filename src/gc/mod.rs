@@ -127,7 +127,6 @@ pub trait GarbageCollection {
     ///
     /// Panics if the threshold is negative.
     ///
-    /// Values above 1.0 will be treated as 1.0.
     /// If you want to drop only fully stale segments, use [`GarbageCollector::drop_stale_segments`] instead.
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64>;
 
