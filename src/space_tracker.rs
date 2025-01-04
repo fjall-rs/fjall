@@ -21,16 +21,7 @@ impl SpaceTracker {
     //
     // Returns the counter *after* incrementing.
     pub fn allocate(&self, n: u64) -> u64 {
-        use Ordering::{Acquire, SeqCst};
-
-        loop {
-            let now = self.0.load(Acquire);
-            let added = now.saturating_add(n);
-
-            if self.0.compare_exchange(now, added, SeqCst, SeqCst).is_ok() {
-                return added;
-            }
-        }
+        self.0.fetch_add(n, Ordering::AcqRel) + n
     }
 
     // Frees some bytes from the space counter.
