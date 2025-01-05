@@ -20,14 +20,14 @@ impl SpaceTracker {
     // Adds some bytes to the space counter.
     //
     // Returns the counter *after* incrementing.
-    pub fn allocate(&self, n: u64) -> u64 {
+    pub fn increment(&self, n: u64) -> u64 {
         self.0.fetch_add(n, Ordering::AcqRel) + n
     }
 
     // Frees some bytes from the space counter.
     //
     // Returns the counter *after* decrementing.
-    pub fn free(&self, n: u64) -> u64 {
+    pub fn decrement(&self, n: u64) -> u64 {
         use Ordering::{Acquire, SeqCst};
 
         loop {
@@ -49,23 +49,23 @@ mod tests {
     #[test]
     fn space_tracker_increment() {
         let m = SpaceTracker::new();
-        m.allocate(5);
+        m.increment(5);
         assert_eq!(m.get(), 5);
 
-        m.allocate(15);
+        m.increment(15);
         assert_eq!(m.get(), 20);
     }
 
     #[test]
     fn space_tracker_decrement() {
         let m = SpaceTracker::new();
-        m.allocate(20);
+        m.increment(20);
         assert_eq!(m.get(), 20);
 
-        m.free(5);
+        m.decrement(5);
         assert_eq!(m.get(), 15);
 
-        m.free(20);
+        m.decrement(20);
         assert_eq!(m.get(), 0);
     }
 }

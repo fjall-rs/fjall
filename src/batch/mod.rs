@@ -143,7 +143,9 @@ impl Batch {
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches
-        self.keyspace.flush_tracker.grow_buffer(batch_size);
+        self.keyspace
+            .flush_tracker
+            .increment_buffer_size(batch_size);
 
         // Check each affected partition for write stall/halt
         for partition in partitions_with_possible_stall {

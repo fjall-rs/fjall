@@ -874,7 +874,9 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.flush_tracker.grow_buffer(u64::from(item_size));
+        let write_buffer_size = self
+            .flush_tracker
+            .increment_buffer_size(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
 
@@ -950,7 +952,9 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.flush_tracker.grow_buffer(u64::from(item_size));
+        let write_buffer_size = self
+            .flush_tracker
+            .increment_buffer_size(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);

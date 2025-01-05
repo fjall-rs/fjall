@@ -73,7 +73,7 @@ impl JournalItemQueue {
 
     #[track_caller]
     pub fn enqueue(&self, item: Item) {
-        self.disk_space.allocate(item.size_in_bytes);
+        self.disk_space.increment(item.size_in_bytes);
         self.items_write_lock().push(item);
     }
 
@@ -126,7 +126,7 @@ impl JournalItemQueue {
             log::trace!("Removing fully flushed journal at {:?}", item.path);
             std::fs::remove_file(&item.path)?;
 
-            self.disk_space.free(item.size_in_bytes);
+            self.disk_space.decrement(item.size_in_bytes);
 
             items.remove(0);
         }

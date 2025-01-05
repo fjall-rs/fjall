@@ -143,7 +143,7 @@ pub fn run(
                     );
                     flush_tracker.dequeue_tasks(&partition.name, created_segments.len());
 
-                    flush_tracker.shrink_buffer(memtables_size);
+                    flush_tracker.decrement_buffer_size(memtables_size);
                     compaction_manager.notify(partition);
                 }
             }

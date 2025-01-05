@@ -160,7 +160,7 @@ impl FlushTracker {
                     // IMPORTANT: Add sealed memtable size to current write buffer size
                     self.tasks
                         .buffer_size()
-                        .allocate(sealed_memtable.size().into());
+                        .increment(sealed_memtable.size().into());
 
                     // TODO: unit test write buffer size after recovery
 
@@ -193,25 +193,21 @@ impl FlushTracker {
 
 /// Flush Task Queues
 impl FlushTracker {
-    #[inline(always)]
     pub fn clear_queues(&self) {
         self.tasks.clear();
     }
 
     /// Gets the names of partitions that have queued tasks.
-    #[inline(always)]
     pub fn get_partitions_with_tasks(&self) -> Vec<PartitionKey> {
         self.tasks.get_partitions_with_tasks()
     }
 
     /// Returns the amount of queues.
-    #[inline(always)]
     pub fn queue_count(&self) -> usize {
         self.tasks.queue_count()
     }
 
     /// Returns the amount of bytes queued.
-    #[inline(always)]
     pub fn queued_size(&self) -> u64 {
         self.tasks.queued_size()
     }
@@ -219,7 +215,6 @@ impl FlushTracker {
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     /// Returns the amount of tasks that are queued to be flushed.
-    #[inline(always)]
     pub fn task_count(&self) -> usize {
         self.tasks.task_count()
     }
@@ -227,28 +222,23 @@ impl FlushTracker {
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     #[must_use]
-    #[inline(always)]
     pub fn is_task_queue_empty(&self) -> bool {
         self.tasks.is_empty()
     }
 
-    #[inline(always)]
     pub fn remove_partition(&self, name: &str) {
         self.tasks.remove_partition(name);
     }
 
-    #[inline(always)]
     pub fn enqueue_task(&self, task: Task) {
         self.tasks.enqueue(task);
     }
 
     /// Returns a list of tasks per partition.
-    #[inline(always)]
     pub fn collect_tasks(&self, limit: usize) -> Vec<Vec<Arc<Task>>> {
         self.tasks.collect_tasks(limit)
     }
 
-    #[inline(always)]
     pub fn dequeue_tasks(&self, partition_name: &PartitionKey, cnt: usize) {
         self.tasks.dequeue(partition_name, cnt);
     }
@@ -256,13 +246,11 @@ impl FlushTracker {
 
 /// Journal Item Queue
 impl FlushTracker {
-    #[inline(always)]
     pub fn clear_items(&self) {
         self.items.clear();
     }
 
     /// Returns the amount of journals
-    #[inline(always)]
     pub fn journal_count(&self) -> usize {
         self.items.journal_count()
     }
@@ -270,24 +258,20 @@ impl FlushTracker {
     // NOTE: is actually used in tests
     #[allow(dead_code)]
     /// Returns the amount of sealed journals
-    #[inline(always)]
     pub fn sealed_journal_count(&self) -> usize {
         self.items.sealed_journal_count()
     }
 
     /// Returns the amount of bytes used on disk by journals
-    #[inline(always)]
     pub fn disk_space_used(&self) -> u64 {
         self.items.disk_space().get()
     }
 
     /// Performs maintenance, maybe deleting some old journals
-    #[inline(always)]
     pub fn maintenance(&self) -> crate::Result<()> {
         self.items.maintenance()
     }
 
-    #[inline(always)]
     pub fn rotate_journal(
         &self,
         journal_writer: &mut MutexGuard<Writer>,
@@ -299,18 +283,15 @@ impl FlushTracker {
 
 /// Write Buffer
 impl FlushTracker {
-    #[inline(always)]
     pub fn buffer_size(&self) -> u64 {
         self.tasks.buffer_size().get()
     }
 
-    #[inline(always)]
-    pub fn grow_buffer(&self, n: u64) -> u64 {
-        self.tasks.buffer_size().allocate(n)
+    pub fn increment_buffer_size(&self, n: u64) -> u64 {
+        self.tasks.buffer_size().increment(n)
     }
 
-    #[inline(always)]
-    pub fn shrink_buffer(&self, n: u64) -> u64 {
-        self.tasks.buffer_size().free(n)
+    pub fn decrement_buffer_size(&self, n: u64) -> u64 {
+        self.tasks.buffer_size().decrement(n)
     }
 }

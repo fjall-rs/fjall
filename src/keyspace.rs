@@ -611,7 +611,7 @@ impl Keyspace {
                     );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
-                    keyspace.flush_tracker.grow_buffer(size);
+                    keyspace.flush_tracker.increment_buffer_size(size);
 
                     // Recover seqno
                     let maybe_next_seqno = partition
