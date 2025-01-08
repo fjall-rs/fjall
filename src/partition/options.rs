@@ -326,6 +326,10 @@ impl Default for CreateOptions {
 impl CreateOptions {
     /// Sets the bits per key for bloom filters.
     ///
+    /// More bits per key increases memory usage, but decreases the
+    /// false positive rate of bloom filters, which decreases unnecessary
+    /// read I/O for point reads.
+    ///
     /// Default = 10 bits
     #[must_use]
     #[doc(hidden)]
