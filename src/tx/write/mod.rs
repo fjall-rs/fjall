@@ -265,8 +265,8 @@ impl BaseTransaction {
         partition
             .inner
             .tree
-            .iter_with_seqno(
-                self.nonce.instant,
+            .iter(
+                Some(self.nonce.instant),
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| item.map_err(Into::into))
@@ -283,7 +283,7 @@ impl BaseTransaction {
         partition
             .inner
             .tree
-            .keys_with_seqno(self.nonce.instant, None)
+            .keys(Some(self.nonce.instant), None)
             .map(|item| item.map_err(Into::into))
     }
 
@@ -298,7 +298,7 @@ impl BaseTransaction {
         partition
             .inner
             .tree
-            .values_with_seqno(self.nonce.instant, None)
+            .values(Some(self.nonce.instant), None)
             .map(|item| item.map_err(Into::into))
     }
 
@@ -314,9 +314,9 @@ impl BaseTransaction {
         partition
             .inner
             .tree
-            .range_with_seqno(
+            .range(
                 range,
-                self.nonce.instant,
+                Some(self.nonce.instant),
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| item.map_err(Into::into))
@@ -334,9 +334,9 @@ impl BaseTransaction {
         partition
             .inner
             .tree
-            .prefix_with_seqno(
+            .prefix(
                 prefix,
-                self.nonce.instant,
+                Some(self.nonce.instant),
                 self.memtables.get(&partition.inner.name).cloned(),
             )
             .map(|item| item.map_err(Into::into))

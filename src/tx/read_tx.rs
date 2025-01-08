@@ -292,7 +292,7 @@ impl ReadTransaction {
         let iter = partition
             .inner
             .tree
-            .iter_with_seqno(self.nonce.instant, None)
+            .iter(Some(self.nonce.instant), None)
             .map(|item| Ok(item?));
 
         crate::iter::Iter::new(self.nonce.clone(), iter)
@@ -309,7 +309,7 @@ impl ReadTransaction {
         let iter = partition
             .inner
             .tree
-            .keys_with_seqno(self.nonce.instant, None)
+            .keys(Some(self.nonce.instant), None)
             .map(|item| Ok(item?));
 
         crate::iter::Iter::new(self.nonce.clone(), iter)
@@ -326,7 +326,7 @@ impl ReadTransaction {
         let iter = partition
             .inner
             .tree
-            .values_with_seqno(self.nonce.instant, None)
+            .values(Some(self.nonce.instant), None)
             .map(|item| Ok(item?));
 
         crate::iter::Iter::new(self.nonce.clone(), iter)
@@ -361,7 +361,7 @@ impl ReadTransaction {
         let iter = partition
             .inner
             .tree
-            .range_with_seqno(range, self.nonce.instant, None)
+            .range(range, Some(self.nonce.instant), None)
             .map(|item| Ok(item?));
 
         crate::iter::Iter::new(self.nonce.clone(), iter)
@@ -396,7 +396,7 @@ impl ReadTransaction {
         let iter = partition
             .inner
             .tree
-            .prefix_with_seqno(prefix, self.nonce.instant, None)
+            .prefix(prefix, Some(self.nonce.instant), None)
             .map(|item| Ok(item?));
 
         crate::iter::Iter::new(self.nonce.clone(), iter)

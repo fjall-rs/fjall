@@ -335,7 +335,9 @@ impl PartitionHandle {
     /// ```
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.iter().map(|item| item.map_err(Into::into))
+        self.tree
+            .iter(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only keys.
@@ -343,7 +345,9 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        self.tree.keys().map(|item| item.map_err(Into::into))
+        self.tree
+            .keys(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only values.
@@ -351,7 +355,9 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        self.tree.values().map(|item| item.map_err(Into::into))
+        self.tree
+            .values(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a range of items.
@@ -377,7 +383,9 @@ impl PartitionHandle {
         &'a self,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.range(range).map(|item| item.map_err(Into::into))
+        self.tree
+            .range(range, None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -404,7 +412,7 @@ impl PartitionHandle {
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree
-            .prefix(prefix)
+            .prefix(prefix, None, None)
             .map(|item| item.map_err(Into::into))
     }
 
@@ -532,7 +540,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.tree.contains_key(key).map_err(Into::into)
+        self.tree.contains_key(key, None).map_err(Into::into)
     }
 
     /// Retrieves an item from the partition.
@@ -557,7 +565,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<lsm_tree::UserValue>> {
-        Ok(self.tree.get(key)?)
+        Ok(self.tree.get(key, None)?)
     }
 
     /// Retrieves the size of an item from the partition.
@@ -582,7 +590,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
-        Ok(self.tree.size_of(key)?)
+        Ok(self.tree.size_of(key, None)?)
     }
 
     /// Returns the first key-value pair in the partition.
@@ -610,7 +618,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.first_key_value()?)
+        Ok(self.tree.first_key_value(None, None)?)
     }
 
     /// Returns the last key-value pair in the partition.
@@ -638,7 +646,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.last_key_value()?)
+        Ok(self.tree.last_key_value(None, None)?)
     }
 
     // NOTE: Used in tests
