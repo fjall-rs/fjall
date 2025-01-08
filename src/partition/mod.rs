@@ -866,15 +866,19 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn insert<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> crate::Result<()> {
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        key: K,
+        value: V,
+    ) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {
             return Err(crate::Error::PartitionDeleted);
         }
 
-        let key = key.as_ref();
-        let value = value.as_ref();
+        let key = key.into();
+        let value = value.into();
 
         let mut journal_writer = self.journal.get_writer();
 
@@ -885,7 +889,7 @@ impl PartitionHandle {
             return Err(crate::Error::Poisoned);
         }
 
-        journal_writer.write_raw(&self.name, key, value, lsm_tree::ValueType::Value, seqno)?;
+        journal_writer.write_raw(&self.name, &key, &value, lsm_tree::ValueType::Value, seqno)?;
 
         if !self.config.manual_journal_persist {
             journal_writer
@@ -943,14 +947,14 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<()> {
+    pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {
             return Err(crate::Error::PartitionDeleted);
         }
 
-        let key = key.as_ref();
+        let key = key.into();
 
         let mut journal_writer = self.journal.get_writer();
 
@@ -961,7 +965,7 @@ impl PartitionHandle {
             return Err(crate::Error::Poisoned);
         }
 
-        journal_writer.write_raw(&self.name, key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
+        journal_writer.write_raw(&self.name, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
         if !self.config.manual_journal_persist {
             journal_writer

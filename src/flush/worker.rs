@@ -152,7 +152,10 @@ pub fn run(
                     flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
 
                     write_buffer_manager.free(memtables_size);
-                    compaction_manager.notify(partition);
+
+                    for _ in 0..parallelism {
+                        compaction_manager.notify(partition.clone());
+                    }
                 }
             }
             Err(e) => {
