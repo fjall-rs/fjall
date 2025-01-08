@@ -147,15 +147,6 @@ Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type
 
 *Disabled by default.*
 
-### bloom *[deprecated]*
-
-Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
-
-*Enabled by default.*
-
-> Will be removed in the future.
-> If you are absolutely, 100% sure you do not need bloom filters: they will be togglable on a per-partition basis.
-
 ## Stable disk format
 
 The disk format is stable as of 1.0.0.

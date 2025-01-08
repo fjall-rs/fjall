@@ -115,8 +115,6 @@ pub struct CreateOptions {
     pub(crate) level_count: u8,
 
     /// Bits per key for levels that are not L0, L1, L2
-    // NOTE: bloom_bits_per_key is not conditionally compiled,
-    // because that would change the file format
     pub(crate) bloom_bits_per_key: i8,
 
     /// Tree type, see [`TreeType`].
@@ -326,10 +324,20 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
+    /// Sets the bits per key for bloom filters.
+    ///
+    /// Default = 10 bits
     #[must_use]
     #[doc(hidden)]
-    pub fn use_bloom_filters(mut self, flag: bool) -> Self {
-        self.bloom_bits_per_key = if flag { 10 } else { -1 };
+    pub fn bloom_filter_bits(mut self, bits: Option<u8>) -> Self {
+        // NOTE: Can simply cast because of the assert above
+        #[allow(clippy::cast_possible_wrap)]
+        if let Some(bits) = bits {
+            assert!(bits <= 20, "bloom filter bits up to 20 are supported");
+            self.bloom_bits_per_key = bits as i8;
+        } else {
+            self.bloom_bits_per_key = -1;
+        }
         self
     }
 

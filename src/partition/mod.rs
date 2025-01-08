@@ -254,18 +254,14 @@ impl PartitionHandle {
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
-            .compression(config.compression);
+            .compression(config.compression)
+            .bloom_bits_per_key(config.bloom_bits_per_key);
 
         if let Some(kv_opts) = &config.kv_separation {
             base_config = base_config
                 .blob_compression(kv_opts.compression)
                 .blob_file_separation_threshold(kv_opts.separation_threshold)
                 .blob_file_target_size(kv_opts.file_target_size);
-        }
-
-        #[cfg(feature = "bloom")]
-        {
-            base_config = base_config.bloom_bits_per_key(config.bloom_bits_per_key);
         }
 
         let tree = match config.tree_type {
