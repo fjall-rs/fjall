@@ -68,6 +68,9 @@ pub struct KeyspaceInner {
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
+    /// Active compaction conter
+    pub(crate) active_compaction_count: Arc<AtomicUsize>,
+
     #[doc(hidden)]
     pub snapshot_tracker: Arc<SnapshotTracker>,
 }
@@ -176,6 +179,14 @@ impl Keyspace {
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {
         self.flush_tracker.buffer_size()
+    }
+
+    /// Returns the number of active compactions currently running.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn active_compactions(&self) -> usize {
+        self.active_compaction_count
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Returns the amount of journals on disk.
@@ -546,6 +557,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: Arc::default(),
+            active_compaction_count: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -769,6 +781,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: Arc::default(),
+            active_compaction_count: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -848,6 +861,7 @@ impl Keyspace {
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
         let snapshot_tracker = self.snapshot_tracker.clone();
+        let compaction_counter = self.active_compaction_count.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -858,7 +872,11 @@ impl Keyspace {
                     log::trace!("compaction: waiting for work");
                     compaction_manager.wait_for();
 
-                    crate::compaction::worker::run(&compaction_manager, &snapshot_tracker);
+                    crate::compaction::worker::run(
+                        &compaction_manager,
+                        &snapshot_tracker,
+                        &compaction_counter,
+                    );
                 }
 
                 log::trace!("compaction thread: exiting because keyspace is dropping");

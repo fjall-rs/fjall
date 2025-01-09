@@ -33,12 +33,13 @@ fn main() -> fjall::Result<()> {
                     // Something like SingleDelete https://github.com/facebook/rocksdb/wiki/Single-Delete
                     // would be good for this type of workload
                     if let Some((key, value)) = tx.first_key_value(&src)? {
-                        tx.remove(&src, &key);
-                        tx.insert(&dst, &key, &value);
+                        let task_id = std::str::from_utf8(&key).unwrap().to_owned();
+
+                        tx.remove(&src, key.clone());
+                        tx.insert(&dst, key, value);
 
                         tx.commit()?;
 
-                        let task_id = std::str::from_utf8(&key).unwrap();
                         println!("consumer {idx} moved {task_id}");
 
                         let ms = rng.gen_range(10..100);

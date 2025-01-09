@@ -141,10 +141,13 @@ pub fn run(
                         partition.name,
                         created_segments.len()
                     );
-                    flush_tracker.dequeue_tasks(&partition.name, created_segments.len());
 
+                    flush_tracker.dequeue_tasks(&partition.name, created_segments.len());
                     flush_tracker.decrement_buffer_size(memtables_size);
-                    compaction_manager.notify(partition);
+
+                    for _ in 0..parallelism {
+                        compaction_manager.notify(partition.clone());
+                    }
                 }
             }
             Err(e) => {

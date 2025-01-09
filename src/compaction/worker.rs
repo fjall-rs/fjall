@@ -5,9 +5,14 @@
 use super::manager::CompactionManager;
 use crate::snapshot_tracker::SnapshotTracker;
 use lsm_tree::AbstractTree;
+use std::sync::atomic::AtomicUsize;
 
 /// Runs a single run of compaction.
-pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTracker) {
+pub fn run(
+    compaction_manager: &CompactionManager,
+    snapshot_tracker: &SnapshotTracker,
+    compaction_counter: &AtomicUsize,
+) {
     let Some(item) = compaction_manager.pop() else {
         return;
     };
@@ -21,10 +26,12 @@ pub fn run(compaction_manager: &CompactionManager, snapshot_tracker: &SnapshotTr
 
     // TODO: loop if there's more work to do
 
+    compaction_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if let Err(e) = item
         .tree
         .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
     };
+    compaction_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 }

@@ -31,18 +31,18 @@ impl ConflictManager {
         }
     }
 
-    pub fn mark_read(&mut self, partition: &PartitionKey, key: &Slice) {
-        self.push_read(partition, Read::Single(key.clone()));
+    pub fn mark_read(&mut self, partition: &PartitionKey, key: Slice) {
+        self.push_read(partition, Read::Single(key));
     }
 
-    pub fn mark_conflict(&mut self, partition: &PartitionKey, key: &[u8]) {
+    pub fn mark_conflict(&mut self, partition: &PartitionKey, key: Slice) {
         if let Some(tbl) = self.conflict_keys.get_mut(partition) {
-            tbl.insert(key.into());
+            tbl.insert(key);
         } else {
             self.conflict_keys
                 .entry(partition.clone())
                 .or_default()
-                .insert(key.into());
+                .insert(key);
         }
     }
 
