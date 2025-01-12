@@ -24,7 +24,7 @@ use std::{
     fs::{remove_dir_all, File},
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
         Arc, RwLock,
     },
 };
@@ -80,6 +80,9 @@ pub struct KeyspaceInner {
 
     /// Active compaction conter
     pub(crate) active_compaction_count: Arc<AtomicUsize>,
+
+    /// Time spent in compactions (in µs)
+    pub(crate) time_compacting: Arc<AtomicU64>,
 
     #[doc(hidden)]
     pub snapshot_tracker: SnapshotTracker,
@@ -195,6 +198,14 @@ impl Keyspace {
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {
         self.write_buffer_manager.get()
+    }
+
+    /// Returns the time all compactions took until now, in µs.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn time_compacting(&self) -> u64 {
+        self.time_compacting
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Returns the number of active compactions currently running.
@@ -592,6 +603,7 @@ impl Keyspace {
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
             active_compaction_count: Arc::default(),
+            time_compacting: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -726,6 +738,7 @@ impl Keyspace {
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
             active_compaction_count: Arc::default(),
+            time_compacting: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -806,6 +819,7 @@ impl Keyspace {
         let thread_counter = self.active_background_threads.clone();
         let snapshot_tracker = self.snapshot_tracker.clone();
         let compaction_counter = self.active_compaction_count.clone();
+        let time_compacting = self.time_compacting.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -820,6 +834,7 @@ impl Keyspace {
                         &compaction_manager,
                         &snapshot_tracker,
                         &compaction_counter,
+                        &time_compacting,
                     );
                 }
 
