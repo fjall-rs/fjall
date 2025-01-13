@@ -602,6 +602,48 @@ impl<'a> WriteTransaction<'a> {
         self.inner.remove(partition, key);
     }
 
+    /// Removes an item from the partition, leaving behind a weak tombstone.
+    ///
+    /// When a weak tombstone is matched with a single write in a compaction,
+    /// the tombstone will be removed along with the value. If the key was
+    /// overwritten the result of a `remove_single` is undefined.
+    ///
+    /// Only use this remove if it is known that the key has only been written
+    /// to once since its creation or last `remove_single`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.remove_single(&partition, "a");
+    ///
+    /// // Read-your-own-write
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(None, item);
+    ///
+    /// drop(tx);
+    ///
+    /// // Deletion was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn remove_single<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+        self.inner.remove_single(partition, key);
+    }
+
     /// Commits the transaction.
     ///
     /// # Errors
