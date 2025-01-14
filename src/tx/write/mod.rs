@@ -408,7 +408,11 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn remove_single<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+    pub(super) fn remove_single<K: Into<UserKey>>(
+        &mut self,
+        partition: &TxPartitionHandle,
+        key: K,
+    ) {
         // TODO: PERF: slow??
         self.memtables
             .entry(partition.inner.name.clone())
