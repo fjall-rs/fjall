@@ -326,10 +326,10 @@ impl TransactionalPartitionHandle {
     ///
     /// When a weak tombstone is matched with a single write in a compaction,
     /// the tombstone will be removed along with the value. If the key was
-    /// overwritten the result of a `remove_single` is undefined.
+    /// overwritten the result of a `remove_weak` is undefined.
     ///
     /// Only use this remove if it is known that the key has only been written
-    /// to once since its creation or last `remove_single`.
+    /// to once since its creation or last `remove_weak`.
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
@@ -347,7 +347,7 @@ impl TransactionalPartitionHandle {
     /// partition.insert("a", "abc")?;
     /// assert!(!keyspace.read_tx().is_empty(&partition)?);
     ///
-    /// partition.remove_single("a")?;
+    /// partition.remove_weak("a")?;
     /// assert!(keyspace.read_tx().is_empty(&partition)?);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -356,11 +356,11 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove_single<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
         #[cfg(feature = "single_writer_tx")]
         {
             let mut tx = self.keyspace.write_tx();
-            tx.remove_single(self, key);
+            tx.remove_weak(self, key);
             tx.commit()?;
             Ok(())
         }
@@ -368,7 +368,7 @@ impl TransactionalPartitionHandle {
         #[cfg(feature = "ssi_tx")]
         {
             let mut tx = self.keyspace.write_tx()?;
-            tx.remove_single(self, key);
+            tx.remove_weak(self, key);
             tx.commit()?.expect("blind remove should not conflict ever");
             Ok(())
         }

@@ -997,10 +997,10 @@ impl PartitionHandle {
     ///
     /// When a weak tombstone is matched with a single write in a compaction,
     /// the tombstone will be removed along with the value. If the key was
-    /// overwritten the result of a `remove_single` is undefined.
+    /// overwritten the result of a `remove_weak` is undefined.
     ///
     /// Only use this remove if it is known that the key has only been written
-    /// to once since its creation or last `remove_single`.
+    /// to once since its creation or last `remove_weak`.
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
@@ -1018,7 +1018,7 @@ impl PartitionHandle {
     /// let item = partition.get("a")?.expect("should have item");
     /// assert_eq!("abc".as_bytes(), &*item);
     ///
-    /// partition.remove_single("a")?;
+    /// partition.remove_weak("a")?;
     ///
     /// let item = partition.get("a")?;
     /// assert_eq!(None, item);
@@ -1029,7 +1029,7 @@ impl PartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove_single<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {

@@ -61,7 +61,7 @@ fn batch_remove(c: &mut Criterion) {
     });
 }
 
-fn batch_remove_single(c: &mut Criterion) {
+fn batch_remove_weak(c: &mut Criterion) {
     let dir = tempfile::tempdir().unwrap();
 
     let keyspace = fjall::Config::new(&dir).open().unwrap();
@@ -83,7 +83,7 @@ fn batch_remove_single(c: &mut Criterion) {
                 let mut batch = keyspace.batch();
                 for item in 'a'..='z' {
                     let item = item.to_string();
-                    batch.remove_single(&items, &item);
+                    batch.remove_weak(&items, &item);
                 }
                 batch.commit().unwrap();
             },
@@ -172,7 +172,7 @@ criterion_group!(
     benches,
     batch_write,
     batch_remove,
-    batch_remove_single,
+    batch_remove_weak,
     block_cache_insert,
     block_cache_get
 );

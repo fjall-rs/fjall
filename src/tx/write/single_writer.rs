@@ -606,10 +606,10 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// When a weak tombstone is matched with a single write in a compaction,
     /// the tombstone will be removed along with the value. If the key was
-    /// overwritten the result of a `remove_single` is undefined.
+    /// overwritten the result of a `remove_weak` is undefined.
     ///
     /// Only use this remove if it is known that the key has only been written
-    /// to once since its creation or last `remove_single`.
+    /// to once since its creation or last `remove_weak`.
     ///
     /// # Examples
     ///
@@ -623,7 +623,7 @@ impl<'a> WriteTransaction<'a> {
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
     /// let mut tx = keyspace.write_tx();
-    /// tx.remove_single(&partition, "a");
+    /// tx.remove_weak(&partition, "a");
     ///
     /// // Read-your-own-write
     /// let item = tx.get(&partition, "a")?;
@@ -640,8 +640,8 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove_single<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
-        self.inner.remove_single(partition, key);
+    pub fn remove_weak<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+        self.inner.remove_weak(partition, key);
     }
 
     /// Commits the transaction.
