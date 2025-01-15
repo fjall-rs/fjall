@@ -48,7 +48,7 @@ pub fn serialize_marker_item<W: Write>(
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    writer.write_u8(partition.as_bytes().len() as u8)?;
+    writer.write_u8(partition.len() as u8)?;
     writer.write_all(partition.as_bytes())?;
 
     // NOTE: Truncation is okay and actually needed
