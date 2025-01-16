@@ -701,7 +701,7 @@ impl WriteTransaction {
     /// partition.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = keyspace.write_tx()?;
     /// tx.remove_weak(&partition, "a");
     ///
     /// // Read-your-own-write
