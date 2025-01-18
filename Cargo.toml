@@ -9,7 +9,7 @@ readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 repository = "https://github.com/fjall-rs/fjall"
 homepage = "https://github.com/fjall-rs/fjall"
-keywords = ["database", "key-value-store", "lsm", "rocksdb", "leveldb"]
+keywords = ["database", "key-value", "lsm", "rocksdb", "leveldb"]
 categories = ["data-structures", "database-implementations", "algorithms"]
 
 [lib]
