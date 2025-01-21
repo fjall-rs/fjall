@@ -180,7 +180,7 @@ pub fn recover_sealed_memtables(
             // IMPORTANT: Only apply sealed memtables to partitions
             // that have a lower seqno to avoid double flushing
             let should_skip_sealed_memtable =
-                partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
+                partition_lsn.is_some_and(|partition_lsn| partition_lsn >= handle.lsn);
 
             if should_skip_sealed_memtable {
                 handle.partition.tree.lock_active_memtable().clear();
