@@ -20,10 +20,10 @@ path = "src/lib.rs"
 default = ["single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
+bytes = ["lsm-tree/bytes"]
 single_writer_tx = []
 ssi_tx = []
 __internal_whitebox = []
-bytes = ["lsm-tree/bytes"]
 
 [dependencies]
 byteorder = "1.5.0"
