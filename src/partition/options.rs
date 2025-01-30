@@ -425,23 +425,6 @@ impl CreateOptions {
         self
     }
 
-    /*   /// Sets the level count (depth of the tree).
-    ///
-    /// Once set for a partition, this property is not considered in the future.
-    ///
-    /// Default = 7
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is less than 2.
-    #[must_use]
-    pub fn level_count(mut self, n: u8) -> Self {
-        assert!(n > 1);
-
-        self.level_count = n;
-        self
-    } */
-
     /// Enables key-value separation for this partition.
     ///
     /// Key-value separation is intended for large value scenarios (1 KiB+ per KV).
@@ -450,6 +433,7 @@ impl CreateOptions {
     /// and higher temporary space usage.
     /// Also, garbage collection for deleted or outdated values becomes lazy, so
     /// GC needs to be triggered *manually*.
+    /// See <https://fjall-rs.github.io/post/announcing-fjall-2/#key-value-separation> for more information.
     ///
     /// Once set for a partition, this property is not considered in the future.
     ///

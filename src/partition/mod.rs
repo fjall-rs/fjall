@@ -651,6 +651,8 @@ impl PartitionHandle {
 
     /// Returns `true` if the underlying LSM-tree is key-value-separated.
     ///
+    /// See [`CreateOptions::with_kv_separation`] for more information.
+    ///
     /// # Examples
     ///
     /// ```
