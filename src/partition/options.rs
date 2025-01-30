@@ -232,7 +232,6 @@ impl lsm_tree::coding::Decode for CreateOptions {
                     l0_threshold,
                     target_size,
                     level_ratio,
-                    ..Default::default()
                 })
             }
             1 => {

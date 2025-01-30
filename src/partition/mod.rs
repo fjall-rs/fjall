@@ -649,6 +649,29 @@ impl PartitionHandle {
         Ok(self.tree.last_key_value(None, None)?)
     }
 
+    /// Returns `true` if the underlying LSM-tree is key-value-separated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// let tree1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert!(!tree1.is_kv_separated());
+    ///
+    /// let blob_cfg = PartitionCreateOptions::default().with_kv_separation(Default::default());
+    /// let tree2 = keyspace.open_partition("blobs", blob_cfg)?;
+    /// assert!(tree2.is_kv_separated());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn is_kv_separated(&self) -> bool {
+        matches!(self.tree, crate::AnyTree::Blob(_))
+    }
+
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
