@@ -7,6 +7,7 @@ use lsm_tree::{DecodeError, EncodeError};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     /// Error inside LSM-tree
     Storage(lsm_tree::Error),
