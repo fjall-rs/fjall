@@ -2,9 +2,9 @@
 name = "fjall"
 description = "LSM-based key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "2.5.0"
+version = "2.6.0"
 edition = "2021"
-rust-version = "1.74.0"
+rust-version = "1.75.0"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 repository = "https://github.com/fjall-rs/fjall"
@@ -17,18 +17,18 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["bloom", "single_writer_tx", "lz4"]
+default = ["single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
 miniz = ["lsm-tree/miniz"]
-bloom = ["lsm-tree/bloom"]
+bytes = ["lsm-tree/bytes"]
 single_writer_tx = []
 ssi_tx = []
 __internal_whitebox = []
-bytes = ["lsm-tree/bytes"]
 
 [dependencies]
 byteorder = "1.5.0"
-lsm-tree = { version = "2.5.0", default-features = false }
+byteview = "0.5.2"
+lsm-tree = { version = "2.6.0", default-features = false, features = [] }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"

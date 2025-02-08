@@ -20,6 +20,8 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
+    log::trace!("Recovering partitions in {:?}", partitions_folder);
+
     #[allow(clippy::significant_drop_tightening)]
     let mut partitions_lock = keyspace.partitions.write().expect("lock is poisoned");
 
@@ -62,11 +64,12 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             continue;
         }
 
-        let partition_name = partition_name
+        let partition_name: PartitionKey = partition_name
             .to_str()
-            .expect("should be valid partition name");
+            .expect("should be valid partition name")
+            .into();
 
-        let path = partitions_folder.join(partition_name);
+        let path = partitions_folder.join(&*partition_name);
 
         let mut config_file = File::open(partition_path.join(PARTITION_CONFIG_FILE))?;
         let recovered_config = PartitionCreateOptions::decode_from(&mut config_file)?;
@@ -99,11 +102,15 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             AnyTree::Standard(base_config.open()?)
         };
 
-        let partition =
-            PartitionHandle::from_keyspace(keyspace, tree, partition_name.into(), recovered_config);
+        let partition = PartitionHandle::from_keyspace(
+            keyspace,
+            tree,
+            partition_name.clone(),
+            recovered_config,
+        );
 
         // Add partition to dictionary
-        partitions_lock.insert(partition_name.into(), partition.clone());
+        partitions_lock.insert(partition_name.clone(), partition.clone());
 
         log::trace!("Recovered partition {:?}", partition_name);
     }

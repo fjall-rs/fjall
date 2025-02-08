@@ -12,7 +12,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.74.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.75.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -146,15 +146,6 @@ Conflict checking is done using optimistic concurrency control.
 Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
 
 *Disabled by default.*
-
-### bloom *[deprecated]*
-
-Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
-
-*Enabled by default.*
-
-> Will be removed in the future.
-> If you are absolutely, 100% sure you do not need bloom filters: they will be togglable on a per-partition basis.
 
 ## Stable disk format
 
