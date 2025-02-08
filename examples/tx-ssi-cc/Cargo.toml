@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 fjall = { path = "../../", default-features = false, features = [
-  "bloom",
   "lz4",
   "ssi_tx",
 ] }
