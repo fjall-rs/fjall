@@ -666,8 +666,9 @@ impl Keyspace {
                     let size = partition.tree.active_memtable_size().into();
 
                     log::trace!(
-                        "Recovered active memtable of size {size}B for partition {:?}",
-                        partition.name
+                        "Recovered active memtable of size {size}B for partition {:?} ({} items)",
+                        partition.name,
+                        partition.tree.lock_active_memtable().len(),
                     );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
@@ -694,13 +695,15 @@ impl Keyspace {
             std::sync::atomic::Ordering::Release,
         );
 
+        log::trace!("Recovery successful");
+
         Ok(keyspace)
     }
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
         let path = config.path.clone();
-        log::info!("Creating keyspace at {path:?}");
+        log::debug!("Creating keyspace at {path:?}");
 
         std::fs::create_dir_all(&path)?;
 
