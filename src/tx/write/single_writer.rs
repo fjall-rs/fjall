@@ -491,7 +491,7 @@ impl<'a> WriteTransaction<'a> {
         self.inner.range(partition, range)
     }
 
-    /// Iterates over a range of the transaction's state.
+    /// Iterates over a prefixed set of the transaction's state.
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     ///
