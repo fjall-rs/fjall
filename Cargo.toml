@@ -27,7 +27,7 @@ __internal_whitebox = []
 
 [dependencies]
 byteorder = "1.5.0"
-byteview = "0.5.1"
+byteview = "0.5.2"
 lsm-tree = { version = "2.6.0", default-features = false, features = [] }
 log = "0.4.21"
 std-semaphore = "0.1.0"
