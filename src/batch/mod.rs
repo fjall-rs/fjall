@@ -7,10 +7,10 @@ pub mod item;
 use crate::{Keyspace, PartitionHandle, PersistMode};
 use item::Item;
 use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 /// Partition key (a.k.a. column family, locality group)
-pub type PartitionKey = Arc<str>;
+pub type PartitionKey = byteview::StrView;
 
 /// An atomic write batch
 ///
