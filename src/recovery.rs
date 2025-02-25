@@ -30,6 +30,10 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         let partition_name = dirent.file_name();
         let partition_path = dirent.path();
 
+        if dirent.file_type()?.is_file() {
+            continue;
+        }
+
         assert!(
             dirent.file_type()?.is_dir(),
             "Found stray file in partitions folder",
