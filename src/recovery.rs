@@ -32,6 +32,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         if !dirent.file_type()?.is_dir() {
             log::warn!("Found stray file in partitions folder");
+            continue;
         }
 
         log::trace!("Recovering partition {:?}", partition_name);
