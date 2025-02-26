@@ -17,8 +17,7 @@ jobs:
     strategy:
       matrix:
         rust_version:
-          - stable
-          - "1.75.0" # MSRV
+          - stable # We cannot run with MSRV because some deps may require a higher MSRV
         os:
           - ubuntu-latest
           - windows-latest
@@ -52,6 +51,7 @@ jobs:
             examples/tx-blob-cas
             examples/tx-mpmc-queue -> target
             examples/tx-partition-move -> target
+            examples/tx-ssi-atomic-counter -> target
             examples/tx-ssi-cc -> target
             examples/tx-ssi-mpmc-queue -> target
             examples/tx-ssi-partition-move -> target
