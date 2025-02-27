@@ -114,7 +114,7 @@ pub struct CreateOptions {
     /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
-    /// Bits per key for levels that are not L0, L1, L2
+    /// Bits per key for levels that are not L0, L1
     pub(crate) bloom_bits_per_key: i8,
 
     /// Tree type, see [`TreeType`].
