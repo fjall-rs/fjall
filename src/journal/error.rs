@@ -39,3 +39,11 @@ pub enum RecoveryError {
     /// The checksum value does not match the expected value
     ChecksumMismatch,
 }
+
+impl std::fmt::Display for RecoveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RecoveryError({:?})", self)
+    }
+}
+
+impl std::error::Error for RecoveryError {}
