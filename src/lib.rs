@@ -105,6 +105,7 @@ mod path;
 mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
+mod stats;
 mod tracked_snapshot;
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]

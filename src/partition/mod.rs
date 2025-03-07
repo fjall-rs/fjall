@@ -20,6 +20,7 @@ use crate::{
     keyspace::Partitions,
     snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
+    stats::Stats,
     write_buffer_manager::WriteBufferManager,
     Error, Keyspace,
 };
@@ -33,7 +34,7 @@ use std::{
     ops::RangeBounds,
     path::Path,
     sync::{atomic::AtomicBool, Arc, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
 use write_delay::get_write_delay;
@@ -96,6 +97,8 @@ pub struct PartitionHandleInner {
 
     /// Snapshot tracker
     pub(crate) snapshot_tracker: SnapshotTracker,
+
+    pub(crate) stats: Arc<Stats>,
 }
 
 impl Drop for PartitionHandleInner {
@@ -184,11 +187,31 @@ impl GarbageCollection for PartitionHandle {
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_space_amp_target(self, factor)
+        let start = Instant::now();
+
+        let result = crate::gc::GarbageCollector::with_space_amp_target(self, factor);
+
+        #[allow(clippy::cast_possible_truncation)]
+        self.stats.time_gc.fetch_add(
+            start.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        result
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_staleness_threshold(self, threshold)
+        let start = Instant::now();
+
+        let result = crate::gc::GarbageCollector::with_staleness_threshold(self, threshold);
+
+        #[allow(clippy::cast_possible_truncation)]
+        self.stats.time_gc.fetch_add(
+            start.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        result
     }
 
     fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
@@ -220,6 +243,7 @@ impl PartitionHandle {
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
             config,
+            stats: keyspace.stats.clone(),
         }))
     }
 
@@ -286,6 +310,7 @@ impl PartitionHandle {
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            stats: keyspace.stats.clone(),
         })))
     }
 
@@ -738,6 +763,10 @@ impl PartitionHandle {
             },
         );
 
+        self.stats
+            .flushes_enqueued
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         drop(flush_manager);
         drop(journal_manager);
         drop(journal);
@@ -849,10 +878,18 @@ impl PartitionHandle {
         }
     }
 
+    /// Number of disk segments (a.k.a. SST files) in the LSM-tree
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.tree.segment_count()
+    }
+
+    /// Number of blob files in the LSM-tree
+    #[doc(hidden)]
+    #[must_use]
+    pub fn blob_file_count(&self) -> usize {
+        self.tree.blob_file_count()
     }
 
     /// Opens a snapshot of this partition.

@@ -114,7 +114,7 @@ fn main() -> Result<()> {
     {
         let query = "water";
 
-        // Permuterm suffix queries are performed using: $TERM*
+        // Permuterm prefix queries are performed using: $TERM*
         for kv in db.prefix(format!("${query}")) {
             let (_, v) = kv?;
             let v = std::str::from_utf8(&v).unwrap();
