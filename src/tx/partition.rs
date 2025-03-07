@@ -15,19 +15,19 @@ pub struct TransactionalPartitionHandle {
 
 impl GarbageCollection for TransactionalPartitionHandle {
     fn gc_scan(&self) -> crate::Result<GcReport> {
-        crate::gc::GarbageCollector::scan(self.inner())
+        self.inner().gc_scan()
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
+        self.inner().gc_with_space_amp_target(factor)
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
+        self.inner().gc_with_staleness_threshold(threshold)
     }
 
     fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::drop_stale_segments(self.inner())
+        self.inner().gc_drop_stale_segments()
     }
 }
 
