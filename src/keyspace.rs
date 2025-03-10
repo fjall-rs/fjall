@@ -438,6 +438,9 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// If the partition does not yet exist, it will be created configured with `create_options`.
+    /// Otherwise simply a handle to the existing partition will be returned.
+    ///
     /// Partition names can be up to 255 characters long, can not be empty and
     /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
     ///

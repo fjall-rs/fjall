@@ -30,11 +30,19 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 ///
 /// Drop the transaction to rollback changes.
 pub(super) struct BaseTransaction {
-    durability: Option<PersistMode>,
+    /// Keyspace to work with
     pub(super) keyspace: TxKeyspace,
+
+    /// Ephemeral transaction changes
+    ///
+    /// Used for RYOW (read-your-own-writes)
     memtables: HashMap<PartitionKey, Arc<Memtable>>,
 
+    /// The snapshot, for repeatable reads
     nonce: SnapshotNonce,
+
+    /// Durability level used, see [`PersistMode`].
+    durability: Option<PersistMode>,
 }
 
 impl BaseTransaction {
