@@ -475,13 +475,13 @@ impl Keyspace {
         })
     }
 
-    /// Returns the amount of partitions
+    /// Returns the amount of partitions.
     #[must_use]
     pub fn partition_count(&self) -> usize {
         self.partitions.read().expect("lock is poisoned").len()
     }
 
-    /// Gets a list of all partition names in the keyspace
+    /// Gets a list of all partition names in the keyspace.
     #[must_use]
     pub fn list_partitions(&self) -> Vec<PartitionKey> {
         self.partitions
