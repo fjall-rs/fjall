@@ -35,6 +35,8 @@ impl Batch {
     }
 
     /// Initializes a new write batch with preallocated capacity.
+    ///
+    /// Capacity refers to the number of batched items, not their size in memory
     #[must_use]
     pub fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
         Self {
@@ -42,6 +44,11 @@ impl Batch {
             keyspace,
             durability: None,
         }
+    }
+
+    /// Gets the number of batched items
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 
     /// Sets the durability level.
