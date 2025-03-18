@@ -802,7 +802,7 @@ impl PartitionHandle {
     }
 
     fn check_write_stall(&self) {
-        let seg_count = self.tree.first_level_segment_count();
+        let seg_count = self.tree.level_segment_count(0).unwrap_or_default();
 
         if seg_count >= 20 {
             if self.tree.is_first_level_disjoint() {
@@ -822,7 +822,7 @@ impl PartitionHandle {
     }
 
     fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() >= 32 {
+        while self.tree.level_segment_count(0).unwrap_or_default() >= 32 {
             if self.tree.is_first_level_disjoint() {
                 // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
                 // so nothing to do
