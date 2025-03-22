@@ -2,7 +2,7 @@
 name = "fjall"
 description = "LSM-based key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "2.6.7"
+version = "2.7.0"
 edition = "2021"
 rust-version = "1.75.0"
 readme = "README.md"
@@ -28,7 +28,7 @@ __internal_whitebox = []
 [dependencies]
 byteorder = "1.5.0"
 byteview = "0.5.4"
-lsm-tree = { version = "2.6.6", default-features = false, features = [] }
+lsm-tree = { version = "2.7.0", default-features = false, features = [] }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"
@@ -41,6 +41,9 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.16"
 rand = "0.9.0"
+
+# half 2.5.0 has MSRV 1.81
+half = "=2.4.0"
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]

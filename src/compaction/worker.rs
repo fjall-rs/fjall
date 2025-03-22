@@ -3,19 +3,15 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::manager::CompactionManager;
-use crate::snapshot_tracker::SnapshotTracker;
+use crate::{snapshot_tracker::SnapshotTracker, stats::Stats};
 use lsm_tree::AbstractTree;
-use std::{
-    sync::atomic::{AtomicU64, AtomicUsize},
-    time::Instant,
-};
+use std::time::Instant;
 
 /// Runs a single run of compaction.
 pub fn run(
     compaction_manager: &CompactionManager,
     snapshot_tracker: &SnapshotTracker,
-    compaction_counter: &AtomicUsize,
-    time_compacting: &AtomicU64,
+    stats: &Stats,
 ) {
     use std::sync::atomic::Ordering::Relaxed;
 
@@ -30,9 +26,7 @@ pub fn run(
 
     let strategy = item.config.compaction_strategy.clone();
 
-    // TODO: loop if there's more work to do
-
-    compaction_counter.fetch_add(1, Relaxed);
+    stats.active_compaction_count.fetch_add(1, Relaxed);
 
     let start = Instant::now();
 
@@ -43,7 +37,12 @@ pub fn run(
         log::error!("Compaction failed: {e:?}");
     }
 
-    time_compacting.fetch_add(start.elapsed().as_micros() as u64, Relaxed);
+    #[allow(clippy::cast_possible_truncation)]
+    stats
+        .time_compacting
+        .fetch_add(start.elapsed().as_micros() as u64, Relaxed);
 
-    compaction_counter.fetch_sub(1, Relaxed);
+    stats.active_compaction_count.fetch_sub(1, Relaxed);
+
+    // TODO: loop if there's more work to do
 }

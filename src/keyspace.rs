@@ -15,6 +15,7 @@ use crate::{
     partition::name::is_valid_partition_name,
     recovery::{recover_partitions, recover_sealed_memtables},
     snapshot_tracker::SnapshotTracker,
+    stats::Stats,
     version::Version,
     write_buffer_manager::WriteBufferManager,
     HashMap, PartitionCreateOptions, PartitionHandle,
@@ -24,7 +25,7 @@ use std::{
     fs::{remove_dir_all, File},
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicUsize},
         Arc, RwLock,
     },
 };
@@ -78,11 +79,7 @@ pub struct KeyspaceInner {
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    /// Active compaction conter
-    pub(crate) active_compaction_count: Arc<AtomicUsize>,
-
-    /// Time spent in compactions (in µs)
-    pub(crate) time_compacting: Arc<AtomicU64>,
+    pub(crate) stats: Arc<Stats>,
 
     #[doc(hidden)]
     pub snapshot_tracker: SnapshotTracker,
@@ -200,11 +197,21 @@ impl Keyspace {
         self.write_buffer_manager.get()
     }
 
+    /// Returns the amount of completed memtable flushes.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn flushes_completed(&self) -> usize {
+        self.stats
+            .flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Returns the time all compactions took until now, in µs.
     #[doc(hidden)]
     #[must_use]
     pub fn time_compacting(&self) -> u64 {
-        self.time_compacting
+        self.stats
+            .time_compacting
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -212,7 +219,8 @@ impl Keyspace {
     #[doc(hidden)]
     #[must_use]
     pub fn active_compactions(&self) -> usize {
-        self.active_compaction_count
+        self.stats
+            .active_compaction_count
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -430,6 +438,9 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// If the partition does not yet exist, it will be created configured with `create_options`.
+    /// Otherwise simply a handle to the existing partition will be returned.
+    ///
     /// Partition names can be up to 255 characters long, can not be empty and
     /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
     ///
@@ -464,13 +475,13 @@ impl Keyspace {
         })
     }
 
-    /// Returns the amount of partitions
+    /// Returns the amount of partitions.
     #[must_use]
     pub fn partition_count(&self) -> usize {
         self.partitions.read().expect("lock is poisoned").len()
     }
 
-    /// Gets a list of all partition names in the keyspace
+    /// Gets a list of all partition names in the keyspace.
     #[must_use]
     pub fn list_partitions(&self) -> Vec<PartitionKey> {
         self.partitions
@@ -602,8 +613,7 @@ impl Keyspace {
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
-            active_compaction_count: Arc::default(),
-            time_compacting: Arc::default(),
+            stats: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -740,8 +750,7 @@ impl Keyspace {
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
-            active_compaction_count: Arc::default(),
-            time_compacting: Arc::default(),
+            stats: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -821,8 +830,7 @@ impl Keyspace {
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
         let snapshot_tracker = self.snapshot_tracker.clone();
-        let compaction_counter = self.active_compaction_count.clone();
-        let time_compacting = self.time_compacting.clone();
+        let stats = self.stats.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -833,12 +841,7 @@ impl Keyspace {
                     log::trace!("compaction: waiting for work");
                     compaction_manager.wait_for();
 
-                    crate::compaction::worker::run(
-                        &compaction_manager,
-                        &snapshot_tracker,
-                        &compaction_counter,
-                        &time_compacting,
-                    );
+                    crate::compaction::worker::run(&compaction_manager, &snapshot_tracker, &stats);
                 }
 
                 log::trace!("compaction thread: exiting because keyspace is dropping");
@@ -862,6 +865,7 @@ impl Keyspace {
             &self.write_buffer_manager,
             &self.snapshot_tracker,
             parallelism,
+            &self.stats,
         );
     }
 
@@ -872,6 +876,7 @@ impl Keyspace {
         let flush_semaphore = self.flush_semaphore.clone();
         let write_buffer_manager = self.write_buffer_manager.clone();
         let snapshot_tracker = self.snapshot_tracker.clone();
+        let stats = self.stats.clone();
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
@@ -894,6 +899,7 @@ impl Keyspace {
                         &write_buffer_manager,
                         &snapshot_tracker,
                         parallelism,
+                        &stats,
                     );
                 }
 

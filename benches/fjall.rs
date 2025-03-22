@@ -2,9 +2,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use fjall::BlockCache;
 use lsm_tree::{
     segment::{
-        block::header::Header as BlockHeader,
+        block::{header::Header as BlockHeader, offset::BlockOffset},
         meta::CompressionType,
-        value_block::{BlockOffset, ValueBlock},
+        value_block::ValueBlock,
     },
     InternalValue,
 };
@@ -96,11 +96,11 @@ fn block_cache_get(c: &mut Criterion) {
         .for_each(|idx| block_cache.insert_disk_block(seg_id, BlockOffset(idx), block.clone()));
     assert_eq!(100_000, block_cache.len());
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     c.bench_function("BlockCache::get_disk_block", |b| {
         b.iter(|| {
-            let key = rng.gen_range(0u64..100_000);
+            let key = rng.random_range(0u64..100_000);
             block_cache
                 .get_disk_block(seg_id, BlockOffset(key))
                 .unwrap();

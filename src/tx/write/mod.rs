@@ -30,11 +30,19 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
 ///
 /// Drop the transaction to rollback changes.
 pub(super) struct BaseTransaction {
-    durability: Option<PersistMode>,
+    /// Keyspace to work with
     pub(super) keyspace: TxKeyspace,
+
+    /// Ephemeral transaction changes
+    ///
+    /// Used for RYOW (read-your-own-writes)
     memtables: HashMap<PartitionKey, Arc<Memtable>>,
 
+    /// The snapshot, for repeatable reads
     nonce: SnapshotNonce,
+
+    /// Durability level used, see [`PersistMode`].
+    durability: Option<PersistMode>,
 }
 
 impl BaseTransaction {
@@ -143,16 +151,15 @@ impl BaseTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
+        let key = key.as_ref();
+
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(&key, None) {
+            if let Some(item) = memtable.get(key, None) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
             }
         }
 
-        let res = partition
-            .inner
-            .snapshot_at(self.nonce.instant)
-            .get(key.as_ref())?;
+        let res = partition.inner.snapshot_at(self.nonce.instant).get(key)?;
 
         Ok(res)
     }
@@ -169,8 +176,10 @@ impl BaseTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<Option<u32>> {
+        let key = key.as_ref();
+
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(&key, None) {
+            if let Some(item) = memtable.get(key, None) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
             }
         }
@@ -178,7 +187,7 @@ impl BaseTransaction {
         let res = partition
             .inner
             .snapshot_at(self.nonce.instant)
-            .size_of(key.as_ref())?;
+            .size_of(key)?;
 
         Ok(res)
     }
@@ -193,8 +202,10 @@ impl BaseTransaction {
         partition: &TxPartitionHandle,
         key: K,
     ) -> crate::Result<bool> {
+        let key = key.as_ref();
+
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(&key, None) {
+            if let Some(item) = memtable.get(key, None) {
                 return Ok(!item.key.is_tombstone());
             }
         }
@@ -202,7 +213,7 @@ impl BaseTransaction {
         let contains = partition
             .inner
             .snapshot_at(self.nonce.instant)
-            .contains_key(key.as_ref())?;
+            .contains_key(key)?;
 
         Ok(contains)
     }

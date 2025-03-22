@@ -5,8 +5,8 @@
 use super::manager::{FlushManager, Task};
 use crate::{
     batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, HashMap,
-    PartitionHandle,
+    snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
+    HashMap, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
@@ -116,6 +116,7 @@ pub fn run(
     write_buffer_manager: &WriteBufferManager,
     snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
+    stats: &Stats,
 ) {
     log::debug!("write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
@@ -147,7 +148,7 @@ pub fn run(
                     log::debug!(
                         "Dequeuing flush tasks: {} => {}",
                         partition.name,
-                        created_segments.len()
+                        created_segments.len(),
                     );
                     flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
 
@@ -156,6 +157,10 @@ pub fn run(
                     for _ in 0..parallelism {
                         compaction_manager.notify(partition.clone());
                     }
+
+                    stats
+                        .flushes_completed
+                        .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
                 }
             }
             Err(e) => {
