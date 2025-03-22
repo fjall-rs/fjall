@@ -171,7 +171,7 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
         log::info!("item now {item}");
 
         use lsm_tree::AbstractTree;
-        assert!(tree2.tree.is_first_level_disjoint());
+        assert!(tree2.tree.l0_run_count() == 1);
 
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());
         assert_eq!(item + 1, tree2.len()?.try_into().unwrap());
