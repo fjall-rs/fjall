@@ -802,16 +802,10 @@ impl PartitionHandle {
     }
 
     fn check_write_stall(&self) {
-        let seg_count = self.tree.first_level_segment_count();
+        let l0_run_count = self.tree.l0_run_count();
 
-        if seg_count >= 20 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
-            let sleep_us = get_write_delay(seg_count);
+        if l0_run_count >= 20 {
+            let sleep_us = get_write_delay(l0_run_count);
 
             if sleep_us > 0 {
                 log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
@@ -822,13 +816,7 @@ impl PartitionHandle {
     }
 
     fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() >= 32 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
+        while self.tree.l0_run_count() >= 32 {
             log::info!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(10));
