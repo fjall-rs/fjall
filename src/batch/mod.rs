@@ -36,7 +36,9 @@ impl Batch {
 
     /// Initializes a new write batch with preallocated capacity.
     ///
-    /// Capacity refers to the number of batched items, not their size in memory
+    /// ### Note
+    ///
+    /// "Capacity" refers to the number of batch item slots, not their size in memory.
     #[must_use]
     pub fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
         Self {
@@ -46,9 +48,16 @@ impl Batch {
         }
     }
 
-    /// Gets the number of batched items
+    /// Gets the number of batched items.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    /// Returns `true` if there are no batches items (yet).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Sets the durability level.
@@ -58,7 +67,7 @@ impl Batch {
         self
     }
 
-    /// Inserts a key-value pair into the batch
+    /// Inserts a key-value pair into the batch.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         p: &PartitionHandle,
@@ -75,7 +84,7 @@ impl Batch {
             .push(Item::new(p.name.clone(), key, vec![], ValueType::Tombstone));
     }
 
-    /// Commits the batch to the [`Keyspace`] atomically
+    /// Commits the batch to the [`Keyspace`] atomically.
     ///
     /// # Errors
     ///
