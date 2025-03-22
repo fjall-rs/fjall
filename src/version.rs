@@ -31,6 +31,7 @@ impl From<Version> for u8 {
 
 impl TryFrom<u8> for Version {
     type Error = ();
+
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             1 => Ok(Self::V1),
