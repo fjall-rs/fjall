@@ -50,6 +50,10 @@ As is normal with any kind of storage engine, larger keys and values have a bigg
 Like any typical key-value store, keys are stored in lexicographic order.
 If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
 
+## Sponsors
+
+<img width="240" src="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail_dark.svg"/>
+
 ## Basic usage
 
 ```bash
