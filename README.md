@@ -52,7 +52,7 @@ If you are storing integer keys (e.g. timeseries data), you should use the big e
 
 ## Sponsors
 
-<a href="https://sqlsync.dev">
+<a href="https://sqlsync.dev" target="_blank">
   <picture>
     <source width="240" alt="Orbitinghail" media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail.svg" />
     <source width="240" alt="Orbitinghail" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail_dark.svg" />
