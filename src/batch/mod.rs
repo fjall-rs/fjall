@@ -147,6 +147,9 @@ impl Batch {
             .fetch_max(batch_seqno + 1, Ordering::AcqRel);
 
         drop(journal_writer);
+
+        log::trace!("batch: Freed journal writer");
+
         drop(partitions);
 
         // IMPORTANT: Add batch size to current write buffer size
