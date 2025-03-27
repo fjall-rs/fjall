@@ -48,7 +48,7 @@ fn main() -> fjall::Result<()> {
 
     // Get items from 1990 to 2000 (exclusive)
     let lo = 1_990_u64;
-    let hi = 1_999_u64;#
+    let hi = 1_999_u64;
 
     println!("Searching for [{lo} - {hi}]");
 
@@ -58,7 +58,7 @@ fn main() -> fjall::Result<()> {
         let (k, _) = kv?;
 
         // Get ID
-        let primary_key = k.split(|&c| c == b'\0').nth(1).unwrap();
+        let primary_key = &k[std::mem::size_of::<u64>() + 1..];
 
         // Get from primary index
         let item = items.get(primary_key)?.unwrap();
