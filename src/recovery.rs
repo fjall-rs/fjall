@@ -190,7 +190,7 @@ pub fn recover_sealed_memtables(
                 partition_lsn.is_some_and(|partition_lsn| partition_lsn >= handle.lsn);
 
             if should_skip_sealed_memtable {
-                handle.partition.tree.lock_active_memtable().clear();
+                handle.partition.tree.clear_active_memtable();
 
                 log::trace!(
                     "Partition {} has higher seqno ({partition_lsn:?}), skipping",
