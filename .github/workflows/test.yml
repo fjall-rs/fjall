@@ -55,6 +55,7 @@ jobs:
             examples/tx-ssi-cc -> target
             examples/tx-ssi-mpmc-queue -> target
             examples/tx-ssi-partition-move -> target
+            examples/unique-index -> target
       - name: Build & test examples
         run: node compile_examples.mjs
   test:
