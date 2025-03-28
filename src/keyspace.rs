@@ -590,6 +590,8 @@ impl Keyspace {
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
         let active_journal = Arc::new(journal_recovery.active);
+        active_journal.get_writer().persist(PersistMode::SyncAll)?;
+
         let sealed_journals = journal_recovery.sealed;
 
         let journal_manager = JournalManager::from_active(active_journal.path());
