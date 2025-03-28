@@ -101,6 +101,7 @@ mod keyspace;
 mod monitor;
 mod partition;
 mod path;
+mod range;
 mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
@@ -130,6 +131,12 @@ pub use {
     tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };
+
+#[doc(hidden)]
+pub use lsm_tree::range::prefix_to_range;
+
+#[doc(hidden)]
+pub use range::prefixed_range;
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub use tx::{
