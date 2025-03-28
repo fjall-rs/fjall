@@ -895,6 +895,28 @@ impl PartitionHandle {
         )
     }
 
+    /// Performs major compaction, blocking the caller until it's done.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn major_compact(&self) -> crate::Result<()> {
+        match &self.config.compaction_strategy {
+            crate::compaction::Strategy::Leveled(x) => self.tree.major_compact(
+                u64::from(x.target_size),
+                self.snapshot_tracker.get_seqno_safe_to_gc(),
+            )?,
+            crate::compaction::Strategy::SizeTiered(_) => self
+                .tree
+                .major_compact(u64::MAX, self.snapshot_tracker.get_seqno_safe_to_gc())?,
+            crate::compaction::Strategy::Fifo(_) => {
+                log::warn!("Major compaction not supported for FIFO strategy");
+            }
+        }
+        Ok(())
+    }
+
     /// Inserts a key-value pair into the partition.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
