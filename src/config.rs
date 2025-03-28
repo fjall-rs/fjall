@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{journal::error::RecoveryMode, path::absolute_path, Keyspace};
-use lsm_tree::{descriptor_table::FileDescriptorTable, BlobCache, BlockCache};
+use lsm_tree::{descriptor_table::FileDescriptorTable, Cache};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -18,13 +18,10 @@ pub struct Config {
     /// When true, the path will be deleted upon drop
     pub(crate) clean_path_on_drop: bool,
 
-    /// Block cache that will be shared between partitions
-    #[doc(hidden)]
-    pub block_cache: Arc<BlockCache>,
+    pub(crate) cache: Arc<Cache>,
 
-    /// Blob cache that will be shared between partitions
-    #[doc(hidden)]
-    pub blob_cache: Arc<BlobCache>,
+    // TODO: remove in V3
+    monkey_patch_cache_size: u64,
 
     /// Descriptor table that will be shared between partitions
     pub(crate) descriptor_table: Arc<FileDescriptorTable>,
@@ -77,8 +74,6 @@ impl Default for Config {
         Self {
             path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
-            block_cache: Arc::new(BlockCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
-            blob_cache: Arc::new(BlobCache::with_capacity_bytes(/* 16 MiB */ 16 * 1_024 * 1_024)),
             descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
             max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
@@ -87,6 +82,9 @@ impl Default for Config {
             compaction_workers_count: cpus.min(4),
             journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
+
+            cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32*1_024*1_024)),
+            monkey_patch_cache_size: 0,
         }
     }
 }
@@ -142,23 +140,37 @@ impl Config {
         self
     }
 
+    // TODO: remove in V3
     /// Sets the block cache.
     ///
     /// Defaults to a block cache with 16 MiB of capacity
     /// shared between all partitions inside this keyspace.
     #[must_use]
-    pub fn block_cache(mut self, block_cache: Arc<BlockCache>) -> Self {
-        self.block_cache = block_cache;
+    #[deprecated = "Use Config::with_cache_size instead"]
+    #[allow(deprecated)]
+    pub fn block_cache(mut self, block_cache: Arc<crate::BlockCache>) -> Self {
+        self.monkey_patch_cache_size += block_cache.capacity();
         self
     }
 
+    // TODO: remove in V3
     /// Sets the blob cache.
     ///
     /// Defaults to a block cache with 16 MiB of capacity
     /// shared between all partitions inside this keyspace.
     #[must_use]
-    pub fn blob_cache(mut self, blob_cache: Arc<BlobCache>) -> Self {
-        self.blob_cache = blob_cache;
+    #[deprecated = "Use Config::with_cache_size instead"]
+    #[allow(deprecated)]
+    pub fn blob_cache(mut self, blob_cache: Arc<crate::BlobCache>) -> Self {
+        self.monkey_patch_cache_size += blob_cache.capacity();
+        self
+    }
+
+    /// Sets the cache capacity in bytes.
+    #[must_use]
+    pub fn with_cache_size(mut self, size_bytes: u64) -> Self {
+        self.monkey_patch_cache_size = 0;
+        self.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
         self
     }
 
@@ -224,7 +236,11 @@ impl Config {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn open(self) -> crate::Result<Keyspace> {
+    pub fn open(mut self) -> crate::Result<Keyspace> {
+        // TODO: remove in V3
+        if self.monkey_patch_cache_size > 0 {
+            self.cache = Arc::new(Cache::with_capacity_bytes(self.monkey_patch_cache_size));
+        }
         Keyspace::open(self)
     }
 
@@ -234,7 +250,11 @@ impl Config {
     ///
     /// Will return `Err` if an IO error occurs.
     #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-    pub fn open_transactional(self) -> crate::Result<crate::TxKeyspace> {
+    pub fn open_transactional(mut self) -> crate::Result<crate::TxKeyspace> {
+        // TODO: remove in V3
+        if self.monkey_patch_cache_size > 0 {
+            self.cache = Arc::new(Cache::with_capacity_bytes(self.monkey_patch_cache_size));
+        }
         crate::TxKeyspace::open(self)
     }
 
