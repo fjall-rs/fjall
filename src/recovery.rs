@@ -76,8 +76,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         let mut base_config = lsm_tree::Config::new(path)
             .descriptor_table(keyspace.config.descriptor_table.clone())
-            .block_cache(keyspace.config.block_cache.clone())
-            .blob_cache(keyspace.config.blob_cache.clone());
+            .use_cache(keyspace.config.cache.clone());
 
         base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
         base_config.data_block_size = recovered_config.data_block_size;
