@@ -220,6 +220,28 @@ impl GarbageCollection for PartitionHandle {
 }
 
 impl PartitionHandle {
+    /// Ingests a sorted stream of key-value pairs into the partition.
+    ///
+    /// Can only be called on a new fresh, empty partition.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the partition is **not** initially empty.
+    ///
+    /// Will panic if the input iterator is not sorted in ascending order.
+    pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        iter: impl Iterator<Item = (K, V)>,
+    ) -> crate::Result<()> {
+        self.tree
+            .ingest(iter.map(|(k, v)| (k.into(), v.into())))
+            .map_err(Into::into)
+    }
+
     pub(crate) fn from_keyspace(
         keyspace: &Keyspace,
         tree: AnyTree,
@@ -273,8 +295,7 @@ impl PartitionHandle {
 
         let mut base_config = lsm_tree::Config::new(base_folder)
             .descriptor_table(keyspace.config.descriptor_table.clone())
-            .block_cache(keyspace.config.block_cache.clone())
-            .blob_cache(keyspace.config.blob_cache.clone())
+            .use_cache(keyspace.config.cache.clone())
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)

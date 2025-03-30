@@ -328,6 +328,12 @@ impl Keyspace {
         Ok(())
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn cache_capacity(&self) -> u64 {
+        self.config.cache.capacity()
+    }
+
     /// Opens a keyspace in the given directory.
     ///
     /// # Errors
@@ -335,12 +341,8 @@ impl Keyspace {
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!(
-            "block cache capacity={}MiB",
-            config.block_cache.capacity() / 1_024 / 1_024,
-        );
-        log::debug!(
-            "blob cache capacity={}MiB",
-            config.blob_cache.capacity() / 1_024 / 1_024,
+            "cache capacity={}MiB",
+            config.cache.capacity() / 1_024 / 1_024,
         );
 
         let keyspace = Self::create_or_recover(config)?;
