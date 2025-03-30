@@ -173,7 +173,7 @@ pub use lsm_tree::{AnyTree, CompressionType, KvPair, Slice, TreeType, UserKey, U
 // TODO: remove in V3
 
 /// Block cache that caches frequently read disk blocks
-#[deprecated = "Use Config::with_cache_size instead"]
+#[deprecated = "Use Config::cache_size instead"]
 pub struct BlockCache(u64);
 
 #[allow(deprecated)]
@@ -192,7 +192,7 @@ impl BlockCache {
 }
 
 /// Blob cache that caches frequently read blobs
-#[deprecated = "Use Config::with_cache_size instead"]
+#[deprecated = "Use Config::cache_size instead"]
 #[allow(deprecated)]
 pub struct BlobCache(BlockCache);
 

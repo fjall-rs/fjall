@@ -146,7 +146,7 @@ impl Config {
     /// Defaults to a block cache with 16 MiB of capacity
     /// shared between all partitions inside this keyspace.
     #[must_use]
-    #[deprecated = "Use Config::with_cache_size instead"]
+    #[deprecated = "Use Config::cache_size instead"]
     #[allow(deprecated)]
     pub fn block_cache(mut self, block_cache: Arc<crate::BlockCache>) -> Self {
         self.monkey_patch_cache_size += block_cache.capacity();
@@ -159,7 +159,7 @@ impl Config {
     /// Defaults to a block cache with 16 MiB of capacity
     /// shared between all partitions inside this keyspace.
     #[must_use]
-    #[deprecated = "Use Config::with_cache_size instead"]
+    #[deprecated = "Use Config::cache_size instead"]
     #[allow(deprecated)]
     pub fn blob_cache(mut self, blob_cache: Arc<crate::BlobCache>) -> Self {
         self.monkey_patch_cache_size += blob_cache.capacity();
@@ -168,7 +168,7 @@ impl Config {
 
     /// Sets the cache capacity in bytes.
     #[must_use]
-    pub fn with_cache_size(mut self, size_bytes: u64) -> Self {
+    pub fn cache_size(mut self, size_bytes: u64) -> Self {
         self.monkey_patch_cache_size = 0;
         self.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
         self
