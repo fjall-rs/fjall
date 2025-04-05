@@ -54,7 +54,7 @@ impl TransactionalPartitionHandle {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open_transactional()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(partition.len()?, 0);
+    /// assert_eq!(partition.approximate_len(), 0);
     ///
     /// partition.insert("1", "abc")?;
     /// assert_eq!(partition.approximate_len(), 1);
