@@ -38,6 +38,38 @@ impl TransactionalPartitionHandle {
         self.inner.path().into()
     }
 
+    /// Approximates the amount of items in the partition.
+    ///
+    /// For update -or delete-heavy workloads, this value will
+    /// diverge from the real value, but is a O(1) operation.
+    ///
+    /// For insert-only workloads (e.g. logs, time series)
+    /// this value is reliable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert_eq!(partition.len()?, 0);
+    ///
+    /// partition.insert("1", "abc")?;
+    /// assert_eq!(partition.approximate_len(), 1);
+    ///
+    /// partition.remove("1")?;
+    /// // Oops! approximate_len will not be reliable here
+    /// assert_eq!(partition.approximate_len(), 2);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn approximate_len(&self) -> usize {
+        self.inner.approximate_len()
+    }
+
     /// Removes an item and returns its value if it existed.
     ///
     /// The operation will run wrapped in a transaction.
