@@ -43,7 +43,7 @@ test-log = "0.2.16"
 rand = "0.9.0"
 
 # half 2.5.0 has MSRV 1.81
-half = "=2.4.0"
+half = "=2.6.0"
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
