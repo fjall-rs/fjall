@@ -117,9 +117,10 @@ Also, when dropped, the keyspace will try to persist the journal *to disk* synch
 
 ## Multithreading, Async and Multiprocess
 
-> !!! A single keyspace may **not** be loaded in parallel from separate *processes*.
+> [!WARNING]
+> A single keyspace may **not** be loaded in parallel from separate *processes*.
 
-However, Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
+Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
 
@@ -148,7 +149,7 @@ Allows opening a transactional Keyspace for single-writer (serialized) transacti
 Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 Conflict checking is done using optimistic concurrency control.
 
-*Disabled by default.*
+*Disabled by default. Mutually exclusive with `single_writer_tx`.*
 
 ### bytes
 
