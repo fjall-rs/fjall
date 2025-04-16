@@ -27,11 +27,12 @@
   </a>
 </p>
 
-*Fjall* is an LSM-based embeddable key-value storage engine written in Rust.
+*Fjall* is an log-structured embeddable key-value storage engine written in Rust.
 It features:
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
+- LSM-tree-based storage similar to RocksDB
 - Range & prefix searching with forward and reverse iteration
 - Partitions (a.k.a. column families) with cross-partition atomic semantics
 - Built-in compression (default = LZ4)
