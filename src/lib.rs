@@ -2,10 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-//! Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
+//! Fjall is an log-structured embeddable key-value storage engine written in Rust. It features:
 //!
 //! - Thread-safe BTreeMap-like API
 //! - 100% safe & stable Rust
+//! - LSM-tree-based storage similar to RocksDB
 //! - Range & prefix searching with forward and reverse iteration
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
