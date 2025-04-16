@@ -149,7 +149,8 @@ Allows opening a transactional Keyspace for single-writer (serialized) transacti
 Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 Conflict checking is done using optimistic concurrency control.
 
-*Disabled by default. Mutually exclusive with `single_writer_tx`.*
+*Disabled by default.
+Mutually exclusive with `single_writer_tx`.*
 
 ### bytes
 
