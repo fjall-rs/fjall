@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{journal::error::RecoveryMode, path::absolute_path, Keyspace};
-use lsm_tree::{descriptor_table::FileDescriptorTable, Cache};
+use lsm_tree::{Cache, DescriptorTable};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -24,7 +24,7 @@ pub struct Config {
     monkey_patch_cache_size: u64,
 
     /// Descriptor table that will be shared between partitions
-    pub(crate) descriptor_table: Arc<FileDescriptorTable>,
+    pub(crate) descriptor_table: Arc<DescriptorTable>,
 
     /// Max size of all journals in bytes
     pub(crate) max_journaling_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
@@ -74,7 +74,7 @@ impl Default for Config {
         Self {
             path: absolute_path(".fjall_data"),
             clean_path_on_drop: false,
-            descriptor_table: Arc::new(FileDescriptorTable::new(get_open_file_limit(), 4)),
+            descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
             max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: None,
@@ -136,7 +136,7 @@ impl Config {
     pub fn max_open_files(mut self, n: usize) -> Self {
         assert!(n >= 2);
 
-        self.descriptor_table = Arc::new(FileDescriptorTable::new(n, 2));
+        self.descriptor_table = Arc::new(DescriptorTable::new(n));
         self
     }
 

@@ -8,7 +8,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
     HashMap, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, Segment, SeqNo};
+use lsm_tree::{super_segment::Segment /* TODO: 3.0.0 rename import */, AbstractTree, SeqNo};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
