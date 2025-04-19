@@ -844,7 +844,7 @@ impl PartitionHandle {
         }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
+    pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
             self.rotate_memtable().map_err(|e| {
                 self.is_poisoned
@@ -1006,7 +1006,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
 
@@ -1082,7 +1082,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);

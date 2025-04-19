@@ -8,7 +8,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
     HashMap, PartitionHandle,
 };
-use lsm_tree::{super_segment::Segment /* TODO: 3.0.0 rename import */, AbstractTree, SeqNo};
+use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
@@ -73,10 +73,7 @@ fn run_multi_flush(
                     .partition
                     .clone();
 
-                let memtables_size: u64 = tasks
-                    .iter()
-                    .map(|t| u64::from(t.sealed_memtable.size()))
-                    .sum();
+                let memtables_size: u64 = tasks.iter().map(|t| t.sealed_memtable.size()).sum();
 
                 // NOTE: Don't trust clippy
                 #[allow(clippy::needless_collect)]

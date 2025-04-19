@@ -677,7 +677,7 @@ impl Keyspace {
                 }
 
                 for partition in partitions.values() {
-                    let size = partition.tree.active_memtable_size().into();
+                    let size = partition.tree.active_memtable_size();
 
                     log::trace!(
                         "Recovered active memtable of size {size}B for partition {:?} ({} items)",

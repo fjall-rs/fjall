@@ -136,7 +136,7 @@ impl Batch {
                 ValueType::WeakTombstone => partition.tree.remove_weak(item.key, batch_seqno),
             };
 
-            batch_size += u64::from(item_size);
+            batch_size += item_size;
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
             partitions_with_possible_stall.insert(partition.clone());
@@ -162,7 +162,7 @@ impl Batch {
 
             if let Err(e) = partition.check_memtable_overflow(memtable_size) {
                 log::error!("Failed memtable rotate check: {e:?}");
-            };
+            }
 
             // IMPORTANT: Check write buffer as well
             // Otherwise batch writes are never stalled/halted

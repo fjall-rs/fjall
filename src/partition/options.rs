@@ -101,7 +101,7 @@ impl lsm_tree::coding::Decode for KvSeparationOptions {
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
     /// Maximum size of this partition's memtable - can be changed during runtime
-    pub(crate) max_memtable_size: u32,
+    pub(crate) max_memtable_size: u64,
 
     /// Block size of data blocks.
     #[doc(hidden)]
@@ -138,7 +138,7 @@ impl lsm_tree::coding::Encode for CreateOptions {
         writer.write_u8(self.level_count)?;
         writer.write_u8(self.tree_type.into())?;
 
-        writer.write_u32::<BigEndian>(self.max_memtable_size)?;
+        writer.write_u64::<BigEndian>(self.max_memtable_size)?;
         writer.write_u32::<BigEndian>(self.data_block_size)?;
         writer.write_u32::<BigEndian>(self.index_block_size)?;
 
@@ -210,7 +210,7 @@ impl lsm_tree::coding::Decode for CreateOptions {
             .try_into()
             .map_err(|()| lsm_tree::DecodeError::InvalidTag(("TreeType", tree_type)))?;
 
-        let max_memtable_size = reader.read_u32::<BigEndian>()?;
+        let max_memtable_size = reader.read_u64::<BigEndian>()?;
         let data_block_size = reader.read_u32::<BigEndian>()?;
         let index_block_size = reader.read_u32::<BigEndian>()?;
 
@@ -394,7 +394,7 @@ impl CreateOptions {
     /// Conversely, if `max_memtable_size` is larger than 64 MiB,
     /// it may require increasing the keyspace's `max_write_buffer_size`.
     #[must_use]
-    pub fn max_memtable_size(mut self, bytes: u32) -> Self {
+    pub fn max_memtable_size(mut self, bytes: u64) -> Self {
         self.max_memtable_size = bytes;
         self
     }
