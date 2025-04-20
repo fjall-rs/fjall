@@ -12,11 +12,11 @@ pub fn run(
     compaction_manager: &CompactionManager,
     snapshot_tracker: &SnapshotTracker,
     stats: &Stats,
-) {
+) -> crate::Result<()> {
     use std::sync::atomic::Ordering::Relaxed;
 
     let Some(item) = compaction_manager.pop() else {
-        return;
+        return Ok(());
     };
 
     log::trace!(
@@ -35,6 +35,7 @@ pub fn run(
         .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
+        return Err(e.into());
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -44,5 +45,7 @@ pub fn run(
 
     stats.active_compaction_count.fetch_sub(1, Relaxed);
 
-    // TODO: loop if there's more work to do
+    // TODO: loop if there's more work to do?
+
+    Ok(())
 }

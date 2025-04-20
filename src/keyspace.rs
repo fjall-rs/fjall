@@ -13,6 +13,7 @@ use crate::{
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
+    poison_dart::PoisonDart,
     recovery::{recover_partitions, recover_sealed_memtables},
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
@@ -775,12 +776,15 @@ impl Keyspace {
         let monitor = Monitor::new(self);
         let stop_signal = self.stop_signal.clone();
         let thread_counter = self.active_background_threads.clone();
+        let is_poisoned = self.is_poisoned.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::Builder::new()
             .name("monitor".into())
             .spawn(move || {
+                let _poison_dart = PoisonDart::new("monitor", is_poisoned.clone());
+
                 while !stop_signal.is_stopped() {
                     let idle = monitor.run();
 
@@ -799,14 +803,16 @@ impl Keyspace {
     fn spawn_fsync_thread(&self, ms: usize) -> crate::Result<()> {
         let journal = self.journal.clone();
         let stop_signal = self.stop_signal.clone();
-        let is_poisoned = self.is_poisoned.clone();
         let thread_counter = self.active_background_threads.clone();
+        let is_poisoned = self.is_poisoned.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::Builder::new()
             .name("syncer".into())
             .spawn(move || {
+                let _poison_dart = PoisonDart::new("syncer", is_poisoned.clone());
+
                 while !stop_signal.is_stopped() {
                     log::trace!("fsync thread: sleeping {ms}ms");
                     std::thread::sleep(std::time::Duration::from_millis(ms as u64));
@@ -815,7 +821,7 @@ impl Keyspace {
                     if let Err(e) = journal.persist(PersistMode::SyncAll) {
                         is_poisoned.store(true, std::sync::atomic::Ordering::Release);
                         log::error!(
-                            "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                            "journal sync failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
                         );
                         return;
                     }
@@ -835,17 +841,24 @@ impl Keyspace {
         let thread_counter = self.active_background_threads.clone();
         let snapshot_tracker = self.snapshot_tracker.clone();
         let stats = self.stats.clone();
+        let is_poisoned = self.is_poisoned.clone();
 
         thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         std::thread::Builder::new()
             .name("compaction".into())
             .spawn(move || {
+                let _poison_dart = PoisonDart::new("compaction", is_poisoned.clone());
+
                 while !stop_signal.is_stopped() {
                     log::trace!("compaction: waiting for work");
                     compaction_manager.wait_for();
 
-                    crate::compaction::worker::run(&compaction_manager, &snapshot_tracker, &stats);
+                    if let Err(e) = crate::compaction::worker::run(&compaction_manager, &snapshot_tracker, &stats){
+                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                        log::error!("compaction failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
+                        return;
+                    }
                 }
 
                 log::trace!("compaction thread: exiting because keyspace is dropping");
@@ -859,7 +872,7 @@ impl Keyspace {
     ///
     /// Should NOT be called when there is a flush worker active already!!!
     #[doc(hidden)]
-    pub fn force_flush(&self) {
+    pub fn force_flush(&self) -> crate::Result<()> {
         let parallelism = self.config.flush_workers_count;
 
         crate::flush::worker::run(
@@ -870,7 +883,7 @@ impl Keyspace {
             &self.snapshot_tracker,
             parallelism,
             &self.stats,
-        );
+        )
     }
 
     fn spawn_flush_worker(&self) -> crate::Result<()> {
@@ -884,6 +897,7 @@ impl Keyspace {
 
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
+        let is_poisoned = self.is_poisoned.clone();
 
         let parallelism = self.config.flush_workers_count;
 
@@ -892,11 +906,13 @@ impl Keyspace {
         std::thread::Builder::new()
             .name("flusher".into())
             .spawn(move || {
+                let _poison_dart = PoisonDart::new("flusher", is_poisoned.clone());
+
                 while !stop_signal.is_stopped() {
                     log::trace!("flush worker: acquiring flush semaphore");
                     flush_semaphore.acquire();
 
-                    crate::flush::worker::run(
+                    if let Err(e) = crate::flush::worker::run(
                         &flush_manager,
                         &journal_manager,
                         &compaction_manager,
@@ -904,7 +920,11 @@ impl Keyspace {
                         &snapshot_tracker,
                         parallelism,
                         &stats,
-                    );
+                    ) {
+                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                        log::error!("flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
+                        return;
+                    }
                 }
 
                 log::trace!("flush worker: exiting because keyspace is dropping");
@@ -993,7 +1013,7 @@ mod tests {
 
             assert_eq!(3, keyspace.journal_count());
 
-            keyspace.force_flush();
+            keyspace.force_flush()?;
 
             assert_eq!(1, db.len()?);
             assert_eq!(0, db.tree.sealed_memtable_count());
@@ -1037,7 +1057,7 @@ mod tests {
             assert_eq!(1, db.tree.sealed_memtable_count());
             assert_eq!(2, keyspace.journal_count());
 
-            keyspace.force_flush();
+            keyspace.force_flush()?;
 
             assert_eq!(1, db.len()?);
             assert_eq!(0, db.tree.sealed_memtable_count());
@@ -1140,7 +1160,7 @@ mod tests {
         assert_eq!(0, db.segment_count());
         assert_eq!(0, db2.segment_count());
 
-        keyspace.force_flush();
+        keyspace.force_flush()?;
 
         assert_eq!(
             0,
@@ -1241,7 +1261,7 @@ mod tests {
 
         assert_eq!(0, db.segment_count());
 
-        keyspace.force_flush();
+        keyspace.force_flush()?;
 
         assert_eq!(
             0,
