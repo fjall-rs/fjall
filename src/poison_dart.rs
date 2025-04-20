@@ -13,6 +13,11 @@ impl PoisonDart {
     pub fn new(name: &'static str, signal: PoisonSignal) -> Self {
         Self { name, signal }
     }
+
+    pub fn poison(&self) {
+        self.signal
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
 }
 
 impl Drop for PoisonDart {
@@ -22,9 +27,7 @@ impl Drop for PoisonDart {
                 "Poisoning keyspace because of panic in background worker {:?}",
                 self.name
             );
-
-            self.signal
-                .store(true, std::sync::atomic::Ordering::Release);
+            self.poison();
         }
     }
 }

@@ -783,7 +783,7 @@ impl Keyspace {
         std::thread::Builder::new()
             .name("monitor".into())
             .spawn(move || {
-                let _poison_dart = PoisonDart::new("monitor", is_poisoned.clone());
+                let _poison_dart = PoisonDart::new("monitor", is_poisoned);
 
                 while !stop_signal.is_stopped() {
                     let idle = monitor.run();
@@ -811,7 +811,7 @@ impl Keyspace {
         std::thread::Builder::new()
             .name("syncer".into())
             .spawn(move || {
-                let _poison_dart = PoisonDart::new("syncer", is_poisoned.clone());
+                let poison_dart = PoisonDart::new("syncer", is_poisoned);
 
                 while !stop_signal.is_stopped() {
                     log::trace!("fsync thread: sleeping {ms}ms");
@@ -819,10 +819,8 @@ impl Keyspace {
 
                     log::trace!("fsync thread: fsyncing journal");
                     if let Err(e) = journal.persist(PersistMode::SyncAll) {
-                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
-                        log::error!(
-                            "journal sync failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                        );
+                        poison_dart.poison();
+                        log::error!("journal sync failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                         return;
                     }
                 }
@@ -848,14 +846,14 @@ impl Keyspace {
         std::thread::Builder::new()
             .name("compaction".into())
             .spawn(move || {
-                let _poison_dart = PoisonDart::new("compaction", is_poisoned.clone());
+                let poison_dart = PoisonDart::new("compaction", is_poisoned);
 
                 while !stop_signal.is_stopped() {
                     log::trace!("compaction: waiting for work");
                     compaction_manager.wait_for();
 
                     if let Err(e) = crate::compaction::worker::run(&compaction_manager, &snapshot_tracker, &stats){
-                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                        poison_dart.poison();
                         log::error!("compaction failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                         return;
                     }
@@ -906,7 +904,7 @@ impl Keyspace {
         std::thread::Builder::new()
             .name("flusher".into())
             .spawn(move || {
-                let _poison_dart = PoisonDart::new("flusher", is_poisoned.clone());
+                let poison_dart = PoisonDart::new("flusher", is_poisoned);
 
                 while !stop_signal.is_stopped() {
                     log::trace!("flush worker: acquiring flush semaphore");
@@ -921,7 +919,7 @@ impl Keyspace {
                         parallelism,
                         &stats,
                     ) {
-                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
+                        poison_dart.poison();
                         log::error!("flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                         return;
                     }
