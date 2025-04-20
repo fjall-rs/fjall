@@ -92,6 +92,7 @@ mod config;
 #[doc(hidden)]
 pub mod drop;
 
+mod background_worker;
 mod error;
 mod file;
 mod flush;
