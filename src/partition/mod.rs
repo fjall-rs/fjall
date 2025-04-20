@@ -992,9 +992,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;
@@ -1068,9 +1066,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;
