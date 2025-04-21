@@ -33,7 +33,10 @@ use std::{
     fs::File,
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, RwLock,
+    },
     time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
@@ -99,6 +102,9 @@ pub struct PartitionHandleInner {
     pub(crate) snapshot_tracker: SnapshotTracker,
 
     pub(crate) stats: Arc<Stats>,
+
+    /// Number of completed memtable flushes in this partition
+    pub(crate) flushes_completed: AtomicUsize,
 }
 
 impl Drop for PartitionHandleInner {
@@ -255,6 +261,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -321,6 +328,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -899,6 +907,13 @@ impl PartitionHandle {
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
+    }
+
+    /// Number of completed memtable flushes in this partition
+    #[must_use]
+    pub fn flushes_completed(&self) -> usize {
+        self.flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Opens a snapshot of this partition.
