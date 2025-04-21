@@ -40,7 +40,7 @@ impl TransactionalPartitionHandle {
 
     /// Approximates the amount of items in the partition.
     ///
-    /// For update -or delete-heavy workloads, this value will
+    /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
     ///
     /// For insert-only workloads (e.g. logs, time series)
