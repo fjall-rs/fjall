@@ -227,6 +227,15 @@ impl Keyspace {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Returns the amount of completed compactions.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn compactions_completed(&self) -> usize {
+        self.stats
+            .compactions_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Returns the amount of journals on disk.
     ///
     /// # Examples

@@ -44,6 +44,7 @@ pub fn run(
         .fetch_add(start.elapsed().as_micros() as u64, Relaxed);
 
     stats.active_compaction_count.fetch_sub(1, Relaxed);
+    stats.compactions_completed.fetch_add(1, Relaxed);
 
     // TODO: loop if there's more work to do?
 
