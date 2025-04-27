@@ -895,22 +895,23 @@ impl PartitionHandle {
         }
     }
 
-    /// Number of disk segments (a.k.a. SST files) in the LSM-tree
+    /// Number of disk segments (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.tree.segment_count()
     }
 
-    /// Number of blob files in the LSM-tree
+    /// Number of blob files in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
     }
 
-    /// Number of completed memtable flushes in this partition
+    /// Number of completed memtable flushes in this partition.
     #[must_use]
+    #[doc(hidden)]
     pub fn flushes_completed(&self) -> usize {
         self.flushes_completed
             .load(std::sync::atomic::Ordering::Relaxed)
