@@ -11,6 +11,7 @@ fn reload_partition_config() -> fjall::Result<()> {
 
     let serialized_config = {
         let keyspace = Config::new(&folder).open()?;
+
         let tree = keyspace.open_partition(
             "default",
             PartitionCreateOptions::default()

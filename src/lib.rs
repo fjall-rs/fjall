@@ -6,7 +6,7 @@
 //!
 //! - Thread-safe BTreeMap-like API
 //! - 100% safe & stable Rust
-//! - LSM-tree-based storage similar to RocksDB
+//! - LSM-tree-based storage similar to `RocksDB`
 //! - Range & prefix searching with forward and reverse iteration
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
@@ -92,6 +92,7 @@ mod config;
 #[doc(hidden)]
 pub mod drop;
 
+mod background_worker;
 mod error;
 mod file;
 mod flush;
@@ -102,6 +103,7 @@ mod keyspace;
 mod monitor;
 mod partition;
 mod path;
+mod poison_dart;
 mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
