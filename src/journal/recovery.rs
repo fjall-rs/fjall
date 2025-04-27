@@ -50,23 +50,19 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
     // NOTE: Sort ascending, so the last item is the active journal
     journal_fragments.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-    if journal_fragments.is_empty() {
-        return Ok(RecoveryResult {
+    Ok(match journal_fragments.pop() {
+        Some((_, active)) => RecoveryResult {
+            active: Journal::from_file(active)?,
+            sealed: journal_fragments,
+            was_active_created: false,
+        },
+        None => RecoveryResult {
             active: {
                 let id: JournalId = max_journal_id + 1;
                 Journal::create_new(path.join(id.to_string()))?
             },
             sealed: vec![],
             was_active_created: true,
-        });
-    }
-
-    // TODO: refactor with is_empty into one match statement
-    let (_, active) = journal_fragments.pop().expect("should exist");
-
-    Ok(RecoveryResult {
-        active: Journal::from_file(active)?,
-        sealed: journal_fragments,
-        was_active_created: false,
+        },
     })
 }
