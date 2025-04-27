@@ -152,7 +152,7 @@ impl Monitor {
         let current_seqno = self.seqno.get();
         let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
 
-        // NOTE: If the difference between watermark if too large, and
+        // NOTE: If the difference between watermark is too large, and
         // we never opened a snapshot, we need to pull the watermark up
         //
         // https://github.com/fjall-rs/fjall/discussions/85
