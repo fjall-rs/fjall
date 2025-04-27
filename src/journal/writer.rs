@@ -6,7 +6,7 @@ use super::marker::{serialize_marker_item, Marker};
 use crate::{batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId};
 use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
 use std::{
-    fs::{rename, File, OpenOptions},
+    fs::{File, OpenOptions},
     hash::Hasher,
     io::{BufWriter, Write},
     path::{Path, PathBuf},
@@ -58,6 +58,8 @@ impl Writer {
             self.path.metadata()?.len(),
         );
 
+        let prev_path = self.path.clone();
+
         let folder = self
             .path
             .parent()
@@ -73,41 +75,25 @@ impl Writer {
             .parse::<JournalId>()
             .expect("should be valid journal ID");
 
-        // TODO: 3.0.0 we don't really need to rename the file
-        // because journal IDs are monotonically increasing
-        // on journal recovery, we can just either treat the
-        // highest number as active journal
-        let sealed_path = folder.join(format!("{journal_id}.sealed"));
-        rename(&self.path, &sealed_path)?;
-
-        // IMPORTANT: fsync moved file
-        self.file.get_mut().sync_all()?;
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(&folder)?;
-
         let new_path = folder.join((journal_id + 1).to_string());
         log::debug!("Rotating active journal to {new_path:?}");
 
-        // TODO: we clone the path on every rotation...
-        // TODO: we shouldn't create + assign a new writer
-        // TODO: but just change ourselves accordingly
-        *self = Self::create_new(&new_path)?;
+        *self = Self::create_new(new_path.clone())?;
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&folder)?;
 
-        Ok((sealed_path, new_path))
+        Ok((prev_path, new_path))
     }
 
-    pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let path = path.as_ref();
-        let file = File::create(path)?;
+    pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {
+        let path = path.into();
+        let file = File::create(&path)?;
         file.set_len(PRE_ALLOCATED_BYTES)?;
         file.sync_all()?;
 
         Ok(Self {
-            path: path.into(),
+            path,
             file: BufWriter::new(file),
             buf: Vec::new(),
             is_buffer_dirty: false,
