@@ -209,13 +209,16 @@ impl Keyspace {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Returns the time all compactions took until now, in µs.
+    /// Returns the time all compactions took until now.
     #[doc(hidden)]
     #[must_use]
-    pub fn time_compacting(&self) -> u64 {
-        self.stats
+    pub fn time_compacting(&self) -> std::time::Duration {
+        let us = self
+            .stats
             .time_compacting
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        std::time::Duration::from_micros(us)
     }
 
     /// Returns the number of active compactions currently running.

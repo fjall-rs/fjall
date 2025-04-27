@@ -163,6 +163,10 @@ pub fn run(
                 stats
                     .flushes_completed
                     .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+
+                partition
+                    .flushes_completed
+                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
             }
             Err(e) => {
                 log::error!("Flush error: {e:?}");
