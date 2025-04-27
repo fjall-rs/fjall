@@ -117,7 +117,7 @@ pub fn run(
     snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
     stats: &Stats,
-) {
+) -> crate::Result<()> {
     log::debug!("write locking flush manager");
     let mut fm = flush_manager.write().expect("lock is poisoned");
     let partitioned_tasks = fm.collect_tasks(parallelism);
@@ -127,7 +127,7 @@ pub fn run(
 
     if task_count == 0 {
         log::debug!("No tasks collected");
-        return;
+        return Ok(());
     }
 
     for result in run_multi_flush(&partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
@@ -141,34 +141,36 @@ pub fn run(
                 // otherwise we could cover up an unwritten journal, which will result in data loss
                 if let Err(e) = partition.tree.register_segments(&created_segments) {
                     log::error!("Failed to register segments: {e:?}");
-                } else {
-                    log::debug!("write locking flush manager to submit results");
-                    let mut flush_manager = flush_manager.write().expect("lock is poisoned");
-
-                    log::debug!(
-                        "Dequeuing flush tasks: {} => {}",
-                        partition.name,
-                        created_segments.len(),
-                    );
-                    flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
-
-                    write_buffer_manager.free(memtables_size);
-
-                    for _ in 0..parallelism {
-                        compaction_manager.notify(partition.clone());
-                    }
-
-                    stats
-                        .flushes_completed
-                        .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
-
-                    partition
-                        .flushes_completed
-                        .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+                    return Err(e.into());
                 }
+
+                log::debug!("write locking flush manager to submit results");
+                let mut flush_manager = flush_manager.write().expect("lock is poisoned");
+
+                log::debug!(
+                    "Dequeuing flush tasks: {} => {}",
+                    partition.name,
+                    created_segments.len(),
+                );
+                flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
+
+                write_buffer_manager.free(memtables_size);
+
+                for _ in 0..parallelism {
+                    compaction_manager.notify(partition.clone());
+                }
+
+                stats
+                    .flushes_completed
+                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+
+                partition
+                    .flushes_completed
+                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
             }
             Err(e) => {
                 log::error!("Flush error: {e:?}");
+                return Err(e);
             }
         }
     }
@@ -180,7 +182,10 @@ pub fn run(
         .maintenance()
     {
         log::error!("journal GC failed: {e:?}");
+        return Err(e);
     }
 
     log::debug!("fully done");
+
+    Ok(())
 }
