@@ -33,7 +33,10 @@ use std::{
     fs::File,
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, RwLock,
+    },
     time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
@@ -99,6 +102,9 @@ pub struct PartitionHandleInner {
     pub(crate) snapshot_tracker: SnapshotTracker,
 
     pub(crate) stats: Arc<Stats>,
+
+    /// Number of completed memtable flushes in this partition
+    pub(crate) flushes_completed: AtomicUsize,
 }
 
 impl Drop for PartitionHandleInner {
@@ -255,6 +261,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -321,6 +328,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -464,7 +472,7 @@ impl PartitionHandle {
 
     /// Approximates the amount of items in the partition.
     ///
-    /// For update -or delete-heavy workloads, this value will
+    /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
     ///
     /// For insert-only workloads (e.g. logs, time series)
@@ -887,18 +895,26 @@ impl PartitionHandle {
         }
     }
 
-    /// Number of disk segments (a.k.a. SST files) in the LSM-tree
+    /// Number of disk segments (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.tree.segment_count()
     }
 
-    /// Number of blob files in the LSM-tree
+    /// Number of blob files in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
+    }
+
+    /// Number of completed memtable flushes in this partition.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn flushes_completed(&self) -> usize {
+        self.flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Opens a snapshot of this partition.
@@ -992,9 +1008,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;
@@ -1068,9 +1082,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;

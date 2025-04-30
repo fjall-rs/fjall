@@ -20,7 +20,7 @@ fn recover_sealed() -> fjall::Result<()> {
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());
 
         tree.rotate_memtable()?;
-        keyspace.force_flush();
+        keyspace.force_flush()?;
     }
 
     Ok(())
@@ -47,7 +47,7 @@ fn recover_sealed_blob() -> fjall::Result<()> {
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());
 
         tree.rotate_memtable()?;
-        keyspace.force_flush();
+        keyspace.force_flush()?;
     }
 
     Ok(())
@@ -84,7 +84,7 @@ fn recover_sealed_pair_1() -> fjall::Result<()> {
         assert_eq!(item + 1, tree2.len()?.try_into().unwrap());
 
         tree.rotate_memtable()?;
-        keyspace.force_flush();
+        keyspace.force_flush()?;
     }
 
     Ok(())
@@ -112,7 +112,7 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
         tree.rotate_memtable()?;
         assert_eq!(1, tree.tree.sealed_memtable_count());
 
-        keyspace.force_flush();
+        keyspace.force_flush()?;
         assert_eq!(0, tree.tree.sealed_memtable_count());
 
         tree.insert(1u8.to_be_bytes(), 1u8.to_be_bytes())?;
@@ -181,7 +181,7 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
         assert!(tree2.tree.lock_active_memtable().is_empty());
 
         log::error!("-- MANUAL FLUSH --");
-        keyspace.force_flush();
+        keyspace.force_flush()?;
         assert_eq!(0, tree2.tree.sealed_memtable_count());
     }
 
