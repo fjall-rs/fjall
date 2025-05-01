@@ -7,8 +7,7 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, LSM_MANIFEST_FILE, PARTITIONS_FOLDER,
-        PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
     },
     flush_tracker::FlushTracker,
     journal::{writer::PersistMode, Journal},
@@ -18,7 +17,7 @@ use crate::{
     version::Version,
     HashMap, PartitionCreateOptions, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, AnyTree, SequenceNumberCounter};
+use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
     fs::{remove_dir_all, File},
     path::Path,
@@ -647,102 +646,6 @@ impl Keyspace {
         );
 
         Ok(keyspace)
-    }
-
-    fn recover_partitions(&self) -> crate::Result<()> {
-        use lsm_tree::coding::Decode;
-
-        let partitions_folder = self.config.path.join(PARTITIONS_FOLDER);
-
-        #[allow(clippy::significant_drop_tightening)]
-        let mut partitions_lock = self.partitions.write().expect("lock is poisoned");
-
-        for dirent in std::fs::read_dir(&partitions_folder)? {
-            let dirent = dirent?;
-            let partition_name = dirent.file_name();
-            let partition_path = dirent.path();
-
-            assert!(
-                dirent.file_type()?.is_dir(),
-                "Found stray file in partitions folder",
-            );
-
-            log::trace!("Recovering partition {:?}", partition_name);
-
-            // NOTE: Check deletion marker
-            if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
-                log::debug!("Deleting deleted partition {:?}", partition_name);
-
-                // IMPORTANT: First, delete the manifest,
-                // once that is deleted, the partition is treated as uninitialized
-                // even if the .deleted marker is removed
-                //
-                // This is important, because if somehow `remove_dir_all` ends up
-                // deleting the `.deleted` marker first, we would end up resurrecting
-                // the partition
-                let manifest_file = partition_path.join(LSM_MANIFEST_FILE);
-                if manifest_file.try_exists()? {
-                    std::fs::remove_file(manifest_file)?;
-                }
-
-                std::fs::remove_dir_all(partition_path)?;
-                continue;
-            }
-
-            // NOTE: Check for marker, maybe the partition is not fully initialized
-            if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
-                log::debug!("Deleting uninitialized partition {:?}", partition_name);
-                std::fs::remove_dir_all(partition_path)?;
-                continue;
-            }
-
-            let partition_name = partition_name
-                .to_str()
-                .expect("should be valid partition name");
-
-            let path = partitions_folder.join(partition_name);
-
-            let mut config_file = File::open(partition_path.join(PARTITION_CONFIG_FILE))?;
-            let recovered_config = PartitionCreateOptions::decode_from(&mut config_file)?;
-
-            let mut base_config = lsm_tree::Config::new(path)
-                .descriptor_table(self.config.descriptor_table.clone())
-                .block_cache(self.config.block_cache.clone())
-                .blob_cache(self.config.blob_cache.clone());
-
-            base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
-            base_config.data_block_size = recovered_config.data_block_size;
-            base_config.index_block_size = recovered_config.index_block_size;
-            base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
-            base_config.compression = recovered_config.compression;
-
-            if let Some(kv_opts) = &recovered_config.kv_separation {
-                base_config = base_config
-                    .blob_compression(kv_opts.compression)
-                    .blob_file_separation_threshold(kv_opts.separation_threshold)
-                    .blob_file_target_size(kv_opts.file_target_size);
-            }
-
-            let is_blob_tree = partition_path
-                .join(lsm_tree::file::BLOBS_FOLDER)
-                .try_exists()?;
-
-            let tree = if is_blob_tree {
-                AnyTree::Blob(base_config.open_as_blob_tree()?)
-            } else {
-                AnyTree::Standard(base_config.open()?)
-            };
-
-            let partition =
-                PartitionHandle::from_keyspace(self, tree, partition_name.into(), recovered_config);
-
-            // Add partition to dictionary
-            partitions_lock.insert(partition_name.into(), partition.clone());
-
-            log::trace!("Recovered partition {:?}", partition_name);
-        }
-
-        Ok(())
     }
 
     #[doc(hidden)]
