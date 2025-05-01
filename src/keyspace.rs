@@ -15,6 +15,7 @@ use crate::{
     monitor::Monitor,
     partition::name::is_valid_partition_name,
     poison_dart::PoisonDart,
+    recovery::recover_partitions,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     version::Version,
@@ -690,6 +691,10 @@ impl Keyspace {
         log::trace!("Recovery successful");
 
         Ok(keyspace)
+    }
+
+    fn recover_partitions(&self) -> crate::Result<()> {
+        recover_partitions(self)
     }
 
     #[doc(hidden)]

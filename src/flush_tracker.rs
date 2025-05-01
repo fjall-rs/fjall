@@ -9,10 +9,13 @@ use crate::{
         manager::{EvictionWatermark, Item, JournalItemQueue},
         writer::Writer,
     },
+    keyspace::Partitions,
+    recovery::recover_sealed_memtables,
 };
+use lsm_tree::SequenceNumberCounter;
 use std::{
     path::PathBuf,
-    sync::{Arc, MutexGuard},
+    sync::{Arc, MutexGuard, RwLock},
 };
 
 /// Keeps track of and flushes sealed journals and memtables
@@ -44,6 +47,16 @@ impl FlushTracker {
             tasks: FlushTaskQueue::new(),
             items: JournalItemQueue::from_active(active_path),
         }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub fn recover_sealed_memtables(
+        &self,
+        partitions: &RwLock<Partitions>,
+        seqno: &SequenceNumberCounter,
+        sealed_journal_paths: impl Iterator<Item = PathBuf>,
+    ) -> crate::Result<()> {
+        recover_sealed_memtables(self, partitions, seqno, sealed_journal_paths)
     }
 }
 
