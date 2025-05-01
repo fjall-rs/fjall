@@ -3,20 +3,98 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    config::Config as KeyspaceConfig, flush_tracker::FlushTracker, keyspace::Partitions,
-    snapshot_tracker::SnapshotTracker, Keyspace,
+    background_worker::Activity, config::Config as KeyspaceConfig, flush_tracker::FlushTracker,
+    keyspace::Partitions, snapshot_tracker::SnapshotTracker, Keyspace,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
-use std::sync::{atomic::AtomicBool, Arc, RwLock};
+use std::{
+    sync::{atomic::AtomicBool, Arc, RwLock},
+    time::Duration,
+};
+
+// TODO: remove in favor of just checking in the write path
+// TODO: and sending signals to background workers
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
-    keyspace_config: KeyspaceConfig,
     flush_tracker: Arc<FlushTracker>,
+    keyspace_config: KeyspaceConfig,
     partitions: Arc<RwLock<Partitions>>,
     seqno: SequenceNumberCounter,
     snapshot_tracker: Arc<SnapshotTracker>,
     keyspace_poison: Arc<AtomicBool>,
+}
+
+impl Activity for Monitor {
+    fn name(&self) -> &'static str {
+        "monitor"
+    }
+
+    fn run(&mut self) -> crate::Result<()> {
+        std::thread::sleep(Duration::from_millis(250));
+
+        // TODO: don't do this too often
+        let current_seqno = self.seqno.get();
+        let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
+
+        // NOTE: If the difference between watermark is too large, and
+        // we never opened a snapshot, we need to pull the watermark up
+        //
+        // https://github.com/fjall-rs/fjall/discussions/85
+        if (current_seqno - gc_seqno_watermark) > 100 && self.snapshot_tracker.data.is_empty() {
+            *self
+                .snapshot_tracker
+                .lowest_freed_instant
+                .write()
+                .expect("lock is poisoned") = current_seqno.saturating_sub(100);
+        }
+
+        let jm_size = self.flush_tracker.disk_space_used();
+
+        let max_journal_size = self.keyspace_config.max_journaling_size_in_bytes;
+
+        if jm_size as f64 > (max_journal_size as f64 * 0.5) {
+            self.try_reduce_journal_size();
+        }
+
+        let write_buffer_size = self.flush_tracker.buffer_size();
+
+        let queued_size = self.flush_tracker.queued_size();
+
+        // TODO: This should never ever overflow
+        // TODO: because that is definitely a logic error
+        // TODO: need to make sure it's impossible this can happen
+        #[cfg(debug_assertions)]
+        {
+            // NOTE: Cannot use panic because we are in a thread that should not
+            // crash
+            if queued_size > write_buffer_size {
+                log::error!(
+                    "Queued size should not be able to be greater than entire write buffer size"
+                );
+                return Ok(());
+            }
+        }
+
+        // NOTE: We cannot flush more stuff if the journal is already too large
+        if jm_size < max_journal_size {
+            let max_write_buffer_size = self.keyspace_config.max_write_buffer_size_in_bytes;
+
+            // NOTE: Take the queued size of unflushed memtables into account
+            // so the system isn't performing a flush storm once the threshold is reached
+            //
+            // Also, As a fail safe, use saturating_sub so it doesn't overflow
+            let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
+
+            if buffer_size_without_queued_size as f64 > (max_write_buffer_size as f64 * 0.5) {
+                self.try_reduce_write_buffer_size();
+            }
+        } else {
+            log::debug!("cannot rotate memtable to free write buffer - journal too large");
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for Monitor {
@@ -34,8 +112,8 @@ impl Monitor {
         crate::drop::increment_drop_counter();
 
         Self {
-            keyspace_config: keyspace.config.clone(),
             flush_tracker: keyspace.flush_tracker.clone(),
+            keyspace_config: keyspace.config.clone(),
             partitions: keyspace.partitions.clone(),
             seqno: keyspace.seqno.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
@@ -48,11 +126,10 @@ impl Monitor {
             "monitor: try flushing affected partitions because journals have passed 50% of threshold"
         );
 
+        let partitions = self.partitions.read().expect("lock is poisoned");
+
         // TODO: this may not scale well for many partitions
-        let lowest_persisted_partition = self
-            .partitions
-            .read()
-            .expect("lock is poisoned")
+        let lowest_persisted_partition = partitions
             .values()
             .filter(|x| x.tree.active_memtable_size() > 0)
             .min_by(|a, b| {
@@ -61,6 +138,8 @@ impl Monitor {
                     .cmp(&b.tree.get_highest_persisted_seqno())
             })
             .cloned();
+
+        drop(partitions);
 
         if let Some(lowest_persisted_partition) = lowest_persisted_partition {
             let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
@@ -88,15 +167,12 @@ impl Monitor {
         log::trace!(
             "monitor: flush inactive partition because write buffer has passed 50% of threshold"
         );
-        let mut partitions_with_tasks = self.flush_tracker.get_partitions_with_tasks();
-        partitions_with_tasks.sort();
 
         let mut partitions = self
             .partitions
             .read()
             .expect("lock is poisoned")
             .values()
-            .filter(|x| partitions_with_tasks.binary_search(&x.name).is_err())
             .cloned()
             .collect::<Vec<_>>();
 
@@ -105,6 +181,12 @@ impl Monitor {
                 .active_memtable_size()
                 .cmp(&a.tree.active_memtable_size())
         });
+
+        let partitions_names_with_queued_tasks = self.flush_tracker.get_partitions_with_tasks();
+
+        let partitions = partitions
+            .into_iter()
+            .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
 
         for partition in partitions {
             log::debug!("monitor: WB rotating {:?}", partition.name);
@@ -126,73 +208,5 @@ impl Monitor {
                 }
             };
         }
-    }
-
-    pub fn run(&self) -> bool {
-        let mut idle = true;
-
-        // TODO: don't do this too often
-        let current_seqno = self.seqno.get();
-        let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
-
-        // NOTE: If the difference between watermark if too large, and
-        // we never opened a snapshot, we need to pull the watermark up
-        //
-        // https://github.com/fjall-rs/fjall/discussions/85
-        if (current_seqno - gc_seqno_watermark) > 100 && self.snapshot_tracker.data.is_empty() {
-            *self
-                .snapshot_tracker
-                .lowest_freed_instant
-                .write()
-                .expect("lock is poisoned") = current_seqno.saturating_sub(100);
-        }
-
-        let jm_size = self.flush_tracker.disk_space_used();
-
-        let max_journal_size = self.keyspace_config.max_journaling_size_in_bytes;
-
-        if jm_size as f64 > (max_journal_size as f64 * 0.5) {
-            self.try_reduce_journal_size();
-            idle = false;
-        }
-
-        let write_buffer_size = self.flush_tracker.buffer_size();
-
-        let queued_size = self.flush_tracker.queued_size();
-
-        // TODO: This should never ever overflow
-        // TODO: because that is definitely a logic error
-        // TODO: need to make sure it's impossible this can happen
-        #[cfg(debug_assertions)]
-        {
-            // NOTE: Cannot use panic because we are in a thread that should not
-            // crash
-            if queued_size > write_buffer_size {
-                log::error!(
-                    "Queued size should not be able to be greater than entire write buffer size"
-                );
-                return idle;
-            }
-        }
-
-        // NOTE: We cannot flush more stuff if the journal is already too large
-        if jm_size < max_journal_size {
-            let max_write_buffer_size = self.keyspace_config.max_write_buffer_size_in_bytes;
-
-            // NOTE: Take the queued size of unflushed memtables into account
-            // so the system isn't performing a flush storm once the threshold is reached
-            //
-            // Also, As a fail safe, use saturating_sub so it doesn't overflow
-            let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
-
-            if buffer_size_without_queued_size as f64 > (max_write_buffer_size as f64 * 0.5) {
-                self.try_reduce_write_buffer_size();
-                idle = false;
-            }
-        } else {
-            log::debug!("cannot rotate memtable to free write buffer - journal too large");
-        }
-
-        idle
     }
 }

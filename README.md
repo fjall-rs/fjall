@@ -12,7 +12,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.74.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.75.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -27,11 +27,12 @@
   </a>
 </p>
 
-*Fjall* is an LSM-based embeddable key-value storage engine written in Rust.
+*Fjall* is a log-structured embeddable key-value storage engine written in Rust.
 It features:
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
+- LSM-tree-based storage similar to RocksDB
 - Range & prefix searching with forward and reverse iteration
 - Partitions (a.k.a. column families) with cross-partition atomic semantics
 - Built-in compression (default = LZ4)
@@ -42,14 +43,23 @@ It features:
 It is not:
 
 - a standalone server
-- a relational database
-- a wide-column database: it has no built-in notion of columns
+- a relational or wide-column database: it has no built-in notion of columns
 
 Keys are limited to 65536 bytes, values are limited to 2^32 bytes.
 As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 
 Like any typical key-value store, keys are stored in lexicographic order.
 If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
+
+## Sponsors
+
+<a href="https://sqlsync.dev">
+  <picture>
+    <source width="240" alt="Orbitinghail" media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail.svg" />
+    <source width="240" alt="Orbitinghail" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail_dark.svg" />
+    <img width="240" alt="Orbitinghail" src="https://raw.githubusercontent.com/fjall-rs/fjall-rs.github.io/d22fcb1e6966ce08327ea3bf6cf2ea86a840b071/public/logos/orbitinghail_dark.svg" />
+  </picture>
+</a>
 
 ## Basic usage
 
@@ -108,9 +118,10 @@ Also, when dropped, the keyspace will try to persist the journal *to disk* synch
 
 ## Multithreading, Async and Multiprocess
 
-> !!! A single keyspace may **not** be loaded in parallel from separate *processes*.
+> [!WARNING]
+> A single keyspace may **not** be loaded in parallel from separate *processes*.
 
-However, Fjall is internally synchronized for multi-threaded access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
+Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
 
@@ -139,22 +150,14 @@ Allows opening a transactional Keyspace for single-writer (serialized) transacti
 Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 Conflict checking is done using optimistic concurrency control.
 
-*Disabled by default.*
+*Disabled by default.
+Mutually exclusive with `single_writer_tx`.*
 
 ### bytes
 
 Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
 
 *Disabled by default.*
-
-### bloom *[deprecated]*
-
-Uses bloom filters to reduce disk I/O when serving point reads, but increases memory usage.
-
-*Enabled by default.*
-
-> Will be removed in the future.
-> If you are absolutely, 100% sure you do not need bloom filters: they will be togglable on a per-partition basis.
 
 ## Stable disk format
 

@@ -17,8 +17,7 @@ jobs:
     strategy:
       matrix:
         rust_version:
-          - stable
-          - "1.74.0" # MSRV
+          - stable # We cannot run with MSRV because some deps may require a higher MSRV
         os:
           - ubuntu-latest
           - windows-latest
@@ -52,9 +51,11 @@ jobs:
             examples/tx-blob-cas
             examples/tx-mpmc-queue -> target
             examples/tx-partition-move -> target
+            examples/tx-ssi-atomic-counter -> target
             examples/tx-ssi-cc -> target
             examples/tx-ssi-mpmc-queue -> target
             examples/tx-ssi-partition-move -> target
+            examples/unique-index -> target
       - name: Build & test examples
         run: node compile_examples.mjs
   test:
@@ -63,7 +64,7 @@ jobs:
       matrix:
         rust_version:
           - stable
-          - "1.74.0" # MSRV
+          - "1.75.0" # MSRV
         os:
           - ubuntu-latest
           - windows-latest
@@ -97,7 +98,7 @@ jobs:
       - name: Run whitebox tests
         run: cargo test --features __internal_whitebox -- whitebox_ --test-threads=1
       - name: Run tests
-        run: cargo nextest run --features lz4,miniz,single_writer_tx,bloom
+        run: cargo nextest run --features lz4,miniz,single_writer_tx
       - name: Run SSI tests
         run: cargo nextest run --no-default-features --features ssi_tx tx_ssi_
       - name: Run doc tests

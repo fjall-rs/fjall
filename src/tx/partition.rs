@@ -15,19 +15,19 @@ pub struct TransactionalPartitionHandle {
 
 impl GarbageCollection for TransactionalPartitionHandle {
     fn gc_scan(&self) -> crate::Result<GcReport> {
-        crate::gc::GarbageCollector::scan(self.inner())
+        self.inner().gc_scan()
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_space_amp_target(self.inner(), factor)
+        self.inner().gc_with_space_amp_target(factor)
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_staleness_threshold(self.inner(), threshold)
+        self.inner().gc_with_staleness_threshold(threshold)
     }
 
     fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::drop_stale_segments(self.inner())
+        self.inner().gc_drop_stale_segments()
     }
 }
 
@@ -36,6 +36,38 @@ impl TransactionalPartitionHandle {
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.inner.path().into()
+    }
+
+    /// Approximates the amount of items in the partition.
+    ///
+    /// For update- or delete-heavy workloads, this value will
+    /// diverge from the real value, but is a O(1) operation.
+    ///
+    /// For insert-only workloads (e.g. logs, time series)
+    /// this value is reliable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert_eq!(partition.approximate_len(), 0);
+    ///
+    /// partition.insert("1", "abc")?;
+    /// assert_eq!(partition.approximate_len(), 1);
+    ///
+    /// partition.remove("1")?;
+    /// // Oops! approximate_len will not be reliable here
+    /// assert_eq!(partition.approximate_len(), 2);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn approximate_len(&self) -> usize {
+        self.inner.approximate_len()
     }
 
     /// Removes an item and returns its value if it existed.

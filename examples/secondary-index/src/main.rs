@@ -14,7 +14,7 @@ fn create_item(
     batch.insert(table, &id, format!("{name} [{year}]"));
 
     let ts_bytes = year.to_be_bytes();
-    let key = format_bytes!(b"{}#{}", ts_bytes, id.as_bytes());
+    let key = format_bytes!(b"{}\0{}", ts_bytes, id.as_bytes());
 
     batch.insert(index, &key, "");
 
@@ -30,6 +30,7 @@ fn main() -> fjall::Result<()> {
 
     let mut batch = keyspace.batch();
     create_item(&mut batch, &items, &sec, "Remain in Light", 1_980)?;
+    create_item(&mut batch, &items, &sec, "Seventeen Seconds", 1_980)?;
     create_item(&mut batch, &items, &sec, "Power, Corruption & Lies", 1_983)?;
     create_item(&mut batch, &items, &sec, "Hounds of Love", 1_985)?;
     create_item(&mut batch, &items, &sec, "Black Celebration", 1_986)?;
@@ -57,7 +58,7 @@ fn main() -> fjall::Result<()> {
         let (k, _) = kv?;
 
         // Get ID
-        let primary_key = k.split(|&c| c == b'#').nth(1).unwrap();
+        let primary_key = &k[std::mem::size_of::<u64>() + 1..];
 
         // Get from primary index
         let item = items.get(primary_key)?.unwrap();

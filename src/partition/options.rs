@@ -112,9 +112,7 @@ pub struct CreateOptions {
     /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
-    /// Bits per key for levels that are not L0, L1, L2
-    // NOTE: bloom_bits_per_key is not conditionally compiled,
-    // because that would change the file format
+    /// Bits per key for levels that are not L0, L1
     pub(crate) bloom_bits_per_key: i8,
 
     /// Tree type, see [`TreeType`].
@@ -231,7 +229,6 @@ impl lsm_tree::coding::Decode for CreateOptions {
                     l0_threshold,
                     target_size,
                     level_ratio,
-                    ..Default::default()
                 })
             }
             1 => {
@@ -323,10 +320,24 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
+    /// Sets the bits per key for bloom filters.
+    ///
+    /// More bits per key increases memory usage, but decreases the
+    /// false positive rate of bloom filters, which decreases unnecessary
+    /// read I/O for point reads.
+    ///
+    /// Default = 10 bits
     #[must_use]
     #[doc(hidden)]
-    pub fn use_bloom_filters(mut self, flag: bool) -> Self {
-        self.bloom_bits_per_key = if flag { 10 } else { -1 };
+    pub fn bloom_filter_bits(mut self, bits: Option<u8>) -> Self {
+        // NOTE: Can simply cast because of the assert above
+        #[allow(clippy::cast_possible_wrap)]
+        if let Some(bits) = bits {
+            assert!(bits <= 20, "bloom filter bits up to 20 are supported");
+            self.bloom_bits_per_key = bits as i8;
+        } else {
+            self.bloom_bits_per_key = -1;
+        }
         self
     }
 
@@ -411,23 +422,6 @@ impl CreateOptions {
         self
     }
 
-    /*   /// Sets the level count (depth of the tree).
-    ///
-    /// Once set for a partition, this property is not considered in the future.
-    ///
-    /// Default = 7
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is less than 2.
-    #[must_use]
-    pub fn level_count(mut self, n: u8) -> Self {
-        assert!(n > 1);
-
-        self.level_count = n;
-        self
-    } */
-
     /// Enables key-value separation for this partition.
     ///
     /// Key-value separation is intended for large value scenarios (1 KiB+ per KV).
@@ -436,6 +430,7 @@ impl CreateOptions {
     /// and higher temporary space usage.
     /// Also, garbage collection for deleted or outdated values becomes lazy, so
     /// GC needs to be triggered *manually*.
+    /// See <https://fjall-rs.github.io/post/announcing-fjall-2/#key-value-separation> for more information.
     ///
     /// Once set for a partition, this property is not considered in the future.
     ///

@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
+    background_worker::{Activity, BackgroundWorker},
     batch::{Batch, PartitionKey},
     compaction::manager::CompactionManager,
     config::Config,
@@ -13,7 +14,9 @@ use crate::{
     journal::{writer::PersistMode, Journal},
     monitor::Monitor,
     partition::name::is_valid_partition_name,
+    poison_dart::PoisonDart,
     snapshot_tracker::SnapshotTracker,
+    stats::Stats,
     version::Version,
     HashMap, PartitionCreateOptions, PartitionHandle,
 };
@@ -25,6 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, RwLock,
     },
+    time::Duration,
 };
 use std_semaphore::Semaphore;
 
@@ -67,8 +71,7 @@ pub struct KeyspaceInner {
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
-    /// Active compaction conter
-    pub(crate) active_compaction_count: Arc<AtomicUsize>,
+    pub(crate) stats: Arc<Stats>,
 
     #[doc(hidden)]
     pub snapshot_tracker: Arc<SnapshotTracker>,
@@ -92,24 +95,24 @@ impl Drop for KeyspaceInner {
             self.compaction_manager.notify_empty();
         }
 
+        // IMPORTANT: Break cyclic Arcs
+        self.flush_tracker.clear_queues();
+        self.compaction_manager.clear();
+        self.partitions.write().expect("lock is poisoned").clear();
+        self.flush_tracker.clear_items();
+
         self.config.descriptor_table.clear();
 
         if self.config.clean_path_on_drop {
             log::info!(
                 "Deleting keyspace because temporary=true: {:?}",
-                self.config.path
+                self.config.path,
             );
 
             if let Err(err) = remove_dir_all(&self.config.path) {
                 eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
             }
         }
-
-        // IMPORTANT: Break cyclic Arcs
-        self.flush_tracker.clear_queues();
-        self.compaction_manager.clear();
-        self.partitions.write().expect("lock is poisoned").clear();
-        self.flush_tracker.clear_items();
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
@@ -180,11 +183,42 @@ impl Keyspace {
         self.flush_tracker.buffer_size()
     }
 
+    /// Returns the amount of completed memtable flushes.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn flushes_completed(&self) -> usize {
+        self.stats
+            .flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns the time all compactions took until now.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn time_compacting(&self) -> std::time::Duration {
+        let us = self
+            .stats
+            .time_compacting
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        std::time::Duration::from_micros(us)
+    }
+
     /// Returns the number of active compactions currently running.
     #[doc(hidden)]
     #[must_use]
     pub fn active_compactions(&self) -> usize {
-        self.active_compaction_count
+        self.stats
+            .active_compaction_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns the amount of completed compactions.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn compactions_completed(&self) -> usize {
+        self.stats
+            .compactions_completed
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -284,6 +318,12 @@ impl Keyspace {
         Ok(())
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn cache_capacity(&self) -> u64 {
+        self.config.cache.capacity()
+    }
+
     /// Opens a keyspace in the given directory.
     ///
     /// # Errors
@@ -291,12 +331,8 @@ impl Keyspace {
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!(
-            "block cache capacity={}MiB",
-            config.block_cache.capacity() / 1_024 / 1_024,
-        );
-        log::debug!(
-            "blob cache capacity={}MiB",
-            config.blob_cache.capacity() / 1_024 / 1_024,
+            "cache capacity={}MiB",
+            config.cache.capacity() / 1_024 / 1_024,
         );
 
         let keyspace = Self::create_or_recover(config)?;
@@ -386,6 +422,9 @@ impl Keyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// If the partition does not yet exist, it will be created configured with `create_options`.
+    /// Otherwise simply a handle to the existing partition will be returned.
+    ///
     /// Partition names can be up to 255 characters long, can not be empty and
     /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
     ///
@@ -420,13 +459,13 @@ impl Keyspace {
         })
     }
 
-    /// Returns the amount of partitions
+    /// Returns the amount of partitions.
     #[must_use]
     pub fn partition_count(&self) -> usize {
         self.partitions.read().expect("lock is poisoned").len()
     }
 
-    /// Gets a list of all partition names in the keyspace
+    /// Gets a list of all partition names in the keyspace.
     #[must_use]
     pub fn list_partitions(&self) -> Vec<PartitionKey> {
         self.partitions
@@ -535,6 +574,8 @@ impl Keyspace {
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
         let active_journal = Arc::new(journal_recovery.active);
+        active_journal.get_writer().persist(PersistMode::SyncAll)?;
+
         let sealed_journals = journal_recovery.sealed;
 
         let active_path = active_journal.path();
@@ -556,7 +597,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: Arc::default(),
-            active_compaction_count: Arc::default(),
+            stats: Arc::default(),
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -617,8 +658,9 @@ impl Keyspace {
                     let size = partition.tree.active_memtable_size().into();
 
                     log::trace!(
-                        "Recovered active memtable of size {size}B for partition {:?}",
-                        partition.name
+                        "Recovered active memtable of size {size}B for partition {:?} ({} items)",
+                        partition.name,
+                        partition.tree.lock_active_memtable().len(),
                     );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
@@ -645,13 +687,15 @@ impl Keyspace {
             std::sync::atomic::Ordering::Release,
         );
 
+        log::trace!("Recovery successful");
+
         Ok(keyspace)
     }
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
         let path = config.path.clone();
-        log::info!("Creating keyspace at {path:?}");
+        log::debug!("Creating keyspace at {path:?}");
 
         std::fs::create_dir_all(&path)?;
 
@@ -684,7 +728,7 @@ impl Keyspace {
             active_background_threads: Arc::default(),
             is_poisoned: Arc::default(),
             snapshot_tracker: Arc::default(),
-            active_compaction_count: Arc::default(),
+            stats: Arc::default(),
         };
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
@@ -702,88 +746,103 @@ impl Keyspace {
     }
 
     fn spawn_monitor_thread(&self) -> crate::Result<()> {
-        let monitor = Monitor::new(self);
-        let stop_signal = self.stop_signal.clone();
-        let thread_counter = self.active_background_threads.clone();
+        const NAME: &str = "monitor";
 
-        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let monitor = Monitor::new(self);
+
+        let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
+        let thread_counter = self.active_background_threads.clone();
+        let stop_signal = self.stop_signal.clone();
+
+        let worker = BackgroundWorker::new(monitor, poison_dart, thread_counter, stop_signal);
 
         std::thread::Builder::new()
-            .name("monitor".into())
+            .name(NAME.into())
             .spawn(move || {
-                while !stop_signal.is_stopped() {
-                    let idle = monitor.run();
-
-                    if idle {
-                        std::thread::sleep(std::time::Duration::from_millis(250));
-                    }
-                }
-
-                log::trace!("monitor: exiting because keyspace is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                worker.start();
             })
             .map(|_| ())
             .map_err(Into::into)
     }
 
-    fn spawn_fsync_thread(&self, ms: usize) -> crate::Result<()> {
-        let journal = self.journal.clone();
-        let stop_signal = self.stop_signal.clone();
-        let is_poisoned = self.is_poisoned.clone();
-        let thread_counter = self.active_background_threads.clone();
+    fn spawn_fsync_thread(&self, ms: u64) -> crate::Result<()> {
+        const NAME: &str = "syncer";
 
-        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        struct Syncer {
+            journal: Arc<Journal>,
+            sleep_dur: Duration,
+        }
+
+        impl Activity for Syncer {
+            fn name(&self) -> &'static str {
+                NAME
+            }
+
+            fn run(&mut self) -> crate::Result<()> {
+                std::thread::sleep(self.sleep_dur);
+                self.journal.persist(PersistMode::SyncAll)?;
+                Ok(())
+            }
+        }
+
+        let syncer = Syncer {
+            journal: self.journal.clone(),
+            sleep_dur: Duration::from_millis(ms),
+        };
+
+        let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
+        let thread_counter = self.active_background_threads.clone();
+        let stop_signal = self.stop_signal.clone();
+
+        let worker = BackgroundWorker::new(syncer, poison_dart, thread_counter, stop_signal);
 
         std::thread::Builder::new()
-            .name("syncer".into())
+            .name(NAME.into())
             .spawn(move || {
-                while !stop_signal.is_stopped() {
-                    log::trace!("fsync thread: sleeping {ms}ms");
-                    std::thread::sleep(std::time::Duration::from_millis(ms as u64));
-
-                    log::trace!("fsync thread: fsyncing journal");
-                    if let Err(e) = journal.persist(PersistMode::SyncAll) {
-                        is_poisoned.store(true, std::sync::atomic::Ordering::Release);
-                        log::error!(
-                            "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                        );
-                        return;
-                    }
-                }
-
-                log::trace!("fsync thread: exiting because keyspace is dropping");
-
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                worker.start();
             })
             .map(|_| ())
             .map_err(Into::into)
     }
 
     fn spawn_compaction_worker(&self) -> crate::Result<()> {
-        let compaction_manager = self.compaction_manager.clone();
-        let stop_signal = self.stop_signal.clone();
-        let thread_counter = self.active_background_threads.clone();
-        let snapshot_tracker = self.snapshot_tracker.clone();
-        let compaction_counter = self.active_compaction_count.clone();
+        const NAME: &str = "compactor";
 
-        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        struct Compactor {
+            manager: Arc<CompactionManager>,
+            snapshot_tracker: Arc<SnapshotTracker>,
+            stats: Arc<Stats>,
+        }
+
+        impl Activity for Compactor {
+            fn name(&self) -> &'static str {
+                NAME
+            }
+
+            fn run(&mut self) -> crate::Result<()> {
+                log::trace!("{:?}: waiting for work", self.name());
+                self.manager.wait_for();
+                crate::compaction::worker::run(&self.manager, &self.snapshot_tracker, &self.stats)?;
+                Ok(())
+            }
+        }
+
+        let compactor = Compactor {
+            manager: self.compaction_manager.clone(),
+            snapshot_tracker: self.snapshot_tracker.clone(),
+            stats: self.stats.clone(),
+        };
+
+        let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
+        let thread_counter = self.active_background_threads.clone();
+        let stop_signal = self.stop_signal.clone();
+
+        let worker = BackgroundWorker::new(compactor, poison_dart, thread_counter, stop_signal);
 
         std::thread::Builder::new()
-            .name("compaction".into())
+            .name(NAME.into())
             .spawn(move || {
-                while !stop_signal.is_stopped() {
-                    log::trace!("compaction: waiting for work");
-                    compaction_manager.wait_for();
-
-                    crate::compaction::worker::run(
-                        &compaction_manager,
-                        &snapshot_tracker,
-                        &compaction_counter,
-                    );
-                }
-
-                log::trace!("compaction thread: exiting because keyspace is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                worker.start();
             })
             .map(|_| ())
             .map_err(Into::into)
@@ -793,7 +852,7 @@ impl Keyspace {
     ///
     /// Should NOT be called when there is a flush worker active already!!!
     #[doc(hidden)]
-    pub fn force_flush(&self) {
+    pub fn force_flush(&self) -> crate::Result<()> {
         let parallelism = self.config.flush_workers_count;
 
         crate::flush::worker::run(
@@ -801,39 +860,63 @@ impl Keyspace {
             &self.compaction_manager,
             &self.snapshot_tracker,
             parallelism,
-        );
+            &self.stats,
+        )
     }
 
     fn spawn_flush_worker(&self) -> crate::Result<()> {
-        let flush_tracker = self.flush_tracker.clone();
-        let compaction_manager = self.compaction_manager.clone();
-        let flush_semaphore = self.flush_semaphore.clone();
-        let snapshot_tracker = self.snapshot_tracker.clone();
+        const NAME: &str = "flusher";
 
+        struct Flusher {
+            parallelism: usize,
+            flush_semaphore: Arc<Semaphore>,
+            flush_tracker: Arc<FlushTracker>,
+            compaction_manager: Arc<CompactionManager>,
+            snapshot_tracker: Arc<SnapshotTracker>,
+            stats: Arc<Stats>,
+        }
+
+        impl Activity for Flusher {
+            fn name(&self) -> &'static str {
+                NAME
+            }
+
+            fn run(&mut self) -> crate::Result<()> {
+                log::trace!("{:?}: waiting for work", self.name());
+
+                self.flush_semaphore.acquire();
+
+                crate::flush::worker::run(
+                    &self.flush_tracker,
+                    &self.compaction_manager,
+                    &self.snapshot_tracker,
+                    self.parallelism,
+                    &self.stats,
+                )?;
+
+                Ok(())
+            }
+        }
+
+        let flusher = Flusher {
+            flush_tracker: self.flush_tracker.clone(),
+            compaction_manager: self.compaction_manager.clone(),
+            flush_semaphore: self.flush_semaphore.clone(),
+            snapshot_tracker: self.snapshot_tracker.clone(),
+            stats: self.stats.clone(),
+            parallelism: self.config.flush_workers_count,
+        };
+
+        let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
         let thread_counter = self.active_background_threads.clone();
         let stop_signal = self.stop_signal.clone();
 
-        let parallelism = self.config.flush_workers_count;
-
-        thread_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let worker = BackgroundWorker::new(flusher, poison_dart, thread_counter, stop_signal);
 
         std::thread::Builder::new()
-            .name("flusher".into())
+            .name(NAME.into())
             .spawn(move || {
-                while !stop_signal.is_stopped() {
-                    log::trace!("flush worker: acquiring flush semaphore");
-                    flush_semaphore.acquire();
-
-                    crate::flush::worker::run(
-                        &flush_tracker,
-                        &compaction_manager,
-                        &snapshot_tracker,
-                        parallelism,
-                    );
-                }
-
-                log::trace!("flush worker: exiting because keyspace is dropping");
-                thread_counter.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                worker.start();
             })
             .map(|_| ())
             .map_err(Into::into)
@@ -918,7 +1001,7 @@ mod tests {
 
             assert_eq!(3, keyspace.journal_count());
 
-            keyspace.force_flush();
+            keyspace.force_flush()?;
 
             assert_eq!(1, db.len()?);
             assert_eq!(0, db.tree.sealed_memtable_count());
@@ -962,7 +1045,7 @@ mod tests {
             assert_eq!(1, db.tree.sealed_memtable_count());
             assert_eq!(2, keyspace.journal_count());
 
-            keyspace.force_flush();
+            keyspace.force_flush()?;
 
             assert_eq!(1, db.len()?);
             assert_eq!(0, db.tree.sealed_memtable_count());
@@ -1016,7 +1099,7 @@ mod tests {
         assert_eq!(0, db.segment_count());
         assert_eq!(0, db2.segment_count());
 
-        keyspace.force_flush();
+        keyspace.force_flush()?;
 
         assert_eq!(0, keyspace.flush_tracker.queued_size());
 
@@ -1061,7 +1144,7 @@ mod tests {
 
         assert_eq!(0, db.segment_count());
 
-        keyspace.force_flush();
+        keyspace.force_flush()?;
 
         assert_eq!(0, keyspace.flush_tracker.queued_size());
 

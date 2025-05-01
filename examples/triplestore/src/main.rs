@@ -30,7 +30,7 @@ impl Triplestore {
 
     pub fn add_triple(&self, from: &str, verb: &str, to: &str, data: &Value) -> fjall::Result<()> {
         self.verbs.insert(
-            format!("{from}#{verb}#{to}"),
+            format!("{from}\0{verb}\0{to}"),
             serde_json::to_string(data).expect("should serialize"),
         )
     }
@@ -45,7 +45,7 @@ impl Triplestore {
         verb: &str,
         object: &str,
     ) -> fjall::Result<Option<Value>> {
-        let Some(bytes) = self.verbs.get(format!("{subject}#{verb}#{object}"))? else {
+        let Some(bytes) = self.verbs.get(format!("{subject}\0{verb}\0{object}"))? else {
             return Ok(None);
         };
         let value = std::str::from_utf8(&bytes).expect("should be utf-8");
@@ -60,11 +60,11 @@ impl Triplestore {
     ) -> fjall::Result<Vec<(String, String, String, Value)>> {
         let mut result = vec![];
 
-        for kv in self.verbs.prefix(format!("{subject}#{verb}#")) {
+        for kv in self.verbs.prefix(format!("{subject}\0{verb}\0")) {
             let (key, value) = kv?;
 
             let key = std::str::from_utf8(&key).expect("should be utf-8");
-            let mut splits = key.split('#');
+            let mut splits = key.split('\0');
             let s = splits.next().unwrap().to_string();
             let v = splits.next().unwrap().to_string();
             let o = splits.next().unwrap().to_string();

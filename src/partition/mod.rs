@@ -18,6 +18,7 @@ use crate::{
     keyspace::Partitions,
     snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
+    stats::Stats,
     Error, Keyspace,
 };
 use lsm_tree::{
@@ -29,8 +30,11 @@ use std::{
     fs::File,
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
-    time::Duration,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, RwLock,
+    },
+    time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
 use write_delay::get_write_delay;
@@ -87,6 +91,11 @@ pub struct PartitionHandleInner {
 
     /// Snapshot tracker
     pub(crate) snapshot_tracker: Arc<SnapshotTracker>,
+
+    pub(crate) stats: Arc<Stats>,
+
+    /// Number of completed memtable flushes in this partition
+    pub(crate) flushes_completed: AtomicUsize,
 }
 
 impl Drop for PartitionHandleInner {
@@ -175,11 +184,31 @@ impl GarbageCollection for PartitionHandle {
     }
 
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_space_amp_target(self, factor)
+        let start = Instant::now();
+
+        let result = crate::gc::GarbageCollector::with_space_amp_target(self, factor);
+
+        #[allow(clippy::cast_possible_truncation)]
+        self.stats.time_gc.fetch_add(
+            start.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        result
     }
 
     fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::with_staleness_threshold(self, threshold)
+        let start = Instant::now();
+
+        let result = crate::gc::GarbageCollector::with_staleness_threshold(self, threshold);
+
+        #[allow(clippy::cast_possible_truncation)]
+        self.stats.time_gc.fetch_add(
+            start.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        result
     }
 
     fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
@@ -188,6 +217,28 @@ impl GarbageCollection for PartitionHandle {
 }
 
 impl PartitionHandle {
+    /// Ingests a sorted stream of key-value pairs into the partition.
+    ///
+    /// Can only be called on a new fresh, empty partition.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the partition is **not** initially empty.
+    ///
+    /// Will panic if the input iterator is not sorted in ascending order.
+    pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        iter: impl Iterator<Item = (K, V)>,
+    ) -> crate::Result<()> {
+        self.tree
+            .ingest(iter.map(|(k, v)| (k.into(), v.into())))
+            .map_err(Into::into)
+    }
+
     pub(crate) fn from_keyspace(
         keyspace: &Keyspace,
         tree: AnyTree,
@@ -201,6 +252,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_tracker: keyspace.flush_tracker.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
@@ -209,6 +261,7 @@ impl PartitionHandle {
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
             config,
+            stats: keyspace.stats.clone(),
         }))
     }
 
@@ -238,23 +291,18 @@ impl PartitionHandle {
 
         let mut base_config = lsm_tree::Config::new(base_folder)
             .descriptor_table(keyspace.config.descriptor_table.clone())
-            .block_cache(keyspace.config.block_cache.clone())
-            .blob_cache(keyspace.config.blob_cache.clone())
+            .use_cache(keyspace.config.cache.clone())
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
-            .compression(config.compression);
+            .compression(config.compression)
+            .bloom_bits_per_key(config.bloom_bits_per_key);
 
         if let Some(kv_opts) = &config.kv_separation {
             base_config = base_config
                 .blob_compression(kv_opts.compression)
                 .blob_file_separation_threshold(kv_opts.separation_threshold)
                 .blob_file_target_size(kv_opts.file_target_size);
-        }
-
-        #[cfg(feature = "bloom")]
-        {
-            base_config = base_config.bloom_bits_per_key(config.bloom_bits_per_key);
         }
 
         let tree = match config.tree_type {
@@ -269,6 +317,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_tracker: keyspace.flush_tracker.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
@@ -277,6 +326,7 @@ impl PartitionHandle {
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            stats: keyspace.stats.clone(),
         })))
     }
 
@@ -326,7 +376,9 @@ impl PartitionHandle {
     /// ```
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.iter().map(|item| item.map_err(Into::into))
+        self.tree
+            .iter(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only keys.
@@ -334,7 +386,9 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        self.tree.keys().map(|item| item.map_err(Into::into))
+        self.tree
+            .keys(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator that scans through the entire partition, returning only values.
@@ -342,7 +396,9 @@ impl PartitionHandle {
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
     pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        self.tree.values().map(|item| item.map_err(Into::into))
+        self.tree
+            .values(None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a range of items.
@@ -368,7 +424,9 @@ impl PartitionHandle {
         &'a self,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree.range(range).map(|item| item.map_err(Into::into))
+        self.tree
+            .range(range, None, None)
+            .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -395,13 +453,13 @@ impl PartitionHandle {
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
         self.tree
-            .prefix(prefix)
+            .prefix(prefix, None, None)
             .map(|item| item.map_err(Into::into))
     }
 
     /// Approximates the amount of items in the partition.
     ///
-    /// For update -or delete-heavy workloads, this value will
+    /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
     ///
     /// For insert-only workloads (e.g. logs, time series)
@@ -415,7 +473,7 @@ impl PartitionHandle {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(partition.len()?, 0);
+    /// assert_eq!(partition.approximate_len(), 0);
     ///
     /// partition.insert("1", "abc")?;
     /// assert_eq!(partition.approximate_len(), 1);
@@ -523,7 +581,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.tree.contains_key(key).map_err(Into::into)
+        self.tree.contains_key(key, None).map_err(Into::into)
     }
 
     /// Retrieves an item from the partition.
@@ -548,7 +606,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<lsm_tree::UserValue>> {
-        Ok(self.tree.get(key)?)
+        Ok(self.tree.get(key, None)?)
     }
 
     /// Retrieves the size of an item from the partition.
@@ -573,7 +631,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
-        Ok(self.tree.size_of(key)?)
+        Ok(self.tree.size_of(key, None)?)
     }
 
     /// Returns the first key-value pair in the partition.
@@ -601,7 +659,7 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.first_key_value()?)
+        Ok(self.tree.first_key_value(None, None)?)
     }
 
     /// Returns the last key-value pair in the partition.
@@ -629,7 +687,32 @@ impl PartitionHandle {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.last_key_value()?)
+        Ok(self.tree.last_key_value(None, None)?)
+    }
+
+    /// Returns `true` if the underlying LSM-tree is key-value-separated.
+    ///
+    /// See [`CreateOptions::with_kv_separation`] for more information.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// let tree1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// assert!(!tree1.is_kv_separated());
+    ///
+    /// let blob_cfg = PartitionCreateOptions::default().with_kv_separation(Default::default());
+    /// let tree2 = keyspace.open_partition("blobs", blob_cfg)?;
+    /// assert!(tree2.is_kv_separated());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn is_kv_separated(&self) -> bool {
+        matches!(self.tree, crate::AnyTree::Blob(_))
     }
 
     // NOTE: Used in tests
@@ -684,6 +767,10 @@ impl PartitionHandle {
             sealed_memtable: yanked_memtable,
         });
 
+        self.stats
+            .flushes_enqueued
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         drop(journal);
 
         // Notify flush worker that new work has arrived
@@ -713,16 +800,10 @@ impl PartitionHandle {
     }
 
     fn check_write_stall(&self) {
-        let seg_count = self.tree.first_level_segment_count();
+        let l0_run_count = self.tree.l0_run_count();
 
-        if seg_count >= 20 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
-            let sleep_us = get_write_delay(seg_count);
+        if l0_run_count >= 20 {
+            let sleep_us = get_write_delay(l0_run_count);
 
             if sleep_us > 0 {
                 log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
@@ -733,13 +814,7 @@ impl PartitionHandle {
     }
 
     fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() >= 32 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
+        while self.tree.l0_run_count() >= 32 {
             log::info!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(10));
@@ -789,10 +864,26 @@ impl PartitionHandle {
         }
     }
 
+    /// Number of disk segments (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.tree.segment_count()
+    }
+
+    /// Number of blob files in the LSM-tree.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn blob_file_count(&self) -> usize {
+        self.tree.blob_file_count()
+    }
+
+    /// Number of completed memtable flushes in this partition.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn flushes_completed(&self) -> usize {
+        self.flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Opens a snapshot of this partition.
@@ -808,6 +899,28 @@ impl PartitionHandle {
             self.tree.snapshot(seqno),
             SnapshotNonce::new(seqno, self.snapshot_tracker.clone()),
         )
+    }
+
+    /// Performs major compaction, blocking the caller until it's done.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn major_compact(&self) -> crate::Result<()> {
+        match &self.config.compaction_strategy {
+            crate::compaction::Strategy::Leveled(x) => self.tree.major_compact(
+                u64::from(x.target_size),
+                self.snapshot_tracker.get_seqno_safe_to_gc(),
+            )?,
+            crate::compaction::Strategy::SizeTiered(_) => self
+                .tree
+                .major_compact(u64::MAX, self.snapshot_tracker.get_seqno_safe_to_gc())?,
+            crate::compaction::Strategy::Fifo(_) => {
+                log::warn!("Major compaction not supported for FIFO strategy");
+            }
+        }
+        Ok(())
     }
 
     /// Inserts a key-value pair into the partition.
@@ -864,9 +977,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;
@@ -942,9 +1053,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;

@@ -5,7 +5,7 @@
 use super::manager::Task;
 use crate::{
     compaction::manager::CompactionManager, flush_tracker::FlushTracker,
-    snapshot_tracker::SnapshotTracker, PartitionHandle,
+    snapshot_tracker::SnapshotTracker, stats::Stats, PartitionHandle,
 };
 use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::Arc;
@@ -114,13 +114,14 @@ pub fn run(
     compaction_manager: &CompactionManager,
     snapshot_tracker: &SnapshotTracker,
     parallelism: usize,
-) {
+    stats: &Stats,
+) -> crate::Result<()> {
     log::debug!("read locking flush manager");
     let partitioned_tasks = flush_tracker.collect_tasks(parallelism);
 
     if partitioned_tasks.is_empty() {
         log::debug!("No tasks collected");
-        return;
+        return Ok(());
     }
 
     for result in run_multi_flush(partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
@@ -134,24 +135,34 @@ pub fn run(
                 // otherwise we could cover up an unwritten journal, which will result in data loss
                 if let Err(e) = partition.tree.register_segments(&created_segments) {
                     log::error!("Failed to register segments: {e:?}");
-                } else {
-                    log::debug!("write locking flush manager to submit results");
-                    log::debug!(
-                        "Dequeuing flush tasks: {} => {}",
-                        partition.name,
-                        created_segments.len()
-                    );
-
-                    flush_tracker.dequeue_tasks(&partition.name, created_segments.len());
-                    flush_tracker.decrement_buffer_size(memtables_size);
-
-                    for _ in 0..parallelism {
-                        compaction_manager.notify(partition.clone());
-                    }
+                    return Err(e.into());
                 }
+
+                log::debug!("write locking flush manager to submit results");
+                log::debug!(
+                    "Dequeuing flush tasks: {} => {}",
+                    partition.name,
+                    created_segments.len(),
+                );
+
+                flush_tracker.dequeue_tasks(&partition.name, created_segments.len());
+                flush_tracker.decrement_buffer_size(memtables_size);
+
+                for _ in 0..parallelism {
+                    compaction_manager.notify(partition.clone());
+                }
+
+                stats
+                    .flushes_completed
+                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+
+                partition
+                    .flushes_completed
+                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
             }
             Err(e) => {
                 log::error!("Flush error: {e:?}");
+                return Err(e);
             }
         }
     }
@@ -159,7 +170,10 @@ pub fn run(
     log::debug!("write locking journal manager to maybe do maintenance");
     if let Err(e) = flush_tracker.maintenance() {
         log::error!("journal GC failed: {e:?}");
+        return Err(e);
     }
 
     log::debug!("fully done");
+
+    Ok(())
 }

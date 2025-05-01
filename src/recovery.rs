@@ -1,11 +1,13 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use crate::{
+    batch::PartitionKey,
     file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
-    flush::manager::Task,
     flush_tracker::FlushTracker,
     journal::{
-        batch_reader::JournalBatchReader,
-        manager::{EvictionWatermark, Item},
-        reader::JournalReader,
+        batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
     },
     keyspace::Partitions,
     partition::options::CreateOptions as PartitionCreateOptions,
@@ -21,6 +23,8 @@ impl Keyspace {
 
         let partitions_folder = self.config.path.join(PARTITIONS_FOLDER);
 
+        log::trace!("Recovering partitions in {:?}", partitions_folder);
+
         #[allow(clippy::significant_drop_tightening)]
         let mut partitions_lock = self.partitions.write().expect("lock is poisoned");
 
@@ -29,10 +33,10 @@ impl Keyspace {
             let partition_name = dirent.file_name();
             let partition_path = dirent.path();
 
-            assert!(
-                dirent.file_type()?.is_dir(),
-                "Found stray file in partitions folder",
-            );
+            if dirent.file_type()?.is_file() {
+                log::warn!("Found stray file {partition_path:?} in partitions folder");
+                continue;
+            }
 
             log::trace!("Recovering partition {:?}", partition_name);
 
@@ -63,19 +67,19 @@ impl Keyspace {
                 continue;
             }
 
-            let partition_name = partition_name
+            let partition_name: PartitionKey = partition_name
                 .to_str()
-                .expect("should be valid partition name");
+                .expect("should be valid partition name")
+                .into();
 
-            let path = partitions_folder.join(partition_name);
+            let path = partitions_folder.join(&*partition_name);
 
             let mut config_file = File::open(partition_path.join(PARTITION_CONFIG_FILE))?;
             let recovered_config = PartitionCreateOptions::decode_from(&mut config_file)?;
 
             let mut base_config = lsm_tree::Config::new(path)
                 .descriptor_table(self.config.descriptor_table.clone())
-                .block_cache(self.config.block_cache.clone())
-                .blob_cache(self.config.blob_cache.clone());
+                .use_cache(self.config.cache.clone());
 
             base_config.bloom_bits_per_key = recovered_config.bloom_bits_per_key;
             base_config.data_block_size = recovered_config.data_block_size;
@@ -100,11 +104,15 @@ impl Keyspace {
                 AnyTree::Standard(base_config.open()?)
             };
 
-            let partition =
-                PartitionHandle::from_keyspace(self, tree, partition_name.into(), recovered_config);
+            let partition = PartitionHandle::from_keyspace(
+                self,
+                tree,
+                partition_name.clone(),
+                recovered_config,
+            );
 
             // Add partition to dictionary
-            partitions_lock.insert(partition_name.into(), partition.clone());
+            partitions_lock.insert(partition_name.clone(), partition.clone());
 
             log::trace!("Recovered partition {:?}", partition_name);
         }
@@ -188,10 +196,10 @@ impl FlushTracker {
                 // IMPORTANT: Only apply sealed memtables to partitions
                 // that have a lower seqno to avoid double flushing
                 let should_skip_sealed_memtable =
-                    partition_lsn.map_or(false, |partition_lsn| partition_lsn >= handle.lsn);
+                    partition_lsn.is_some_and(|partition_lsn| partition_lsn >= handle.lsn);
 
                 if should_skip_sealed_memtable {
-                    handle.partition.tree.lock_active_memtable().clear();
+                    handle.partition.tree.clear_active_memtable();
 
                     log::trace!(
                         "Partition {} has higher seqno ({partition_lsn:?}), skipping",
@@ -227,7 +235,7 @@ impl FlushTracker {
                     // TODO: unit test write buffer size after recovery
 
                     // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                    self.enqueue_task(Task {
+                    self.enqueue_task(crate::flush::manager::Task {
                         id: memtable_id,
                         sealed_memtable,
                         partition: handle.partition.clone(),
@@ -240,7 +248,7 @@ impl FlushTracker {
             log::debug!("Recovered {recovered_count} sealed memtables");
 
             // IMPORTANT: Add sealed journal to journal manager
-            self.enqueue_item(Item {
+            self.enqueue_item(crate::journal::manager::Item {
                 watermarks,
                 path: journal_path.clone(),
                 size_in_bytes: journal_size,
