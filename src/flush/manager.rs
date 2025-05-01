@@ -44,12 +44,12 @@ impl FlushTaskQueue {
     }
 
     #[track_caller]
-    fn queues_read_lock(&self) -> RwLockReadGuard<'_, HashMap<Arc<str>, FlushQueue>> {
+    fn queues_read_lock(&self) -> RwLockReadGuard<'_, HashMap<PartitionKey, FlushQueue>> {
         self.queues.read().expect("lock is poisoned")
     }
 
     #[track_caller]
-    fn queues_write_lock(&self) -> RwLockWriteGuard<'_, HashMap<Arc<str>, FlushQueue>> {
+    fn queues_write_lock(&self) -> RwLockWriteGuard<'_, HashMap<PartitionKey, FlushQueue>> {
         self.queues.write().expect("lock is poisoned")
     }
 
