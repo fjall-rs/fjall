@@ -61,7 +61,9 @@ impl Journal {
         log::trace!("Creating new journal at {path:?}");
 
         let folder = path.parent().expect("parent should exist");
-        std::fs::create_dir_all(folder)?;
+        std::fs::create_dir_all(folder).inspect_err(|e| {
+            log::error!("Failed to create journal folder at {path:?}: {e:?}");
+        })?;
 
         let writer = Writer::create_new(path)?;
 

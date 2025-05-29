@@ -17,9 +17,17 @@ pub const LSM_MANIFEST_FILE: &str = "manifest";
 
 #[cfg(not(target_os = "windows"))]
 pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
-    let file = std::fs::File::open(path)?;
+    let path = path.as_ref();
+
+    let file = std::fs::File::open(path).inspect_err(|e| {
+        log::error!("Failed to open directory at {path:?}: {e:?}");
+    })?;
+
     debug_assert!(file.metadata()?.is_dir());
-    file.sync_all()
+
+    file.sync_all().inspect_err(|e| {
+        log::error!("Failed to fsync directory at {path:?}: {e:?}");
+    })
 }
 
 #[cfg(target_os = "windows")]
