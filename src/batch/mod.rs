@@ -162,7 +162,7 @@ impl Batch {
 
             if let Err(e) = partition.check_memtable_overflow(memtable_size) {
                 log::error!("Failed memtable rotate check: {e:?}");
-            };
+            }
 
             // IMPORTANT: Check write buffer as well
             // Otherwise batch writes are never stalled/halted

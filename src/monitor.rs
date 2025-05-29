@@ -176,7 +176,7 @@ impl Monitor {
                     self.keyspace_poison
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
-            };
+            }
         }
     }
 
@@ -227,7 +227,7 @@ impl Monitor {
                     self.keyspace_poison
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
-            };
+            }
         }
     }
 }

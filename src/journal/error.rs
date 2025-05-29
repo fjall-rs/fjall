@@ -42,7 +42,7 @@ pub enum RecoveryError {
 
 impl std::fmt::Display for RecoveryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RecoveryError({:?})", self)
+        write!(f, "RecoveryError({self:?})")
     }
 }
 
