@@ -854,7 +854,7 @@ impl PartitionHandle {
 
     pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable().inspect_err(|e| {
+            self.rotate_memtable().inspect_err(|_| {
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
