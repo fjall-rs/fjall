@@ -238,7 +238,7 @@ pub fn recover_sealed_memtables(
                 );
 
                 recovered_count += 1;
-            };
+            }
         }
 
         log::debug!("Recovered {recovered_count} sealed memtables");

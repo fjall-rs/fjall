@@ -133,7 +133,12 @@ impl JournalManager {
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
             log::trace!("Removing fully flushed journal at {:?}", item.path);
-            std::fs::remove_file(&item.path)?;
+            std::fs::remove_file(&item.path).inspect_err(|e| {
+                log::error!(
+                    "Failed to clean up stale journal file at {:?}: {e:?}",
+                    item.path,
+                );
+            })?;
 
             self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
             self.items.remove(0);

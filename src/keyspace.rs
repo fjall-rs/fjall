@@ -338,7 +338,7 @@ impl Keyspace {
             );
 
             return Err(crate::Error::Poisoned);
-        };
+        }
 
         Ok(())
     }

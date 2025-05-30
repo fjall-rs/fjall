@@ -135,14 +135,14 @@ impl Drop for PartitionHandleInner {
                                 log::error!(
                                     "Failed to cleanup deleted partition's folder at {path:?}: {e}"
                                 );
-                            };
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
                 }
-            };
+            }
         }
 
         #[cfg(feature = "__internal_whitebox")]
@@ -854,11 +854,9 @@ impl PartitionHandle {
 
     pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable().map_err(|e| {
+            self.rotate_memtable().inspect_err(|_| {
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
-
-                e
             })?;
 
             self.check_journal_size();
