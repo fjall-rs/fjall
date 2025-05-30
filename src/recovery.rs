@@ -5,14 +5,16 @@
 use crate::{
     batch::PartitionKey,
     file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
+    flush_tracker::FlushTracker,
     journal::{
         batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
     },
+    keyspace::Partitions,
     partition::options::CreateOptions as PartitionCreateOptions,
-    HashMap, Keyspace, PartitionHandle,
+    Keyspace, PartitionHandle,
 };
-use lsm_tree::{AbstractTree, AnyTree};
-use std::{fs::File, path::PathBuf};
+use lsm_tree::{AbstractTree, AnyTree, SequenceNumberCounter};
+use std::{fs::File, path::PathBuf, sync::RwLock};
 
 /// Recovers partitions
 pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
@@ -119,17 +121,13 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
 #[allow(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(
-    keyspace: &Keyspace,
-    sealed_journal_paths: &[PathBuf],
+    flush_tracker: &FlushTracker,
+    partitions: &RwLock<Partitions>,
+    seqno: &SequenceNumberCounter,
+    sealed_journal_paths: impl Iterator<Item = PathBuf>,
 ) -> crate::Result<()> {
     #[allow(clippy::significant_drop_tightening)]
-    let mut flush_manager_lock = keyspace.flush_manager.write().expect("lock is poisoned");
-
-    #[allow(clippy::significant_drop_tightening)]
-    let mut journal_manager_lock = keyspace.journal_manager.write().expect("lock is poisoned");
-
-    #[allow(clippy::significant_drop_tightening)]
-    let partitions_lock = keyspace.partitions.read().expect("lock is poisoned");
+    let partitions_lock = partitions.read().expect("lock is poisoned");
 
     for journal_path in sealed_journal_paths {
         log::debug!("Recovering sealed journal: {journal_path:?}");
@@ -138,10 +136,10 @@ pub fn recover_sealed_memtables(
 
         log::debug!("Reading sealed journal at {journal_path:?}");
 
-        let raw_reader = JournalReader::new(journal_path)?;
+        let raw_reader = JournalReader::new(&journal_path)?;
         let reader = JournalBatchReader::new(raw_reader);
 
-        let mut watermarks: HashMap<PartitionKey, EvictionWatermark> = HashMap::default();
+        let mut watermarks: Vec<EvictionWatermark> = Vec::new();
 
         for batch in reader {
             let batch = batch?;
@@ -150,15 +148,24 @@ pub fn recover_sealed_memtables(
                 if let Some(handle) = partitions_lock.get(&item.partition) {
                     let tree = &handle.tree;
 
-                    watermarks
-                        .entry(item.partition)
-                        .and_modify(|prev| {
-                            prev.lsn = prev.lsn.max(batch.seqno);
-                        })
-                        .or_insert_with(|| EvictionWatermark {
-                            partition: handle.clone(),
-                            lsn: batch.seqno,
-                        });
+                    match watermarks
+                        .binary_search_by(|watermark| watermark.partition.name.cmp(&item.partition))
+                    {
+                        Ok(index) => {
+                            if let Some(prev) = watermarks.get_mut(index) {
+                                prev.lsn = prev.lsn.max(batch.seqno);
+                            }
+                        }
+                        Err(index) => {
+                            watermarks.insert(
+                                index,
+                                EvictionWatermark {
+                                    partition: handle.clone(),
+                                    lsn: batch.seqno,
+                                },
+                            );
+                        }
+                    };
 
                     match item.value_type {
                         lsm_tree::ValueType::Value => {
@@ -178,7 +185,7 @@ pub fn recover_sealed_memtables(
         log::debug!("Sealing recovered memtables");
         let mut recovered_count = 0;
 
-        for handle in watermarks.values() {
+        for handle in &watermarks {
             let tree = &handle.partition.tree;
 
             let partition_lsn = tree.get_highest_persisted_seqno();
@@ -214,28 +221,21 @@ pub fn recover_sealed_memtables(
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
 
-                keyspace
-                    .seqno
-                    .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
+                seqno.fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
 
-                log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+                log::debug!("Keyspace seqno is now {}", seqno.get());
 
                 // IMPORTANT: Add sealed memtable size to current write buffer size
-                keyspace
-                    .write_buffer_manager
-                    .allocate(sealed_memtable.size().into());
+                flush_tracker.increment_buffer_size(sealed_memtable.size().into());
 
                 // TODO: unit test write buffer size after recovery
 
                 // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                flush_manager_lock.enqueue_task(
-                    handle.partition.name.clone(),
-                    crate::flush::manager::Task {
-                        id: memtable_id,
-                        sealed_memtable,
-                        partition: handle.partition.clone(),
-                    },
-                );
+                flush_tracker.enqueue_task(crate::flush::manager::Task {
+                    id: memtable_id,
+                    sealed_memtable,
+                    partition: handle.partition.clone(),
+                });
 
                 recovered_count += 1;
             }
@@ -244,8 +244,8 @@ pub fn recover_sealed_memtables(
         log::debug!("Recovered {recovered_count} sealed memtables");
 
         // IMPORTANT: Add sealed journal to journal manager
-        journal_manager_lock.enqueue(crate::journal::manager::Item {
-            watermarks: watermarks.into_values().collect(),
+        flush_tracker.enqueue_item(crate::journal::manager::Item {
+            watermarks,
             path: journal_path.clone(),
             size_in_bytes: journal_size,
         });
