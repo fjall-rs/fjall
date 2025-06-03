@@ -28,7 +28,8 @@ __internal_whitebox = []
 [dependencies]
 byteorder = "1.5.0"
 byteview = "0.6.1"
-lsm-tree = { path = "../lsm-tree", default-features = false, features = [] }
+lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "v3/level-manifest-versioning", default-features = false, features = [
+] }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"
