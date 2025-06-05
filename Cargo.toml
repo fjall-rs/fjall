@@ -4,7 +4,7 @@ description = "LSM-based key-value storage engine"
 license = "MIT OR Apache-2.0"
 version = "2.11.0"
 edition = "2021"
-rust-version = "1.76.0"
+rust-version = "1.81.0"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 repository = "https://github.com/fjall-rs/fjall"
@@ -28,7 +28,8 @@ __internal_whitebox = []
 [dependencies]
 byteorder = "1.5.0"
 byteview = "0.6.1"
-lsm-tree = { version = "~2.10", default-features = false, features = [] }
+lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "v3/level-manifest-versioning", default-features = false, features = [
+] }
 log = "0.4.21"
 std-semaphore = "0.1.0"
 tempfile = "3.10.1"

@@ -47,7 +47,6 @@ impl FlushQueue {
         self.items
             .iter()
             .map(|x| x.sealed_memtable.size())
-            .map(u64::from)
             .sum::<u64>()
     }
 }

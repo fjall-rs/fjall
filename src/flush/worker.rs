@@ -73,10 +73,7 @@ fn run_multi_flush(
                     .partition
                     .clone();
 
-                let memtables_size: u64 = tasks
-                    .iter()
-                    .map(|t| u64::from(t.sealed_memtable.size()))
-                    .sum();
+                let memtables_size: u64 = tasks.iter().map(|t| t.sealed_memtable.size()).sum();
 
                 // NOTE: Don't trust clippy
                 #[allow(clippy::needless_collect)]
