@@ -2,10 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-//! Fjall is an LSM-based embeddable key-value storage engine written in Rust. It features:
+//! Fjall is a log-structured embeddable key-value storage engine written in Rust. It features:
 //!
 //! - Thread-safe BTreeMap-like API
 //! - 100% safe & stable Rust
+//! - LSM-tree-based storage similar to `RocksDB`
 //! - Range & prefix searching with forward and reverse iteration
 //! - Cross-partition snapshots (MVCC)
 //! - Automatic background maintenance
@@ -19,8 +20,7 @@
 //! It is not:
 //!
 //! - a standalone server
-//! - a relational database
-//! - a wide-column database: it has no notion of columns
+//! - a relational or wide-column database: it has no notion of columns
 //!
 //! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 //!
@@ -92,6 +92,7 @@ mod config;
 #[doc(hidden)]
 pub mod drop;
 
+mod background_worker;
 mod error;
 mod file;
 mod flush;
@@ -102,6 +103,7 @@ mod keyspace;
 mod monitor;
 mod partition;
 mod path;
+mod poison_dart;
 mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
@@ -169,6 +171,49 @@ pub type LsmError = lsm_tree::Error;
 #[doc(hidden)]
 pub use lsm_tree::AbstractTree;
 
-pub use lsm_tree::{
-    AnyTree, BlobCache, BlockCache, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue,
-};
+pub use lsm_tree::{AnyTree, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue};
+
+// TODO: remove in V3
+
+/// Block cache that caches frequently read disk blocks
+#[deprecated = "Use Config::cache_size instead"]
+pub struct BlockCache(u64);
+
+#[allow(deprecated)]
+impl BlockCache {
+    /// Creates a new cache with given capacity in bytes.
+    #[must_use]
+    pub fn with_capacity_bytes(bytes: u64) -> Self {
+        Self(bytes)
+    }
+
+    /// Returns the cache capacity in bytes.
+    #[must_use]
+    pub fn capacity(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Blob cache that caches frequently read blobs
+#[deprecated = "Use Config::cache_size instead"]
+#[allow(deprecated)]
+pub struct BlobCache(BlockCache);
+
+#[allow(deprecated)]
+impl BlobCache {
+    /// Creates a new cache with given capacity in bytes.
+    #[must_use]
+    pub fn with_capacity_bytes(bytes: u64) -> Self {
+        #[allow(deprecated)]
+        Self(BlockCache::with_capacity_bytes(bytes))
+    }
+}
+
+#[allow(deprecated)]
+impl std::ops::Deref for BlobCache {
+    type Target = BlockCache;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

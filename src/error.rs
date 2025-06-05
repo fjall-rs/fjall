@@ -70,7 +70,20 @@ impl From<lsm_tree::Error> for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Storage(inner) => Some(inner),
+            Self::Io(inner) => Some(inner),
+            Self::Encode(inner) => Some(inner),
+            Self::Decode(inner) => Some(inner),
+            Self::JournalRecovery(inner) => Some(inner),
+            Self::InvalidVersion(_) => None,
+            Self::Poisoned => None,
+            Self::PartitionDeleted => None,
+        }
+    }
+}
 
 /// Result helper type
 pub type Result<T> = std::result::Result<T, Error>;

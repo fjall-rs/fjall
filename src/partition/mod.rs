@@ -33,7 +33,10 @@ use std::{
     fs::File,
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, RwLock,
+    },
     time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
@@ -99,6 +102,9 @@ pub struct PartitionHandleInner {
     pub(crate) snapshot_tracker: SnapshotTracker,
 
     pub(crate) stats: Arc<Stats>,
+
+    /// Number of completed memtable flushes in this partition
+    pub(crate) flushes_completed: AtomicUsize,
 }
 
 impl Drop for PartitionHandleInner {
@@ -129,14 +135,14 @@ impl Drop for PartitionHandleInner {
                                 log::error!(
                                     "Failed to cleanup deleted partition's folder at {path:?}: {e}"
                                 );
-                            };
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
                 }
-            };
+            }
         }
 
         #[cfg(feature = "__internal_whitebox")]
@@ -220,6 +226,28 @@ impl GarbageCollection for PartitionHandle {
 }
 
 impl PartitionHandle {
+    /// Ingests a sorted stream of key-value pairs into the partition.
+    ///
+    /// Can only be called on a new fresh, empty partition.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the partition is **not** initially empty.
+    ///
+    /// Will panic if the input iterator is not sorted in ascending order.
+    pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        iter: impl Iterator<Item = (K, V)>,
+    ) -> crate::Result<()> {
+        self.tree
+            .ingest(iter.map(|(k, v)| (k.into(), v.into())))
+            .map_err(Into::into)
+    }
+
     pub(crate) fn from_keyspace(
         keyspace: &Keyspace,
         tree: AnyTree,
@@ -233,6 +261,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -273,8 +302,7 @@ impl PartitionHandle {
 
         let mut base_config = lsm_tree::Config::new(base_folder)
             .descriptor_table(keyspace.config.descriptor_table.clone())
-            .block_cache(keyspace.config.block_cache.clone())
-            .blob_cache(keyspace.config.blob_cache.clone())
+            .use_cache(keyspace.config.cache.clone())
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
@@ -300,6 +328,7 @@ impl PartitionHandle {
             keyspace_config: keyspace.config.clone(),
             flush_manager: keyspace.flush_manager.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
+            flushes_completed: AtomicUsize::new(0),
             journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
@@ -443,7 +472,7 @@ impl PartitionHandle {
 
     /// Approximates the amount of items in the partition.
     ///
-    /// For update -or delete-heavy workloads, this value will
+    /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
     ///
     /// For insert-only workloads (e.g. logs, time series)
@@ -457,7 +486,7 @@ impl PartitionHandle {
     /// # let folder = tempfile::tempdir()?;
     /// # let keyspace = Config::new(folder).open()?;
     /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(partition.len()?, 0);
+    /// assert_eq!(partition.approximate_len(), 0);
     ///
     /// partition.insert("1", "abc")?;
     /// assert_eq!(partition.approximate_len(), 1);
@@ -802,16 +831,10 @@ impl PartitionHandle {
     }
 
     fn check_write_stall(&self) {
-        let seg_count = self.tree.first_level_segment_count();
+        let l0_run_count = self.tree.l0_run_count();
 
-        if seg_count >= 20 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
-            let sleep_us = get_write_delay(seg_count);
+        if l0_run_count >= 20 {
+            let sleep_us = get_write_delay(l0_run_count);
 
             if sleep_us > 0 {
                 log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
@@ -822,13 +845,7 @@ impl PartitionHandle {
     }
 
     fn check_write_halt(&self) {
-        while self.tree.first_level_segment_count() >= 32 {
-            if self.tree.is_first_level_disjoint() {
-                // NOTE: If the first level is disjoint, we are probably dealing with a monotonic series
-                // so nothing to do
-                return;
-            }
-
+        while self.tree.l0_run_count() >= 32 {
             log::info!("Halting writes until L0 is cleared up...");
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(10));
@@ -837,11 +854,9 @@ impl PartitionHandle {
 
     pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable().map_err(|e| {
+            self.rotate_memtable().inspect_err(|_| {
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
-
-                e
             })?;
 
             self.check_journal_size();
@@ -878,18 +893,26 @@ impl PartitionHandle {
         }
     }
 
-    /// Number of disk segments (a.k.a. SST files) in the LSM-tree
+    /// Number of disk segments (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.tree.segment_count()
     }
 
-    /// Number of blob files in the LSM-tree
+    /// Number of blob files in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
+    }
+
+    /// Number of completed memtable flushes in this partition.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn flushes_completed(&self) -> usize {
+        self.flushes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Opens a snapshot of this partition.
@@ -905,6 +928,28 @@ impl PartitionHandle {
             self.tree.snapshot(seqno),
             SnapshotNonce::new(seqno, self.snapshot_tracker.clone()),
         )
+    }
+
+    /// Performs major compaction, blocking the caller until it's done.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn major_compact(&self) -> crate::Result<()> {
+        match &self.config.compaction_strategy {
+            crate::compaction::Strategy::Leveled(x) => self.tree.major_compact(
+                u64::from(x.target_size),
+                self.snapshot_tracker.get_seqno_safe_to_gc(),
+            )?,
+            crate::compaction::Strategy::SizeTiered(_) => self
+                .tree
+                .major_compact(u64::MAX, self.snapshot_tracker.get_seqno_safe_to_gc())?,
+            crate::compaction::Strategy::Fifo(_) => {
+                log::warn!("Major compaction not supported for FIFO strategy");
+            }
+        }
+        Ok(())
     }
 
     /// Inserts a key-value pair into the partition.
@@ -961,9 +1006,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;
@@ -1037,9 +1080,7 @@ impl PartitionHandle {
             journal_writer
                 .persist(crate::PersistMode::Buffer)
                 .map_err(|e| {
-                    log::error!(
-                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.store(true, Ordering::Relaxed);
                     e
                 })?;

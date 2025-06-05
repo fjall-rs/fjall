@@ -6,7 +6,7 @@ use super::marker::{serialize_marker_item, Marker};
 use crate::{batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId};
 use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
 use std::{
-    fs::{rename, File, OpenOptions},
+    fs::{File, OpenOptions},
     hash::Hasher,
     io::{BufWriter, Write},
     path::{Path, PathBuf},
@@ -55,8 +55,18 @@ impl Writer {
         log::debug!(
             "Sealing active journal at {:?}, len={}B",
             self.path,
-            self.path.metadata()?.len(),
+            self.path
+                .metadata()
+                .inspect_err(|e| {
+                    log::error!(
+                        "Failed to get file metadata of journal file at {:?}: {e:?}",
+                        self.path
+                    );
+                })?
+                .len(),
         );
+
+        let prev_path = self.path.clone();
 
         let folder = self
             .path
@@ -73,41 +83,36 @@ impl Writer {
             .parse::<JournalId>()
             .expect("should be valid journal ID");
 
-        // TODO: 3.0.0 we don't really need to rename the file
-        // because journal IDs are monotonically increasing
-        // on journal recovery, we can just either treat the
-        // highest number as active journal
-        let sealed_path = folder.join(format!("{journal_id}.sealed"));
-        rename(&self.path, &sealed_path)?;
-
-        // IMPORTANT: fsync moved file
-        self.file.get_mut().sync_all()?;
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(&folder)?;
-
         let new_path = folder.join((journal_id + 1).to_string());
         log::debug!("Rotating active journal to {new_path:?}");
 
-        // TODO: we clone the path on every rotation...
-        // TODO: we shouldn't create + assign a new writer
-        // TODO: but just change ourselves accordingly
-        *self = Self::create_new(&new_path)?;
+        *self = Self::create_new(new_path.clone())?;
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&folder)?;
 
-        Ok((sealed_path, new_path))
+        Ok((prev_path, new_path))
     }
 
-    pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
-        let path = path.as_ref();
-        let file = File::create(path)?;
-        file.set_len(PRE_ALLOCATED_BYTES)?;
-        file.sync_all()?;
+    pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {
+        let path = path.into();
+
+        let file = File::create(&path).inspect_err(|e| {
+            log::error!("Failed to create journal file at {path:?}: {e:?}");
+        })?;
+
+        file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
+            log::error!(
+                "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+            );
+        })?;
+
+        file.sync_all().inspect_err(|e| {
+            log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+        })?;
 
         Ok(Self {
-            path: path.into(),
+            path,
             file: BufWriter::new(file),
             buf: Vec::new(),
             is_buffer_dirty: false,
@@ -118,9 +123,23 @@ impl Writer {
         let path = path.as_ref();
 
         if !path.try_exists()? {
-            let file = OpenOptions::new().create_new(true).write(true).open(path)?;
-            file.set_len(PRE_ALLOCATED_BYTES)?;
-            file.sync_all()?;
+            let file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(path)
+                .inspect_err(|e| {
+                    log::error!("Failed to create journal file at {path:?}: {e:?}");
+                })?;
+
+            file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
+                log::error!(
+                    "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+                );
+            })?;
+
+            file.sync_all().inspect_err(|e| {
+                log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+            })?;
 
             return Ok(Self {
                 path: path.into(),
@@ -130,7 +149,12 @@ impl Writer {
             });
         }
 
-        let file = OpenOptions::new().append(true).open(path)?;
+        let file = OpenOptions::new()
+            .append(true)
+            .open(path)
+            .inspect_err(|e| {
+                log::error!("Failed to open journal file at {path:?}: {e:?}");
+            })?;
 
         Ok(Self {
             path: path.into(),
@@ -142,16 +166,25 @@ impl Writer {
 
     /// Persists the journal file.
     pub(crate) fn persist(&mut self, mode: PersistMode) -> std::io::Result<()> {
-        log::trace!("Persist journal {:?} with mode={mode:?}", self.path);
+        log::trace!("Persisting journal at {:?} with mode={mode:?}", self.path);
 
         if self.is_buffer_dirty {
-            self.file.flush()?;
+            self.file.flush().inspect_err(|e| {
+                log::error!(
+                    "Failed to flush journal IO buffers at {:?}: {e:?}",
+                    self.path
+                );
+            })?;
             self.is_buffer_dirty = false;
         }
 
         match mode {
-            PersistMode::SyncAll => self.file.get_mut().sync_all(),
-            PersistMode::SyncData => self.file.get_mut().sync_data(),
+            PersistMode::SyncAll => self.file.get_mut().sync_all().inspect_err(|e| {
+                log::error!("Failed to fsync journal file at {:?}: {e:?}", self.path);
+            }),
+            PersistMode::SyncData => self.file.get_mut().sync_data().inspect_err(|e| {
+                log::error!("Failed to fsyncdata journal file at {:?}: {e:?}", self.path);
+            }),
             PersistMode::Buffer => Ok(()),
         }
     }

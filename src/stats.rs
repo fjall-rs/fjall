@@ -17,6 +17,9 @@ pub struct Stats {
 
     /// Number of completed memtable flushes
     pub(crate) flushes_completed: AtomicUsize,
+
+    /// Number of completed compactions
+    pub(crate) compactions_completed: AtomicUsize,
 }
 
 impl Stats {

@@ -61,7 +61,9 @@ impl Journal {
         log::trace!("Creating new journal at {path:?}");
 
         let folder = path.parent().expect("parent should exist");
-        std::fs::create_dir_all(folder)?;
+        std::fs::create_dir_all(folder).inspect_err(|e| {
+            log::error!("Failed to create journal folder at {path:?}: {e:?}");
+        })?;
 
         let writer = Writer::create_new(path)?;
 
@@ -116,7 +118,6 @@ mod tests {
     fn journal_rotation() -> crate::Result<()> {
         let dir = tempdir()?;
         let path = dir.path().join("0");
-        let path_rotated = dir.path().join("0.sealed");
         let next_path = dir.path().join("1");
 
         {
@@ -135,8 +136,7 @@ mod tests {
             writer.rotate()?;
         }
 
-        assert!(!path.try_exists()?);
-        assert!(path_rotated.try_exists()?);
+        assert!(path.try_exists()?);
         assert!(next_path.try_exists()?);
 
         Ok(())
@@ -146,10 +146,7 @@ mod tests {
     fn journal_recovery_active() -> crate::Result<()> {
         let dir = tempdir()?;
         let path = dir.path().join("0");
-        let path_rotated = dir.path().join("0.sealed");
-
-        let next_path_rotated = dir.path().join("1.sealed");
-
+        let next_path = dir.path().join("1");
         let next_next_path = dir.path().join("2");
 
         {
@@ -189,17 +186,13 @@ mod tests {
             )?;
         }
 
-        assert!(!path.try_exists()?);
-        assert!(path_rotated.try_exists()?);
-        assert!(next_path_rotated.try_exists()?);
+        assert!(path.try_exists()?);
+        assert!(next_path.try_exists()?);
         assert!(next_next_path.try_exists()?);
 
         let journal_recovered = Journal::recover(dir)?;
         assert_eq!(journal_recovered.active.path(), next_next_path);
-        assert_eq!(
-            journal_recovered.sealed,
-            &[(0, path_rotated), (1, next_path_rotated)]
-        );
+        assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
         Ok(())
     }
@@ -208,8 +201,6 @@ mod tests {
     fn journal_recovery_no_active() -> crate::Result<()> {
         let dir = tempdir()?;
         let path = dir.path().join("0");
-        let path_rotated = dir.path().join("0.sealed");
-
         let next_path = dir.path().join("1");
 
         {
@@ -230,16 +221,17 @@ mod tests {
                 writer.rotate()?;
             }
 
+            // NOTE: Delete the new, active journal -> old journal will be
+            // reused as active on next recovery
             std::fs::remove_file(&next_path)?;
         }
 
-        assert!(!path.try_exists()?);
-        assert!(path_rotated.try_exists()?);
+        assert!(path.try_exists()?);
         assert!(!next_path.try_exists()?);
 
         let journal_recovered = Journal::recover(dir)?;
-        assert_eq!(journal_recovered.active.path(), next_path);
-        assert_eq!(journal_recovered.sealed, &[(0, path_rotated)]);
+        assert_eq!(journal_recovered.active.path(), path);
+        assert_eq!(journal_recovered.sealed, &[]);
 
         Ok(())
     }

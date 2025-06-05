@@ -35,6 +35,10 @@ impl Batch {
     }
 
     /// Initializes a new write batch with preallocated capacity.
+    ///
+    /// ### Note
+    ///
+    /// "Capacity" refers to the number of batch item slots, not their size in memory.
     #[must_use]
     pub fn with_capacity(keyspace: Keyspace, capacity: usize) -> Self {
         Self {
@@ -44,6 +48,18 @@ impl Batch {
         }
     }
 
+    /// Gets the number of batched items.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Returns `true` if there are no batches items (yet).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Sets the durability level.
     #[must_use]
     pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
@@ -51,7 +67,7 @@ impl Batch {
         self
     }
 
-    /// Inserts a key-value pair into the batch
+    /// Inserts a key-value pair into the batch.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         p: &PartitionHandle,
@@ -78,7 +94,7 @@ impl Batch {
         ));
     }
 
-    /// Commits the batch to the [`Keyspace`] atomically
+    /// Commits the batch to the [`Keyspace`] atomically.
     ///
     /// # Errors
     ///
@@ -141,6 +157,9 @@ impl Batch {
             .fetch_max(batch_seqno + 1, Ordering::AcqRel);
 
         drop(journal_writer);
+
+        log::trace!("batch: Freed journal writer");
+
         drop(partitions);
 
         // IMPORTANT: Add batch size to current write buffer size
@@ -153,7 +172,7 @@ impl Batch {
 
             if let Err(e) = partition.check_memtable_overflow(memtable_size) {
                 log::error!("Failed memtable rotate check: {e:?}");
-            };
+            }
 
             // IMPORTANT: Check write buffer as well
             // Otherwise batch writes are never stalled/halted

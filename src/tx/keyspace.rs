@@ -125,13 +125,19 @@ impl TxKeyspace {
 
     /// Creates or opens a keyspace partition.
     ///
+    /// If the partition does not yet exist, it will be created configured with `create_options`.
+    /// Otherwise simply a handle to the existing partition will be returned.
+    ///
+    /// Partition names can be up to 255 characters long, can not be empty and
+    /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
+    ///
     /// # Errors
     ///
     /// Returns error, if an IO error occurred.
     ///
     /// # Panics
     ///
-    /// Panics if the partition name includes characters other than: a-z A-Z 0-9 _ -
+    /// Panics if the partition name is invalid.
     pub fn open_partition(
         &self,
         name: &str,

@@ -358,6 +358,9 @@ impl ReadTransaction {
         partition: &'a TxPartitionHandle,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+        // TODO: 3.0.0: if we bind the iterator lifetime to ReadTx, we can remove the snapshot nonce from Iter
+        // TODO: for all other ReadTx::iterators too
+
         let iter = partition
             .inner
             .tree
