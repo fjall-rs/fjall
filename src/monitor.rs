@@ -12,6 +12,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc, RwLock},
     time::Duration,
 };
+use std_semaphore::Semaphore;
 
 // TODO: remove in favor of just checking in the write path
 // TODO: and sending signals to background workers
@@ -26,6 +27,7 @@ pub struct Monitor {
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) snapshot_tracker: SnapshotTracker,
     pub(crate) keyspace_poison: Arc<AtomicBool>,
+    pub(crate) flush_semaphore: Arc<Semaphore>,
 }
 
 impl Activity for Monitor {
@@ -81,7 +83,7 @@ impl Activity for Monitor {
             // crash
             if queued_size > write_buffer_size {
                 log::error!(
-                    "Queued size should not be able to be greater than entire write buffer size"
+                    "Queued size should not be able to be greater than entire write buffer size",
                 );
                 return Ok(());
             }
@@ -131,12 +133,13 @@ impl Monitor {
             seqno: keyspace.seqno.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
             keyspace_poison: keyspace.is_poisoned.clone(),
+            flush_semaphore: keyspace.flush_semaphore.clone(),
         }
     }
 
     fn try_reduce_journal_size(&self) {
         log::debug!(
-            "monitor: try flushing affected partitions because journals have passed 50% of threshold"
+            "monitor: try flushing some partitions because journals have passed 50% of threshold",
         );
 
         let partitions = self.partitions.read().expect("lock is poisoned");
@@ -162,6 +165,7 @@ impl Monitor {
                 .get_partitions_with_tasks();
 
             if partitions_names_with_queued_tasks.contains(&lowest_persisted_partition.name) {
+                self.flush_semaphore.release();
                 return;
             }
 
@@ -170,7 +174,7 @@ impl Monitor {
                 Err(e) => {
                     log::error!(
                         "monitor: memtable rotation failed for {:?}: {e:?}",
-                        lowest_persisted_partition.name
+                        lowest_persisted_partition.name,
                     );
 
                     self.keyspace_poison
@@ -182,7 +186,7 @@ impl Monitor {
 
     fn try_reduce_write_buffer_size(&self) {
         log::trace!(
-            "monitor: flush inactive partition because write buffer has passed 50% of threshold"
+            "monitor: flush inactive partition because write buffer has passed 50% of threshold",
         );
 
         let mut partitions = self
@@ -221,7 +225,7 @@ impl Monitor {
                 Err(e) => {
                     log::error!(
                         "monitor: memtable rotation failed for {:?}: {e:?}",
-                        partition.name
+                        partition.name,
                     );
 
                     self.keyspace_poison
