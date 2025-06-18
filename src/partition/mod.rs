@@ -807,26 +807,23 @@ impl PartitionHandle {
     }
 
     fn check_journal_size(&self) {
-        loop {
+        let limit = self.keyspace_config.max_journaling_size_in_bytes;
+
+        for i in 1.. {
             let bytes = self
                 .journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .disk_space_used();
 
-            if bytes <= self.keyspace_config.max_journaling_size_in_bytes {
-                if bytes as f64 > self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.9 {
-                    log::info!(
-                        "partition: write stall because 90% journal threshold has been reached"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-
+            if bytes < limit {
                 break;
             }
 
-            log::info!("partition: write halt because of too many journals");
-            std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
+            let sleep_ms = i.min(100);
+
+            log::info!("partition: write stall because journal is too large");
+            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
         }
     }
 
@@ -872,23 +869,17 @@ impl PartitionHandle {
         let limit = self.keyspace_config.max_write_buffer_size_in_bytes;
 
         if initial_size > limit {
-            let p90_limit = (limit as f64) * 0.9;
-
-            loop {
+            for i in 1.. {
                 let bytes = self.write_buffer_manager.get();
 
                 if bytes < limit {
-                    if bytes as f64 > p90_limit {
-                        log::info!(
-                            "partition: write stall because 90% write buffer threshold has been reached"
-                        );
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
                     break;
                 }
 
-                log::info!("partition: write halt because of write buffer saturation");
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                let sleep_ms = i.min(100);
+
+                log::info!("partition: write stall because of write buffer saturation");
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
             }
         }
     }
