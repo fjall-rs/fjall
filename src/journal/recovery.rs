@@ -40,7 +40,11 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
             .strip_suffix(".sealed") // TODO: 3.0.0 remove in V3
             .unwrap_or(filename)
             .parse::<JournalId>()
-            .expect("should be valid journal ID");
+            .map_err(|e| {
+                log::error!("found an invalid journal file name {filename:?}: {e:?}");
+                e
+            })
+            .expect("should be a valid journal file name");
 
         max_journal_id = max_journal_id.max(journal_id);
 
