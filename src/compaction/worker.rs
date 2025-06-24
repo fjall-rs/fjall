@@ -24,7 +24,7 @@ pub fn run(
         item.0.name,
     );
 
-    let strategy = item.config.compaction_strategy.clone();
+    let strategy = &item.config.compaction_strategy;
 
     stats.active_compaction_count.fetch_add(1, Relaxed);
 
