@@ -26,7 +26,12 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
         let path = dirent.path();
         let filename = dirent.file_name();
 
+        // https://en.wikipedia.org/wiki/.DS_Store
         if filename == ".DS_Store" {
+            continue;
+        }
+        // https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats
+        if filename.to_string_lossy().starts_with("._") {
             continue;
         }
 
