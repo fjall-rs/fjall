@@ -20,7 +20,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
     let partitions_folder = keyspace.config.path.join(PARTITIONS_FOLDER);
 
-    log::trace!("Recovering partitions in {:?}", partitions_folder);
+    log::trace!("Recovering partitions in {partitions_folder:?}");
 
     #[allow(clippy::significant_drop_tightening)]
     let mut partitions_lock = keyspace.partitions.write().expect("lock is poisoned");
@@ -35,11 +35,11 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
             continue;
         }
 
-        log::trace!("Recovering partition {:?}", partition_name);
+        log::trace!("Recovering partition {partition_name:?}");
 
         // NOTE: Check deletion marker
         if partition_path.join(PARTITION_DELETED_MARKER).try_exists()? {
-            log::debug!("Deleting deleted partition {:?}", partition_name);
+            log::debug!("Deleting deleted partition {partition_name:?}");
 
             // IMPORTANT: First, delete the manifest,
             // once that is deleted, the partition is treated as uninitialized
@@ -59,7 +59,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
 
         // NOTE: Check for marker, maybe the partition is not fully initialized
         if !partition_path.join(LSM_MANIFEST_FILE).try_exists()? {
-            log::debug!("Deleting uninitialized partition {:?}", partition_name);
+            log::debug!("Deleting uninitialized partition {partition_name:?}");
             std::fs::remove_dir_all(partition_path)?;
             continue;
         }
@@ -111,7 +111,7 @@ pub fn recover_partitions(keyspace: &Keyspace) -> crate::Result<()> {
         // Add partition to dictionary
         partitions_lock.insert(partition_name.clone(), partition.clone());
 
-        log::trace!("Recovered partition {:?}", partition_name);
+        log::trace!("Recovered partition {partition_name:?}");
     }
 
     Ok(())
@@ -250,7 +250,7 @@ pub fn recover_sealed_memtables(
             size_in_bytes: journal_size,
         });
 
-        log::debug!("Requeued sealed journal at {:?}", journal_path);
+        log::debug!("Requeued sealed journal at {journal_path:?}");
     }
 
     Ok(())
