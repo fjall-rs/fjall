@@ -2,7 +2,7 @@ use fjall::Config;
 use test_log::test;
 
 #[test]
-fn keyspace_journal_recovery_mac_underscore_file() -> fjall::Result<()> {
+fn keyspace_journal_recovery_mac_ds_store() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
