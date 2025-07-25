@@ -822,7 +822,10 @@ impl PartitionHandle {
 
             let sleep_ms = i.min(100);
 
-            log::info!("partition: write stall because journal is too large");
+            log::info!(
+                "Write stall in partition {} because journal is too large",
+                self.name
+            );
             std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
         }
     }
@@ -834,7 +837,10 @@ impl PartitionHandle {
             let sleep_us = get_write_delay(l0_run_count);
 
             if sleep_us > 0 {
-                log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
+                log::info!(
+                    "Stalling writes by {sleep_us}µs in partition {} due to many segments in L0...",
+                    self.name
+                );
                 self.compaction_manager.notify(self.clone());
                 std::thread::sleep(Duration::from_micros(sleep_us));
             }
@@ -843,7 +849,10 @@ impl PartitionHandle {
 
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 32 {
-            log::info!("Halting writes until L0 is cleared up...");
+            log::info!(
+                "Halting writes in partition {} until L0 is cleared up...",
+                self.name
+            );
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -878,7 +887,10 @@ impl PartitionHandle {
 
                 let sleep_ms = i.min(100);
 
-                log::info!("partition: write stall because of write buffer saturation");
+                log::info!(
+                    "Write stall in partition {} because of write buffer saturation",
+                    self.name
+                );
                 std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
             }
         }
