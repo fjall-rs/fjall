@@ -825,7 +825,10 @@ impl PartitionHandle {
                 break;
             }
 
-            log::info!("partition: write halt because of too many journals");
+            log::info!(
+                "Write stall in partition {} because journal is too large",
+                self.name
+            );
             std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
         }
     }
@@ -837,7 +840,10 @@ impl PartitionHandle {
             let sleep_us = get_write_delay(l0_run_count);
 
             if sleep_us > 0 {
-                log::info!("Stalling writes by {sleep_us}µs, many segments in L0...");
+                log::info!(
+                    "Stalling writes by {sleep_us}µs in partition {} due to many segments in L0...",
+                    self.name
+                );
                 self.compaction_manager.notify(self.clone());
                 std::thread::sleep(Duration::from_micros(sleep_us));
             }
@@ -846,7 +852,10 @@ impl PartitionHandle {
 
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 32 {
-            log::info!("Halting writes until L0 is cleared up...");
+            log::info!(
+                "Halting writes in partition {} until L0 is cleared up...",
+                self.name
+            );
             self.compaction_manager.notify(self.clone());
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -887,7 +896,10 @@ impl PartitionHandle {
                     break;
                 }
 
-                log::info!("partition: write halt because of write buffer saturation");
+                log::info!(
+                    "Write stall in partition {} because of write buffer saturation",
+                    self.name
+                );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
@@ -1093,6 +1105,99 @@ impl PartitionHandle {
         drop(journal_writer);
 
         let write_buffer_size = self.write_buffer_manager.allocate(item_size);
+
+        self.check_memtable_overflow(memtable_size)?;
+        self.check_write_buffer_size(write_buffer_size);
+
+        Ok(())
+    }
+
+    /// Removes an item from the partition, leaving behind a weak tombstone.
+    ///
+    /// When a weak tombstone is matched with a single write in a compaction,
+    /// the tombstone will be removed along with the value. If the key was
+    /// overwritten the result of a `remove_weak` is undefined.
+    ///
+    /// Only use this remove if it is known that the key has only been written
+    /// to once since its creation or last `remove_weak`.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    ///
+    /// let item = partition.get("a")?.expect("should have item");
+    /// assert_eq!("abc".as_bytes(), &*item);
+    ///
+    /// partition.remove_weak("a")?;
+    ///
+    /// let item = partition.get("a")?;
+    /// assert_eq!(None, item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+        use std::sync::atomic::Ordering;
+
+        if self.is_deleted.load(Ordering::Relaxed) {
+            return Err(crate::Error::PartitionDeleted);
+        }
+
+        let key = key.into();
+
+        let mut journal_writer = self.journal.get_writer();
+
+        let seqno = self.seqno.next();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
+        journal_writer.write_raw(
+            &self.name,
+            &key,
+            &[],
+            lsm_tree::ValueType::WeakTombstone,
+            seqno,
+        )?;
+
+        if !self.config.manual_journal_persist {
+            journal_writer
+                .persist(crate::PersistMode::Buffer)
+                .map_err(|e| {
+                    log::error!(
+                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
+                    );
+                    self.is_poisoned.store(true, Ordering::Relaxed);
+                    e
+                })?;
+        }
+
+        let (item_size, memtable_size) = self.tree.remove(key, seqno);
+
+        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+
+        drop(journal_writer);
+
+        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);

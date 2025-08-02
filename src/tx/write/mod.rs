@@ -406,6 +406,32 @@ impl BaseTransaction {
             ));
     }
 
+    /// Removes an item from the partition, leaving behind a weak tombstone.
+    ///
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+        // TODO: PERF: slow??
+        self.memtables
+            .entry(partition.inner.name.clone())
+            .or_default()
+            .insert(lsm_tree::InternalValue::new_weak_tombstone(
+                key,
+                // NOTE: Just take the max seqno, which should never be reached
+                // that way, the write is definitely always the newest
+                SeqNo::MAX,
+            ));
+    }
+
     /// Commits the transaction.
     ///
     /// # Errors
