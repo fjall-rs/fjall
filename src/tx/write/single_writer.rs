@@ -602,6 +602,51 @@ impl<'a> WriteTransaction<'a> {
         self.inner.remove(partition, key);
     }
 
+    /// Removes an item from the partition, leaving behind a weak tombstone.
+    ///
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
+    ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    ///
+    /// let mut tx = keyspace.write_tx();
+    /// tx.remove_weak(&partition, "a");
+    ///
+    /// // Read-your-own-write
+    /// let item = tx.get(&partition, "a")?;
+    /// assert_eq!(None, item);
+    ///
+    /// drop(tx);
+    ///
+    /// // Deletion was not committed
+    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn remove_weak<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+        self.inner.remove_weak(partition, key);
+    }
+
     /// Commits the transaction.
     ///
     /// # Errors
