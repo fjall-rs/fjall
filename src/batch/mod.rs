@@ -84,7 +84,17 @@ impl Batch {
             .push(Item::new(p.name.clone(), key, vec![], ValueType::Tombstone));
     }
 
-    /// Adds a weak tombstone marker for a key
+    /// Adds a weak tombstone marker for a key.
+    /// 
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
+    ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, p: &PartitionHandle, key: K) {
         self.data.push(Item::new(
             p.name.clone(),

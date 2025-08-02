@@ -683,12 +683,14 @@ impl WriteTransaction {
 
     /// Removes an item from the partition, leaving behind a weak tombstone.
     ///
-    /// When a weak tombstone is matched with a single write in a compaction,
-    /// the tombstone will be removed along with the value. If the key was
-    /// overwritten the result of a `remove_weak` is undefined.
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
     ///
-    /// Only use this remove if it is known that the key has only been written
-    /// to once since its creation or last `remove_weak`.
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
     ///
     /// # Examples
     ///

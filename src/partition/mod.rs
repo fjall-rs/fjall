@@ -1112,6 +1112,10 @@ impl PartitionHandle {
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
     ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    ///
     /// # Examples
     ///
     /// ```
