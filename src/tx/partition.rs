@@ -354,6 +354,61 @@ impl TransactionalPartitionHandle {
         }
     }
 
+    /// Removes an item from the partition, leaving behind a weak tombstone.
+    ///
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let keyspace = Config::new(folder).open_transactional()?;
+    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// partition.insert("a", "abc")?;
+    /// assert!(!keyspace.read_tx().is_empty(&partition)?);
+    ///
+    /// partition.remove_weak("a")?;
+    /// assert!(keyspace.read_tx().is_empty(&partition)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.keyspace.write_tx();
+            tx.remove_weak(self, key);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.keyspace.write_tx()?;
+            tx.remove_weak(self, key);
+            tx.commit()?.expect("blind remove should not conflict ever");
+            Ok(())
+        }
+    }
+
     /// Retrieves an item from the partition.
     ///
     /// The operation will run wrapped in a read snapshot.
