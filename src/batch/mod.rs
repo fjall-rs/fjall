@@ -78,7 +78,7 @@ impl Batch {
             .push(Item::new(p.name.clone(), key, value, ValueType::Value));
     }
 
-    /// Adds a tombstone marker for a key
+    /// Removes a key-value pair.
     pub fn remove<K: Into<UserKey>>(&mut self, p: &PartitionHandle, key: K) {
         self.data
             .push(Item::new(p.name.clone(), key, vec![], ValueType::Tombstone));
