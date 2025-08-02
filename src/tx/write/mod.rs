@@ -414,10 +414,6 @@ impl BaseTransaction {
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
     ///
-    /// # Experimental
-    ///
-    /// This function is currently experimental.
-    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.

@@ -390,6 +390,7 @@ impl TransactionalPartitionHandle {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
         #[cfg(feature = "single_writer_tx")]
         {
