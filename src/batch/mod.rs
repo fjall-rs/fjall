@@ -85,7 +85,7 @@ impl Batch {
     }
 
     /// Adds a weak tombstone marker for a key.
-    /// 
+    ///
     /// The tombstone marker of this delete operation will vanish when it
     /// collides with its corresponding insertion.
     /// This may cause older versions of the value to be resurrected, so it should
