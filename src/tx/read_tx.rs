@@ -239,7 +239,7 @@ impl ReadTransaction {
 
     /// Returns `true` if the partition is empty.
     ///
-    /// This operation has O(1) complexity.
+    /// This operation has O(log N) complexity.
     ///
     /// # Examples
     ///
