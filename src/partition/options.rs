@@ -103,6 +103,9 @@ pub struct CreateOptions {
     /// Maximum size of this partition's memtable - can be changed during runtime
     pub(crate) max_memtable_size: u64,
 
+    /// Data block hash ratio
+    pub data_block_hash_ratio: f32,
+
     /// Block size of data blocks.
     #[doc(hidden)]
     pub data_block_size: u32,
@@ -276,6 +279,7 @@ impl lsm_tree::coding::Decode for CreateOptions {
         };
 
         Ok(Self {
+            data_block_hash_ratio: 0.0, // TODO: recover
             max_memtable_size,
             data_block_size,
             index_block_size,
@@ -298,6 +302,8 @@ impl Default for CreateOptions {
             manual_journal_persist: false,
 
             max_memtable_size: /* 16 MiB */ 16 * 1_024 * 1_024,
+
+            data_block_hash_ratio: 0.0,
 
             data_block_size: default_tree_config.data_block_size,
             index_block_size: default_tree_config.index_block_size,
@@ -323,6 +329,23 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
+    /// Sets the hash ratio for the hash index in data blocks.
+    ///
+    /// The hash index speeds up point queries by using an embedded
+    /// hash map in data blocks, but uses more space/memory.
+    ///
+    /// Something along the lines of 1.0 - 2.0 is sensible.
+    ///
+    /// If 0, the hash index is not constructed.
+    ///
+    /// Default = 0.0
+    #[must_use]
+    #[doc(hidden)]
+    pub fn data_block_hash_ratio(mut self, ratio: f32) -> Self {
+        self.data_block_hash_ratio = ratio;
+        self
+    }
+
     /// Sets the bits per key for bloom filters.
     ///
     /// More bits per key increases memory usage, but decreases the

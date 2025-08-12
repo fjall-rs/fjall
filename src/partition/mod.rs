@@ -307,7 +307,8 @@ impl PartitionHandle {
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
             .compression(config.compression)
-            .bloom_bits_per_key(config.bloom_bits_per_key);
+            .bloom_bits_per_key(config.bloom_bits_per_key)
+            .data_block_hash_ratio(config.data_block_hash_ratio);
 
         if let Some(kv_opts) = &config.kv_separation {
             base_config = base_config
