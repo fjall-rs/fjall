@@ -35,6 +35,8 @@ pub fn run(
         .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
+        stats.active_compaction_count.fetch_sub(1, Relaxed);
+
         return Err(e.into());
     }
 
