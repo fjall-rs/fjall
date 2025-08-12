@@ -899,7 +899,7 @@ impl PartitionHandle {
 
                 log::info!(
                     "Write stall in partition {} because of write buffer saturation",
-                    self.name
+                    self.name,
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -1198,7 +1198,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
