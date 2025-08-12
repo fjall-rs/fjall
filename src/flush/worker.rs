@@ -127,7 +127,9 @@ pub fn run(
         return Ok(());
     }
 
-    for result in run_multi_flush(&partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
+    let gc_watermark = snapshot_tracker.get_seqno_safe_to_gc();
+
+    for result in run_multi_flush(&partitioned_tasks, gc_watermark) {
         match result {
             Ok(MultiFlushResultItem {
                 partition,
@@ -136,7 +138,10 @@ pub fn run(
             }) => {
                 // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = partition.tree.register_segments(&created_segments) {
+                if let Err(e) = partition
+                    .tree
+                    .register_segments(&created_segments, gc_watermark)
+                {
                     log::error!("Failed to register segments: {e:?}");
                     return Err(e.into());
                 }
