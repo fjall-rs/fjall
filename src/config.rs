@@ -62,8 +62,9 @@ fn get_open_file_limit() -> usize {
     return 150;
 }
 
-impl Default for Config {
-    fn default() -> Self {
+impl Config {
+    /// Creates a new configuration
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
 
         // Reserve 1 CPU core if possible
@@ -72,8 +73,8 @@ impl Default for Config {
             .max(1);
 
         Self {
-            path: absolute_path(".fjall_data"),
-            clean_path_on_drop: false,
+            path: absolute_path(path),
+                clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
             max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
@@ -85,16 +86,6 @@ impl Default for Config {
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32*1_024*1_024)),
             monkey_patch_cache_size: 0,
-        }
-    }
-}
-
-impl Config {
-    /// Creates a new configuration
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        Self {
-            path: absolute_path(path),
-            ..Default::default()
         }
     }
 
