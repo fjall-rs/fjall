@@ -29,21 +29,17 @@ byteorder = "1.5.0"
 byteview = "0.6.1"
 lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "3.0.0", default-features = false, features = [
 ] }
-log = "0.4.21"
+log = "0.4.27"
 std-semaphore = "0.1.0"
-tempfile = "3.10.1"
-path-absolutize = "3.1.1"
-dashmap = "6.0.1"
-xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
+tempfile = "3.20.0"
+dashmap = "6.1.0"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
-test-log = "0.2.16"
-rand = "0.9.0"
-
-# half 2.5.0 has MSRV 1.81
-half = "=2.4.0"
+test-log = "0.2.18"
+rand = "0.9.2"
 
 [[bench]]
 name = "lsmt"
