@@ -21,6 +21,8 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
     let mut max_journal_id: JournalId = 0;
     let mut journal_fragments = Vec::<(JournalId, PathBuf)>::new();
 
+    log::trace!("Got journal fragments: {journal_fragments:#?}");
+
     for dirent in std::fs::read_dir(path)? {
         let dirent = dirent?;
         let path = dirent.path();

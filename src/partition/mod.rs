@@ -307,7 +307,8 @@ impl PartitionHandle {
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
             .compression(config.compression)
-            .bloom_bits_per_key(config.bloom_bits_per_key);
+            .bloom_bits_per_key(config.bloom_bits_per_key)
+            .data_block_hash_ratio(config.data_block_hash_ratio);
 
         if let Some(kv_opts) = &config.kv_separation {
             base_config = base_config
@@ -547,7 +548,7 @@ impl PartitionHandle {
 
     /// Returns `true` if the partition is empty.
     ///
-    /// This operation has O(1) complexity.
+    /// This operation has O(log N) complexity.
     ///
     /// # Examples
     ///
@@ -861,7 +862,7 @@ impl PartitionHandle {
         }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
+    pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
             self.rotate_memtable().inspect_err(|_| {
                 self.is_poisoned
@@ -898,7 +899,7 @@ impl PartitionHandle {
 
                 log::info!(
                     "Write stall in partition {} because of write buffer saturation",
-                    self.name
+                    self.name,
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -1030,7 +1031,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
 
@@ -1104,7 +1105,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
@@ -1197,7 +1198,7 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);

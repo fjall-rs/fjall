@@ -12,7 +12,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.76.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.82.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -132,12 +132,6 @@ For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/m
 Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
 
 *Enabled by default.*
-
-### miniz
-
-Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://github.com/Frommi/miniz_oxide).
-
-*Disabled by default.*
 
 ### single_writer_tx
 

@@ -223,7 +223,7 @@ pub fn recover_sealed_memtables(
                 // IMPORTANT: Add sealed memtable size to current write buffer size
                 keyspace
                     .write_buffer_manager
-                    .allocate(sealed_memtable.size().into());
+                    .allocate(sealed_memtable.size());
 
                 // TODO: unit test write buffer size after recovery
 

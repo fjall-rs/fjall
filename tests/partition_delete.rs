@@ -133,7 +133,7 @@ fn tx_partition_delete() -> fjall::Result<()> {
 
         assert!(path.try_exists()?);
 
-        keyspace.delete_partition(tree)?;
+        keyspace.inner().delete_partition(tree.inner().clone())?;
 
         assert!(!path.try_exists()?);
     }

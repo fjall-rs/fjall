@@ -169,15 +169,6 @@ impl TxKeyspace {
         self.inner.partition_exists(name)
     }
 
-    /// Destroys the partition, removing all data associated with it.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn delete_partition(&self, handle: TxPartitionHandle) -> crate::Result<()> {
-        self.inner.delete_partition(handle.inner)
-    }
-
     /// Returns the current write buffer size (active + sealed memtables).
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {

@@ -154,7 +154,7 @@ impl BaseTransaction {
         let key = key.as_ref();
 
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
             }
         }
@@ -179,7 +179,9 @@ impl BaseTransaction {
         let key = key.as_ref();
 
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
+                // NOTE: Values are limited to u32 in lsm-tree
+                #[allow(clippy::cast_possible_truncation)]
                 return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
             }
         }
@@ -205,7 +207,7 @@ impl BaseTransaction {
         let key = key.as_ref();
 
         if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(!item.key.is_tombstone());
             }
         }
@@ -376,9 +378,9 @@ impl BaseTransaction {
             .insert(lsm_tree::InternalValue::from_components(
                 key,
                 value,
-                // NOTE: Just take the max seqno, which should never be reached
+                // NOTE: Just take the max seqno - 1, which should never be reached
                 // that way, the write is definitely always the newest
-                SeqNo::MAX,
+                SeqNo::MAX - 1,
                 lsm_tree::ValueType::Value,
             ));
     }
@@ -398,9 +400,9 @@ impl BaseTransaction {
             .or_default()
             .insert(lsm_tree::InternalValue::new_tombstone(
                 key,
-                // NOTE: Just take the max seqno, which should never be reached
+                // NOTE: Just take the max seqno - 1, which should never be reached
                 // that way, the write is definitely always the newest
-                SeqNo::MAX,
+                SeqNo::MAX - 1,
             ));
     }
 
