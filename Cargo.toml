@@ -19,7 +19,6 @@ path = "src/lib.rs"
 [features]
 default = ["single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
-miniz = ["lsm-tree/miniz"]
 bytes = ["lsm-tree/bytes"]
 single_writer_tx = []
 ssi_tx = []

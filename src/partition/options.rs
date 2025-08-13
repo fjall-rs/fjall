@@ -57,10 +57,7 @@ impl Default for KvSeparationOptions {
             #[cfg(feature = "lz4")]
             compression: CompressionType::Lz4,
 
-            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            compression: CompressionType::Miniz(6),
-
-            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            #[cfg(not(feature = "lz4"))]
             compression: CompressionType::None,
 
             file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
@@ -315,10 +312,7 @@ impl Default for CreateOptions {
             #[cfg(feature = "lz4")]
             compression: CompressionType::Lz4,
 
-            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            compression: CompressionType::Miniz(6),
-
-            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            #[cfg(not(feature = "lz4"))]
             compression: CompressionType::None,
 
             kv_separation: None,
@@ -371,7 +365,7 @@ impl CreateOptions {
     ///
     /// Once set for a partition, this property is not considered in the future.
     ///
-    /// Default = In order: Lz4 -> Miniz -> None, depending on compilation flags
+    /// Default = In order: Lz4 -> None, depending on compilation flags
     #[must_use]
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
@@ -478,7 +472,7 @@ mod tests {
     use test_log::test;
 
     #[test]
-    #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+    #[cfg(not(feature = "lz4"))]
     fn partition_opts_compression_none() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::None);
@@ -512,53 +506,5 @@ mod tests {
         c = c.compression(CompressionType::None);
         assert_eq!(c.compression, CompressionType::None);
         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    #[cfg(not(feature = "lz4"))]
-    #[cfg(feature = "miniz")]
-    fn partition_opts_compression_miniz() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::Miniz(6));
-        assert_eq!(c.kv_separation, None);
-
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::Miniz(6),
-        );
-
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
-
-    #[test]
-    #[cfg(all(feature = "miniz", feature = "lz4"))]
-    fn partition_opts_compression_all() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::Lz4);
-        assert_eq!(c.kv_separation, None);
-
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::Lz4,
-        );
-
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::None
-        );
-
-        c = c.compression(CompressionType::Miniz(3));
-        assert_eq!(c.compression, CompressionType::Miniz(3));
-        assert_eq!(
-            c.kv_separation.unwrap().compression,
-            CompressionType::Miniz(3)
-        );
     }
 }
