@@ -245,6 +245,12 @@ impl PartitionHandle {
     ) -> crate::Result<()> {
         self.tree
             .ingest(iter.map(|(k, v)| (k.into(), v.into())))
+            .inspect(|()| {
+                self.seqno
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.visible_seqno
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            })
             .map_err(Into::into)
     }
 

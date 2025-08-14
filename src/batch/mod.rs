@@ -142,7 +142,7 @@ impl Batch {
 
         let mut batch_size = 0u64;
 
-        log::trace!("Applying {} batched items to memtable(s)", self.data.len());
+        log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
         for item in std::mem::take(&mut self.data) {
             let Some(partition) = partitions.get(&item.partition) else {
