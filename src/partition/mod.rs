@@ -11,17 +11,14 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config as KeyspaceConfig,
     file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
-    flush::manager::{FlushManager, Task as FlushTask},
+    flush::manager::Task as FlushTask,
+    flush_tracker::FlushTracker,
     gc::GarbageCollection,
-    journal::{
-        manager::{EvictionWatermark, JournalManager},
-        Journal,
-    },
+    journal::{manager::EvictionWatermark, Journal},
     keyspace::Partitions,
     snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
-    write_buffer_manager::WriteBufferManager,
     Error, Keyspace,
 };
 use lsm_tree::{
@@ -68,17 +65,11 @@ pub struct PartitionHandleInner {
     /// Config of keyspace
     pub(crate) keyspace_config: KeyspaceConfig,
 
-    /// Flush manager of keyspace
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-
-    /// Journal manager of keyspace
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+    /// Flush tracker of keyspace
+    pub(crate) flush_tracker: Arc<FlushTracker>,
 
     /// Compaction manager of keyspace
-    pub(crate) compaction_manager: CompactionManager,
-
-    /// Write buffer manager of keyspace
-    pub(crate) write_buffer_manager: WriteBufferManager,
+    pub(crate) compaction_manager: Arc<CompactionManager>,
 
     // TODO: notifying flush worker should probably become a method in FlushManager
     /// Flush semaphore of keyspace
@@ -99,7 +90,7 @@ pub struct PartitionHandleInner {
     pub visible_seqno: SequenceNumberCounter,
 
     /// Snapshot tracker
-    pub(crate) snapshot_tracker: SnapshotTracker,
+    pub(crate) snapshot_tracker: Arc<SnapshotTracker>,
 
     pub(crate) stats: Arc<Stats>,
 
@@ -259,15 +250,13 @@ impl PartitionHandle {
             tree,
             partitions: keyspace.partitions.clone(),
             keyspace_config: keyspace.config.clone(),
-            flush_manager: keyspace.flush_manager.clone(),
+            flush_tracker: keyspace.flush_tracker.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             visible_seqno: keyspace.visible_seqno.clone(),
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
@@ -326,16 +315,14 @@ impl PartitionHandle {
             config,
             partitions: keyspace.partitions.clone(),
             keyspace_config: keyspace.config.clone(),
-            flush_manager: keyspace.flush_manager.clone(),
+            flush_tracker: keyspace.flush_tracker.clone(),
             flush_semaphore: keyspace.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: keyspace.journal_manager.clone(),
             journal: keyspace.journal.clone(),
             compaction_manager: keyspace.compaction_manager.clone(),
             seqno: keyspace.seqno.clone(),
             visible_seqno: keyspace.visible_seqno.clone(),
             tree,
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: keyspace.is_poisoned.clone(),
             snapshot_tracker: keyspace.snapshot_tracker.clone(),
@@ -732,12 +719,7 @@ impl PartitionHandle {
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         if self.rotate_memtable()? {
-            while !self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .is_empty()
-            {
+            while !self.flush_tracker.is_task_queue_empty() {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
@@ -758,9 +740,6 @@ impl PartitionHandle {
             return Ok(false);
         };
 
-        log::trace!("partition: acquiring journal manager lock");
-        let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
-
         let seqno_map = {
             let partitions = self.partitions.write().expect("lock is poisoned");
 
@@ -778,26 +757,20 @@ impl PartitionHandle {
             seqnos
         };
 
-        journal_manager.rotate_journal(&mut journal, seqno_map)?;
+        log::trace!("partition: acquiring journal manager lock");
+        self.flush_tracker.rotate_journal(&mut journal, seqno_map)?;
 
         log::trace!("partition: acquiring flush manager lock");
-        let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
-
-        flush_manager.enqueue_task(
-            self.name.clone(),
-            FlushTask {
-                id: yanked_id,
-                partition: self.clone(),
-                sealed_memtable: yanked_memtable,
-            },
-        );
+        self.flush_tracker.enqueue_task(FlushTask {
+            id: yanked_id,
+            partition: self.clone(),
+            sealed_memtable: yanked_memtable,
+        });
 
         self.stats
             .flushes_enqueued
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        drop(flush_manager);
-        drop(journal_manager);
         drop(journal);
 
         // Notify flush worker that new work has arrived
@@ -808,11 +781,7 @@ impl PartitionHandle {
 
     fn check_journal_size(&self) {
         loop {
-            let bytes = self
-                .journal_manager
-                .read()
-                .expect("lock is poisoned")
-                .disk_space_used();
+            let bytes = self.flush_tracker.disk_space_used();
 
             if bytes <= self.keyspace_config.max_journaling_size_in_bytes {
                 if bytes as f64 > self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.9 {
@@ -884,7 +853,7 @@ impl PartitionHandle {
             let p90_limit = (limit as f64) * 0.9;
 
             loop {
-                let bytes = self.write_buffer_manager.get();
+                let bytes = self.flush_tracker.buffer_size();
 
                 if bytes < limit {
                     if bytes as f64 > p90_limit {
@@ -1030,7 +999,9 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self
+            .flush_tracker
+            .increment_buffer_size(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
 
@@ -1104,7 +1075,9 @@ impl PartitionHandle {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self
+            .flush_tracker
+            .increment_buffer_size(u64::from(item_size));
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
