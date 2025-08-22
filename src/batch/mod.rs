@@ -136,6 +136,7 @@ impl Batch {
             }
         }
 
+        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
         let partitions = self.keyspace.partitions.read().expect("lock is poisoned");

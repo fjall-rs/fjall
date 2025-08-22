@@ -35,7 +35,7 @@ It features:
 - LSM-tree-based storage similar to `RocksDB`
 - Range & prefix searching with forward and reverse iteration
 - Multiple keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
-- Built-in compression (default = LZ4)
+- Built-in compression (default = `LZ4`)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 - Automatic background maintenance
@@ -70,9 +70,10 @@ cargo add fjall
 ```rust
 use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
 
-// A database may contain multiple collections ("keyspace")
+// A database may contain multiple keyspaces
 // You should probably only use a single database for your application
-let db = Database::builder(folder).open_or_create()?; // or open_transactional for transactional semantics
+let db = Database::builder(folder).open()?;
+// TxDatabase::builder for transactional semantics
 
 // Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
 let items = db.create_or_open_keyspace("my_items", KeyspaceCreateOptions::default())?;

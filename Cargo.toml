@@ -19,15 +19,17 @@ path = "src/lib.rs"
 [features]
 default = ["single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
-bytes = ["lsm-tree/bytes"]
+# bytes = ["lsm-tree/bytes"]
 single_writer_tx = []
 ssi_tx = []
+metrics = ["lsm-tree/metrics"]
 __internal_whitebox = []
 
 [dependencies]
 byteorder = "1.5.0"
 byteview = "0.6.1"
-lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "3.0.0", default-features = false, features = [
+lsm-tree = { path = "../lsm-tree", default-features = false, features = [
+  "use_unsafe",
 ] }
 log = "0.4.27"
 std-semaphore = "0.1.0"

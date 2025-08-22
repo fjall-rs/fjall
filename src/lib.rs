@@ -8,14 +8,11 @@
 //! - 100% safe & stable Rust
 //! - LSM-tree-based storage similar to `RocksDB`
 //! - Range & prefix searching with forward and reverse iteration
-//! - Cross-partition snapshots (MVCC)
-//! - Automatic background maintenance
-//! - Single-writer transactions (optional)
+//! - Keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
+//! - Built-in compression (default = `LZ4`)
+//! - Serializable transactions (optional)
 //! - Key-value separation for large blob use cases (optional)
-//!
-//! Each `Keyspace` is a single logical database and is split into `partitions` (a.k.a. column families) - you should probably only use a single keyspace for your application.
-//! Each partition is physically a single LSM-tree and its own logical collection; however, write operations across partitions are atomic as they are persisted in a
-//! single database-level journal, which will be recovered after a crash.
+//! - Automatic background maintenance
 //!
 //! It is not:
 //!
@@ -27,17 +24,15 @@
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
 //! ```
-//! use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+//! use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
 //!
-//! # let folder = tempfile::tempdir()?;
-//! #
-//! // A keyspace is a database, which may contain multiple collections ("partitions")
-//! // You should probably only use a single keyspace for your application
-//! //
-//! let keyspace = Config::new(folder).open()?; // or open_transactional for transactional semantics
+//! // A database may contain multiple keyspaces
+//! // You should probably only use a single database for your application
+//! let db = Database::builder(folder).open()?;
+//! // TxDatabase::builder for transactional semantics
 //!
-//! // Each partition is its own physical LSM-tree
-//! let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+//! // Each keyspace is its own physical LSM-tree
+//! let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -64,8 +59,8 @@
 //! }
 //!
 //! // Sync the journal to disk to make sure data is definitely durable
-//! // When the keyspace is dropped, it will try to persist with `PersistMode::SyncAll` as well
-//! keyspace.persist(PersistMode::SyncAll)?;
+//! // When the database is dropped, it will try to persist with `PersistMode::SyncAll` as well
+//! db.persist(PersistMode::SyncAll)?;
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
@@ -80,6 +75,7 @@
 #![warn(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn)]
 #![warn(clippy::multiple_crate_versions)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod batch;
 

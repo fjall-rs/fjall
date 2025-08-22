@@ -453,6 +453,9 @@ impl Keyspace {
         Ok(())
     }
 
+    // TODO: open_or_create_keyspace(create_opts) -> Result<Keyspace>
+    // TODO: open_partition -> Result<Option<Keyspace>>
+
     /// Creates or opens a keyspace partition.
     ///
     /// If the partition does not yet exist, it will be created configured with `create_options`.
@@ -732,7 +735,7 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
         let path = config.path.clone();
-        log::debug!("Creating keyspace at {path:?}");
+        log::debug!("Creating keyspace at {}", path.display());
 
         std::fs::create_dir_all(&path)?;
 

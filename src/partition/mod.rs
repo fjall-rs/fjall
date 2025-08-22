@@ -40,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
-use write_delay::get_write_delay;
+use write_delay::perform_write_stall;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
@@ -844,27 +844,20 @@ impl PartitionHandle {
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
-            let sleep_us = get_write_delay(l0_run_count);
-
-            if sleep_us > 0 {
-                log::info!(
-                    "Stalling writes by {sleep_us}µs in partition {} due to many segments in L0...",
-                    self.name
-                );
-                self.compaction_manager.notify(self.clone());
-                std::thread::sleep(Duration::from_micros(sleep_us));
-            }
+            self.compaction_manager.notify(self.clone());
+            perform_write_stall(l0_run_count);
         }
     }
 
     fn check_write_halt(&self) {
-        while self.tree.l0_run_count() >= 32 {
+        while self.tree.l0_run_count() >= 30 {
             log::info!(
                 "Halting writes in partition {} until L0 is cleared up...",
-                self.name
+                self.name,
             );
+
             self.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 
@@ -876,10 +869,10 @@ impl PartitionHandle {
             })?;
 
             self.check_journal_size();
-            self.check_write_halt();
         }
 
         self.check_write_stall();
+        self.check_write_halt();
 
         Ok(())
     }

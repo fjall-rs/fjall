@@ -2,20 +2,16 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-/// Gets the write delay based on L0 segments.
+const STEP_SIZE: usize = 10_000;
+const THRESHOLD: usize = 20;
+
 #[allow(clippy::module_name_repetitions)]
-pub fn get_write_delay(l0_segments: usize) -> u64 {
-    match l0_segments {
-        20 => 1,
-        21 => 2,
-        22 => 4,
-        23 => 8,
-        24 => 16,
-        25 => 32,
-        26 => 64,
-        27 => 128,
-        28 => 256,
-        29 => 512,
-        _ => 0,
+pub fn perform_write_stall(l0_runs: usize) {
+    if let THRESHOLD..30 = l0_runs {
+        let d = l0_runs - THRESHOLD;
+
+        for _ in 0..(d * STEP_SIZE) {
+            std::hint::black_box(());
+        }
     }
 }
