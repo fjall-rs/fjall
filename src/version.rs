@@ -12,6 +12,9 @@ pub enum Version {
 
     /// Version for 2.x.x releases
     V2,
+
+    /// Version for 3.x.x releases
+    V3,
 }
 
 impl std::fmt::Display for Version {
@@ -25,6 +28,7 @@ impl From<Version> for u8 {
         match value {
             Version::V1 => 1,
             Version::V2 => 2,
+            Version::V3 => 3,
         }
     }
 }
@@ -36,6 +40,7 @@ impl TryFrom<u8> for Version {
         match value {
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
             _ => Err(()),
         }
     }
