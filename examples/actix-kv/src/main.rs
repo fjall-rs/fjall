@@ -165,7 +165,7 @@ async fn main() -> fjall::Result<()> {
 
     log::info!("Opening database");
 
-    let keyspace = Config::default().open()?;
+    let keyspace = Config::new(".fjall_data").open()?;
     let db = keyspace.open_partition("data", Default::default())?;
 
     log::info!("Starting on port {port}");

@@ -74,7 +74,7 @@ const WORDS: &[&str] = &[
 ];
 
 fn main() -> Result<()> {
-    let keyspace = Config::default().temporary(true).open()?;
+    let keyspace = Config::new(".fjall_data").temporary(true).open()?;
 
     let db = keyspace.open_partition("db", Default::default())?;
 

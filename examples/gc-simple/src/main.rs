@@ -4,7 +4,7 @@ use std::time::Instant;
 const BLOB_SIZE: usize = 10_000;
 
 fn main() -> fjall::Result<()> {
-    let keyspace = Config::default().temporary(true).open()?;
+    let keyspace = Config::new(".fjall_data").temporary(true).open()?;
     let blobs = keyspace.open_partition(
         "blobs",
         PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
