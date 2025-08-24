@@ -8,7 +8,8 @@ use crate::{
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, PARTITIONS_FOLDER, PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, LOCK_FILE, PARTITIONS_FOLDER,
+        PARTITION_DELETED_MARKER,
     },
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
@@ -86,6 +87,8 @@ pub struct KeyspaceInner {
 
     #[doc(hidden)]
     pub snapshot_tracker: SnapshotTracker,
+
+    lock_fd: File,
 }
 
 impl Drop for KeyspaceInner {
@@ -127,8 +130,16 @@ impl Drop for KeyspaceInner {
             );
 
             if let Err(err) = remove_dir_all(&self.config.path) {
-                eprintln!("Failed to clean up path: {:?} - {err}", self.config.path);
+                log::warn!(
+                    "Failed to clean up path: {} - {err}",
+                    self.config.path.display()
+                );
             }
+        }
+
+        // Unlock for good measure
+        if let Err(e) = self.lock_fd.unlock() {
+            log::warn!("Failed to unlock lock file: {e}");
         }
 
         #[cfg(feature = "__internal_whitebox")]
@@ -376,8 +387,6 @@ impl Keyspace {
     /// Should not be user-facing.
     #[doc(hidden)]
     pub fn create_or_recover(config: Config) -> crate::Result<Self> {
-        log::info!("Opening keyspace at {:?}", config.path);
-
         if config.path.join(FJALL_MARKER).try_exists()? {
             Self::recover(config)
         } else {
@@ -427,7 +436,8 @@ impl Keyspace {
     pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
         let partition_path = handle.path();
 
-        let file = File::create(partition_path.join(PARTITION_DELETED_MARKER))?;
+        // TODO: just remove from meta partition instead
+        let file = File::create_new(partition_path.join(PARTITION_DELETED_MARKER))?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
@@ -582,7 +592,7 @@ impl Keyspace {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
         if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V2 {
+            if version != Version::V3 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -596,13 +606,19 @@ impl Keyspace {
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering keyspace at {:?}", config.path);
-
-        // TODO:
-        // let recovery_mode = config.journal_recovery_mode;
+        log::info!("Recovering keyspace at {}", config.path.display());
 
         // Check version
         Self::check_version(&config.path)?;
+
+        let lock_file = File::open(config.path.join(LOCK_FILE))?;
+        lock_file.try_lock().map_err(|e| match e {
+            std::fs::TryLockError::Error(e) => crate::Error::Io(e),
+            std::fs::TryLockError::WouldBlock => crate::Error::Locked,
+        })?;
+
+        // TODO:
+        // let recovery_mode = config.journal_recovery_mode;
 
         // Reload active journal
         let journals_folder = config.path.join(JOURNALS_FOLDER);
@@ -636,6 +652,7 @@ impl Keyspace {
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
             stats: Arc::default(),
+            lock_fd: lock_file,
         };
 
         let keyspace = Self(Arc::new(inner));
@@ -734,16 +751,18 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
-        let path = config.path.clone();
-        log::debug!("Creating keyspace at {}", path.display());
+        log::info!("Creating keyspace at {}", config.path.display());
 
-        std::fs::create_dir_all(&path)?;
+        std::fs::create_dir_all(&config.path)?;
 
-        let marker_path = path.join(FJALL_MARKER);
-        assert!(!marker_path.try_exists()?);
+        let lock_file = File::create_new(config.path.join(LOCK_FILE))?;
+        lock_file.try_lock().map_err(|e| match e {
+            std::fs::TryLockError::Error(e) => crate::Error::Io(e),
+            std::fs::TryLockError::WouldBlock => crate::Error::Locked,
+        })?;
 
-        let journal_folder_path = path.join(JOURNALS_FOLDER);
-        let partition_folder_path = path.join(PARTITIONS_FOLDER);
+        let journal_folder_path = config.path.join(JOURNALS_FOLDER);
+        let partition_folder_path = config.path.join(PARTITIONS_FOLDER);
 
         std::fs::create_dir_all(&journal_folder_path)?;
         std::fs::create_dir_all(&partition_folder_path)?;
@@ -751,6 +770,16 @@ impl Keyspace {
         let active_journal_path = journal_folder_path.join("0");
         let journal = Journal::create_new(&active_journal_path)?;
         let journal = Arc::new(journal);
+
+        // NOTE: Lastly, fsync .fjall marker, which contains the version
+        let mut marker = std::fs::File::create_new(config.path.join(FJALL_MARKER))?;
+        Version::V3.write_file_header(&mut marker)?;
+        marker.sync_all()?;
+
+        // IMPORTANT: fsync folders on Unix
+        fsync_directory(&journal_folder_path)?;
+        fsync_directory(&partition_folder_path)?;
+        fsync_directory(&config.path)?;
 
         let inner = KeyspaceInner {
             config,
@@ -773,18 +802,8 @@ impl Keyspace {
             is_poisoned: Arc::default(),
             snapshot_tracker: SnapshotTracker::default(),
             stats: Arc::default(),
+            lock_fd: lock_file,
         };
-
-        // NOTE: Lastly, fsync .fjall marker, which contains the version
-        // -> the keyspace is fully initialized
-        let mut file = std::fs::File::create(marker_path)?;
-        Version::V2.write_file_header(&mut file)?;
-        file.sync_all()?;
-
-        // IMPORTANT: fsync folders on Unix
-        fsync_directory(&journal_folder_path)?;
-        fsync_directory(&partition_folder_path)?;
-        fsync_directory(&path)?;
 
         Ok(Self(Arc::new(inner)))
     }
@@ -976,6 +995,7 @@ impl Keyspace {
 }
 
 #[cfg(test)]
+#[allow(clippy::default_trait_access, clippy::expect_used)]
 mod tests {
     use super::*;
     use test_log::test;

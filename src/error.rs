@@ -38,6 +38,9 @@ pub enum Error {
 
     /// Partition is deleted
     PartitionDeleted,
+
+    /// Database is locked.
+    Locked,
 }
 
 impl std::fmt::Display for Error {
@@ -78,9 +81,9 @@ impl std::error::Error for Error {
             Self::Encode(inner) => Some(inner),
             Self::Decode(inner) => Some(inner),
             Self::JournalRecovery(inner) => Some(inner),
-            Self::InvalidVersion(_) => None,
-            Self::Poisoned => None,
-            Self::PartitionDeleted => None,
+            Self::InvalidVersion(_) | Self::Poisoned | Self::PartitionDeleted | Self::Locked => {
+                None
+            }
         }
     }
 }

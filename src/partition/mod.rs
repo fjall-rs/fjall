@@ -302,7 +302,7 @@ impl PartitionHandle {
         std::fs::create_dir_all(&base_folder)?;
 
         // Write config
-        let mut file = File::create(base_folder.join(PARTITION_CONFIG_FILE))?;
+        let mut file = File::create_new(base_folder.join(PARTITION_CONFIG_FILE))?;
         config.encode_into(&mut file)?;
         file.sync_all()?;
 

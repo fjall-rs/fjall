@@ -97,7 +97,7 @@ impl Writer {
     pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {
         let path = path.into();
 
-        let file = File::create(&path).inspect_err(|e| {
+        let file = File::create_new(&path).inspect_err(|e| {
             log::error!("Failed to create journal file at {path:?}: {e:?}");
         })?;
 
