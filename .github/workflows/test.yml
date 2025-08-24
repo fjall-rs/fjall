@@ -13,7 +13,7 @@ env:
 
 jobs:
   examples:
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       matrix:
         rust_version:
