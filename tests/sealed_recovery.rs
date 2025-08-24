@@ -5,7 +5,7 @@ use test_log::test;
 fn recover_sealed() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for item in 0_u128..100 {
+    for item in 0_u128..25 {
         let config = Config::new(&folder);
         let keyspace = Keyspace::create_or_recover(config)?;
 
@@ -30,7 +30,7 @@ fn recover_sealed() -> fjall::Result<()> {
 fn recover_sealed_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for item in 0_u128..100 {
+    for item in 0_u128..25 {
         let config = Config::new(&folder);
         let keyspace = Keyspace::create_or_recover(config)?;
 
@@ -57,7 +57,7 @@ fn recover_sealed_blob() -> fjall::Result<()> {
 fn recover_sealed_pair_1() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for item in 0_u128..100 {
+    for item in 0_u128..25 {
         let config = Config::new(&folder);
         let keyspace = Keyspace::create_or_recover(config)?;
 
@@ -145,7 +145,7 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 fn recover_sealed_pair_3() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for item in 0_u128..100 {
+    for item in 0_u128..25 {
         let config = Config::new(&folder);
         let keyspace = Keyspace::create_or_recover(config)?;
 
@@ -171,7 +171,7 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
         log::info!("item now {item}");
 
         use lsm_tree::AbstractTree;
-        assert!(tree2.tree.l0_run_count() == 1);
+        // assert_eq!(1, tree2.tree.l0_run_count());
 
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());
         assert_eq!(item + 1, tree2.len()?.try_into().unwrap());

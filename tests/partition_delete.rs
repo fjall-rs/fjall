@@ -129,11 +129,13 @@ fn tx_partition_delete() -> fjall::Result<()> {
     {
         let keyspace = Config::new(&folder).open_transactional()?;
 
-        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+        {
+            let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
 
-        assert!(path.try_exists()?);
+            assert!(path.try_exists()?);
 
-        keyspace.inner().delete_partition(tree.inner().clone())?;
+            keyspace.inner().delete_partition(tree.inner().clone())?;
+        }
 
         assert!(!path.try_exists()?);
     }
