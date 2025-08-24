@@ -23,7 +23,8 @@
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
-//! ```
+//! TODO: 3.0.0 restore to be rust code when finishing API
+//! ```bash
 //! use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
 //!
 //! // A database may contain multiple keyspaces
