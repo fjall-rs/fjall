@@ -97,6 +97,8 @@ jobs:
         run: cargo build-all-features
       - name: Run whitebox tests
         run: cargo test --features __internal_whitebox -- whitebox_ --test-threads=1
+        env:
+          RUST_LOG: trace
       - name: Run tests
         run: cargo nextest run --features lz4,single_writer_tx
       - name: Run SSI tests
