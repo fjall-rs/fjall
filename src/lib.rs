@@ -124,7 +124,10 @@ pub use {
     journal::{error::RecoveryError, writer::PersistMode},
     keyspace::Keyspace,
     partition::{
-        options::CreateOptions as PartitionCreateOptions, options::KvSeparationOptions,
+        options::KvSeparationOptions,
+        options::{
+            CreateOptions as PartitionCreateOptions, KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD,
+        },
         PartitionHandle,
     },
     tracked_snapshot::TrackedSnapshot as Snapshot,

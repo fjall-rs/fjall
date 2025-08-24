@@ -6,6 +6,9 @@ use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
+/// Default key-value separation blob size threshold
+pub const KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
+
 /// Configuration options for key-value-separated partitions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
@@ -40,10 +43,14 @@ impl KvSeparationOptions {
 
     /// Sets the key-value separation threshold in bytes.
     ///
-    /// Smaller value will reduce compaction overhead and thus write amplification,
+    /// A smaller value will reduce compaction overhead and thus write amplification,
     /// at the cost of lower read performance.
     ///
-    /// Defaults to 1 KiB.
+    /// Setting the threshold too low (~64 bytes) generally doesn't make much sense, as
+    /// at some point the blobs will become smaller than the blob pointers, decreasing
+    /// read performance while not actually improving write amplification.
+    ///
+    /// Defaults to 512 bytes.
     #[must_use]
     pub fn separation_threshold(mut self, bytes: u32) -> Self {
         self.separation_threshold = bytes;
@@ -62,7 +69,7 @@ impl Default for KvSeparationOptions {
 
             file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
 
-            separation_threshold: /* 1 KiB */ 1_024,
+            separation_threshold: KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD,
         }
     }
 }
