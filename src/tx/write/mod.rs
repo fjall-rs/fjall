@@ -428,7 +428,7 @@ impl BaseTransaction {
                 key,
                 // NOTE: Just take the max seqno, which should never be reached
                 // that way, the write is definitely always the newest
-                SeqNo::MAX,
+                SeqNo::MAX - 1,
             ));
     }
 
