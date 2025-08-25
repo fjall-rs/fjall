@@ -136,13 +136,14 @@ impl Batch {
             }
         }
 
+        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
         #[allow(clippy::mutable_key_type)]
         let mut partitions_with_possible_stall = HashSet::new();
         let partitions = self.keyspace.partitions.read().expect("lock is poisoned");
 
         let mut batch_size = 0u64;
 
-        log::trace!("Applying {} batched items to memtable(s)", self.data.len());
+        log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
         for item in std::mem::take(&mut self.data) {
             let Some(partition) = partitions.get(&item.partition) else {
@@ -156,15 +157,13 @@ impl Batch {
                 ValueType::WeakTombstone => partition.tree.remove_weak(item.key, batch_seqno),
             };
 
-            batch_size += u64::from(item_size);
+            batch_size += item_size;
 
             // IMPORTANT: Clone the handle, because we don't want to keep the partitions lock open
             partitions_with_possible_stall.insert(partition.clone());
         }
 
-        self.keyspace
-            .visible_seqno
-            .fetch_max(batch_seqno + 1, Ordering::AcqRel);
+        self.keyspace.visible_seqno.fetch_max(batch_seqno + 1);
 
         drop(journal_writer);
 

@@ -9,6 +9,7 @@ pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 2];
 pub const JOURNALS_FOLDER: &str = "journals";
 pub const PARTITIONS_FOLDER: &str = "partitions";
 
+pub const LOCK_FILE: &str = "lock";
 pub const FJALL_MARKER: &str = "version";
 pub const PARTITION_DELETED_MARKER: &str = ".deleted";
 pub const PARTITION_CONFIG_FILE: &str = "config";

@@ -51,7 +51,7 @@ impl<A: Activity> BackgroundWorker<A> {
             }
 
             if let Err(e) = self.activity.run() {
-                eprintln!("Background worker {:?} failed: {e:?}", self.activity.name());
+                log::error!("Background worker {:?} failed: {e:?}", self.activity.name());
                 self.poison_dart.poison();
                 return;
             }

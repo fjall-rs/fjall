@@ -35,8 +35,17 @@ pub fn run(
         .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
+        stats.active_compaction_count.fetch_sub(1, Relaxed);
+
         return Err(e.into());
     }
+
+    // TODO: we need feedback from the compaction strategy...
+    // TODO: if there is nothing more to do, we should clear the compaction_manager semaphore
+
+    // NOTE: Throttle a bit to avoid a storm of compaction choice attempts
+    // (in case of write throttling)
+    std::thread::sleep(std::time::Duration::from_millis(1));
 
     #[allow(clippy::cast_possible_truncation)]
     stats
@@ -45,8 +54,6 @@ pub fn run(
 
     stats.active_compaction_count.fetch_sub(1, Relaxed);
     stats.compactions_completed.fetch_add(1, Relaxed);
-
-    // TODO: loop if there's more work to do?
 
     Ok(())
 }

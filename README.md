@@ -12,7 +12,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.76.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.89.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -32,10 +32,10 @@ It features:
 
 - Thread-safe BTreeMap-like API
 - 100% safe & stable Rust
-- LSM-tree-based storage similar to RocksDB
+- LSM-tree-based storage similar to `RocksDB`
 - Range & prefix searching with forward and reverse iteration
-- Partitions (a.k.a. column families) with cross-partition atomic semantics
-- Built-in compression (default = LZ4)
+- Multiple keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
+- Built-in compression (default = `LZ4`)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 - Automatic background maintenance
@@ -68,15 +68,15 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
 
-// A keyspace is a database, which may contain multiple collections ("partitions")
-// You should probably only use a single keyspace for your application
-//
-let keyspace = Config::new(folder).open()?; // or open_transactional for transactional semantics
+// A database may contain multiple keyspaces
+// You should probably only use a single database for your application
+let db = Database::builder(folder).open()?;
+// TxDatabase::builder for transactional semantics
 
-// Each partition is its own physical LSM-tree
-let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+// Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
+let items = db.create_or_open_keyspace("my_items", KeyspaceCreateOptions::default())?;
 
 // Write some data
 items.insert("a", "hello")?;
@@ -103,7 +103,7 @@ for kv in items.prefix("prefix").rev() {
 }
 
 // Sync the journal to disk to make sure data is definitely durable
-// When the keyspace is dropped, it will try to persist with `PersistMode::SyncAll` as well
+// When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
 keyspace.persist(PersistMode::SyncAll)?;
 ```
 
@@ -111,17 +111,17 @@ keyspace.persist(PersistMode::SyncAll)?;
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
 your application needs.
-After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
+After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Database::persist`](https://docs.rs/fjall/latest/fjall/struct.Database.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
 By default, any operation will flush to OS buffers, but **not** to disk.
 This is in line with RocksDB's default durability.
-Also, when dropped, the keyspace will try to persist the journal *to disk* synchronously.
+Also, when dropped, the database will try to persist the journal *to disk* synchronously.
 
 ## Multithreading, Async and Multiprocess
 
 > [!WARNING]
-> A single keyspace may **not** be loaded in parallel from separate *processes*.
+> A single database may **not** be loaded in parallel from separate *processes*.
 
-Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
+Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Database` and `Keyspace`s as needed, without needing to lock yourself.
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
 
@@ -132,12 +132,6 @@ For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/m
 Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
 
 *Enabled by default.*
-
-### miniz
-
-Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://github.com/Frommi/miniz_oxide).
-
-*Disabled by default.*
 
 ### single_writer_tx
 

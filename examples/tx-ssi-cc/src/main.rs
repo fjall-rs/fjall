@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
-    let keyspace = fjall::Config::default()
+    let keyspace = fjall::Config::new(".fjall_data")
         .temporary(true)
         .open_transactional()?;
     let items = keyspace.open_partition("items", Default::default())?;

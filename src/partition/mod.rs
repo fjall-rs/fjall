@@ -40,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 use std_semaphore::Semaphore;
-use write_delay::get_write_delay;
+use write_delay::perform_write_stall;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct PartitionHandleInner {
@@ -245,6 +245,10 @@ impl PartitionHandle {
     ) -> crate::Result<()> {
         self.tree
             .ingest(iter.map(|(k, v)| (k.into(), v.into())))
+            .inspect(|()| {
+                self.seqno.next();
+                self.visible_seqno.next();
+            })
             .map_err(Into::into)
     }
 
@@ -296,7 +300,7 @@ impl PartitionHandle {
         std::fs::create_dir_all(&base_folder)?;
 
         // Write config
-        let mut file = File::create(base_folder.join(PARTITION_CONFIG_FILE))?;
+        let mut file = File::create_new(base_folder.join(PARTITION_CONFIG_FILE))?;
         config.encode_into(&mut file)?;
         file.sync_all()?;
 
@@ -307,7 +311,8 @@ impl PartitionHandle {
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
             .compression(config.compression)
-            .bloom_bits_per_key(config.bloom_bits_per_key);
+            .bloom_bits_per_key(config.bloom_bits_per_key)
+            .data_block_hash_ratio(config.data_block_hash_ratio);
 
         if let Some(kv_opts) = &config.kv_separation {
             base_config = base_config
@@ -547,7 +552,7 @@ impl PartitionHandle {
 
     /// Returns `true` if the partition is empty.
     ///
-    /// This operation has O(1) complexity.
+    /// This operation has O(log N) complexity.
     ///
     /// # Examples
     ///
@@ -837,31 +842,24 @@ impl PartitionHandle {
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
-            let sleep_us = get_write_delay(l0_run_count);
-
-            if sleep_us > 0 {
-                log::info!(
-                    "Stalling writes by {sleep_us}µs in partition {} due to many segments in L0...",
-                    self.name
-                );
-                self.compaction_manager.notify(self.clone());
-                std::thread::sleep(Duration::from_micros(sleep_us));
-            }
+            self.compaction_manager.notify(self.clone());
+            perform_write_stall(l0_run_count);
         }
     }
 
     fn check_write_halt(&self) {
-        while self.tree.l0_run_count() >= 32 {
+        while self.tree.l0_run_count() >= 30 {
             log::info!(
                 "Halting writes in partition {} until L0 is cleared up...",
-                self.name
+                self.name,
             );
+
             self.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u32) -> crate::Result<()> {
+    pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
             self.rotate_memtable().inspect_err(|_| {
                 self.is_poisoned
@@ -869,10 +867,10 @@ impl PartitionHandle {
             })?;
 
             self.check_journal_size();
-            self.check_write_halt();
         }
 
         self.check_write_stall();
+        self.check_write_halt();
 
         Ok(())
     }
@@ -898,7 +896,7 @@ impl PartitionHandle {
 
                 log::info!(
                     "Write stall in partition {} because of write buffer saturation",
-                    self.name
+                    self.name,
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -1026,11 +1024,11 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
 
@@ -1100,11 +1098,11 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);
@@ -1193,11 +1191,11 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(u64::from(item_size));
+        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
         self.check_write_buffer_size(write_buffer_size);

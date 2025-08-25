@@ -69,6 +69,8 @@ impl SnapshotTrackerInner {
         }
     }
 
+    // TODO: after recovery, we may need to set the GC watermark once to current_seqno - safety_gap
+    // so there cannot be compactions scheduled immediately with gc_watermark=0
     pub fn get_seqno_safe_to_gc(&self) -> Instant {
         *self.lowest_freed_instant.read().expect("lock is poisoned")
     }

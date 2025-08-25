@@ -8,7 +8,7 @@ const ITEMS_PER_SPLIT: usize = 1_000;
 fn main() -> fjall::Result<()> {
     env_logger::Builder::from_default_env().init();
 
-    let keyspace = fjall::Config::default().open()?;
+    let keyspace = fjall::Config::new(".fjall_data").open()?;
 
     let start = std::time::Instant::now();
 

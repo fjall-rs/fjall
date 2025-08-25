@@ -6,6 +6,9 @@ use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
+/// Default key-value separation blob size threshold
+pub const KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
+
 /// Configuration options for key-value-separated partitions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
@@ -40,10 +43,14 @@ impl KvSeparationOptions {
 
     /// Sets the key-value separation threshold in bytes.
     ///
-    /// Smaller value will reduce compaction overhead and thus write amplification,
+    /// A smaller value will reduce compaction overhead and thus write amplification,
     /// at the cost of lower read performance.
     ///
-    /// Defaults to 1 KiB.
+    /// Setting the threshold too low (~64 bytes) generally doesn't make much sense, as
+    /// at some point the blobs will become smaller than the blob pointers, decreasing
+    /// read performance while not actually improving write amplification.
+    ///
+    /// Defaults to 512 bytes.
     #[must_use]
     pub fn separation_threshold(mut self, bytes: u32) -> Self {
         self.separation_threshold = bytes;
@@ -57,15 +64,12 @@ impl Default for KvSeparationOptions {
             #[cfg(feature = "lz4")]
             compression: CompressionType::Lz4,
 
-            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            compression: CompressionType::Miniz(6),
-
-            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            #[cfg(not(feature = "lz4"))]
             compression: CompressionType::None,
 
             file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
 
-            separation_threshold: /* 1 KiB */ 1_024,
+            separation_threshold: KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD,
         }
     }
 }
@@ -101,7 +105,10 @@ impl lsm_tree::coding::Decode for KvSeparationOptions {
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
     /// Maximum size of this partition's memtable - can be changed during runtime
-    pub(crate) max_memtable_size: u32,
+    pub(crate) max_memtable_size: u64,
+
+    /// Data block hash ratio
+    pub data_block_hash_ratio: f32,
 
     /// Block size of data blocks.
     #[doc(hidden)]
@@ -138,7 +145,7 @@ impl lsm_tree::coding::Encode for CreateOptions {
         writer.write_u8(self.level_count)?;
         writer.write_u8(self.tree_type.into())?;
 
-        writer.write_u32::<BigEndian>(self.max_memtable_size)?;
+        writer.write_u64::<BigEndian>(self.max_memtable_size)?;
         writer.write_u32::<BigEndian>(self.data_block_size)?;
         writer.write_u32::<BigEndian>(self.index_block_size)?;
 
@@ -210,7 +217,7 @@ impl lsm_tree::coding::Decode for CreateOptions {
             .try_into()
             .map_err(|()| lsm_tree::DecodeError::InvalidTag(("TreeType", tree_type)))?;
 
-        let max_memtable_size = reader.read_u32::<BigEndian>()?;
+        let max_memtable_size = reader.read_u64::<BigEndian>()?;
         let data_block_size = reader.read_u32::<BigEndian>()?;
         let index_block_size = reader.read_u32::<BigEndian>()?;
 
@@ -276,6 +283,7 @@ impl lsm_tree::coding::Decode for CreateOptions {
         };
 
         Ok(Self {
+            data_block_hash_ratio: 0.0, // TODO: recover
             max_memtable_size,
             data_block_size,
             index_block_size,
@@ -299,6 +307,8 @@ impl Default for CreateOptions {
 
             max_memtable_size: /* 16 MiB */ 16 * 1_024 * 1_024,
 
+            data_block_hash_ratio: 0.0,
+
             data_block_size: default_tree_config.data_block_size,
             index_block_size: default_tree_config.index_block_size,
             bloom_bits_per_key: default_tree_config.bloom_bits_per_key,
@@ -309,10 +319,7 @@ impl Default for CreateOptions {
             #[cfg(feature = "lz4")]
             compression: CompressionType::Lz4,
 
-            #[cfg(all(feature = "miniz", not(feature = "lz4")))]
-            compression: CompressionType::Miniz(6),
-
-            #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+            #[cfg(not(feature = "lz4"))]
             compression: CompressionType::None,
 
             kv_separation: None,
@@ -323,6 +330,23 @@ impl Default for CreateOptions {
 }
 
 impl CreateOptions {
+    /// Sets the hash ratio for the hash index in data blocks.
+    ///
+    /// The hash index speeds up point queries by using an embedded
+    /// hash map in data blocks, but uses more space/memory.
+    ///
+    /// Something along the lines of 1.0 - 2.0 is sensible.
+    ///
+    /// If 0, the hash index is not constructed.
+    ///
+    /// Default = 0.0
+    #[must_use]
+    #[doc(hidden)]
+    pub fn data_block_hash_ratio(mut self, ratio: f32) -> Self {
+        self.data_block_hash_ratio = ratio;
+        self
+    }
+
     /// Sets the bits per key for bloom filters.
     ///
     /// More bits per key increases memory usage, but decreases the
@@ -348,7 +372,7 @@ impl CreateOptions {
     ///
     /// Once set for a partition, this property is not considered in the future.
     ///
-    /// Default = In order: Lz4 -> Miniz -> None, depending on compilation flags
+    /// Default = In order: Lz4 -> None, depending on compilation flags
     #[must_use]
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
@@ -394,7 +418,7 @@ impl CreateOptions {
     /// Conversely, if `max_memtable_size` is larger than 64 MiB,
     /// it may require increasing the keyspace's `max_write_buffer_size`.
     #[must_use]
-    pub fn max_memtable_size(mut self, bytes: u32) -> Self {
+    pub fn max_memtable_size(mut self, bytes: u64) -> Self {
         self.max_memtable_size = bytes;
         self
     }
@@ -455,7 +479,7 @@ mod tests {
     use test_log::test;
 
     #[test]
-    #[cfg(not(any(feature = "lz4", feature = "miniz")))]
+    #[cfg(not(feature = "lz4"))]
     fn partition_opts_compression_none() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::None);
@@ -489,53 +513,5 @@ mod tests {
         c = c.compression(CompressionType::None);
         assert_eq!(c.compression, CompressionType::None);
         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    #[cfg(not(feature = "lz4"))]
-    #[cfg(feature = "miniz")]
-    fn partition_opts_compression_miniz() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::Miniz(6));
-        assert_eq!(c.kv_separation, None);
-
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::Miniz(6),
-        );
-
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
-
-    #[test]
-    #[cfg(all(feature = "miniz", feature = "lz4"))]
-    fn partition_opts_compression_all() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::Lz4);
-        assert_eq!(c.kv_separation, None);
-
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::Lz4,
-        );
-
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::None
-        );
-
-        c = c.compression(CompressionType::Miniz(3));
-        assert_eq!(c.compression, CompressionType::Miniz(3));
-        assert_eq!(
-            c.kv_separation.unwrap().compression,
-            CompressionType::Miniz(3)
-        );
     }
 }
