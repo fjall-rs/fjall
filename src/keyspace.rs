@@ -730,19 +730,13 @@ impl Keyspace {
                         .map(|x| x + 1)
                         .unwrap_or_default();
 
-                    keyspace
-                        .seqno
-                        .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
-
+                    keyspace.seqno.fetch_max(maybe_next_seqno);
                     log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
                 }
             }
         }
 
-        keyspace.visible_seqno.store(
-            keyspace.seqno.load(std::sync::atomic::Ordering::Acquire),
-            std::sync::atomic::Ordering::Release,
-        );
+        keyspace.visible_seqno.set(keyspace.seqno.get());
 
         log::trace!("Recovery successful");
 

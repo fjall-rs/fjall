@@ -213,11 +213,7 @@ pub fn recover_sealed_memtables(
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
-
-                keyspace
-                    .seqno
-                    .fetch_max(maybe_next_seqno, std::sync::atomic::Ordering::AcqRel);
-
+                keyspace.seqno.fetch_max(maybe_next_seqno);
                 log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
 
                 // IMPORTANT: Add sealed memtable size to current write buffer size

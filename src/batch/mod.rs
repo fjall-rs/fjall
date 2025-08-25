@@ -163,9 +163,7 @@ impl Batch {
             partitions_with_possible_stall.insert(partition.clone());
         }
 
-        self.keyspace
-            .visible_seqno
-            .fetch_max(batch_seqno + 1, Ordering::AcqRel);
+        self.keyspace.visible_seqno.fetch_max(batch_seqno + 1);
 
         drop(journal_writer);
 

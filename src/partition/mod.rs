@@ -246,10 +246,8 @@ impl PartitionHandle {
         self.tree
             .ingest(iter.map(|(k, v)| (k.into(), v.into())))
             .inspect(|()| {
-                self.seqno
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.visible_seqno
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.seqno.next();
+                self.visible_seqno.next();
             })
             .map_err(Into::into)
     }
@@ -1026,7 +1024,7 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
@@ -1100,7 +1098,7 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
@@ -1193,7 +1191,7 @@ impl PartitionHandle {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1, Ordering::AcqRel);
+        self.visible_seqno.fetch_max(seqno + 1);
 
         drop(journal_writer);
 
