@@ -28,7 +28,7 @@ __internal_whitebox = []
 [dependencies]
 byteorder = "1.5.0"
 byteview = "0.6.1"
-lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", rev = "fa4bca1cf4c7008ff4613e838f17836d35750166", default-features = false, features = [
+lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", rev = "9ddc0cd4ad0a6a9a8e24ecbeab38849ef8934d62", default-features = false, features = [
   "use_unsafe",
 ] }
 log = "0.4.27"
