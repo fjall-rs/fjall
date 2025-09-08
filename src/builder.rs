@@ -31,6 +31,7 @@ impl Builder {
     /// # Errors
     ///
     /// Errors if an I/O error occured, or if the database can not be opened.
+    #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
     pub fn open_transactional(self) -> crate::Result<crate::TxDatabase> {
         crate::TxDatabase::open(self.0)
     }
