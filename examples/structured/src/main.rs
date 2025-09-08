@@ -132,7 +132,7 @@ fn main() -> fjall::Result<()> {
     {
         println!("\nReloading...");
 
-        let db = Config::new(path).temporary(true).open()?;
+        let db = Database::builder(path).temporary(true).open()?;
         let tree = db.keyspace("songs", Default::default())?;
 
         let song_db = SongDatabase {

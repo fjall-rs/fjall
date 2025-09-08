@@ -165,7 +165,7 @@ async fn main() -> fjall::Result<()> {
 
     log::info!("Opening database");
 
-    let db = Config::new(".fjall_data").open()?;
+    let db = Database::builder(".fjall_data").open()?;
     let tree = db.keyspace("data", Default::default())?;
 
     log::info!("Starting on port {port}");

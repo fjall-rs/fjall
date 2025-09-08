@@ -214,7 +214,7 @@ mod tests {
 
         let data_folder = tempfile::tempdir()?;
 
-        let db = Config::new(data_folder).open()?;
+        let db = Database::builder(data_folder).open()?;
         let tree = db.keyspace("data", Default::default())?;
 
         let state = State { db, tree };
