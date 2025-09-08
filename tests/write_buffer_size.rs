@@ -1,4 +1,4 @@
-use fjall::{Database, KvSeparationOptions, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
