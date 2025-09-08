@@ -26,7 +26,7 @@ metrics = ["lsm-tree/metrics"]
 __internal_whitebox = []
 
 [dependencies]
-byteorder = "1.5.0"
+byteorder = { package = "byteorder-lite", version = "0.1.0" }
 byteview = "0.6.1"
 lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "3.0.0", default-features = false, features = [
   "use_unsafe",

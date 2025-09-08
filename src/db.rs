@@ -278,15 +278,13 @@ impl Database {
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
-    #[must_use]
-    pub fn journal_disk_space(&self) -> u64 {
-        // TODO: 3.0.0 error is not handled because that would break the API...
-        self.journal.get_writer().len().unwrap_or_default()
+    pub fn journal_disk_space(&self) -> crate::Result<u64> {
+        Ok(self.journal.get_writer().len()?
             + self
                 .journal_manager
                 .read()
                 .expect("lock is poisoned")
-                .disk_space_used()
+                .disk_space_used())
     }
 
     /// Returns the disk space usage of the entire database.
@@ -303,7 +301,9 @@ impl Database {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn disk_space(&self) -> u64 {
+    pub fn disk_space(&self) -> crate::Result<u64> {
+        let journal_size = self.journal_disk_space()?;
+
         let keyspaces_size = self
             .keyspaces
             .read()
@@ -312,7 +312,7 @@ impl Database {
             .map(Keyspace::disk_space)
             .sum::<u64>();
 
-        self.journal_disk_space() + keyspaces_size
+        Ok(journal_size + keyspaces_size)
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]

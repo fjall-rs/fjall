@@ -177,8 +177,7 @@ impl TxDatabase {
     }
 
     /// Returns the disk space usage of the entire database.
-    #[must_use]
-    pub fn disk_space(&self) -> u64 {
+    pub fn disk_space(&self) -> crate::Result<u64> {
         self.inner.disk_space()
     }
 

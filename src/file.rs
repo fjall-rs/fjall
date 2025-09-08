@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
-pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 2];
+pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 3];
 
-pub const JOURNALS_FOLDER: &str = "journals";
+pub const JOURNALS_FOLDER: &str = "journals"; // TODO: remove journals/ folder, just store flat in folder
 pub const KEYSPACES_FOLDER: &str = "keyspaces";
 
 pub const LOCK_FILE: &str = "lock";

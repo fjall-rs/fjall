@@ -43,8 +43,6 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
         let filename = filename.to_str().expect("should be utf-8");
 
         let journal_id = filename
-            .strip_suffix(".sealed") // TODO: 3.0.0 remove in V3
-            .unwrap_or(filename)
             .parse::<JournalId>()
             .inspect_err(|e| {
                 log::error!("found an invalid journal file name {filename:?}: {e:?}");
