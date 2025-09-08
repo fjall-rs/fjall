@@ -23,9 +23,8 @@
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
-//! TODO: 3.0.0 restore to be rust code when finishing API
-//! ```bash
-//! use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
+//! ```rs
+//! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 //!
 //! // A database may contain multiple keyspaces
 //! // You should probably only use a single database for your application
@@ -79,6 +78,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod batch;
+mod builder;
 
 /// Contains compaction strategies
 pub mod compaction;
@@ -90,6 +90,7 @@ mod config;
 pub mod drop;
 
 mod background_worker;
+mod db;
 mod error;
 mod file;
 mod flush;
@@ -98,7 +99,6 @@ mod iter;
 mod journal;
 mod keyspace;
 mod monitor;
-mod partition;
 mod path;
 mod poison_dart;
 mod recovery;
@@ -118,17 +118,16 @@ pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh
 
 pub use {
     batch::Batch,
+    builder::Builder as DatabaseBuilder,
     config::Config,
+    db::Database,
     error::{Error, Result},
     gc::GarbageCollection,
     journal::{error::RecoveryError, writer::PersistMode},
-    keyspace::Keyspace,
-    partition::{
+    keyspace::{
         options::KvSeparationOptions,
-        options::{
-            CreateOptions as PartitionCreateOptions, KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD,
-        },
-        PartitionHandle,
+        options::{CreateOptions as KeyspaceCreateOptions, KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD},
+        Keyspace,
     },
     tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
@@ -136,33 +135,15 @@ pub use {
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub use tx::{
-    keyspace::{TransactionalKeyspace, TxKeyspace},
-    partition::TransactionalPartitionHandle,
-    read_tx::ReadTransaction,
-    write_tx::WriteTransaction,
+    db::TxDatabase, keyspace::TxKeyspace, read_tx::ReadTransaction, write_tx::WriteTransaction,
 };
 
 /// Alias for [`Batch`]
 pub type WriteBatch = Batch;
 
-/// Alias for [`PartitionHandle`]
-pub type Partition = PartitionHandle;
-
-/// Alias for [`TransactionalPartitionHandle`]
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-pub type TxPartition = TransactionalPartitionHandle;
-
-/// Alias for [`TransactionalPartitionHandle`]
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-pub type TxPartitionHandle = TransactionalPartitionHandle;
-
-/// Alias for [`TransactionalPartitionHandle`]
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-pub type TransactionalPartition = TransactionalPartitionHandle;
-
 /// A snapshot moment
 ///
-/// See [`Keyspace::instant`].
+/// See [`Database::instant`].
 pub type Instant = lsm_tree::SeqNo;
 
 /// Re-export of [`lsm_tree::Error`]
@@ -172,48 +153,3 @@ pub type LsmError = lsm_tree::Error;
 pub use lsm_tree::AbstractTree;
 
 pub use lsm_tree::{AnyTree, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue};
-
-// TODO: remove in V3
-
-/// Block cache that caches frequently read disk blocks
-#[deprecated = "Use Config::cache_size instead"]
-pub struct BlockCache(u64);
-
-#[allow(deprecated)]
-impl BlockCache {
-    /// Creates a new cache with given capacity in bytes.
-    #[must_use]
-    pub fn with_capacity_bytes(bytes: u64) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the cache capacity in bytes.
-    #[must_use]
-    pub fn capacity(&self) -> u64 {
-        self.0
-    }
-}
-
-/// Blob cache that caches frequently read blobs
-#[deprecated = "Use Config::cache_size instead"]
-#[allow(deprecated)]
-pub struct BlobCache(BlockCache);
-
-#[allow(deprecated)]
-impl BlobCache {
-    /// Creates a new cache with given capacity in bytes.
-    #[must_use]
-    pub fn with_capacity_bytes(bytes: u64) -> Self {
-        #[allow(deprecated)]
-        Self(BlockCache::with_capacity_bytes(bytes))
-    }
-}
-
-#[allow(deprecated)]
-impl std::ops::Deref for BlobCache {
-    type Target = BlockCache;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}

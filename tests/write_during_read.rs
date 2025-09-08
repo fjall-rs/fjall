@@ -1,15 +1,15 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions};
 use test_log::test;
 
 #[test]
 fn write_during_read() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let keyspace = Config::new(&folder).open()?;
+    let db = Database::builder(&folder).open()?;
 
-    let tree = keyspace.open_partition(
+    let tree = db.keyspace(
         "default",
-        PartitionCreateOptions::default().max_memtable_size(128_000),
+        KeyspaceCreateOptions::default().max_memtable_size(128_000),
     )?;
 
     for x in 0u64..50_000 {

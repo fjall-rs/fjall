@@ -3,9 +3,9 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    background_worker::Activity, config::Config as KeyspaceConfig, flush::manager::FlushManager,
-    journal::manager::JournalManager, keyspace::Partitions, snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager, Keyspace,
+    background_worker::Activity, config::Config as DatabaseConfig, db::Keyspaces,
+    flush::manager::FlushManager, journal::manager::JournalManager,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, Database,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
@@ -19,13 +19,13 @@ use std::{
 /// Monitors write buffer size & journal size
 pub struct Monitor {
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-    pub(crate) keyspace_config: KeyspaceConfig,
+    pub(crate) db_config: DatabaseConfig,
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_manager: WriteBufferManager,
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
+    pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
     pub(crate) seqno: SequenceNumberCounter,
     pub(crate) snapshot_tracker: SnapshotTracker,
-    pub(crate) keyspace_poison: Arc<AtomicBool>,
+    pub(crate) db_poison: Arc<AtomicBool>,
 }
 
 impl Activity for Monitor {
@@ -58,7 +58,7 @@ impl Activity for Monitor {
             .expect("lock is poisoned")
             .disk_space_used();
 
-        let max_journal_size = self.keyspace_config.max_journaling_size_in_bytes;
+        let max_journal_size = self.db_config.max_journaling_size_in_bytes;
 
         if jm_size as f64 > (max_journal_size as f64 * 0.5) {
             self.try_reduce_journal_size();
@@ -89,7 +89,7 @@ impl Activity for Monitor {
 
         // NOTE: We cannot flush more stuff if the journal is already too large
         if jm_size < max_journal_size {
-            let max_write_buffer_size = self.keyspace_config.max_write_buffer_size_in_bytes;
+            let max_write_buffer_size = self.db_config.max_write_buffer_size_in_bytes;
 
             // NOTE: Take the queued size of unflushed memtables into account
             // so the system isn't performing a flush storm once the threshold is reached
@@ -118,31 +118,31 @@ impl Drop for Monitor {
 }
 
 impl Monitor {
-    pub fn new(keyspace: &Keyspace) -> Self {
+    pub fn new(db: &Database) -> Self {
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {
-            flush_manager: keyspace.flush_manager.clone(),
-            journal_manager: keyspace.journal_manager.clone(),
-            keyspace_config: keyspace.config.clone(),
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
-            partitions: keyspace.partitions.clone(),
-            seqno: keyspace.seqno.clone(),
-            snapshot_tracker: keyspace.snapshot_tracker.clone(),
-            keyspace_poison: keyspace.is_poisoned.clone(),
+            flush_manager: db.flush_manager.clone(),
+            journal_manager: db.journal_manager.clone(),
+            db_config: db.config.clone(),
+            write_buffer_manager: db.write_buffer_manager.clone(),
+            keyspaces: db.keyspaces.clone(),
+            seqno: db.seqno.clone(),
+            snapshot_tracker: db.snapshot_tracker.clone(),
+            db_poison: db.is_poisoned.clone(),
         }
     }
 
     fn try_reduce_journal_size(&self) {
         log::debug!(
-            "monitor: try flushing affected partitions because journals have passed 50% of threshold"
+            "monitor: try flushing affected keyspaces because journals have passed 50% of threshold"
         );
 
-        let partitions = self.partitions.read().expect("lock is poisoned");
+        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
 
-        // TODO: this may not scale well for many partitions
-        let lowest_persisted_partition = partitions
+        // TODO: this may not scale well for many keyspaces
+        let lowest_persisted_keyspace = keyspaces
             .values()
             .filter(|x| x.tree.active_memtable_size() > 0)
             .min_by(|a, b| {
@@ -152,28 +152,28 @@ impl Monitor {
             })
             .cloned();
 
-        drop(partitions);
+        drop(keyspaces);
 
-        if let Some(lowest_persisted_partition) = lowest_persisted_partition {
-            let partitions_names_with_queued_tasks = self
+        if let Some(lowest_persisted_keyspace) = lowest_persisted_keyspace {
+            let keyspaces_names_with_queued_tasks = self
                 .flush_manager
                 .read()
                 .expect("lock is poisoned")
-                .get_partitions_with_tasks();
+                .get_keyspaces_with_tasks();
 
-            if partitions_names_with_queued_tasks.contains(&lowest_persisted_partition.name) {
+            if keyspaces_names_with_queued_tasks.contains(&lowest_persisted_keyspace.name) {
                 return;
             }
 
-            match lowest_persisted_partition.rotate_memtable() {
+            match lowest_persisted_keyspace.rotate_memtable() {
                 Ok(_) => {}
                 Err(e) => {
                     log::error!(
                         "monitor: memtable rotation failed for {:?}: {e:?}",
-                        lowest_persisted_partition.name
+                        lowest_persisted_keyspace.name
                     );
 
-                    self.keyspace_poison
+                    self.db_poison
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
             }
@@ -182,37 +182,37 @@ impl Monitor {
 
     fn try_reduce_write_buffer_size(&self) {
         log::trace!(
-            "monitor: flush inactive partition because write buffer has passed 50% of threshold"
+            "monitor: flush inactive keyspaces because write buffer has passed 50% of threshold"
         );
 
-        let mut partitions = self
-            .partitions
+        let mut keyspaces = self
+            .keyspaces
             .read()
             .expect("lock is poisoned")
             .values()
             .cloned()
             .collect::<Vec<_>>();
 
-        partitions.sort_by(|a, b| {
+        keyspaces.sort_by(|a, b| {
             b.tree
                 .active_memtable_size()
                 .cmp(&a.tree.active_memtable_size())
         });
 
-        let partitions_names_with_queued_tasks = self
+        let keyspaces_names_with_queued_tasks = self
             .flush_manager
             .read()
             .expect("lock is poisoned")
-            .get_partitions_with_tasks();
+            .get_keyspaces_with_tasks();
 
-        let partitions = partitions
+        let keyspaces = keyspaces
             .into_iter()
-            .filter(|x| !partitions_names_with_queued_tasks.contains(&x.name));
+            .filter(|x| !keyspaces_names_with_queued_tasks.contains(&x.name));
 
-        for partition in partitions {
-            log::debug!("monitor: WB rotating {:?}", partition.name);
+        for keyspace in keyspaces {
+            log::debug!("monitor: WB rotating {:?}", keyspace.name);
 
-            match partition.rotate_memtable() {
+            match keyspace.rotate_memtable() {
                 Ok(rotated) => {
                     if rotated {
                         break;
@@ -221,10 +221,10 @@ impl Monitor {
                 Err(e) => {
                     log::error!(
                         "monitor: memtable rotation failed for {:?}: {e:?}",
-                        partition.name
+                        keyspace.name
                     );
 
-                    self.keyspace_poison
+                    self.db_poison
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
             }

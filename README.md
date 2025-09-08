@@ -68,7 +68,7 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, PersistMode, Database, KeyspaceCreateOptions};
+use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 
 // A database may contain multiple keyspaces
 // You should probably only use a single database for your application
@@ -76,7 +76,7 @@ let db = Database::builder(folder).open()?;
 // TxDatabase::builder for transactional semantics
 
 // Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
-let items = db.create_or_open_keyspace("my_items", KeyspaceCreateOptions::default())?;
+let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
 
 // Write some data
 items.insert("a", "hello")?;
@@ -135,13 +135,13 @@ Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeit
 
 ### single_writer_tx
 
-Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
+Allows opening a transactional database for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 
 *Enabled by default.*
 
 ### ssi_tx
 
-Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
+Allows opening a transactional database for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
 Conflict checking is done using optimistic concurrency control.
 
 *Disabled by default.

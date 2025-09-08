@@ -2,14 +2,14 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{path::absolute_path, Keyspace};
+use crate::path::absolute_path;
 use lsm_tree::{Cache, DescriptorTable};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-/// Global keyspace configuration
+/// Global Database configuration
 #[derive(Clone)]
 pub struct Config {
     /// Base path of database
@@ -18,9 +18,10 @@ pub struct Config {
     /// When true, the path will be deleted upon drop
     pub(crate) clean_path_on_drop: bool,
 
-    pub(crate) cache: Arc<Cache>,
+    #[doc(hidden)]
+    pub cache: Arc<Cache>,
 
-    /// Descriptor table that will be shared between partitions
+    /// Descriptor table that will be shared between keyspaces
     pub(crate) descriptor_table: Arc<DescriptorTable>,
 
     /// Max size of all journals in bytes
@@ -29,7 +30,7 @@ pub struct Config {
     /// Max size of all active memtables
     ///
     /// This can be used to cap the memory usage if there are
-    /// many (possibly inactive) partitions.
+    /// many (possibly inactive) keyspaces.
     pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
 
     pub(crate) manual_journal_persist: bool,
@@ -60,7 +61,7 @@ fn get_open_file_limit() -> usize {
 
 impl Config {
     /// Creates a new configuration
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+    pub fn new(path: &Path) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
 
         // Reserve 1 CPU core if possible
@@ -69,7 +70,7 @@ impl Config {
             .max(1);
 
         Self {
-            path: absolute_path(path.as_ref()),
+            path: absolute_path(path),
             clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
             max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
@@ -82,151 +83,5 @@ impl Config {
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32*1_024*1_024)),
         }
-    }
-
-    /// If `false`, write batches or transactions automatically flush data to the operating system.
-    ///
-    /// Default = false
-    ///
-    /// Set to `true` to handle persistence manually, e.g. manually using `PersistMode::SyncData` for ACID transactions.
-    #[must_use]
-    pub fn manual_journal_persist(mut self, flag: bool) -> Self {
-        self.manual_journal_persist = flag;
-        self
-    }
-
-    /// Sets the amount of flush workers
-    ///
-    /// Default = # CPU cores
-    #[must_use]
-    pub fn flush_workers(mut self, n: usize) -> Self {
-        self.flush_workers_count = n;
-        self
-    }
-
-    /// Sets the amount of compaction workers
-    ///
-    /// Default = # CPU cores
-    #[must_use]
-    pub fn compaction_workers(mut self, n: usize) -> Self {
-        self.compaction_workers_count = n;
-        self
-    }
-
-    /// Sets the upper limit for open file descriptors.
-    ///
-    /// # Panics
-    ///
-    /// Panics if n < 2.
-    #[must_use]
-    pub fn max_open_files(mut self, n: usize) -> Self {
-        assert!(n >= 2);
-
-        self.descriptor_table = Arc::new(DescriptorTable::new(n));
-        self
-    }
-
-    /// Sets the cache capacity in bytes.
-    #[must_use]
-    pub fn cache_size(mut self, size_bytes: u64) -> Self {
-        self.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
-        self
-    }
-
-    /// Max size of all journals in bytes.
-    ///
-    /// Default = 512 MiB
-    ///
-    /// # Panics
-    ///
-    /// Panics if bytes < 24 MiB.
-    ///
-    /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
-    /// anything less will immediately stall the system.
-    ///
-    /// Same as `max_total_wal_size` in `RocksDB`.
-    #[must_use]
-    pub fn max_journaling_size(mut self, bytes: u64) -> Self {
-        assert!(bytes >= 24 * 1_024 * 1_024);
-
-        self.max_journaling_size_in_bytes = bytes;
-        self
-    }
-
-    /// Max size of all memtables in bytes.
-    ///
-    /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
-    ///
-    /// Set to `u64::MAX` to disable it.
-    ///
-    /// Default = 64 MiB
-    ///
-    /// # Panics
-    ///
-    /// Panics if bytes < 1 MiB.
-    #[must_use]
-    pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
-        assert!(bytes >= 1_024 * 1_024);
-
-        self.max_write_buffer_size_in_bytes = bytes;
-        self
-    }
-
-    /// If Some, starts an fsync thread that asynchronously
-    /// persists data to disk (using fsync).
-    ///
-    /// Default = off
-    ///
-    /// # Panics
-    ///
-    /// Panics if ms is 0.
-    #[must_use]
-    pub fn fsync_ms(mut self, ms: Option<u16>) -> Self {
-        if let Some(ms) = ms {
-            assert!(ms > 0);
-        }
-
-        self.fsync_ms = ms;
-        self
-    }
-
-    /// Opens a keyspace using the config.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn open(self) -> crate::Result<Keyspace> {
-        Keyspace::open(self)
-    }
-
-    /// Opens a transactional keyspace using the config.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-    pub fn open_transactional(self) -> crate::Result<crate::TxKeyspace> {
-        crate::TxKeyspace::open(self)
-    }
-
-    /// Sets the `Keyspace` to clean upon drop.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
-    /// # let folder = tempfile::tempdir()?.into_path();
-    /// let keyspace = Config::new(&folder).temporary(true).open()?;
-    ///
-    /// assert!(folder.try_exists()?);
-    /// drop(keyspace);
-    /// assert!(!folder.try_exists()?);
-    /// #
-    /// # Ok::<_, fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn temporary(mut self, flag: bool) -> Self {
-        self.clean_path_on_drop = flag;
-        self
     }
 }

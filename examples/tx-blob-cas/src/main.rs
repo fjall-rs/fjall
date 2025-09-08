@@ -1,6 +1,6 @@
 use fjall::{
-    Config, GarbageCollection, KvSeparationOptions, PartitionCreateOptions, PersistMode,
-    TxKeyspace, TxPartition, UserValue, WriteTransaction,
+    Database, GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions, PersistMode,
+    TxDatabase, TxKeyspace, UserValue, WriteTransaction,
 };
 use format_bytes::format_bytes;
 use sha2::Digest;
@@ -8,35 +8,31 @@ use std::path::Path;
 
 /// Content-addressable store
 struct Cas {
-    keyspace: TxKeyspace,
-    items: TxPartition,
-    blobs: TxPartition,
+    db: TxDatabase,
+    items: TxKeyspace,
+    blobs: TxKeyspace,
 }
 
 impl Cas {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
-        let keyspace = Config::new(path).open_transactional()?;
+        let db = Database::builder(path).open_transactional()?;
 
-        let items = keyspace.open_partition("items", Default::default())?;
-        let blobs = keyspace.open_partition(
+        let items = db.keyspace("items", Default::default())?;
+        let blobs = db.keyspace(
             "blobs",
             // IMPORTANT: Use KV-separation
-            PartitionCreateOptions::default()
+            KeyspaceCreateOptions::default()
                 .with_kv_separation(KvSeparationOptions::default())
                 .max_memtable_size(32_000_000),
         )?;
 
-        Ok(Self {
-            keyspace,
-            items,
-            blobs,
-        })
+        Ok(Self { db, items, blobs })
     }
 
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> fjall::Result<Option<UserValue>> {
         let key = key.as_ref();
 
-        let tx = self.keyspace.read_tx();
+        let tx = self.db.read_tx();
 
         let Some(content_hash) = tx.get(&self.items, format_bytes!(b"k#{}", key))? else {
             return Ok(None);
@@ -50,9 +46,7 @@ impl Cas {
 
         let content_hash = Self::get_content_hash(value);
 
-        self.keyspace
-            .read_tx()
-            .contains_key(&self.blobs, content_hash)
+        self.db.read_tx().contains_key(&self.blobs, content_hash)
     }
 
     fn get_content_hash(value: &[u8]) -> Vec<u8> {
@@ -113,7 +107,7 @@ impl Cas {
 
         let content_hash = Self::get_content_hash(value);
 
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.db.write_tx();
 
         let item_key = format_bytes!(b"k#{}", key);
 
@@ -138,7 +132,7 @@ impl Cas {
         }
 
         tx.commit()?;
-        self.keyspace.persist(PersistMode::SyncAll)?;
+        self.db.persist(PersistMode::SyncAll)?;
 
         Ok(())
     }
@@ -146,7 +140,7 @@ impl Cas {
     pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> fjall::Result<()> {
         let key = key.as_ref();
 
-        let mut tx = self.keyspace.write_tx();
+        let mut tx = self.db.write_tx();
 
         let item_key = format_bytes!(b"k#{}", key);
 
@@ -160,7 +154,7 @@ impl Cas {
             }
 
             tx.commit()?;
-            self.keyspace.persist(PersistMode::SyncAll)?;
+            self.db.persist(PersistMode::SyncAll)?;
         }
 
         Ok(())
@@ -188,8 +182,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.insert(b"a", &big_blob_1)?;
 
@@ -197,8 +191,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(1 + 1, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1 + 1, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.insert(b"b", &big_blob_2)?;
 
@@ -209,8 +203,8 @@ fn main() -> fjall::Result<()> {
     assert_eq!(&*cas.get(b"a")?.unwrap(), big_blob_1);
     assert_eq!(&*cas.get(b"b")?.unwrap(), big_blob_2);
 
-    assert_eq!(2 + 2, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(2, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(2 + 2, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(2, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.remove(b"a")?;
 
@@ -218,8 +212,8 @@ fn main() -> fjall::Result<()> {
     assert!(cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(1 + 1, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1 + 1, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.remove(b"b")?;
 
@@ -227,8 +221,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.insert(b"b", &big_blob_3)?;
 
@@ -236,8 +230,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(cas.has_content(&big_blob_3)?);
 
-    assert_eq!(1 + 1, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1 + 1, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.remove(b"b")?;
 
@@ -245,8 +239,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.insert(b"b", &big_blob_3)?;
     cas.insert(b"c", &big_blob_3)?;
@@ -255,8 +249,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(cas.has_content(&big_blob_3)?);
 
-    assert_eq!(2 + 1, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(2 + 1, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.remove(b"c")?;
 
@@ -264,8 +258,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(cas.has_content(&big_blob_3)?);
 
-    assert_eq!(1 + 1, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1 + 1, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.remove(b"b")?;
 
@@ -273,15 +267,15 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
 
     cas.insert(b"a", &big_blob_1)?;
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
     cas.insert(b"a", &big_blob_2)?;
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
     cas.insert(b"a", &big_blob_3)?;
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
 
     assert!(!cas.has_content(&big_blob_1)?);
     assert!(!cas.has_content(&big_blob_2)?);
@@ -293,8 +287,8 @@ fn main() -> fjall::Result<()> {
     assert!(!cas.has_content(&big_blob_2)?);
     assert!(!cas.has_content(&big_blob_3)?);
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.items)?);
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.items)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
 
     // example
 
@@ -304,8 +298,8 @@ fn main() -> fjall::Result<()> {
         "<html>hello google</html>".repeat(1_000_000).as_bytes(),
     )?;
 
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     log::info!(">>> Storing HTML page for https://github.com");
     cas.insert(
@@ -313,8 +307,8 @@ fn main() -> fjall::Result<()> {
         "<html>hello github</html>".repeat(1_000_000).as_bytes(),
     )?;
 
-    assert_eq!(2, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(2, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     assert!(cas.get("com.google")?.is_some());
     log::info!(
@@ -340,8 +334,8 @@ fn main() -> fjall::Result<()> {
         cas.get("com.google.www")?.is_some()
     );
 
-    assert_eq!(2, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(2, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     assert_eq!(cas.get("com.google.www")?, cas.get("com.google")?);
     log::info!(
@@ -357,8 +351,8 @@ fn main() -> fjall::Result<()> {
         cas.get("com.github")?.is_some()
     );
 
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     log::info!(">>> Removing https://google.com");
     cas.remove("com.google")?;
@@ -369,8 +363,8 @@ fn main() -> fjall::Result<()> {
         cas.get("com.google")?.is_some()
     );
 
-    assert_eq!(1, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(1, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     log::info!(">>> Removing https://www.google.com");
     cas.remove("com.google.www")?;
@@ -381,8 +375,8 @@ fn main() -> fjall::Result<()> {
         cas.get("www.com.google")?.is_some()
     );
 
-    assert_eq!(0, cas.keyspace.read_tx().len(&cas.blobs)?);
-    log::info!("Stored blobs: {}", cas.keyspace.read_tx().len(&cas.blobs)?);
+    assert_eq!(0, cas.db.read_tx().len(&cas.blobs)?);
+    log::info!("Stored blobs: {}", cas.db.read_tx().len(&cas.blobs)?);
 
     let report = cas.blobs.gc_scan()?;
     eprintln!("{report}");

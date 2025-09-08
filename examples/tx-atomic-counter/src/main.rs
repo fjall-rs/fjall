@@ -1,4 +1,4 @@
-use fjall::{Config, PersistMode};
+use fjall::{Database, PersistMode};
 use std::path::Path;
 
 const LIMIT: u64 = 100;
@@ -6,14 +6,17 @@ const LIMIT: u64 = 100;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open_transactional()?;
-    let counters = keyspace.open_partition("counters", Default::default())?;
+    let db = Database::builder(path)
+        .temporary(true)
+        .open_transactional()?;
+
+    let counters = db.keyspace("counters", Default::default())?;
 
     counters.insert("c1", 0_u64.to_be_bytes())?;
 
     let workers = (0_u8..4)
         .map(|idx| {
-            let keyspace = keyspace.clone();
+            let db = db.clone();
             let counters = counters.clone();
 
             std::thread::spawn(move || {
@@ -22,7 +25,7 @@ fn main() -> fjall::Result<()> {
                 let mut rng = rand::thread_rng();
 
                 loop {
-                    let mut write_tx = keyspace.write_tx();
+                    let mut write_tx = db.write_tx();
 
                     let item = write_tx.get(&counters, "c1")?.unwrap();
 

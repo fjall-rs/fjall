@@ -10,7 +10,8 @@ use std::sync::{atomic::AtomicU64, Arc, RwLock};
 #[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
     // TODO: maybe use rustc_hash or ahash
-    pub(crate) data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
+    #[doc(hidden)]
+    pub data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
 
     #[doc(hidden)]
     pub(crate) freed_count: AtomicU64,

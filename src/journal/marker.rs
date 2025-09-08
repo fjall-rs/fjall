@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{batch::PartitionKey, file::MAGIC_BYTES};
+use crate::{batch::KeyspaceKey, file::MAGIC_BYTES};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
@@ -27,7 +27,7 @@ pub enum Marker {
         compression: CompressionType,
     },
     Item {
-        partition: PartitionKey,
+        keyspace: KeyspaceKey,
         key: UserKey,
         value: UserValue,
         value_type: ValueType,
@@ -37,7 +37,7 @@ pub enum Marker {
 
 pub fn serialize_marker_item<W: Write>(
     writer: &mut W,
-    partition: &str,
+    keyspace_name: &str,
     key: &[u8],
     value: &[u8],
     value_type: ValueType,
@@ -48,8 +48,8 @@ pub fn serialize_marker_item<W: Write>(
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    writer.write_u8(partition.len() as u8)?;
-    writer.write_all(partition.as_bytes())?;
+    writer.write_u8(keyspace_name.len() as u8)?;
+    writer.write_all(keyspace_name.as_bytes())?;
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
@@ -107,12 +107,12 @@ impl Encode for Marker {
                 compression.encode_into(writer)?;
             }
             Item {
-                partition,
+                keyspace,
                 key,
                 value,
                 value_type,
             } => {
-                serialize_marker_item(writer, partition, key, value, *value_type)?;
+                serialize_marker_item(writer, keyspace, key, value, *value_type)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
@@ -154,11 +154,11 @@ impl Decode for Marker {
                     .try_into()
                     .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
 
-                // Read partition key
-                let partition_len = reader.read_u8()?;
-                let mut partition = vec![0; partition_len.into()];
-                reader.read_exact(&mut partition)?;
-                let partition = std::str::from_utf8(&partition)?;
+                // Read keyspace key
+                let keyspace_name_len = reader.read_u8()?;
+                let mut keyspace_name = vec![0; keyspace_name_len.into()];
+                reader.read_exact(&mut keyspace_name)?;
+                let keyspace = std::str::from_utf8(&keyspace_name)?;
 
                 // Read key
                 let key_len = reader.read_u16::<BigEndian>()?;
@@ -171,7 +171,7 @@ impl Decode for Marker {
                 reader.read_exact(&mut value)?;
 
                 Ok(Self::Item {
-                    partition: partition.into(),
+                    keyspace: keyspace.into(),
                     key: key.into(),
                     value: value.into(),
                     value_type,
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
         let item = Marker::Item {
-            partition: "default".into(),
+            keyspace: "default".into(),
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
             value_type: ValueType::Value,

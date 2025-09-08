@@ -1,4 +1,4 @@
-use fjall::{Config, PersistMode};
+use fjall::{Database, PersistMode};
 use std::path::Path;
 
 const ITEM_COUNT: u64 = 200;
@@ -6,9 +6,12 @@ const ITEM_COUNT: u64 = 200;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open_transactional()?;
-    let src = keyspace.open_partition("src", Default::default())?;
-    let dst = keyspace.open_partition("dst", Default::default())?;
+    let db = Database::builder(path)
+        .temporary(true)
+        .open_transactional()?;
+
+    let src = db.keyspace("src", Default::default())?;
+    let dst = db.keyspace("dst", Default::default())?;
 
     for _ in 0..ITEM_COUNT {
         src.insert(scru128::new_string(), "")?;
@@ -16,7 +19,7 @@ fn main() -> fjall::Result<()> {
 
     let movers = (0..4)
         .map(|idx| {
-            let keyspace = keyspace.clone();
+            let db = db.clone();
             let src = src.clone();
             let dst = dst.clone();
 
@@ -26,7 +29,7 @@ fn main() -> fjall::Result<()> {
                 let mut rng = rand::thread_rng();
 
                 loop {
-                    let mut tx = keyspace.write_tx().unwrap();
+                    let mut tx = db.write_tx().unwrap();
 
                     // TODO: NOTE:
                     // Tombstones will add up over time, making first KV slower
@@ -56,8 +59,8 @@ fn main() -> fjall::Result<()> {
         t.join().unwrap()?;
     }
 
-    assert_eq!(ITEM_COUNT, keyspace.read_tx().len(&dst)? as u64);
-    assert!(keyspace.read_tx().is_empty(&src)?);
+    assert_eq!(ITEM_COUNT, db.read_tx().len(&dst)? as u64);
+    assert!(db.read_tx().is_empty(&src)?);
 
     Ok(())
 }

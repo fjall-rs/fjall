@@ -7,22 +7,22 @@ pub mod options;
 mod write_delay;
 
 use crate::{
-    batch::PartitionKey,
+    batch::KeyspaceKey,
     compaction::manager::CompactionManager,
-    config::Config as KeyspaceConfig,
-    file::{LSM_MANIFEST_FILE, PARTITIONS_FOLDER, PARTITION_CONFIG_FILE, PARTITION_DELETED_MARKER},
+    config::Config as DatabaseConfig,
+    db::Keyspaces,
+    file::{KEYSPACES_FOLDER, KEYSPACE_CONFIG_FILE, KEYSPACE_DELETED_MARKER, LSM_MANIFEST_FILE},
     flush::manager::{FlushManager, Task as FlushTask},
     gc::GarbageCollection,
     journal::{
         manager::{EvictionWatermark, JournalManager},
         Journal,
     },
-    keyspace::Partitions,
     snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     write_buffer_manager::WriteBufferManager,
-    Error, Keyspace,
+    Database, Error,
 };
 use lsm_tree::{
     gc::Report as GcReport, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
@@ -43,17 +43,17 @@ use std_semaphore::Semaphore;
 use write_delay::perform_write_stall;
 
 #[allow(clippy::module_name_repetitions)]
-pub struct PartitionHandleInner {
+pub struct KeyspaceInner {
     // Internal
     //
-    /// Partition name
-    pub name: PartitionKey,
+    /// Keyspace name
+    pub name: KeyspaceKey,
 
-    // Partition configuration
+    // Keyspace configuration
     #[doc(hidden)]
     pub config: CreateOptions,
 
-    /// If `true`, the partition is marked as deleted
+    /// If `true`, the keyspace is marked as deleted
     pub(crate) is_deleted: AtomicBool,
 
     /// If `true`, fsync failed during persisting, see `Error::Poisoned`
@@ -63,38 +63,38 @@ pub struct PartitionHandleInner {
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    // Keyspace stuff
+    // Database stuff
     //
-    /// Config of keyspace
-    pub(crate) keyspace_config: KeyspaceConfig,
+    /// Config of database
+    pub(crate) db_config: DatabaseConfig,
 
-    /// Flush manager of keyspace
+    /// Flush manager of database
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
 
-    /// Journal manager of keyspace
+    /// Journal manager of database
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
 
-    /// Compaction manager of keyspace
+    /// Compaction manager of database
     pub(crate) compaction_manager: CompactionManager,
 
-    /// Write buffer manager of keyspace
+    /// Write buffer manager of database
     pub(crate) write_buffer_manager: WriteBufferManager,
 
     // TODO: notifying flush worker should probably become a method in FlushManager
-    /// Flush semaphore of keyspace
+    /// Flush semaphore of database
     pub(crate) flush_semaphore: Arc<Semaphore>,
 
-    /// Journal of keyspace
+    /// Journal of database
     pub(crate) journal: Arc<Journal>,
 
-    /// Partition map of keyspace
-    pub(crate) partitions: Arc<RwLock<Partitions>>,
+    /// Keyspace map of database
+    pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
 
-    /// Sequence number generator of keyspace
+    /// Sequence number generator of database
     #[doc(hidden)]
     pub seqno: SequenceNumberCounter,
 
-    /// Visible sequence number of keyspace
+    /// Visible sequence number of database
     #[doc(hidden)]
     pub visible_seqno: SequenceNumberCounter,
 
@@ -103,24 +103,24 @@ pub struct PartitionHandleInner {
 
     pub(crate) stats: Arc<Stats>,
 
-    /// Number of completed memtable flushes in this partition
+    /// Number of completed memtable flushes in this keyspace
     pub(crate) flushes_completed: AtomicUsize,
 }
 
-impl Drop for PartitionHandleInner {
+impl Drop for KeyspaceInner {
     fn drop(&mut self) {
-        log::trace!("Dropping partition inner: {:?}", self.name);
+        log::trace!("Dropping keyspace inner: {:?}", self.name);
 
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             let path = &self.tree.tree_config().path;
 
             // IMPORTANT: First, delete the manifest,
-            // once that is deleted, the partition is treated as uninitialized
+            // once that is deleted, the keyspace is treated as uninitialized
             // even if the .deleted marker is removed
             //
             // This is important, because if somehow `remove_dir_all` ends up
             // deleting the `.deleted` marker first, we would end up resurrecting
-            // the partition
+            // the keyspace
             let manifest_file = path.join(LSM_MANIFEST_FILE);
 
             // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
@@ -129,18 +129,25 @@ impl Drop for PartitionHandleInner {
                 Ok(exists) => {
                     if exists {
                         if let Err(e) = std::fs::remove_file(manifest_file) {
-                            log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
+                            log::error!(
+                                "Failed to cleanup keyspace manifest at {}: {e}",
+                                path.display(),
+                            );
                         } else {
                             if let Err(e) = std::fs::remove_dir_all(path) {
                                 log::error!(
-                                    "Failed to cleanup deleted partition's folder at {path:?}: {e}"
+                                    "Failed to cleanup deleted keyspace's folder at {}: {e}",
+                                    path.display(),
                                 );
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to cleanup partition manifest at {path:?}: {e}");
+                    log::error!(
+                        "Failed to cleanup keyspace manifest at {}: {e}",
+                        path.display(),
+                    );
                 }
             }
         }
@@ -150,43 +157,43 @@ impl Drop for PartitionHandleInner {
     }
 }
 
-/// Access to a keyspace partition
+/// Handle to a keyspace
 ///
-/// Each partition is backed by an LSM-tree to provide a
+/// Each keyspace is backed by an LSM-tree to provide a
 /// disk-backed search tree, and can be configured individually.
 ///
-/// A partition generally only takes a little bit of memory and disk space,
+/// A keyspace generally only takes a little bit of memory and disk space,
 /// but does not spawn its own background threads.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
 #[doc(alias = "table")]
-pub struct PartitionHandle(pub(crate) Arc<PartitionHandleInner>);
+pub struct Keyspace(pub(crate) Arc<KeyspaceInner>);
 
-impl std::ops::Deref for PartitionHandle {
-    type Target = PartitionHandleInner;
+impl std::ops::Deref for Keyspace {
+    type Target = KeyspaceInner;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl PartialEq for PartitionHandle {
+impl PartialEq for Keyspace {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Eq for PartitionHandle {}
+impl Eq for Keyspace {}
 
-impl std::hash::Hash for PartitionHandle {
+impl std::hash::Hash for Keyspace {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write(self.name.as_bytes());
     }
 }
 
-impl GarbageCollection for PartitionHandle {
+impl GarbageCollection for Keyspace {
     fn gc_scan(&self) -> crate::Result<GcReport> {
         let _nonce = SnapshotNonce::new(self.seqno.get(), self.snapshot_tracker.clone());
         crate::gc::GarbageCollector::scan(self)
@@ -225,10 +232,10 @@ impl GarbageCollection for PartitionHandle {
     }
 }
 
-impl PartitionHandle {
-    /// Ingests a sorted stream of key-value pairs into the partition.
+impl Keyspace {
+    /// Ingests a sorted stream of key-value pairs into the keyspace.
     ///
-    /// Can only be called on a new fresh, empty partition.
+    /// Can only be called on a new fresh, empty keyspace.
     ///
     /// # Errors
     ///
@@ -236,7 +243,7 @@ impl PartitionHandle {
     ///
     /// # Panics
     ///
-    /// Panics if the partition is **not** initially empty.
+    /// Panics if the keyspace is **not** initially empty.
     ///
     /// Will panic if the input iterator is not sorted in ascending order.
     pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
@@ -252,61 +259,61 @@ impl PartitionHandle {
             .map_err(Into::into)
     }
 
-    pub(crate) fn from_keyspace(
-        keyspace: &Keyspace,
+    pub(crate) fn from_database(
+        db: &Database,
         tree: AnyTree,
-        name: PartitionKey,
+        name: KeyspaceKey,
         config: CreateOptions,
     ) -> Self {
-        Self(Arc::new(PartitionHandleInner {
+        Self(Arc::new(KeyspaceInner {
             name,
             tree,
-            partitions: keyspace.partitions.clone(),
-            keyspace_config: keyspace.config.clone(),
-            flush_manager: keyspace.flush_manager.clone(),
-            flush_semaphore: keyspace.flush_semaphore.clone(),
+            keyspaces: db.keyspaces.clone(),
+            db_config: db.config.clone(),
+            flush_manager: db.flush_manager.clone(),
+            flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: keyspace.journal_manager.clone(),
-            journal: keyspace.journal.clone(),
-            compaction_manager: keyspace.compaction_manager.clone(),
-            seqno: keyspace.seqno.clone(),
-            visible_seqno: keyspace.visible_seqno.clone(),
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            journal_manager: db.journal_manager.clone(),
+            journal: db.journal.clone(),
+            compaction_manager: db.compaction_manager.clone(),
+            seqno: db.seqno.clone(),
+            visible_seqno: db.visible_seqno.clone(),
+            write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
-            is_poisoned: keyspace.is_poisoned.clone(),
-            snapshot_tracker: keyspace.snapshot_tracker.clone(),
+            is_poisoned: db.is_poisoned.clone(),
+            snapshot_tracker: db.snapshot_tracker.clone(),
             config,
-            stats: keyspace.stats.clone(),
+            stats: db.stats.clone(),
         }))
     }
 
-    /// Creates a new partition.
+    /// Creates a new keyspace.
     pub(crate) fn create_new(
-        keyspace: &Keyspace,
-        name: PartitionKey,
+        db: &Database,
+        name: KeyspaceKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
         use lsm_tree::coding::Encode;
 
-        log::debug!("Creating partition {name:?}");
+        log::debug!("Creating keyspace {name:?}");
 
-        let base_folder = keyspace.config.path.join(PARTITIONS_FOLDER).join(&*name);
+        let base_folder = db.config.path.join(KEYSPACES_FOLDER).join(&*name);
 
-        if base_folder.join(PARTITION_DELETED_MARKER).try_exists()? {
-            log::error!("Failed to open partition, partition is deleted.");
-            return Err(Error::PartitionDeleted);
+        if base_folder.join(KEYSPACE_DELETED_MARKER).try_exists()? {
+            log::error!("Failed to open keyspace; is deleted.");
+            return Err(Error::KeyspaceDeleted);
         }
 
         std::fs::create_dir_all(&base_folder)?;
 
         // Write config
-        let mut file = File::create_new(base_folder.join(PARTITION_CONFIG_FILE))?;
+        let mut file = File::create_new(base_folder.join(KEYSPACE_CONFIG_FILE))?;
         config.encode_into(&mut file)?;
         file.sync_all()?;
 
         let mut base_config = lsm_tree::Config::new(base_folder)
-            .descriptor_table(keyspace.config.descriptor_table.clone())
-            .use_cache(keyspace.config.cache.clone())
+            .descriptor_table(db.config.descriptor_table.clone())
+            .use_cache(db.config.cache.clone())
             .data_block_size(config.data_block_size)
             .index_block_size(config.index_block_size)
             .level_count(config.level_count)
@@ -326,25 +333,25 @@ impl PartitionHandle {
             lsm_tree::TreeType::Blob => AnyTree::Blob(base_config.open_as_blob_tree()?),
         };
 
-        Ok(Self(Arc::new(PartitionHandleInner {
+        Ok(Self(Arc::new(KeyspaceInner {
             name,
             config,
-            partitions: keyspace.partitions.clone(),
-            keyspace_config: keyspace.config.clone(),
-            flush_manager: keyspace.flush_manager.clone(),
-            flush_semaphore: keyspace.flush_semaphore.clone(),
+            keyspaces: db.keyspaces.clone(),
+            db_config: db.config.clone(),
+            flush_manager: db.flush_manager.clone(),
+            flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: keyspace.journal_manager.clone(),
-            journal: keyspace.journal.clone(),
-            compaction_manager: keyspace.compaction_manager.clone(),
-            seqno: keyspace.seqno.clone(),
-            visible_seqno: keyspace.visible_seqno.clone(),
+            journal_manager: db.journal_manager.clone(),
+            journal: db.journal.clone(),
+            compaction_manager: db.compaction_manager.clone(),
+            seqno: db.seqno.clone(),
+            visible_seqno: db.visible_seqno.clone(),
             tree,
-            write_buffer_manager: keyspace.write_buffer_manager.clone(),
+            write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
-            is_poisoned: keyspace.is_poisoned.clone(),
-            snapshot_tracker: keyspace.snapshot_tracker.clone(),
-            stats: keyspace.stats.clone(),
+            is_poisoned: db.is_poisoned.clone(),
+            snapshot_tracker: db.snapshot_tracker.clone(),
+            stats: db.stats.clone(),
         })))
     }
 
@@ -354,17 +361,17 @@ impl PartitionHandle {
         self.tree.tree_config().path.as_path()
     }
 
-    /// Returns the disk space usage of this partition.
+    /// Returns the disk space usage of this keyspace.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(0, partition.disk_space());
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert_eq!(0, tree.disk_space());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -373,22 +380,22 @@ impl PartitionHandle {
         self.tree.disk_space()
     }
 
-    /// Returns an iterator that scans through the entire partition.
+    /// Returns an iterator that scans through the entire keyspace.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
-    /// partition.insert("f", "abc")?;
-    /// partition.insert("g", "abc")?;
-    /// assert_eq!(3, partition.iter().count());
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    /// tree.insert("f", "abc")?;
+    /// tree.insert("g", "abc")?;
+    /// assert_eq!(3, tree.iter().count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -399,7 +406,7 @@ impl PartitionHandle {
             .map(|item| item.map_err(Into::into))
     }
 
-    /// Returns an iterator that scans through the entire partition, returning only keys.
+    /// Returns an iterator that scans through the entire keyspace, returning only keys.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
@@ -409,7 +416,7 @@ impl PartitionHandle {
             .map(|item| item.map_err(Into::into))
     }
 
-    /// Returns an iterator that scans through the entire partition, returning only values.
+    /// Returns an iterator that scans through the entire keyspace, returning only values.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
@@ -426,15 +433,15 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
-    /// partition.insert("f", "abc")?;
-    /// partition.insert("g", "abc")?;
-    /// assert_eq!(2, partition.range("a"..="f").count());
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    /// tree.insert("f", "abc")?;
+    /// tree.insert("g", "abc")?;
+    /// assert_eq!(2, tree.range("a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -454,15 +461,15 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
-    /// partition.insert("ab", "abc")?;
-    /// partition.insert("abc", "abc")?;
-    /// assert_eq!(2, partition.prefix("ab").count());
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    /// tree.insert("ab", "abc")?;
+    /// tree.insert("abc", "abc")?;
+    /// assert_eq!(2, tree.prefix("ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -475,7 +482,7 @@ impl PartitionHandle {
             .map(|item| item.map_err(Into::into))
     }
 
-    /// Approximates the amount of items in the partition.
+    /// Approximates the amount of items in the keyspace.
     ///
     /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
@@ -486,19 +493,19 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(partition.approximate_len(), 0);
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert_eq!(tree.approximate_len(), 0);
     ///
-    /// partition.insert("1", "abc")?;
-    /// assert_eq!(partition.approximate_len(), 1);
+    /// tree.insert("1", "abc")?;
+    /// assert_eq!(tree.approximate_len(), 1);
     ///
-    /// partition.remove("1")?;
+    /// tree.remove("1")?;
     /// // Oops! approximate_len will not be reliable here
-    /// assert_eq!(partition.approximate_len(), 2);
+    /// assert_eq!(tree.approximate_len(), 2);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -507,31 +514,31 @@ impl PartitionHandle {
         self.tree.approximate_len()
     }
 
-    /// Scans the entire partition, returning the amount of items.
+    /// Scans the entire keyspace, returning the amount of items.
     ///
     /// ###### Caution
     ///
-    /// This operation scans the entire partition: O(n) complexity!
+    /// This operation scans the entire keyspace: O(n) complexity!
     ///
     /// Never, under any circumstances, use .`len()` == 0 to check
-    /// if the partition is empty, use [`PartitionHandle::is_empty`] instead.
+    /// if the keyspace is empty, use [`Keyspace::is_empty`] instead.
     ///
-    /// If you want an estimate, use [`PartitionHandle::approximate_len`] instead.
+    /// If you want an estimate, use [`Keyspace::approximate_len`] instead.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(partition.len()?, 0);
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert_eq!(tree.len()?, 0);
     ///
-    /// partition.insert("1", "abc")?;
-    /// partition.insert("3", "abc")?;
-    /// partition.insert("5", "abc")?;
-    /// assert_eq!(partition.len()?, 3);
+    /// tree.insert("1", "abc")?;
+    /// tree.insert("3", "abc")?;
+    /// tree.insert("5", "abc")?;
+    /// assert_eq!(tree.len()?, 3);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -550,22 +557,22 @@ impl PartitionHandle {
         Ok(count)
     }
 
-    /// Returns `true` if the partition is empty.
+    /// Returns `true` if the keyspace is empty.
     ///
     /// This operation has O(log N) complexity.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(partition.is_empty()?);
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert!(tree.is_empty()?);
     ///
-    /// partition.insert("a", "abc")?;
-    /// assert!(!partition.is_empty()?);
+    /// tree.insert("a", "abc")?;
+    /// assert!(!tree.is_empty()?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -577,20 +584,20 @@ impl PartitionHandle {
         self.first_key_value().map(|x| x.is_none())
     }
 
-    /// Returns `true` if the partition contains the specified key.
+    /// Returns `true` if the keyspace contains the specified key.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(!partition.contains_key("a")?);
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert!(!tree.contains_key("a")?);
     ///
-    /// partition.insert("a", "abc")?;
-    /// assert!(partition.contains_key("a")?);
+    /// tree.insert("a", "abc")?;
+    /// assert!(tree.contains_key("a")?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -602,19 +609,19 @@ impl PartitionHandle {
         self.tree.contains_key(key, None).map_err(Into::into)
     }
 
-    /// Retrieves an item from the partition.
+    /// Retrieves an item from the keyspace.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "my_value")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert_eq!(Some("my_value".as_bytes().into()), item);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -627,19 +634,19 @@ impl PartitionHandle {
         Ok(self.tree.get(key, None)?)
     }
 
-    /// Retrieves the size of an item from the partition.
+    /// Retrieves the size of an item from the keyspace.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "my_value")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
     ///
-    /// let len = partition.size_of("a")?.unwrap_or_default();
+    /// let len = tree.size_of("a")?.unwrap_or_default();
     /// assert_eq!("my_value".len() as u32, len);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -652,22 +659,22 @@ impl PartitionHandle {
         Ok(self.tree.size_of(key, None)?)
     }
 
-    /// Returns the first key-value pair in the partition.
-    /// The key in this pair is the minimum key in the partition.
+    /// Returns the first key-value pair in the keyspace.
+    /// The key in this pair is the minimum key in the keyspace.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("1", "abc")?;
-    /// partition.insert("3", "abc")?;
-    /// partition.insert("5", "abc")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("1", "abc")?;
+    /// tree.insert("3", "abc")?;
+    /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = partition.first_key_value()?.expect("item should exist");
+    /// let (key, _) = tree.first_key_value()?.expect("item should exist");
     /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -680,22 +687,22 @@ impl PartitionHandle {
         Ok(self.tree.first_key_value(None, None)?)
     }
 
-    /// Returns the last key-value pair in the partition.
-    /// The key in this pair is the maximum key in the partition.
+    /// Returns the last key-value pair in the keyspace.
+    /// The key in this pair is the maximum key in the keyspace.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("1", "abc")?;
-    /// partition.insert("3", "abc")?;
-    /// partition.insert("5", "abc")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("1", "abc")?;
+    /// tree.insert("3", "abc")?;
+    /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = partition.last_key_value()?.expect("item should exist");
+    /// let (key, _) = tree.last_key_value()?.expect("item should exist");
     /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -715,15 +722,15 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// let tree1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let tree1 = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// assert!(!tree1.is_kv_separated());
     ///
-    /// let blob_cfg = PartitionCreateOptions::default().with_kv_separation(Default::default());
-    /// let tree2 = keyspace.open_partition("blobs", blob_cfg)?;
+    /// let blob_cfg = KeyspaceCreateOptions::default().with_kv_separation(Default::default());
+    /// let tree2 = db.keyspace("blobs", blob_cfg)?;
     /// assert!(tree2.is_kv_separated());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -754,7 +761,7 @@ impl PartitionHandle {
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::debug!("Rotating memtable {:?}", self.name);
 
-        log::trace!("partition: acquiring journal lock");
+        log::trace!("keyspace: acquiring journal lock");
         let mut journal = self.journal.get_writer();
 
         // Rotate memtable
@@ -763,19 +770,19 @@ impl PartitionHandle {
             return Ok(false);
         };
 
-        log::trace!("partition: acquiring journal manager lock");
+        log::trace!("keyspace: acquiring journal manager lock");
         let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
 
         let seqno_map = {
-            let partitions = self.partitions.write().expect("lock is poisoned");
+            let keyspaces = self.keyspaces.write().expect("lock is poisoned");
 
-            let mut seqnos = Vec::with_capacity(partitions.len());
+            let mut seqnos = Vec::with_capacity(keyspaces.len());
 
-            for partition in partitions.values() {
-                if let Some(lsn) = partition.tree.get_highest_memtable_seqno() {
+            for keyspace in keyspaces.values() {
+                if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
                     seqnos.push(EvictionWatermark {
                         lsn,
-                        partition: partition.clone(),
+                        keyspace: keyspace.clone(),
                     });
                 }
             }
@@ -785,14 +792,14 @@ impl PartitionHandle {
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
 
-        log::trace!("partition: acquiring flush manager lock");
+        log::trace!("keyspace: acquiring flush manager lock");
         let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
 
         flush_manager.enqueue_task(
             self.name.clone(),
             FlushTask {
                 id: yanked_id,
-                partition: self.clone(),
+                keyspace: self.clone(),
                 sealed_memtable: yanked_memtable,
             },
         );
@@ -819,10 +826,10 @@ impl PartitionHandle {
                 .expect("lock is poisoned")
                 .disk_space_used();
 
-            if bytes <= self.keyspace_config.max_journaling_size_in_bytes {
-                if bytes as f64 > self.keyspace_config.max_journaling_size_in_bytes as f64 * 0.9 {
+            if bytes <= self.db_config.max_journaling_size_in_bytes {
+                if bytes as f64 > self.db_config.max_journaling_size_in_bytes as f64 * 0.9 {
                     log::info!(
-                        "partition: write stall because 90% journal threshold has been reached"
+                        "keyspace: write stall because 90% journal threshold has been reached"
                     );
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
@@ -831,7 +838,7 @@ impl PartitionHandle {
             }
 
             log::info!(
-                "Write stall in partition {} because journal is too large",
+                "Write stall in keyspace {} because journal is too large",
                 self.name
             );
             std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
@@ -850,7 +857,7 @@ impl PartitionHandle {
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 30 {
             log::info!(
-                "Halting writes in partition {} until L0 is cleared up...",
+                "Halting writes in keyspace {} until L0 is cleared up...",
                 self.name,
             );
 
@@ -876,7 +883,7 @@ impl PartitionHandle {
     }
 
     pub(crate) fn check_write_buffer_size(&self, initial_size: u64) {
-        let limit = self.keyspace_config.max_write_buffer_size_in_bytes;
+        let limit = self.db_config.max_write_buffer_size_in_bytes;
 
         if initial_size > limit {
             let p90_limit = (limit as f64) * 0.9;
@@ -887,7 +894,7 @@ impl PartitionHandle {
                 if bytes < limit {
                     if bytes as f64 > p90_limit {
                         log::info!(
-                            "partition: write stall because 90% write buffer threshold has been reached"
+                            "keyspace: write stall because 90% write buffer threshold has been reached"
                         );
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
@@ -895,7 +902,7 @@ impl PartitionHandle {
                 }
 
                 log::info!(
-                    "Write stall in partition {} because of write buffer saturation",
+                    "Write stall in keyspace {} because of write buffer saturation",
                     self.name,
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -917,7 +924,7 @@ impl PartitionHandle {
         self.tree.blob_file_count()
     }
 
-    /// Number of completed memtable flushes in this partition.
+    /// Number of completed memtable flushes in this keyspace.
     #[must_use]
     #[doc(hidden)]
     pub fn flushes_completed(&self) -> usize {
@@ -925,13 +932,13 @@ impl PartitionHandle {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Opens a snapshot of this partition.
+    /// Opens a snapshot of this keyspace.
     #[must_use]
     pub fn snapshot(&self) -> crate::Snapshot {
         self.snapshot_at(self.seqno.get())
     }
 
-    /// Opens a snapshot of this partition with a given sequence number.
+    /// Opens a snapshot of this keyspace with a given sequence number.
     #[must_use]
     pub fn snapshot_at(&self, seqno: crate::Instant) -> crate::Snapshot {
         crate::Snapshot::new(
@@ -962,7 +969,7 @@ impl PartitionHandle {
         Ok(())
     }
 
-    /// Inserts a key-value pair into the partition.
+    /// Inserts a key-value pair into the keyspace.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
@@ -972,14 +979,14 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// assert!(!partition.is_empty()?);
+    /// assert!(!tree.is_empty()?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -995,7 +1002,7 @@ impl PartitionHandle {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {
-            return Err(crate::Error::PartitionDeleted);
+            return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();
@@ -1037,7 +1044,7 @@ impl PartitionHandle {
         Ok(())
     }
 
-    /// Removes an item from the partition.
+    /// Removes an item from the keyspace.
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
@@ -1045,19 +1052,19 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let item = partition.get("a")?.expect("should have item");
+    /// let item = tree.get("a")?.expect("should have item");
     /// assert_eq!("abc".as_bytes(), &*item);
     ///
-    /// partition.remove("a")?;
+    /// tree.remove("a")?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert_eq!(None, item);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -1070,7 +1077,7 @@ impl PartitionHandle {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {
-            return Err(crate::Error::PartitionDeleted);
+            return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();
@@ -1110,7 +1117,7 @@ impl PartitionHandle {
         Ok(())
     }
 
-    /// Removes an item from the partition, leaving behind a weak tombstone.
+    /// Removes an item from the keyspace, leaving behind a weak tombstone.
     ///
     /// When a weak tombstone is matched with a single write in a compaction,
     /// the tombstone will be removed along with the value. If the key was
@@ -1129,19 +1136,19 @@ impl PartitionHandle {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let item = partition.get("a")?.expect("should have item");
+    /// let item = tree.get("a")?.expect("should have item");
     /// assert_eq!("abc".as_bytes(), &*item);
     ///
-    /// partition.remove_weak("a")?;
+    /// tree.remove_weak("a")?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert_eq!(None, item);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -1155,7 +1162,7 @@ impl PartitionHandle {
         use std::sync::atomic::Ordering;
 
         if self.is_deleted.load(Ordering::Relaxed) {
-            return Err(crate::Error::PartitionDeleted);
+            return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();

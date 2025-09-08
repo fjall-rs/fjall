@@ -36,8 +36,8 @@ pub enum Error {
     /// More info: <https://www.usenix.org/system/files/atc20-rebello.pdf>
     Poisoned,
 
-    /// Partition is deleted
-    PartitionDeleted,
+    /// Keyspace is deleted
+    KeyspaceDeleted,
 
     /// Database is locked.
     Locked,
@@ -81,9 +81,7 @@ impl std::error::Error for Error {
             Self::Encode(inner) => Some(inner),
             Self::Decode(inner) => Some(inner),
             Self::JournalRecovery(inner) => Some(inner),
-            Self::InvalidVersion(_) | Self::Poisoned | Self::PartitionDeleted | Self::Locked => {
-                None
-            }
+            Self::InvalidVersion(_) | Self::Poisoned | Self::KeyspaceDeleted | Self::Locked => None,
         }
     }
 }

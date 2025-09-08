@@ -147,13 +147,13 @@ impl Iterator for JournalBatchReader {
                     }));
                 }
                 Marker::Item {
-                    partition,
+                    keyspace,
                     key,
                     value,
                     value_type,
                 } => {
                     let item = Marker::Item {
-                        partition: partition.clone(),
+                        keyspace: keyspace.clone(),
                         key: key.clone(),
                         value: value.clone(),
                         value_type,
@@ -180,7 +180,7 @@ impl Iterator for JournalBatchReader {
                     self.batch_counter -= 1;
 
                     self.items.push(BatchItem {
-                        partition,
+                        keyspace,
                         key,
                         value,
                         value_type,

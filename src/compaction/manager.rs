@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::PartitionHandle;
+use crate::Keyspace;
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
@@ -10,7 +10,7 @@ use std::{
 use std_semaphore::Semaphore;
 
 pub struct CompactionManagerInner {
-    partitions: Mutex<VecDeque<PartitionHandle>>,
+    keyspaces: Mutex<VecDeque<Keyspace>>,
     semaphore: Semaphore,
 }
 
@@ -23,20 +23,20 @@ impl Drop for CompactionManagerInner {
 impl Default for CompactionManagerInner {
     fn default() -> Self {
         Self {
-            partitions: Mutex::new(VecDeque::with_capacity(10)),
+            keyspaces: Mutex::new(VecDeque::with_capacity(10)),
             semaphore: Semaphore::new(0),
         }
     }
 }
 
-/// The compaction manager keeps track of which partitions
+/// The compaction manager keeps track of which keyspaces
 /// have recently been flushed in a FIFO queue.
 ///
 /// Its semaphore notifies compaction threads which will wake
 /// up and consume the queue items.
 ///
 /// The semaphore is incremented by the flush worker and optionally
-/// by the individual partitions in case of write halting.
+/// by the individual keyspaces in case of write halting.
 #[derive(Clone, Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct CompactionManager(Arc<CompactionManagerInner>);
@@ -51,11 +51,11 @@ impl std::ops::Deref for CompactionManager {
 
 impl CompactionManager {
     pub fn clear(&self) {
-        self.partitions.lock().expect("lock is poisoned").clear();
+        self.keyspaces.lock().expect("lock is poisoned").clear();
     }
 
-    pub fn remove_partition(&self, name: &str) {
-        let mut lock = self.partitions.lock().expect("lock is poisoned");
+    pub fn remove_keyspace(&self, name: &str) {
+        let mut lock = self.keyspaces.lock().expect("lock is poisoned");
         lock.retain(|x| &*x.name != name);
     }
 
@@ -63,9 +63,9 @@ impl CompactionManager {
         self.semaphore.acquire();
     }
 
-    pub fn notify(&self, partition: PartitionHandle) {
-        let mut lock = self.partitions.lock().expect("lock is poisoned");
-        lock.push_back(partition);
+    pub fn notify(&self, keyspace: Keyspace) {
+        let mut lock = self.keyspaces.lock().expect("lock is poisoned");
+        lock.push_back(keyspace);
         self.semaphore.release();
     }
 
@@ -73,8 +73,8 @@ impl CompactionManager {
         self.semaphore.release();
     }
 
-    pub fn pop(&self) -> Option<PartitionHandle> {
-        let mut lock = self.partitions.lock().expect("lock is poisoned");
+    pub fn pop(&self) -> Option<Keyspace> {
+        let mut lock = self.keyspaces.lock().expect("lock is poisoned");
         lock.pop_front()
     }
 }

@@ -4,9 +4,9 @@
 
 use super::manager::{FlushManager, Task};
 use crate::{
-    batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
+    batch::KeyspaceKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
     snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
-    HashMap, PartitionHandle,
+    HashMap, Keyspace,
 };
 use lsm_tree::{AbstractTree, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
@@ -14,7 +14,7 @@ use std::sync::{Arc, RwLock};
 /// Flushes a single segment.
 fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Result<Option<Segment>> {
     #[rustfmt::skip]
-    let segment = task.partition.tree.flush_memtable(
+    let segment = task.keyspace.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
         task.id,
@@ -25,7 +25,7 @@ fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Resul
     // TODO: test this after a failed flush
     if segment.is_err() {
         // IMPORTANT: Need to decrement pending segments counter
-        if let crate::AnyTree::Blob(tree) = &task.partition.tree {
+        if let crate::AnyTree::Blob(tree) = &task.keyspace.tree {
             tree.pending_segments
                 .fetch_sub(1, std::sync::atomic::Ordering::Release);
         }
@@ -35,7 +35,7 @@ fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Resul
 }
 
 struct MultiFlushResultItem {
-    partition: PartitionHandle,
+    keyspace: Keyspace,
     created_segments: Vec<Segment>,
 
     /// Size sum of sealed memtables that have been flushed
@@ -44,11 +44,11 @@ struct MultiFlushResultItem {
 
 type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
 
-/// Distributes tasks of multiple partitions over multiple worker threads.
+/// Distributes tasks of multiple keyspaces over multiple worker threads.
 ///
-/// Each thread is responsible for the tasks of one partition.
+/// Each thread is responsible for the tasks of one keyspace.
 fn run_multi_flush(
-    partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>,
+    partitioned_tasks: &HashMap<KeyspaceKey, Vec<Arc<Task>>>,
     eviction_threshold: SeqNo,
 ) -> MultiFlushResults {
     log::debug!("spawning {} worker threads", partitioned_tasks.len());
@@ -57,20 +57,20 @@ fn run_multi_flush(
     #[allow(clippy::needless_collect)]
     let threads = partitioned_tasks
         .iter()
-        .map(|(partition_name, tasks)| {
-            let partition_name = partition_name.clone();
+        .map(|(keyspace_name, tasks)| {
+            let keyspace_name = keyspace_name.clone();
             let tasks = tasks.clone();
 
             std::thread::spawn(move || {
                 log::trace!(
-                    "flushing {} memtables for partition {partition_name:?}",
+                    "flushing {} memtables for keyspace {keyspace_name:?}",
                     tasks.len()
                 );
 
-                let partition = tasks
+                let keyspace = tasks
                     .first()
                     .expect("should always have at least one task")
-                    .partition
+                    .keyspace
                     .clone();
 
                 let memtables_size: u64 = tasks.iter().map(|t| t.sealed_memtable.size()).sum();
@@ -90,7 +90,7 @@ fn run_multi_flush(
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 Ok(MultiFlushResultItem {
-                    partition,
+                    keyspace,
                     created_segments: created_segments.into_iter().flatten().collect(),
                     size: memtables_size,
                 })
@@ -132,13 +132,13 @@ pub fn run(
     for result in run_multi_flush(&partitioned_tasks, gc_watermark) {
         match result {
             Ok(MultiFlushResultItem {
-                partition,
+                keyspace,
                 created_segments,
                 size: memtables_size,
             }) => {
                 // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = partition
+                if let Err(e) = keyspace
                     .tree
                     .register_segments(&created_segments, gc_watermark)
                 {
@@ -151,22 +151,22 @@ pub fn run(
 
                 log::debug!(
                     "Dequeuing flush tasks: {} => {}",
-                    partition.name,
+                    keyspace.name,
                     created_segments.len(),
                 );
-                flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
+                flush_manager.dequeue_tasks(keyspace.name.clone(), created_segments.len());
 
                 write_buffer_manager.free(memtables_size);
 
                 for _ in 0..parallelism {
-                    compaction_manager.notify(partition.clone());
+                    compaction_manager.notify(keyspace.clone());
                 }
 
                 stats
                     .flushes_completed
                     .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
 
-                partition
+                keyspace
                     .flushes_completed
                     .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
             }

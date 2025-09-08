@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -10,18 +10,18 @@ fn recover_sealed_journal() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let keyspace = Config::new(&folder)
+        let db = Database::builder(&folder)
             .flush_workers(0)
             .compaction_workers(0)
             .open()?;
 
-        let partitions = &[
-            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
         ];
 
-        for tree in partitions {
+        for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
                 let value = nanoid::nanoid!();
@@ -29,7 +29,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             }
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT);
@@ -38,12 +38,12 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             first.rotate_memtable()?;
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
                 let value = nanoid::nanoid!();
@@ -51,7 +51,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             }
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
@@ -60,31 +60,31 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
     }
 
     for _ in 0..10 {
-        let keyspace = Config::new(&folder)
+        let db = Database::builder(&folder)
             .flush_workers(0)
             .compaction_workers(0)
             .open()?;
 
-        let partitions = &[
-            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
         ];
 
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
@@ -93,7 +93,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
     }
@@ -108,18 +108,18 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let keyspace = Config::new(&folder)
+        let db = Database::builder(&folder)
             .flush_workers(0)
             .compaction_workers(0)
             .open()?;
 
-        let partitions = &[
-            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
         ];
 
-        for tree in partitions {
+        for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
                 let value = nanoid::nanoid!().repeat(1_000);
@@ -127,7 +127,7 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             }
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT);
@@ -136,12 +136,12 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             first.rotate_memtable()?;
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
                 let value = nanoid::nanoid!().repeat(1_000);
@@ -149,7 +149,7 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             }
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
@@ -158,31 +158,31 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
     }
 
     for _ in 0..10 {
-        let keyspace = Config::new(&folder)
+        let db = Database::builder(&folder)
             .flush_workers(0)
             .compaction_workers(0)
             .open()?;
 
-        let partitions = &[
-            keyspace.open_partition("tree1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("tree3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
         ];
 
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
@@ -191,7 +191,7 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
         {
             use lsm_tree::AbstractTree;
 
-            let first = partitions.first().unwrap();
+            let first = keyspaces.first().unwrap();
             assert_eq!(1, first.tree.sealed_memtable_count());
         }
     }

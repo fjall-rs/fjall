@@ -2,15 +2,16 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::PartitionKey;
+use super::KeyspaceKey;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Item {
-    /// Partition key - an arbitrary byte array
+    // TODO: 3.0.0: not utf-8 in 3.0.0
+    /// Keyspace key - an arbitrary UTF-8 byte array
     ///
     /// Supports up to 2^8 bytes
-    pub partition: PartitionKey,
+    pub keyspace: KeyspaceKey,
 
     /// User-defined key - an arbitrary byte array
     ///
@@ -31,7 +32,7 @@ impl std::fmt::Debug for Item {
         write!(
             f,
             "{}:{:?}:{} => {:?}",
-            self.partition,
+            self.keyspace,
             self.key,
             match self.value_type {
                 ValueType::Value => "V",
@@ -44,20 +45,20 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
-    pub fn new<P: Into<PartitionKey>, K: Into<UserKey>, V: Into<UserValue>>(
-        partition: P,
+    pub fn new<N: Into<KeyspaceKey>, K: Into<UserKey>, V: Into<UserValue>>(
+        keyspace_name: N,
         key: K,
         value: V,
         value_type: ValueType,
     ) -> Self {
-        let p = partition.into();
+        let p = keyspace_name.into();
         let k = key.into();
         let v = value.into();
 
         assert!(!p.is_empty());
         assert!(!k.is_empty());
 
-        assert!(u8::try_from(p.len()).is_ok(), "Partition name too long");
+        assert!(u8::try_from(p.len()).is_ok(), "Keyspace name too long");
         assert!(
             u16::try_from(k.len()).is_ok(),
             "Keys can be up to 65535 bytes long"
@@ -68,7 +69,7 @@ impl Item {
         );
 
         Self {
-            partition: p,
+            keyspace: p,
             key: k,
             value: v,
             value_type,

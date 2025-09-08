@@ -2,14 +2,14 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::PartitionHandle;
+use crate::Keyspace;
 use lsm_tree::{gc::Report as GcReport, AnyTree};
 
 /// Functions for garbage collection strategies
 ///
-/// These functions are to be used with a key-value separated partition.
+/// These functions are to be used with a key-value separated keyspace.
 pub trait GarbageCollection {
-    /// Collects statistics about blob fragmentation inside the partition.
+    /// Collects statistics about blob fragmentation inside the keyspace.
     ///
     /// # Errors
     ///
@@ -17,7 +17,7 @@ pub trait GarbageCollection {
     ///
     /// # Panics
     ///
-    /// Panics if the partition is not KV-separated.
+    /// Panics if the keyspace is not KV-separated.
     fn gc_scan(&self) -> crate::Result<GcReport>;
 
     /// Rewrites blobs in order to achieve the given space amplification factor.
@@ -25,11 +25,11 @@ pub trait GarbageCollection {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
-    /// let blobs = keyspace.open_partition("my_blobs", opts)?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let opts = KeyspaceCreateOptions::default().with_kv_separation(Default::default());
+    /// let blobs = db.keyspace("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
     /// blobs.insert("b", "hello".repeat(1_000))?;
@@ -70,7 +70,7 @@ pub trait GarbageCollection {
     ///
     /// # Panics
     ///
-    /// Panics if the partition is not KV-separated.
+    /// Panics if the keyspace is not KV-separated.
     fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64>;
 
     /// Rewrites blobs that have reached a given staleness threshold.
@@ -78,11 +78,11 @@ pub trait GarbageCollection {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{ GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
-    /// let blobs = keyspace.open_partition("my_blobs", opts)?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let opts = KeyspaceCreateOptions::default().with_kv_separation(Default::default());
+    /// let blobs = db.keyspace("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
     /// blobs.insert("b", "hello".repeat(1_000))?;
@@ -123,7 +123,7 @@ pub trait GarbageCollection {
     ///
     /// # Panics
     ///
-    /// Panics if the partition is not KV-separated.
+    /// Panics if the keyspace is not KV-separated.
     ///
     /// Panics if the threshold is negative.
     ///
@@ -138,11 +138,11 @@ pub trait GarbageCollection {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, GarbageCollection, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// let opts = PartitionCreateOptions::default().with_kv_separation(Default::default());
-    /// let blobs = keyspace.open_partition("my_blobs", opts)?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let opts = KeyspaceCreateOptions::default().with_kv_separation(Default::default());
+    /// let blobs = db.keyspace("my_blobs", opts)?;
     ///
     /// blobs.insert("a", "hello".repeat(1_000))?;
     /// assert!(blobs.contains_key("a")?);
@@ -175,52 +175,49 @@ pub trait GarbageCollection {
     ///
     /// # Panics
     ///
-    /// Panics if the partition is not KV-separated.
+    /// Panics if the keyspace is not KV-separated.
     fn gc_drop_stale_segments(&self) -> crate::Result<u64>;
 }
 
 pub struct GarbageCollector;
 
 impl GarbageCollector {
-    pub fn scan(partition: &PartitionHandle) -> crate::Result<GcReport> {
-        if let AnyTree::Blob(tree) = &partition.tree {
+    pub fn scan(keyspace: &Keyspace) -> crate::Result<GcReport> {
+        if let AnyTree::Blob(tree) = &keyspace.tree {
             return tree
                 .gc_scan_stats(
-                    partition.seqno.get(),
-                    partition.snapshot_tracker.get_seqno_safe_to_gc(),
+                    keyspace.seqno.get(),
+                    keyspace.snapshot_tracker.get_seqno_safe_to_gc(),
                 )
                 .map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");
     }
 
-    pub fn with_space_amp_target(partition: &PartitionHandle, factor: f32) -> crate::Result<u64> {
-        if let AnyTree::Blob(tree) = &partition.tree {
+    pub fn with_space_amp_target(keyspace: &Keyspace, factor: f32) -> crate::Result<u64> {
+        if let AnyTree::Blob(tree) = &keyspace.tree {
             let strategy = lsm_tree::gc::SpaceAmpStrategy::new(factor);
 
-            tree.apply_gc_strategy(&strategy, partition.seqno.next())
+            tree.apply_gc_strategy(&strategy, keyspace.seqno.next())
                 .map_err(Into::into)
         } else {
             panic!("Cannot use GC for non-KV-separated tree");
         }
     }
 
-    pub fn with_staleness_threshold(
-        partition: &PartitionHandle,
-        threshold: f32,
-    ) -> crate::Result<u64> {
-        if let AnyTree::Blob(tree) = &partition.tree {
+    pub fn with_staleness_threshold(keyspace: &Keyspace, threshold: f32) -> crate::Result<u64> {
+        if let AnyTree::Blob(tree) = &keyspace.tree {
             let strategy = lsm_tree::gc::StaleThresholdStrategy::new(threshold);
 
             return tree
-                .apply_gc_strategy(&strategy, partition.seqno.next())
+                .apply_gc_strategy(&strategy, keyspace.seqno.next())
                 .map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");
     }
 
-    pub fn drop_stale_segments(partition: &PartitionHandle) -> crate::Result<u64> {
-        if let AnyTree::Blob(tree) = &partition.tree {
+    pub fn drop_stale_segments(keyspace: &Keyspace) -> crate::Result<u64> {
+        if let AnyTree::Blob(tree) = &keyspace.tree {
             return tree.gc_drop_stale().map_err(Into::into);
         }
         panic!("Cannot use GC for non-KV-separated tree");

@@ -1,11 +1,11 @@
 use super::BaseTransaction as InnerWriteTransaction;
-use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxKeyspace, TxPartitionHandle};
+use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxDatabase, TxKeyspace};
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
 
-/// A single-writer (serialized) cross-partition transaction
+/// A single-writer (serialized) cross-keyspace transaction
 ///
-/// Use [`WriteTransaction::commit`] to commit changes to the partition(s).
+/// Use [`WriteTransaction::commit`] to commit changes to the keyspace(s).
 ///
 /// Drop the transaction to rollback changes.
 pub struct WriteTransaction<'a> {
@@ -14,14 +14,10 @@ pub struct WriteTransaction<'a> {
 }
 
 impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(
-        keyspace: TxKeyspace,
-        nonce: SnapshotNonce,
-        guard: MutexGuard<'a, ()>,
-    ) -> Self {
+    pub(crate) fn new(db: TxDatabase, nonce: SnapshotNonce, guard: MutexGuard<'a, ()>) -> Self {
         Self {
             _guard: guard,
-            inner: InnerWriteTransaction::new(keyspace, nonce),
+            inner: InnerWriteTransaction::new(db, nonce),
         }
     }
 
@@ -35,21 +31,21 @@ impl<'a> WriteTransaction<'a> {
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = db.write_tx();
     ///
-    /// let taken = tx.take(&partition, "a")?.unwrap();
+    /// let taken = tx.take(&tree, "a")?.unwrap();
     /// assert_eq!(b"abc", &*taken);
     /// tx.commit()?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert!(item.is_none());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -60,10 +56,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn take<K: Into<UserKey>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.take(partition, key)
+        self.inner.take(keyspace, key)
     }
 
     /// Atomically updates an item and returns the new value.
@@ -73,41 +69,41 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = db.write_tx();
     ///
-    /// let updated = tx.update_fetch(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// let updated = tx.update_fetch(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
     /// tx.commit()?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = db.write_tx();
     ///
-    /// let updated = tx.update_fetch(&partition, "a", |_| None)?;
+    /// let updated = tx.update_fetch(&tree, "a", |_| None)?;
     /// assert!(updated.is_none());
     /// tx.commit()?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert!(item.is_none());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -118,11 +114,11 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.update_fetch(partition, key, f)
+        self.inner.update_fetch(keyspace, key, f)
     }
 
     /// Atomically updates an item and returns the previous value.
@@ -132,41 +128,41 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions, Slice};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = db.write_tx();
     ///
-    /// let prev = tx.fetch_update(&partition, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// let prev = tx.fetch_update(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
     /// tx.commit()?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "abc")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
     ///
-    /// let mut tx = keyspace.write_tx();
+    /// let mut tx = db.write_tx();
     ///
-    /// let prev = tx.fetch_update(&partition, "a", |_| None)?.unwrap();
+    /// let prev = tx.fetch_update(&tree, "a", |_| None)?.unwrap();
     /// assert_eq!(b"abc", &*prev);
     /// tx.commit()?;
     ///
-    /// let item = partition.get("a")?;
+    /// let item = tree.get("a")?;
     /// assert!(item.is_none());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -177,11 +173,11 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.fetch_update(partition, key, f)
+        self.inner.fetch_update(keyspace, key, f)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -191,25 +187,25 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "new_value");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "new_value");
     ///
     /// // Read-your-own-write
-    /// let item = tx.get(&partition, "a")?;
+    /// let item = tx.get(&tree, "a")?;
     /// assert_eq!(Some("new_value".as_bytes().into()), item);
     ///
     /// drop(tx);
     ///
     /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -219,10 +215,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.get(partition, key)
+        self.inner.get(keyspace, key)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -232,25 +228,25 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "new_value");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "new_value");
     ///
     /// // Read-your-own-write
-    /// let len = tx.size_of(&partition, "a")?.unwrap_or_default();
+    /// let len = tx.size_of(&tree, "a")?.unwrap_or_default();
     /// assert_eq!("new_value".len() as u32, len);
     ///
     /// drop(tx);
     ///
     /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -260,10 +256,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<u32>> {
-        self.inner.size_of(partition, key)
+        self.inner.size_of(keyspace, key)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -271,25 +267,25 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "my_value")?;
-    /// assert!(keyspace.read_tx().contains_key(&partition, "a")?);
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    /// assert!(db.read_tx().contains_key(&tree, "a")?);
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// assert!(tx.contains_key(&partition, "a")?);
+    /// let mut tx = db.write_tx();
+    /// assert!(tx.contains_key(&tree, "a")?);
     ///
-    /// tx.insert(&partition, "b", "my_value2");
-    /// assert!(tx.contains_key(&partition, "b")?);
+    /// tx.insert(&tree, "b", "my_value2");
+    /// assert!(tx.contains_key(&tree, "b")?);
     ///
     /// // Transaction not committed yet
-    /// assert!(!keyspace.read_tx().contains_key(&partition, "b")?);
+    /// assert!(!db.read_tx().contains_key(&tree, "b")?);
     ///
     /// tx.commit()?;
-    /// assert!(keyspace.read_tx().contains_key(&partition, "b")?);
+    /// assert!(db.read_tx().contains_key(&tree, "b")?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -299,10 +295,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<bool> {
-        self.inner.contains_key(partition, key)
+        self.inner.contains_key(keyspace, key)
     }
 
     /// Returns the first key-value pair in the transaction's state.
@@ -311,21 +307,21 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "1", "abc");
-    /// tx.insert(&partition, "3", "abc");
-    /// tx.insert(&partition, "5", "abc");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "1", "abc");
+    /// tx.insert(&tree, "3", "abc");
+    /// tx.insert(&tree, "5", "abc");
     ///
-    /// let (key, _) = tx.first_key_value(&partition)?.expect("item should exist");
+    /// let (key, _) = tx.first_key_value(&tree)?.expect("item should exist");
     /// assert_eq!(&*key, "1".as_bytes());
     ///
-    /// assert!(keyspace.read_tx().first_key_value(&partition)?.is_none());
+    /// assert!(db.read_tx().first_key_value(&tree)?.is_none());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -333,8 +329,8 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
-        self.inner.first_key_value(partition)
+    pub fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+        self.inner.first_key_value(keyspace)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -343,21 +339,21 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "1", "abc");
-    /// tx.insert(&partition, "3", "abc");
-    /// tx.insert(&partition, "5", "abc");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "1", "abc");
+    /// tx.insert(&tree, "3", "abc");
+    /// tx.insert(&tree, "5", "abc");
     ///
-    /// let (key, _) = tx.last_key_value(&partition)?.expect("item should exist");
+    /// let (key, _) = tx.last_key_value(&tree)?.expect("item should exist");
     /// assert_eq!(&*key, "5".as_bytes());
     ///
-    /// assert!(keyspace.read_tx().last_key_value(&partition)?.is_none());
+    /// assert!(db.read_tx().last_key_value(&tree)?.is_none());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -365,36 +361,36 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, partition: &TxPartitionHandle) -> crate::Result<Option<KvPair>> {
-        self.inner.last_key_value(partition)
+    pub fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+        self.inner.last_key_value(keyspace)
     }
 
-    /// Scans the entire partition, returning the amount of items.
+    /// Scans the entire keyspace, returning the amount of items.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "my_value")?;
-    /// partition.insert("b", "my_value2")?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    /// tree.insert("b", "my_value2")?;
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// assert_eq!(2, tx.len(&partition)?);
+    /// let mut tx = db.write_tx();
+    /// assert_eq!(2, tx.len(&tree)?);
     ///
-    /// tx.insert(&partition, "c", "my_value3");
+    /// tx.insert(&tree, "c", "my_value3");
     ///
     /// // read-your-own write
-    /// assert_eq!(3, tx.len(&partition)?);
+    /// assert_eq!(3, tx.len(&tree)?);
     ///
     /// // Transaction is not committed yet
-    /// assert_eq!(2, keyspace.read_tx().len(&partition)?);
+    /// assert_eq!(2, db.read_tx().len(&tree)?);
     ///
     /// tx.commit()?;
-    /// assert_eq!(3, keyspace.read_tx().len(&partition)?);
+    /// assert_eq!(3, db.read_tx().len(&tree)?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -402,8 +398,8 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
-        self.inner.len(partition)
+    pub fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
+        self.inner.len(keyspace)
     }
 
     /// Iterates over the transaction's state.
@@ -413,28 +409,28 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "abc");
-    /// tx.insert(&partition, "f", "abc");
-    /// tx.insert(&partition, "g", "abc");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "abc");
+    /// tx.insert(&tree, "f", "abc");
+    /// tx.insert(&tree, "g", "abc");
     ///
-    /// assert_eq!(3, tx.iter(&partition).count());
-    /// assert_eq!(0, keyspace.read_tx().iter(&partition).count());
+    /// assert_eq!(3, tx.iter(&tree).count());
+    /// assert_eq!(0, db.read_tx().iter(&tree).count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn iter<'b>(
         &'b self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
-        self.inner.iter(partition)
+        self.inner.iter(keyspace)
     }
 
     /// Iterates over the transaction's state, returning keys only.
@@ -443,9 +439,9 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn keys<'b>(
         &'b self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'b {
-        self.inner.keys(partition)
+        self.inner.keys(keyspace)
     }
 
     /// Iterates over the transaction's state, returning values only.
@@ -454,9 +450,9 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn values<'b>(
         &'b self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
     ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'b {
-        self.inner.values(partition)
+        self.inner.values(keyspace)
     }
 
     // Iterates over a range of the transaction's state.
@@ -466,29 +462,29 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "abc");
-    /// tx.insert(&partition, "f", "abc");
-    /// tx.insert(&partition, "g", "abc");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "abc");
+    /// tx.insert(&tree, "f", "abc");
+    /// tx.insert(&tree, "g", "abc");
     ///
-    /// assert_eq!(2, tx.range(&partition, "a"..="f").count());
-    /// assert_eq!(0, keyspace.read_tx().range(&partition, "a"..="f").count());
+    /// assert_eq!(2, tx.range(&tree, "a"..="f").count());
+    /// assert_eq!(0, db.read_tx().range(&tree, "a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
-        partition: &'b TxPartitionHandle,
+        keyspace: &'b TxKeyspace,
         range: R,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
-        self.inner.range(partition, range)
+        self.inner.range(keyspace, range)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -498,32 +494,32 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "abc");
-    /// tx.insert(&partition, "ab", "abc");
-    /// tx.insert(&partition, "abc", "abc");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "abc");
+    /// tx.insert(&tree, "ab", "abc");
+    /// tx.insert(&tree, "abc", "abc");
     ///
-    /// assert_eq!(2, tx.prefix(&partition, "ab").count());
-    /// assert_eq!(0, keyspace.read_tx().prefix(&partition, "ab").count());
+    /// assert_eq!(2, tx.prefix(&tree, "ab").count());
+    /// assert_eq!(0, db.read_tx().prefix(&tree, "ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
-        partition: &'b TxPartitionHandle,
+        keyspace: &'b TxKeyspace,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
-        self.inner.prefix(partition, prefix)
+        self.inner.prefix(keyspace, prefix)
     }
 
-    // Inserts a key-value pair into the partition.
+    // Inserts a key-value pair into the keyspace.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
@@ -533,21 +529,21 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// tx.insert(&partition, "a", "new_value");
+    /// let mut tx = db.write_tx();
+    /// tx.insert(&tree, "a", "new_value");
     ///
     /// drop(tx);
     ///
     /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -557,14 +553,14 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         value: V,
     ) {
-        self.inner.insert(partition, key, value);
+        self.inner.insert(keyspace, key, value);
     }
 
-    /// Removes an item from the partition.
+    /// Removes an item from the keyspace.
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
@@ -572,25 +568,25 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// tx.remove(&partition, "a");
+    /// let mut tx = db.write_tx();
+    /// tx.remove(&tree, "a");
     ///
     /// // Read-your-own-write
-    /// let item = tx.get(&partition, "a")?;
+    /// let item = tx.get(&tree, "a")?;
     /// assert_eq!(None, item);
     ///
     /// drop(tx);
     ///
     /// // Deletion was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -598,11 +594,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
-        self.inner.remove(partition, key);
+    pub fn remove<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
+        self.inner.remove(keyspace, key);
     }
 
-    /// Removes an item from the partition, leaving behind a weak tombstone.
+    /// Removes an item from the keyspace, leaving behind a weak tombstone.
     ///
     /// The tombstone marker of this delete operation will vanish when it
     /// collides with its corresponding insertion.
@@ -616,25 +612,25 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open_transactional()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// partition.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "previous_value")?;
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
-    /// let mut tx = keyspace.write_tx();
-    /// tx.remove_weak(&partition, "a");
+    /// let mut tx = db.write_tx();
+    /// tx.remove_weak(&tree, "a");
     ///
     /// // Read-your-own-write
-    /// let item = tx.get(&partition, "a")?;
+    /// let item = tx.get(&tree, "a")?;
     /// assert_eq!(None, item);
     ///
     /// drop(tx);
     ///
     /// // Deletion was not committed
-    /// assert_eq!(b"previous_value", &*partition.get("a")?.unwrap());
+    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -643,8 +639,8 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn remove_weak<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
-        self.inner.remove_weak(partition, key);
+    pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
+        self.inner.remove_weak(keyspace, key);
     }
 
     /// Commits the transaction.

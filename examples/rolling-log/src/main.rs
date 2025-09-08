@@ -1,4 +1,4 @@
-use fjall::{Config, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions};
 use std::path::Path;
 
 const LIMIT: u64 = 10_000_000;
@@ -6,14 +6,14 @@ const LIMIT: u64 = 10_000_000;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path)
+    let db = Database::builder(path)
         .temporary(true)
         .max_write_buffer_size(4_000_000)
         .open()?;
 
-    let log = keyspace.open_partition(
+    let log = db.keyspace(
         "log",
-        PartitionCreateOptions::default().compaction_strategy(fjall::compaction::Strategy::Fifo(
+        KeyspaceCreateOptions::default().compaction_strategy(fjall::compaction::Strategy::Fifo(
             fjall::compaction::Fifo::new(LIMIT, None),
         )),
     )?;

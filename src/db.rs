@@ -4,24 +4,24 @@
 
 use crate::{
     background_worker::{Activity, BackgroundWorker},
-    batch::{Batch, PartitionKey},
+    batch::{Batch, KeyspaceKey},
     compaction::manager::CompactionManager,
     config::Config,
     file::{
-        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, LOCK_FILE, PARTITIONS_FOLDER,
-        PARTITION_DELETED_MARKER,
+        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, KEYSPACES_FOLDER, KEYSPACE_DELETED_MARKER,
+        LOCK_FILE,
     },
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
+    keyspace::name::is_valid_keyspace_name,
     monitor::Monitor,
-    partition::name::is_valid_partition_name,
     poison_dart::PoisonDart,
-    recovery::{recover_partitions, recover_sealed_memtables},
+    recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     version::Version,
     write_buffer_manager::WriteBufferManager,
-    HashMap, PartitionCreateOptions, PartitionHandle,
+    HashMap, Keyspace, KeyspaceCreateOptions,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
@@ -35,18 +35,18 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
-pub type Partitions = HashMap<PartitionKey, PartitionHandle>;
+pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 
 #[allow(clippy::module_name_repetitions)]
-pub struct KeyspaceInner {
-    /// Dictionary of all partitions
+pub struct DatabaseInner {
+    /// Dictionary of all keyspaces
     #[doc(hidden)]
-    pub partitions: Arc<RwLock<Partitions>>,
+    pub keyspaces: Arc<RwLock<Keyspaces>>,
 
     /// Journal (write-ahead-log/WAL)
     pub(crate) journal: Arc<Journal>,
 
-    /// Keyspace configuration
+    /// Database configuration
     #[doc(hidden)]
     pub config: Config,
 
@@ -67,11 +67,11 @@ pub struct KeyspaceInner {
     /// Notifies flush threads
     pub(crate) flush_semaphore: Arc<Semaphore>,
 
-    /// Keeps track of which partitions are most likely to be
+    /// Keeps track of which keyspaces are most likely to be
     /// candidates for compaction
     pub(crate) compaction_manager: CompactionManager,
 
-    /// Stop signal when keyspace is dropped to stop background threads
+    /// Stop signal when database is dropped to stop background threads
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
 
     /// Counter of background threads
@@ -91,9 +91,9 @@ pub struct KeyspaceInner {
     lock_fd: File,
 }
 
-impl Drop for KeyspaceInner {
+impl Drop for DatabaseInner {
     fn drop(&mut self) {
-        log::trace!("Dropping Keyspace");
+        log::trace!("Dropping Database");
 
         self.stop_signal.send();
 
@@ -115,7 +115,7 @@ impl Drop for KeyspaceInner {
             .expect("lock is poisoned")
             .clear();
         self.compaction_manager.clear();
-        self.partitions.write().expect("lock is poisoned").clear();
+        self.keyspaces.write().expect("lock is poisoned").clear();
         self.journal_manager
             .write()
             .expect("lock is poisoned")
@@ -125,8 +125,8 @@ impl Drop for KeyspaceInner {
 
         if self.config.clean_path_on_drop {
             log::info!(
-                "Deleting keyspace because temporary=true: {:?}",
-                self.config.path,
+                "Deleting database because temporary=true: {}",
+                self.config.path.display(),
             );
 
             if let Err(err) = remove_dir_all(&self.config.path) {
@@ -147,50 +147,55 @@ impl Drop for KeyspaceInner {
     }
 }
 
-/// A keyspace is a single logical database
-/// which can house multiple partitions
+/// A database is a single logical database
+/// which can house multiple keyspaces
 ///
-/// In your application, you should create a single keyspace
+/// In your application, you should create a single database
 /// and keep it around for as long as needed
-/// (as long as you are using its partitions).
+/// (as long as you are using its keyspaces).
 #[derive(Clone)]
 #[doc(alias = "database")]
 #[doc(alias = "collection")]
-pub struct Keyspace(pub(crate) Arc<KeyspaceInner>);
+pub struct Database(pub(crate) Arc<DatabaseInner>);
 
-impl std::ops::Deref for Keyspace {
-    type Target = KeyspaceInner;
+impl std::ops::Deref for Database {
+    type Target = DatabaseInner;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl Keyspace {
+impl Database {
+    /// Creates a new database builder to create or open a database at `path`.
+    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder {
+        crate::DatabaseBuilder::new(path.as_ref())
+    }
+
     /// Initializes a new atomic write batch.
     ///
-    /// Items may be written to multiple partitions, which
+    /// Items may be written to multiple keyspaces, which
     /// will be be updated atomically when the batch is committed.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// let mut batch = keyspace.batch();
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// let mut batch = db.batch();
     ///
-    /// assert_eq!(partition.len()?, 0);
-    /// batch.insert(&partition, "1", "abc");
-    /// batch.insert(&partition, "3", "abc");
-    /// batch.insert(&partition, "5", "abc");
+    /// assert_eq!(tree.len()?, 0);
+    /// batch.insert(&tree, "1", "abc");
+    /// batch.insert(&tree, "3", "abc");
+    /// batch.insert(&tree, "5", "abc");
     ///
-    /// assert_eq!(partition.len()?, 0);
+    /// assert_eq!(tree.len()?, 0);
     ///
     /// batch.commit()?;
-    /// assert_eq!(partition.len()?, 3);
+    /// assert_eq!(tree.len()?, 3);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -255,12 +260,11 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert_eq!(1, keyspace.journal_count());
+    /// # let db = Database::builder(folder).open()?;
+    /// assert_eq!(1, db.journal_count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -285,30 +289,30 @@ impl Keyspace {
                 .disk_space_used()
     }
 
-    /// Returns the disk space usage of the entire keyspace.
+    /// Returns the disk space usage of the entire database.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// # let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(keyspace.disk_space() > 0);
+    /// # let db = Database::builder(folder).open()?;
+    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert!(db.disk_space() > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     pub fn disk_space(&self) -> u64 {
-        let partitions_size = self
-            .partitions
+        let keyspaces_size = self
+            .keyspaces
             .read()
             .expect("lock is poisoned")
             .values()
-            .map(PartitionHandle::disk_space)
+            .map(Keyspace::disk_space)
             .sum::<u64>();
 
-        self.journal_disk_space() + partitions_size
+        self.journal_disk_space() + keyspaces_size
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]
@@ -320,14 +324,14 @@ impl Keyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// let keyspace = Config::new(folder).open()?;
-    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+    /// let db = Database::builder(folder).open()?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
     ///
-    /// keyspace.persist(PersistMode::SyncAll)?;
+    /// db.persist(PersistMode::SyncAll)?;
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
@@ -360,7 +364,7 @@ impl Keyspace {
         self.config.cache.capacity()
     }
 
-    /// Opens a keyspace in the given directory.
+    /// Opens a database in the given directory.
     ///
     /// # Errors
     ///
@@ -371,18 +375,18 @@ impl Keyspace {
             config.cache.capacity() / 1_024 / 1_024,
         );
 
-        let keyspace = Self::create_or_recover(config)?;
-        keyspace.start_background_threads()?;
+        let db = Self::create_or_recover(config)?;
+        db.start_background_threads()?;
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
-        Ok(keyspace)
+        Ok(db)
     }
 
-    /// Same as [`Keyspace::open`], but does not start background threads.
+    /// Same as [`Database::open`], but does not start background threads.
     ///
-    /// Needed to open a keyspace without threads for testing.
+    /// Needed to open a database without threads for testing.
     ///
     /// Should not be user-facing.
     #[doc(hidden)]
@@ -394,9 +398,9 @@ impl Keyspace {
         }
     }
 
-    /// Starts background threads that maintain the keyspace.
+    /// Starts background threads that maintain the database.
     ///
-    /// Should not be called, unless in [`Keyspace::open`]
+    /// Should not be called, unless in [`Database::open`]
     /// and should definitely not be user-facing.
     pub(crate) fn start_background_threads(&self) -> crate::Result<()> {
         if self.config.flush_workers_count > 0 {
@@ -428,34 +432,34 @@ impl Keyspace {
         self.spawn_monitor_thread()
     }
 
-    /// Destroys the partition, removing all data associated with it.
+    /// Destroys the keyspace, removing all data associated with it.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn delete_partition(&self, handle: PartitionHandle) -> crate::Result<()> {
-        let partition_path = handle.path();
+    pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
+        let keyspace_path = handle.path();
 
-        // TODO: just remove from meta partition instead
-        let file = File::create_new(partition_path.join(PARTITION_DELETED_MARKER))?;
+        // TODO: just remove from meta keyspace instead
+        let file = File::create_new(keyspace_path.join(KEYSPACE_DELETED_MARKER))?;
         file.sync_all()?;
 
         // IMPORTANT: fsync folder on Unix
-        fsync_directory(partition_path)?;
+        fsync_directory(keyspace_path)?;
 
         handle
             .is_deleted
             .store(true, std::sync::atomic::Ordering::Release);
 
-        // IMPORTANT: Care, locks partitions map
-        self.compaction_manager.remove_partition(&handle.name);
+        // IMPORTANT: Care, locks keyspaces map
+        self.compaction_manager.remove_keyspace(&handle.name);
 
         self.flush_manager
             .write()
             .expect("lock is poisoned")
-            .remove_partition(&handle.name);
+            .remove_keyspace(&handle.name);
 
-        self.partitions
+        self.keyspaces
             .write()
             .expect("lock is poisoned")
             .remove(&handle.name);
@@ -463,16 +467,12 @@ impl Keyspace {
         Ok(())
     }
 
-    // TODO: open_or_create_keyspace(create_opts) -> Result<Keyspace>
-    // TODO: open_partition -> Result<Option<Keyspace>>
-
-    /// Creates or opens a keyspace partition.
+    /// Creates or opens a keyspace.
     ///
-    /// If the partition does not yet exist, it will be created configured with `create_options`.
-    /// Otherwise simply a handle to the existing partition will be returned.
+    /// If the keyspace does not yet exist, it will be created configured with `create_options`.
+    /// Otherwise simply a handle to the existing keyspace will be returned.
     ///
-    /// Partition names can be up to 255 characters long, can not be empty and
-    /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
+    /// Keyspace names can be up to 255 characters long and can not be empty.
     ///
     /// # Errors
     ///
@@ -480,23 +480,23 @@ impl Keyspace {
     ///
     /// # Panics
     ///
-    /// Panics if the partition name is invalid.
-    pub fn open_partition(
+    /// Panics if the keyspace name is invalid.
+    pub fn keyspace(
         &self,
         name: &str,
-        create_options: PartitionCreateOptions,
-    ) -> crate::Result<PartitionHandle> {
-        assert!(is_valid_partition_name(name));
+        create_options: KeyspaceCreateOptions,
+    ) -> crate::Result<Keyspace> {
+        assert!(is_valid_keyspace_name(name));
 
-        let mut partitions = self.partitions.write().expect("lock is poisoned");
+        let mut keyspaces = self.keyspaces.write().expect("lock is poisoned");
 
-        Ok(if let Some(partition) = partitions.get(name) {
-            partition.clone()
+        Ok(if let Some(keyspace) = keyspaces.get(name) {
+            keyspace.clone()
         } else {
-            let name: PartitionKey = name.into();
+            let name: KeyspaceKey = name.into();
 
-            let handle = PartitionHandle::create_new(self, name.clone(), create_options)?;
-            partitions.insert(name, handle.clone());
+            let handle = Keyspace::create_new(self, name.clone(), create_options)?;
+            keyspaces.insert(name, handle.clone());
 
             #[cfg(feature = "__internal_whitebox")]
             crate::drop::increment_drop_counter();
@@ -505,16 +505,16 @@ impl Keyspace {
         })
     }
 
-    /// Returns the amount of partitions.
+    /// Returns the number of keyspaces.
     #[must_use]
-    pub fn partition_count(&self) -> usize {
-        self.partitions.read().expect("lock is poisoned").len()
+    pub fn keyspace_count(&self) -> usize {
+        self.keyspaces.read().expect("lock is poisoned").len()
     }
 
-    /// Gets a list of all partition names in the keyspace.
+    /// Gets a list of all keyspace names in the database.
     #[must_use]
-    pub fn list_partitions(&self) -> Vec<PartitionKey> {
-        self.partitions
+    pub fn list_keyspaces(&self) -> Vec<KeyspaceKey> {
+        self.keyspaces
             .read()
             .expect("lock is poisoned")
             .keys()
@@ -522,24 +522,24 @@ impl Keyspace {
             .collect()
     }
 
-    /// Returns `true` if the partition with the given name exists.
+    /// Returns `true` if the keyspace with the given name exists.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// assert!(!keyspace.partition_exists("default"));
-    /// keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// assert!(keyspace.partition_exists("default"));
+    /// # let db = Database::builder(folder).open()?;
+    /// assert!(!db.keyspace_exists("default"));
+    /// db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert!(db.keyspace_exists("default"));
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn partition_exists(&self, name: &str) -> bool {
-        self.partitions
+    pub fn keyspace_exists(&self, name: &str) -> bool {
+        self.keyspaces
             .read()
             .expect("lock is poisoned")
             .contains_key(name)
@@ -547,39 +547,39 @@ impl Keyspace {
 
     /// Gets the current sequence number.
     ///
-    /// Can be used to start a cross-partition snapshot, using [`PartitionHandle::snapshot_at`].
+    /// Can be used to start a cross-keyspace snapshot, using [`Keyspace::snapshot_at`].
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, Keyspace, PartitionCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let keyspace = Config::new(folder).open()?;
-    /// let partition1 = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    /// let partition2 = keyspace.open_partition("another", PartitionCreateOptions::default())?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let tree1 = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// let tree2 = db.keyspace("another", KeyspaceCreateOptions::default())?;
     ///
-    /// partition1.insert("abc1", "abc")?;
-    /// partition2.insert("abc2", "abc")?;
+    /// tree1.insert("abc1", "abc")?;
+    /// tree2.insert("abc2", "abc")?;
     ///
-    /// let instant = keyspace.instant();
-    /// let snapshot1 = partition1.snapshot_at(instant);
-    /// let snapshot2 = partition2.snapshot_at(instant);
+    /// let instant = db.instant();
+    /// let snapshot1 = tree1.snapshot_at(instant);
+    /// let snapshot2 = tree2.snapshot_at(instant);
     ///
-    /// assert!(partition1.contains_key("abc1")?);
-    /// assert!(partition2.contains_key("abc2")?);
+    /// assert!(tree1.contains_key("abc1")?);
+    /// assert!(tree2.contains_key("abc2")?);
     ///
     /// assert!(snapshot1.contains_key("abc1")?);
     /// assert!(snapshot2.contains_key("abc2")?);
     ///
-    /// partition1.insert("def1", "def")?;
-    /// partition2.insert("def2", "def")?;
+    /// tree1.insert("def1", "def")?;
+    /// tree2.insert("def2", "def")?;
     ///
     /// assert!(!snapshot1.contains_key("def1")?);
     /// assert!(!snapshot2.contains_key("def2")?);
     ///
-    /// assert!(partition1.contains_key("def1")?);
-    /// assert!(partition2.contains_key("def2")?);
+    /// assert!(tree1.contains_key("def1")?);
+    /// assert!(tree2.contains_key("def2")?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -602,11 +602,11 @@ impl Keyspace {
         Ok(())
     }
 
-    /// Recovers existing keyspace from directory.
+    /// Recovers existing database from directory.
     #[allow(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering keyspace at {}", config.path.display());
+        log::info!("Recovering database at {}", config.path.display());
 
         // Check version
         Self::check_version(&config.path)?;
@@ -632,11 +632,11 @@ impl Keyspace {
 
         let journal_manager = JournalManager::from_active(active_journal.path());
 
-        // Construct (empty) keyspace, then fill back with partition data
-        let inner = KeyspaceInner {
+        // Construct (empty) database, then fill back with keyspace data
+        let inner = DatabaseInner {
             config,
             journal: active_journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+            keyspaces: Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
                 10,
                 xxhash_rust::xxh3::Xxh3Builder::new(),
             ))),
@@ -655,14 +655,14 @@ impl Keyspace {
             lock_fd: lock_file,
         };
 
-        let keyspace = Self(Arc::new(inner));
+        let db = Self(Arc::new(inner));
 
-        // Recover partitions
-        recover_partitions(&keyspace)?;
+        // Recover keyspaces
+        recover_keyspaces(&db)?;
 
         // Recover sealed memtables by walking through old journals
         recover_sealed_memtables(
-            &keyspace,
+            &db,
             &sealed_journals
                 .into_iter()
                 .map(|(_, x)| x)
@@ -670,14 +670,14 @@ impl Keyspace {
         )?;
 
         {
-            let partitions = keyspace.partitions.read().expect("lock is poisoned");
+            let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
             #[cfg(debug_assertions)]
-            for partition in partitions.values() {
+            for keyspace in keyspaces.values() {
                 // NOTE: If this triggers, the last sealed memtable
                 // was not correctly rotated
                 debug_assert!(
-                    partition.tree.lock_active_memtable().is_empty(),
+                    keyspace.tree.lock_active_memtable().is_empty(),
                     "active memtable is not empty - this is a bug"
                 );
             }
@@ -687,14 +687,14 @@ impl Keyspace {
             if !journal_recovery.was_active_created {
                 log::trace!("Recovering active memtables from active journal");
 
-                let reader = keyspace.journal.get_reader()?;
+                let reader = db.journal.get_reader()?;
 
                 for batch in reader {
                     let batch = batch?;
 
                     for item in batch.items {
-                        if let Some(partition) = partitions.get(&item.partition) {
-                            let tree = &partition.tree;
+                        if let Some(keyspace) = keyspaces.get(&item.keyspace) {
+                            let tree = &keyspace.tree;
 
                             match item.value_type {
                                 lsm_tree::ValueType::Value => {
@@ -711,41 +711,41 @@ impl Keyspace {
                     }
                 }
 
-                for partition in partitions.values() {
-                    let size = partition.tree.active_memtable_size();
+                for keyspace in keyspaces.values() {
+                    let size = keyspace.tree.active_memtable_size();
 
                     log::trace!(
-                        "Recovered active memtable of size {size}B for partition {:?} ({} items)",
-                        partition.name,
-                        partition.tree.lock_active_memtable().len(),
+                        "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
+                        keyspace.name,
+                        keyspace.tree.lock_active_memtable().len(),
                     );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
-                    keyspace.write_buffer_manager.allocate(size);
+                    db.write_buffer_manager.allocate(size);
 
                     // Recover seqno
-                    let maybe_next_seqno = partition
+                    let maybe_next_seqno = keyspace
                         .tree
                         .get_highest_seqno()
                         .map(|x| x + 1)
                         .unwrap_or_default();
 
-                    keyspace.seqno.fetch_max(maybe_next_seqno);
-                    log::debug!("Keyspace seqno is now {}", keyspace.seqno.get());
+                    db.seqno.fetch_max(maybe_next_seqno);
+                    log::debug!("Database seqno is now {}", db.seqno.get());
                 }
             }
         }
 
-        keyspace.visible_seqno.set(keyspace.seqno.get());
+        db.visible_seqno.set(db.seqno.get());
 
         log::trace!("Recovery successful");
 
-        Ok(keyspace)
+        Ok(db)
     }
 
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
-        log::info!("Creating keyspace at {}", config.path.display());
+        log::info!("Creating database at {}", config.path.display());
 
         std::fs::create_dir_all(&config.path)?;
 
@@ -756,10 +756,10 @@ impl Keyspace {
         })?;
 
         let journal_folder_path = config.path.join(JOURNALS_FOLDER);
-        let partition_folder_path = config.path.join(PARTITIONS_FOLDER);
+        let keyspace_folder_path = config.path.join(KEYSPACES_FOLDER);
 
         std::fs::create_dir_all(&journal_folder_path)?;
-        std::fs::create_dir_all(&partition_folder_path)?;
+        std::fs::create_dir_all(&keyspace_folder_path)?;
 
         let active_journal_path = journal_folder_path.join("0");
         let journal = Journal::create_new(&active_journal_path)?;
@@ -772,13 +772,13 @@ impl Keyspace {
 
         // IMPORTANT: fsync folders on Unix
         fsync_directory(&journal_folder_path)?;
-        fsync_directory(&partition_folder_path)?;
+        fsync_directory(&keyspace_folder_path)?;
         fsync_directory(&config.path)?;
 
-        let inner = KeyspaceInner {
+        let inner = DatabaseInner {
             config,
             journal,
-            partitions: Arc::new(RwLock::new(Partitions::with_capacity_and_hasher(
+            keyspaces: Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
                 10,
                 xxhash_rust::xxh3::Xxh3Builder::new(),
             ))),
@@ -994,91 +994,91 @@ mod tests {
     use super::*;
     use test_log::test;
 
-    // TODO: 3.0.0 if we store the partition as a monotonic integer
-    // and the partition's name inside the partition options/manifest
-    // we could allow all UTF-8 characters for partition names
+    // TODO: 3.0.0 if we store the keyspace as a monotonic integer
+    // and the keyspace's name inside the keyspace options/manifest
+    // we could allow all UTF-8 characters for keyspace names
     //
     // https://github.com/fjall-rs/fjall/issues/89
     #[test]
-    pub fn test_exotic_partition_names() -> crate::Result<()> {
+    #[ignore = "remove"]
+    pub fn test_exotic_keyspace_names() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
-        let config = Config::new(&folder);
-        let keyspace = Keyspace::create_or_recover(config)?;
+        let db = Database::builder(&folder).open()?;
 
         for name in ["hello$world", "hello#world", "hello.world", "hello_world"] {
-            let db = keyspace.open_partition(name, Default::default())?;
-            db.insert("a", "a")?;
-            assert_eq!(1, db.len()?);
+            let tree = db.keyspace(name, Default::default())?;
+            tree.insert("a", "a")?;
+            assert_eq!(1, tree.len()?);
         }
 
         Ok(())
     }
 
     #[test]
-    pub fn recover_after_rotation_multiple_partitions() -> crate::Result<()> {
+    pub fn recover_after_rotation_multiple_keyspaces() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
         {
-            let config = Config::new(&folder);
-            let keyspace = Keyspace::create_or_recover(config)?;
-            let db = keyspace.open_partition("default", Default::default())?;
-            let db2 = keyspace.open_partition("default2", Default::default())?;
+            let db = Database::create_or_recover(Config::new(folder.path()))?;
+            let tree = db.keyspace("default", Default::default())?;
+            let tree2 = db.keyspace("default2", Default::default())?;
 
-            db.insert("a", "a")?;
-            db2.insert("a", "a")?;
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db2.len()?);
+            tree.insert("a", "a")?;
+            tree2.insert("a", "a")?;
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree2.len()?);
 
-            assert_eq!(None, db.tree.get_highest_persisted_seqno());
-            assert_eq!(None, db2.tree.get_highest_persisted_seqno());
+            assert_eq!(None, tree.tree.get_highest_persisted_seqno());
+            assert_eq!(None, tree2.tree.get_highest_persisted_seqno());
 
-            db.rotate_memtable()?;
+            tree.rotate_memtable()?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db.tree.sealed_memtable_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree.tree.sealed_memtable_count());
 
-            assert_eq!(1, db2.len()?);
-            assert_eq!(0, db2.tree.sealed_memtable_count());
+            assert_eq!(1, tree2.len()?);
+            assert_eq!(0, tree2.tree.sealed_memtable_count());
 
-            db2.insert("b", "b")?;
-            db2.rotate_memtable()?;
+            tree2.insert("b", "b")?;
+            tree2.rotate_memtable()?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db.tree.sealed_memtable_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree.tree.sealed_memtable_count());
 
-            assert_eq!(2, db2.len()?);
-            assert_eq!(1, db2.tree.sealed_memtable_count());
+            assert_eq!(2, tree2.len()?);
+            assert_eq!(1, tree2.tree.sealed_memtable_count());
         }
 
         {
             // IMPORTANT: We need to allocate enough flush workers
             // because on CI there may not be enough cores by default
             // so the result would be wrong
-            let config = Config::new(&folder).flush_workers(16);
-            let keyspace = Keyspace::create_or_recover(config)?;
-            let db = keyspace.open_partition("default", Default::default())?;
-            let db2 = keyspace.open_partition("default2", Default::default())?;
+            let config = Database::builder(&folder).flush_workers(16).into_config();
+            let db = Database::create_or_recover(config)?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db.tree.sealed_memtable_count());
+            let tree = db.keyspace("default", Default::default())?;
+            let tree2 = db.keyspace("default2", Default::default())?;
 
-            assert_eq!(2, db2.len()?);
-            assert_eq!(2, db2.tree.sealed_memtable_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree.tree.sealed_memtable_count());
 
-            assert_eq!(3, keyspace.journal_count());
+            assert_eq!(2, tree2.len()?);
+            assert_eq!(2, tree2.tree.sealed_memtable_count());
 
-            keyspace.force_flush()?;
+            assert_eq!(3, db.journal_count());
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(0, db.tree.sealed_memtable_count());
+            db.force_flush()?;
 
-            assert_eq!(2, db2.len()?);
-            assert_eq!(0, db2.tree.sealed_memtable_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(0, tree.tree.sealed_memtable_count());
 
-            assert_eq!(1, keyspace.journal_count());
+            assert_eq!(2, tree2.len()?);
+            assert_eq!(0, tree2.tree.sealed_memtable_count());
 
-            assert_eq!(Some(0), db.tree.get_highest_persisted_seqno());
-            assert_eq!(Some(2), db2.tree.get_highest_persisted_seqno());
+            assert_eq!(1, db.journal_count());
+
+            assert_eq!(Some(0), tree.tree.get_highest_persisted_seqno());
+            assert_eq!(Some(2), tree2.tree.get_highest_persisted_seqno());
         }
 
         Ok(())
@@ -1089,56 +1089,52 @@ mod tests {
         let folder = tempfile::tempdir()?;
 
         {
-            let config = Config::new(&folder);
-            let keyspace = Keyspace::create_or_recover(config)?;
-            let db = keyspace.open_partition("default", Default::default())?;
+            let db = Database::create_or_recover(Config::new(folder.path()))?;
+            let tree = db.keyspace("default", Default::default())?;
 
-            db.insert("a", "a")?;
-            assert_eq!(1, db.len()?);
+            tree.insert("a", "a")?;
+            assert_eq!(1, tree.len()?);
 
-            db.rotate_memtable()?;
+            tree.rotate_memtable()?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db.tree.sealed_memtable_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree.tree.sealed_memtable_count());
         }
 
         {
-            let config = Config::new(&folder);
-            let keyspace = Keyspace::create_or_recover(config)?;
-            let db = keyspace.open_partition("default", Default::default())?;
+            let db = Database::create_or_recover(Config::new(folder.path()))?;
+            let tree = db.keyspace("default", Default::default())?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(1, db.tree.sealed_memtable_count());
-            assert_eq!(2, keyspace.journal_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(1, tree.tree.sealed_memtable_count());
+            assert_eq!(2, db.journal_count());
 
-            keyspace.force_flush()?;
+            db.force_flush()?;
 
-            assert_eq!(1, db.len()?);
-            assert_eq!(0, db.tree.sealed_memtable_count());
-            assert_eq!(1, keyspace.journal_count());
+            assert_eq!(1, tree.len()?);
+            assert_eq!(0, tree.tree.sealed_memtable_count());
+            assert_eq!(1, db.journal_count());
         }
 
         Ok(())
     }
 
     #[test]
-    pub fn force_flush_multiple_partitions() -> crate::Result<()> {
+    pub fn force_flush_multiple_keyspaces() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
-        let config = Config::new(folder);
-        let keyspace = Keyspace::create_or_recover(config)?;
-        let db = keyspace.open_partition("default", Default::default())?;
-        let db2 = keyspace.open_partition("default2", Default::default())?;
+        let db = Database::create_or_recover(Config::new(folder.path()))?;
+        let tree = db.keyspace("default", Default::default())?;
+        let tree2 = db.keyspace("default2", Default::default())?;
 
-        assert_eq!(0, keyspace.write_buffer_size());
+        assert_eq!(0, db.write_buffer_size());
 
-        assert_eq!(0, db.segment_count());
-        assert_eq!(0, db2.segment_count());
+        assert_eq!(0, tree.segment_count());
+        assert_eq!(0, tree2.segment_count());
 
         assert_eq!(
             0,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
@@ -1146,106 +1142,73 @@ mod tests {
 
         assert_eq!(
             0,
-            keyspace
-                .flush_manager
+            db.flush_manager
                 .read()
                 .expect("lock is poisoned")
                 .queued_size()
         );
 
-        assert_eq!(
-            0,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
+        assert_eq!(0, db.flush_manager.read().expect("lock is poisoned").len());
 
         for _ in 0..100 {
-            db.insert(nanoid::nanoid!(), "abc")?;
-            db2.insert(nanoid::nanoid!(), "abc")?;
+            tree.insert(nanoid::nanoid!(), "abc")?;
+            tree2.insert(nanoid::nanoid!(), "abc")?;
         }
 
-        db.rotate_memtable()?;
+        tree.rotate_memtable()?;
+
+        assert_eq!(1, db.flush_manager.read().expect("lock is poisoned").len());
 
         assert_eq!(
             1,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
-
-        assert_eq!(
-            1,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
         );
 
         for _ in 0..100 {
-            db2.insert(nanoid::nanoid!(), "abc")?;
+            tree2.insert(nanoid::nanoid!(), "abc")?;
         }
 
-        db2.rotate_memtable()?;
+        tree2.rotate_memtable()?;
+
+        assert_eq!(2, db.flush_manager.read().expect("lock is poisoned").len());
 
         assert_eq!(
             2,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
-
-        assert_eq!(
-            2,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, db.segment_count());
-        assert_eq!(0, db2.segment_count());
+        assert_eq!(0, tree.segment_count());
+        assert_eq!(0, tree2.segment_count());
 
-        keyspace.force_flush()?;
+        db.force_flush()?;
 
         assert_eq!(
             0,
-            keyspace
-                .flush_manager
+            db.flush_manager
                 .read()
                 .expect("lock is poisoned")
                 .queued_size()
         );
 
-        assert_eq!(
-            0,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
+        assert_eq!(0, db.flush_manager.read().expect("lock is poisoned").len());
 
         assert_eq!(
             0,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, keyspace.write_buffer_size());
-        assert_eq!(1, db.segment_count());
-        assert_eq!(1, db2.segment_count());
+        assert_eq!(0, db.write_buffer_size());
+        assert_eq!(1, tree.segment_count());
+        assert_eq!(1, tree2.segment_count());
 
         Ok(())
     }
@@ -1254,18 +1217,16 @@ mod tests {
     pub fn force_flush() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
-        let config = Config::new(folder);
-        let keyspace = Keyspace::create_or_recover(config)?;
-        let db = keyspace.open_partition("default", Default::default())?;
+        let db = Database::create_or_recover(Config::new(folder.path()))?;
+        let tree = db.keyspace("default", Default::default())?;
 
-        assert_eq!(0, keyspace.write_buffer_size());
+        assert_eq!(0, db.write_buffer_size());
 
-        assert_eq!(0, db.segment_count());
+        assert_eq!(0, tree.segment_count());
 
         assert_eq!(
             0,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
@@ -1273,79 +1234,54 @@ mod tests {
 
         assert_eq!(
             0,
-            keyspace
-                .flush_manager
+            db.flush_manager
                 .read()
                 .expect("lock is poisoned")
                 .queued_size()
         );
 
-        assert_eq!(
-            0,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
+        assert_eq!(0, db.flush_manager.read().expect("lock is poisoned").len());
 
         for _ in 0..100 {
-            db.insert(nanoid::nanoid!(), "abc")?;
+            tree.insert(nanoid::nanoid!(), "abc")?;
         }
 
-        db.rotate_memtable()?;
+        tree.rotate_memtable()?;
+
+        assert_eq!(1, db.flush_manager.read().expect("lock is poisoned").len());
 
         assert_eq!(
             1,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
-
-        assert_eq!(
-            1,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, db.segment_count());
+        assert_eq!(0, tree.segment_count());
 
-        keyspace.force_flush()?;
+        db.force_flush()?;
 
         assert_eq!(
             0,
-            keyspace
-                .flush_manager
+            db.flush_manager
                 .read()
                 .expect("lock is poisoned")
                 .queued_size()
         );
 
-        assert_eq!(
-            0,
-            keyspace
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .len()
-        );
+        assert_eq!(0, db.flush_manager.read().expect("lock is poisoned").len());
 
         assert_eq!(
             0,
-            keyspace
-                .journal_manager
+            db.journal_manager
                 .read()
                 .expect("lock is poisoned")
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, keyspace.write_buffer_size());
-        assert_eq!(1, db.segment_count());
+        assert_eq!(0, db.write_buffer_size());
+        assert_eq!(1, tree.segment_count());
 
         Ok(())
     }

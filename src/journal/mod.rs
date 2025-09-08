@@ -439,7 +439,7 @@ mod tests {
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
-                partition: "default".into(),
+                keyspace: "default".into(),
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
@@ -460,7 +460,7 @@ mod tests {
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
-                partition: "default".into(),
+                keyspace: "default".into(),
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,

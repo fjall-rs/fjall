@@ -1,15 +1,15 @@
-#[test_log::test]
-fn keyspace_lock() -> fjall::Result<()> {
-    use fjall::Config;
+use fjall::Database;
 
+#[test_log::test]
+fn db_lock() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
     Ok(())

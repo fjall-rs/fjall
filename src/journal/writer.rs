@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// TODO: this should be a keyspace configuration
+// TODO: this should be a database configuration
 pub const PRE_ALLOCATED_BYTES: u64 = 32 * 1_024 * 1_024;
 
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
@@ -218,7 +218,7 @@ impl Writer {
 
     pub(crate) fn write_raw(
         &mut self,
-        partition: &str,
+        keyspace: &str,
         key: &[u8],
         value: &[u8],
         value_type: ValueType,
@@ -233,7 +233,7 @@ impl Writer {
         byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(&mut self.buf, partition, key, value, value_type)?;
+        serialize_marker_item(&mut self.buf, keyspace, key, value, value_type)?;
 
         self.file.write_all(&self.buf)?;
 
@@ -276,7 +276,7 @@ impl Writer {
 
             serialize_marker_item(
                 &mut self.buf,
-                &item.partition,
+                &item.keyspace,
                 &item.key,
                 &item.value,
                 item.value_type,

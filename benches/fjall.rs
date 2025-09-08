@@ -1,16 +1,16 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use fjall::Database;
 
 fn batch_write(c: &mut Criterion) {
     let dir = tempfile::tempdir().unwrap();
 
-    let keyspace = fjall::Config::new(&dir).open().unwrap();
-    let items = keyspace
-        .open_partition("default", Default::default())
-        .unwrap();
+    let db = Database::builder(&dir).open().unwrap();
+
+    let items = db.keyspace("default", Default::default()).unwrap();
 
     c.bench_function("Batch commit", |b| {
         b.iter(|| {
-            let mut batch = keyspace.batch();
+            let mut batch = db.batch();
             for item in 'a'..='z' {
                 let item = item.to_string();
                 batch.insert(&items, &item, &item);

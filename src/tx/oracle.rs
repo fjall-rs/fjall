@@ -1,7 +1,6 @@
+use super::conflict_manager::ConflictManager;
 use crate::snapshot_tracker::SnapshotTracker;
 use crate::Instant;
-
-use super::conflict_manager::ConflictManager;
 use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -73,34 +72,34 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Config, PartitionCreateOptions, TxKeyspace, TxPartitionHandle};
+    use crate::{Database, KeyspaceCreateOptions, TxKeyspace};
 
     #[allow(clippy::unwrap_used)]
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
-        let ks = Config::new(tmpdir.path()).open_transactional()?;
+        let db = Database::builder(tmpdir.path()).open_transactional()?;
 
-        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
+        let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
         for _ in 0..250 {
-            run_tx(&ks, &part).unwrap();
+            run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         for _ in 0..200 {
-            run_tx(&ks, &part).unwrap();
+            run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         Ok(())
     }
 
-    fn run_tx(ks: &TxKeyspace, part: &TxPartitionHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let mut tx1 = ks.write_tx()?;
-        let mut tx2 = ks.write_tx()?;
+    fn run_tx(db: &TxDatabase, part: &TxKeyspace) -> Result<(), Box<dyn std::error::Error>> {
+        let mut tx1 = db.write_tx()?;
+        let mut tx2 = db.write_tx()?;
         tx1.insert(part, "hello", "world");
 
         tx1.commit()??;

@@ -3,7 +3,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 type PoisonSignal = Arc<AtomicBool>;
 
 /// RAII guard to catch panics in background workers
-/// and poison a keyspace
+/// and poison a database
 pub struct PoisonDart {
     name: &'static str,
     signal: PoisonSignal,
@@ -24,7 +24,7 @@ impl Drop for PoisonDart {
     fn drop(&mut self) {
         if std::thread::panicking() {
             log::error!(
-                "Poisoning keyspace because of panic in background worker {:?}",
+                "Poisoning database because of panic in background worker {:?}",
                 self.name
             );
             self.poison();

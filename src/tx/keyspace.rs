@@ -2,210 +2,557 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
-use crate::{
-    batch::PartitionKey, snapshot_nonce::SnapshotNonce, Config, Keyspace, PartitionCreateOptions,
-    PersistMode, TxPartitionHandle,
-};
-use std::sync::{Arc, Mutex};
+use crate::{gc::GarbageCollection, Keyspace, TxDatabase};
+use lsm_tree::{gc::Report as GcReport, KvPair, UserKey, UserValue};
+use std::path::PathBuf;
 
-#[cfg(feature = "ssi_tx")]
-use super::oracle::Oracle;
-
-/// Transactional keyspace
+/// Handle to a keyspace of a transactional database
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
-pub struct TransactionalKeyspace {
+pub struct TxKeyspace {
     pub(crate) inner: Keyspace,
-
-    #[cfg(feature = "ssi_tx")]
-    pub(super) oracle: Arc<Oracle>,
-
-    #[cfg(feature = "single_writer_tx")]
-    single_writer_lock: Arc<Mutex<()>>,
+    pub(crate) db: TxDatabase,
 }
 
-/// Alias for [`TransactionalKeyspace`]
-#[allow(clippy::module_name_repetitions)]
-pub type TxKeyspace = TransactionalKeyspace;
+impl GarbageCollection for TxKeyspace {
+    fn gc_scan(&self) -> crate::Result<GcReport> {
+        self.inner().gc_scan()
+    }
+
+    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
+        self.inner().gc_with_space_amp_target(factor)
+    }
+
+    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
+        self.inner().gc_with_staleness_threshold(threshold)
+    }
+
+    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
+        self.inner().gc_drop_stale_segments()
+    }
+}
 
 impl TxKeyspace {
-    #[doc(hidden)]
+    /// Returns the underlying LSM-tree's path
     #[must_use]
-    pub fn inner(&self) -> &Keyspace {
-        &self.inner
+    pub fn path(&self) -> PathBuf {
+        self.inner.path().into()
     }
 
-    /// Starts a new writeable transaction.
-    #[cfg(feature = "single_writer_tx")]
-    #[must_use]
-    pub fn write_tx(&self) -> WriteTransaction {
-        let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
-        let instant = self.inner.instant();
-
-        let mut write_tx = WriteTransaction::new(
-            self.clone(),
-            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-            guard,
-        );
-
-        if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(PersistMode::Buffer));
-        }
-
-        write_tx
-    }
-
-    /// Starts a new writeable transaction.
+    /// Approximates the amount of items in the keyspace.
     ///
-    /// # Errors
+    /// For update- or delete-heavy workloads, this value will
+    /// diverge from the real value, but is a O(1) operation.
     ///
-    /// Will return `Err` if creation failed.
-    #[cfg(feature = "ssi_tx")]
-    pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
-        let instant = {
-            // acquire a lock here to prevent getting a stale snapshot seqno
-            // this will drain at least part of the commit queue, but ordering
-            // is platform-dependent since we use std::sync::Mutex
-            let _guard = self.oracle.write_serialize_lock()?;
-
-            self.inner.instant()
-        };
-
-        let mut write_tx = WriteTransaction::new(
-            self.clone(),
-            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-        );
-
-        if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(PersistMode::Buffer));
-        }
-
-        Ok(write_tx)
-    }
-
-    /// Starts a new read-only transaction.
-    #[must_use]
-    pub fn read_tx(&self) -> ReadTransaction {
-        let instant = self.inner.instant();
-
-        ReadTransaction::new(SnapshotNonce::new(
-            instant,
-            self.inner.snapshot_tracker.clone(),
-        ))
-    }
-
-    /// Flushes the active journal. The durability depends on the [`PersistMode`]
-    /// used.
-    ///
-    /// Persisting only affects durability, NOT consistency! Even without flushing
-    /// data is crash-safe.
+    /// For insert-only workloads (e.g. logs, time series)
+    /// this value is reliable.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
-    /// # let folder = tempfile::tempdir()?;
-    /// let keyspace = Config::new(folder).open_transactional()?;
-    /// let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
-    ///
-    /// items.insert("a", "hello")?;
-    ///
-    /// keyspace.persist(PersistMode::SyncAll)?;
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
-    /// # Ok::<_, fjall::Error>(())
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// assert_eq!(tree.approximate_len(), 0);
+    ///
+    /// tree.insert("1", "abc")?;
+    /// assert_eq!(tree.approximate_len(), 1);
+    ///
+    /// tree.remove("1")?;
+    /// // Oops! approximate_len will not be reliable here
+    /// assert_eq!(tree.approximate_len(), 2);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn approximate_len(&self) -> usize {
+        self.inner.approximate_len()
+    }
+
+    /// Removes an item and returns its value if it existed.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let taken = tree.take("a")?.unwrap();
+    /// assert_eq!(b"abc", &*taken);
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
-    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
-        self.inner.persist(mode)
+    /// Will return `Err` if an IO error occurs.
+    pub fn take<K: Into<UserKey>>(&self, key: K) -> crate::Result<Option<UserValue>> {
+        self.fetch_update(key, |_| None)
     }
 
-    /// Creates or opens a keyspace partition.
+    /// Atomically updates an item and returns the previous value.
     ///
-    /// If the partition does not yet exist, it will be created configured with `create_options`.
-    /// Otherwise simply a handle to the existing partition will be returned.
+    /// Returning `None` removes the item if it existed before.
     ///
-    /// Partition names can be up to 255 characters long, can not be empty and
-    /// can only contain alphanumerics, underscore (`_`), dash (`-`), hash tag (`#`) and dollar (`$`).
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, Slice, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let prev = tree.fetch_update("a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    ///
+    /// let item = tree.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let prev = tree.fetch_update("a", |_| None)?.unwrap();
+    /// assert_eq!(b"abc", &*prev);
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the partition name is invalid.
-    pub fn open_partition(
+    /// Will return `Err` if an IO error occurs.
+    #[allow(unused_mut)]
+    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
-        name: &str,
-        create_options: PartitionCreateOptions,
-    ) -> crate::Result<TxPartitionHandle> {
-        let partition = self.inner.open_partition(name, create_options)?;
+        key: K,
+        mut f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let key: UserKey = key.into();
 
-        Ok(TxPartitionHandle {
-            inner: partition,
-            keyspace: self.clone(),
-        })
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.db.write_tx();
+
+            let prev = tx.fetch_update(self, key, f)?;
+            tx.commit()?;
+
+            Ok(prev)
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.db.write_tx()?;
+            let prev = tx.fetch_update(self, key.clone(), &mut f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(prev);
+            }
+        }
     }
 
-    /// Returns the amount of partitions
-    #[must_use]
-    pub fn partition_count(&self) -> usize {
-        self.inner.partition_count()
-    }
-
-    /// Gets a list of all partition names in the keyspace
-    #[must_use]
-    pub fn list_partitions(&self) -> Vec<PartitionKey> {
-        self.inner.list_partitions()
-    }
-
-    /// Returns `true` if the partition with the given name exists.
-    #[must_use]
-    pub fn partition_exists(&self, name: &str) -> bool {
-        self.inner.partition_exists(name)
-    }
-
-    /// Returns the current write buffer size (active + sealed memtables).
-    #[must_use]
-    pub fn write_buffer_size(&self) -> u64 {
-        self.inner.write_buffer_size()
-    }
-
-    /// Returns the amount of journals on disk.
-    #[must_use]
-    pub fn journal_count(&self) -> usize {
-        self.inner.journal_count()
-    }
-
-    /// Returns the disk space usage of the entire keyspace.
-    #[must_use]
-    pub fn disk_space(&self) -> u64 {
-        self.inner.disk_space()
-    }
-
-    /// Opens a keyspace in the given directory.
+    /// Atomically updates an item and returns the new value.
+    ///
+    /// Returning `None` removes the item if it existed before.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Note
+    ///
+    /// The provided closure can be called multiple times as this function
+    /// automatically retries on conflict. Since this is an `FnMut`, make sure
+    /// it is idempotent and will not cause side-effects.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, Slice, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let updated = tree.update_fetch("a", |_| Some(Slice::from(*b"def")))?.unwrap();
+    /// assert_eq!(b"def", &*updated);
+    ///
+    /// let item = tree.get("a")?;
+    /// assert_eq!(Some("def".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// let updated = tree.update_fetch("a", |_| None)?;
+    /// assert!(updated.is_none());
+    ///
+    /// let item = tree.get("a")?;
+    /// assert!(item.is_none());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
-    pub fn open(config: Config) -> crate::Result<Self> {
-        let inner = Keyspace::create_or_recover(config)?;
-        inner.start_background_threads()?;
+    /// Will return `Err` if an IO error occurs.
+    #[allow(unused_mut)]
+    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+        &self,
+        key: K,
+        mut f: F,
+    ) -> crate::Result<Option<UserValue>> {
+        let key = key.into();
 
-        Ok(Self {
-            #[cfg(feature = "ssi_tx")]
-            oracle: Arc::new(Oracle {
-                write_serialize_lock: Mutex::default(),
-                seqno: inner.seqno.clone(),
-                snapshot_tracker: inner.snapshot_tracker.clone(),
-            }),
-            inner,
-            #[cfg(feature = "single_writer_tx")]
-            single_writer_lock: Default::default(),
-        })
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.db.write_tx();
+            let updated = tx.update_fetch(self, key, f)?;
+            tx.commit()?;
+
+            Ok(updated)
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        loop {
+            let mut tx = self.db.write_tx()?;
+            let updated = tx.update_fetch(self, key.clone(), &mut f)?;
+            if tx.commit()?.is_ok() {
+                return Ok(updated);
+            }
+        }
+    }
+
+    /// Inserts a key-value pair into the keyspace.
+    ///
+    /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
+    /// Shorter keys and values result in better performance.
+    ///
+    /// If the key already exists, the item will be overwritten.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    ///
+    /// assert!(!db.read_tx().is_empty(&tree)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
+        &self,
+        key: K,
+        value: V,
+    ) -> crate::Result<()> {
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.db.write_tx();
+            tx.insert(self, key, value);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.db.write_tx()?;
+            tx.insert(self, key, value);
+            tx.commit()?.expect("blind insert should not conflict ever");
+            Ok(())
+        }
+    }
+
+    /// Removes an item from the keyspace.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    /// assert!(!db.read_tx().is_empty(&tree)?);
+    ///
+    /// tree.remove("a")?;
+    /// assert!(db.read_tx().is_empty(&tree)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.db.write_tx();
+            tx.remove(self, key);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.db.write_tx()?;
+            tx.remove(self, key);
+            tx.commit()?.expect("blind remove should not conflict ever");
+            Ok(())
+        }
+    }
+
+    /// Removes an item from the keyspace, leaving behind a weak tombstone.
+    ///
+    /// The tombstone marker of this delete operation will vanish when it
+    /// collides with its corresponding insertion.
+    /// This may cause older versions of the value to be resurrected, so it should
+    /// only be used and preferred in scenarios where a key is only ever written once.
+    ///
+    /// The key may be up to 65536 bytes long.
+    /// Shorter keys result in better performance.
+    ///
+    /// The operation will run wrapped in a transaction.
+    ///
+    /// # Experimental
+    ///
+    /// This function is currently experimental.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "abc")?;
+    /// assert!(!db.read_tx().is_empty(&tree)?);
+    ///
+    /// tree.remove_weak("a")?;
+    /// assert!(db.read_tx().is_empty(&tree)?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
+        #[cfg(feature = "single_writer_tx")]
+        {
+            let mut tx = self.db.write_tx();
+            tx.remove_weak(self, key);
+            tx.commit()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "ssi_tx")]
+        {
+            let mut tx = self.db.write_tx()?;
+            tx.remove_weak(self, key);
+            tx.commit()?.expect("blind remove should not conflict ever");
+            Ok(())
+        }
+    }
+
+    /// Retrieves an item from the keyspace.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let item = tree.get("a")?;
+    /// assert_eq!(Some("my_value".as_bytes().into()), item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<lsm_tree::UserValue>> {
+        self.inner.get(key)
+    }
+
+    /// Retrieves the size of an item from the keyspace.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let len = tree.size_of("a")?.unwrap_or_default();
+    /// assert_eq!("my_value".len() as u32, len);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
+        self.inner.size_of(key)
+    }
+
+    /// Returns the first key-value pair in the keyspace.
+    /// The key in this pair is the minimum key in the keyspace.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    /// tree.insert("b", "my_value")?;
+    ///
+    /// assert_eq!(b"a", &*tree.first_key_value()?.unwrap().0);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
+        let read_tx = self.db.read_tx();
+        read_tx.first_key_value(self)
+    }
+
+    /// Returns the last key-value pair in the keyspace.
+    /// The key in this pair is the maximum key in the keyspace.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    /// tree.insert("b", "my_value")?;
+    ///
+    /// assert_eq!(b"b", &*tree.last_key_value()?.unwrap().0);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
+        let read_tx = self.db.read_tx();
+        read_tx.last_key_value(self)
+    }
+
+    /// Returns `true` if the keyspace contains the specified key.
+    ///
+    /// The operation will run wrapped in a read snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// assert!(tree.contains_key("a")?);
+    /// assert!(!tree.contains_key("b")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
+        self.inner.contains_key(key)
+    }
+
+    /// Allows access to the inner keyspace handle, allowing to
+    /// escape from the transactional context.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn inner(&self) -> &Keyspace {
+        &self.inner
     }
 }

@@ -9,7 +9,7 @@ use lsm_tree::{CompressionType, TreeType};
 /// Default key-value separation blob size threshold
 pub const KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
 
-/// Configuration options for key-value-separated partitions.
+/// Configuration options for key-value-separated keyspaces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct KvSeparationOptions {
@@ -100,11 +100,11 @@ impl lsm_tree::coding::Decode for KvSeparationOptions {
     }
 }
 
-/// Options to configure a partition
+/// Options to configure a keyspace
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
-    /// Maximum size of this partition's memtable - can be changed during runtime
+    /// Maximum size of this keyspace's memtable - can be changed during runtime
     pub(crate) max_memtable_size: u64,
 
     /// Data block hash ratio
@@ -206,7 +206,7 @@ impl lsm_tree::coding::Decode for CreateOptions {
 
         if header != MAGIC_BYTES {
             return Err(lsm_tree::DecodeError::InvalidHeader(
-                "PartitionCreateOptions",
+                "KeyspaceCreateOptions",
             ));
         }
 
@@ -370,7 +370,7 @@ impl CreateOptions {
 
     /// Sets the compression method.
     ///
-    /// Once set for a partition, this property is not considered in the future.
+    /// Once set for a keyspace, this property is not considered in the future.
     ///
     /// Default = In order: Lz4 -> None, depending on compilation flags
     #[must_use]
@@ -413,10 +413,10 @@ impl CreateOptions {
     ///
     /// Note that the memory usage may temporarily be `max_memtable_size * flush_worker_count`
     /// because of parallel flushing.
-    /// Use the keyspace's `max_write_buffer_size` to cap global memory usage.
+    /// Use the database's `max_write_buffer_size` to cap global memory usage.
     ///
     /// Conversely, if `max_memtable_size` is larger than 64 MiB,
-    /// it may require increasing the keyspace's `max_write_buffer_size`.
+    /// it may require increasing the database's `max_write_buffer_size`.
     #[must_use]
     pub fn max_memtable_size(mut self, bytes: u64) -> Self {
         self.max_memtable_size = bytes;
@@ -425,7 +425,7 @@ impl CreateOptions {
 
     /// Sets the block size.
     ///
-    /// Once set for a partition, this property is not considered in the future.
+    /// Once set for a keyspace, this property is not considered in the future.
     ///
     /// Default = 4 KiB
     ///
@@ -449,7 +449,7 @@ impl CreateOptions {
         self
     }
 
-    /// Enables key-value separation for this partition.
+    /// Enables key-value separation for this keyspace.
     ///
     /// Key-value separation is intended for large value scenarios (1 KiB+ per KV).
     /// Large values will be separated into a log-structured value log, which heavily
@@ -459,7 +459,7 @@ impl CreateOptions {
     /// GC needs to be triggered *manually*.
     /// See <https://fjall-rs.github.io/post/announcing-fjall-2/#key-value-separation> for more information.
     ///
-    /// Once set for a partition, this property is not considered in the future.
+    /// Once set for a keyspace, this property is not considered in the future.
     ///
     /// Default = disabled
     #[must_use]
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "lz4"))]
-    fn partition_opts_compression_none() {
+    fn keyspace_opts_compression_none() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::None);
         assert_eq!(c.kv_separation, None);
@@ -499,7 +499,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     #[cfg(feature = "lz4")]
-    fn partition_opts_compression_default() {
+    fn keyspace_opts_compression_default() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::Lz4);
         assert_eq!(c.kv_separation, None);

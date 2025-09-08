@@ -2,8 +2,8 @@ use tokio::task::spawn_blocking;
 
 #[tokio::main]
 async fn main() -> fjall::Result<()> {
-    let keyspace = fjall::Config::new(".fjall_data").open()?;
-    let items = keyspace.open_partition("items", Default::default())?;
+    let db = fjall::Database::builder(".fjall_data").open()?;
+    let items = db.keyspace("items", Default::default())?;
 
     {
         let items = items.clone();

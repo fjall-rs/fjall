@@ -1,11 +1,11 @@
-use fjall::{Config, RecoveryError, Version};
+use fjall::{Database, RecoveryError, Version};
 use test_log::test;
 
 #[test]
-fn keyspace_load_v2() -> fjall::Result<()> {
+fn db_load_v2() -> fjall::Result<()> {
     let folder = "test_fixture/v2_keyspace";
 
-    let result = Config::new(folder).open();
+    let result = Database::builder(folder).open();
 
     matches!(result, Err(fjall::Error::InvalidVersion(Some(Version::V2))));
 
@@ -13,10 +13,11 @@ fn keyspace_load_v2() -> fjall::Result<()> {
 }
 
 #[test]
-fn keyspace_load_v2_corrupt_journal() -> fjall::Result<()> {
+fn db_load_v2_corrupt_journal() -> fjall::Result<()> {
     let folder = "test_fixture/v2_keyspace_corrupt_journal";
 
-    let result = Config::new(folder).open();
+    let result = Database::builder(folder).open();
+
     matches!(
         result,
         Err(fjall::Error::JournalRecovery(

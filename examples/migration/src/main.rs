@@ -1,4 +1,4 @@
-use fjall::Config;
+use fjall::Database;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -51,8 +51,8 @@ impl std::fmt::Display for Planet {
 fn main() -> fjall::Result<()> {
     let path = std::path::Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open()?;
-    let planets_v1 = keyspace.open_partition("v1_planets", Default::default())?;
+    let db = Database::builder(path).temporary(true).open()?;
+    let planets_v1 = db.keyspace("v1_planets", Default::default())?;
 
     for (id, name) in [
         ("p:earth", "Earth"),
@@ -82,7 +82,7 @@ fn main() -> fjall::Result<()> {
     }
 
     // Do migration from V1 -> V2
-    let planets_v2 = keyspace.open_partition("v2_planets", Default::default())?;
+    let planets_v2 = db.keyspace("v2_planets", Default::default())?;
 
     let stream = planets_v1.iter().map(|kv| {
         let (k, v) = kv.unwrap();
@@ -108,7 +108,7 @@ fn main() -> fjall::Result<()> {
     assert_eq!(planets_v1.len()?, planets_v2.len()?);
 
     // Delete old data
-    keyspace.delete_partition(planets_v1)?;
+    db.delete_keyspace(planets_v1)?;
 
     Ok(())
 }

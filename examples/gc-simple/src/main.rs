@@ -1,13 +1,13 @@
-use fjall::{Config, GarbageCollection, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions};
 use std::time::Instant;
 
 const BLOB_SIZE: usize = 10_000;
 
 fn main() -> fjall::Result<()> {
-    let keyspace = Config::new(".fjall_data").temporary(true).open()?;
-    let blobs = keyspace.open_partition(
+    let db = Database::builder(".fjall_data").temporary(true).open()?;
+    let blobs = db.keyspace(
         "blobs",
-        PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
     )?;
 
     for _ in 0..10 {
@@ -17,7 +17,7 @@ fn main() -> fjall::Result<()> {
         blobs.rotate_memtable_and_wait()?;
     }
 
-    eprintln!("Running GC for partition {:?}", blobs.name);
+    eprintln!("Running GC for keyspace {:?}", blobs.name);
     let start = Instant::now();
 
     let report = blobs.gc_scan()?;

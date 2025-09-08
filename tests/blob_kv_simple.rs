@@ -1,4 +1,4 @@
-use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use lsm_tree::AbstractTree;
 use test_log::test;
 
@@ -6,28 +6,28 @@ use test_log::test;
 fn blob_kv_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let keyspace = Config::new(folder).open()?;
-    let partition = keyspace.open_partition(
+    let db = Database::builder(&folder).open()?;
+    let tree = db.keyspace(
         "default",
-        PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
     )?;
 
-    assert_eq!(partition.len()?, 0);
-    partition.insert("1", "oxygen".repeat(1_000_000))?;
-    partition.insert("3", "abc")?;
-    partition.insert("5", "abc")?;
-    assert_eq!(partition.len()?, 3);
+    assert_eq!(tree.len()?, 0);
+    tree.insert("1", "oxygen".repeat(1_000_000))?;
+    tree.insert("3", "abc")?;
+    tree.insert("5", "abc")?;
+    assert_eq!(tree.len()?, 3);
 
-    partition.rotate_memtable_and_wait()?;
+    tree.rotate_memtable_and_wait()?;
 
-    if let fjall::AnyTree::Blob(tree) = &partition.tree {
+    if let fjall::AnyTree::Blob(tree) = &tree.tree {
         assert!(tree.index.disk_space() < 200);
 
         // NOTE: The data is compressed quite well, so it's way less than 1M
         assert!(tree.disk_space() > 5_000);
 
         assert!(tree.blobs.manifest.disk_space_used() > 5_000);
-        assert_eq!(1, tree.blobs.segment_count());
+        assert_eq!(1, tree.blob_file_count());
     } else {
         panic!("nope");
     }

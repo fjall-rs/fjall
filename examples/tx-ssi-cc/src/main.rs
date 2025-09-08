@@ -1,19 +1,20 @@
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
-    let keyspace = fjall::Config::new(".fjall_data")
+    let db = fjall::Database::builder(".fjall_data")
         .temporary(true)
         .open_transactional()?;
-    let items = keyspace.open_partition("items", Default::default())?;
+
+    let items = db.keyspace("items", Default::default())?;
 
     let start = Instant::now();
 
     let t1 = {
-        let keyspace = keyspace.clone();
+        let db = db.clone();
         let items = items.clone();
 
         std::thread::spawn(move || {
-            let mut wtx = keyspace.write_tx().unwrap();
+            let mut wtx = db.write_tx().unwrap();
             println!("Started tx1");
             std::thread::sleep(Duration::from_secs(3));
             wtx.insert(&items, "a", "a");
@@ -22,11 +23,11 @@ fn main() -> fjall::Result<()> {
     };
 
     let t2 = {
-        let keyspace = keyspace.clone();
+        let db = db.clone();
         let items = items.clone();
 
         std::thread::spawn(move || {
-            let mut wtx = keyspace.write_tx().unwrap();
+            let mut wtx = db.write_tx().unwrap();
             println!("Started tx2");
             std::thread::sleep(Duration::from_secs(3));
             wtx.insert(&items, "b", "b");
@@ -45,7 +46,7 @@ fn main() -> fjall::Result<()> {
     // NOTE: We would expect a single writer tx implementation to finish in
     // ~6 seconds
     println!("Done in {:?}, items.len={}", start.elapsed(), {
-        let rtx = keyspace.read_tx();
+        let rtx = db.read_tx();
         rtx.len(&items)?
     });
 

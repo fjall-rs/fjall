@@ -20,7 +20,7 @@ pub fn run(
     };
 
     log::trace!(
-        "compactor: calling compaction strategy for partition {:?}",
+        "compactor: calling compaction strategy for keyspace {:?}",
         item.0.name,
     );
 

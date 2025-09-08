@@ -8,12 +8,12 @@ use std::sync::Arc;
 /// A FIFO queue of flush tasks.
 ///
 /// Allows peeking N items into the queue head to allow
-/// parallel processing of tasks of a single partition,
+/// parallel processing of tasks of a single keyspace,
 /// which allows processing N tasks even if there is just
-/// one partition.
+/// one keyspace.
 ///
 /// This only really works because there is one flush thread
-/// that spawns flush workers for each partition it collects tasks for.
+/// that spawns flush workers for each keyspace it collects tasks for.
 #[derive(Default, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct FlushQueue {

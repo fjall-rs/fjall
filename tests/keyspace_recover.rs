@@ -1,20 +1,20 @@
-use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
 
 #[test]
-fn reload_partition_config() -> fjall::Result<()> {
+fn reload_keyspace_config() -> fjall::Result<()> {
     use lsm_tree::coding::Encode;
 
     let folder = tempfile::tempdir()?;
 
     let serialized_config = {
-        let keyspace = Config::new(&folder).open()?;
+        let db = Database::builder(&folder).open()?;
 
-        let tree = keyspace.open_partition(
+        let tree = db.keyspace(
             "default",
-            PartitionCreateOptions::default()
+            KeyspaceCreateOptions::default()
                 .compaction_strategy(fjall::compaction::Strategy::SizeTiered(
                     fjall::compaction::SizeTiered::default(),
                 ))
@@ -30,8 +30,8 @@ fn reload_partition_config() -> fjall::Result<()> {
     };
 
     {
-        let keyspace = Config::new(&folder).open()?;
-        let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
         assert_eq!(serialized_config, tree.config.encode_into_vec());
     }
 
@@ -39,21 +39,21 @@ fn reload_partition_config() -> fjall::Result<()> {
 }
 
 #[test]
-fn reload_with_partitions() -> fjall::Result<()> {
+fn reload_with_keyspaces() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let keyspace = Config::new(&folder).open()?;
+        let db = Database::builder(&folder).open()?;
 
-        let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("default1", KeyspaceCreateOptions::default())?,
+            db.keyspace("default2", KeyspaceCreateOptions::default())?,
+            db.keyspace("default3", KeyspaceCreateOptions::default())?,
         ];
 
-        for tree in partitions {
+        for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
                 let value = nanoid::nanoid!();
@@ -67,7 +67,7 @@ fn reload_with_partitions() -> fjall::Result<()> {
             }
         }
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
@@ -75,15 +75,15 @@ fn reload_with_partitions() -> fjall::Result<()> {
     }
 
     for _ in 0..10 {
-        let keyspace = Config::new(&folder).open()?;
+        let db = Database::builder(&folder).open()?;
 
-        let partitions = &[
-            keyspace.open_partition("default1", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default2", PartitionCreateOptions::default())?,
-            keyspace.open_partition("default3", PartitionCreateOptions::default())?,
+        let keyspaces = &[
+            db.keyspace("default1", KeyspaceCreateOptions::default())?,
+            db.keyspace("default2", KeyspaceCreateOptions::default())?,
+            db.keyspace("default3", KeyspaceCreateOptions::default())?,
         ];
 
-        for tree in partitions {
+        for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
             assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
             assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);

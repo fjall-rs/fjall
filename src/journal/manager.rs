@@ -3,20 +3,20 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::writer::Writer;
-use crate::PartitionHandle;
+use crate::Keyspace;
 use lsm_tree::{AbstractTree, SeqNo};
 use std::{path::PathBuf, sync::MutexGuard};
 
-/// Stores the highest seqno of a partition found in a journal.
+/// Stores the highest seqno of a keyspace found in a journal.
 #[derive(Clone)]
 pub struct EvictionWatermark {
-    pub(crate) partition: PartitionHandle,
+    pub(crate) keyspace: Keyspace,
     pub(crate) lsn: SeqNo,
 }
 
 impl std::fmt::Debug for EvictionWatermark {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.partition.name, self.lsn)
+        write!(f, "{}:{}", self.keyspace.name, self.lsn)
     }
 }
 
@@ -40,7 +40,7 @@ impl std::fmt::Debug for Item {
 
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
-/// Each journal may contain items of different partitions.
+/// Each journal may contain items of different keyspaces.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
@@ -104,39 +104,39 @@ impl JournalManager {
                 return Ok(());
             };
 
-            // TODO: unit test: check deleted partition does not prevent journal eviction
+            // TODO: unit test: check deleted keyspace does not prevent journal eviction
             for item in &item.watermarks {
-                // Only check partition seqno if not deleted
+                // Only check keyspace seqno if not deleted
                 if !item
-                    .partition
+                    .keyspace
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    let Some(partition_seqno) = item.partition.tree.get_highest_persisted_seqno()
+                    let Some(keyspace_seqno) = item.keyspace.tree.get_highest_persisted_seqno()
                     else {
                         return Ok(());
                     };
 
-                    if partition_seqno < item.lsn {
+                    if keyspace_seqno < item.lsn {
                         return Ok(());
                     }
                 }
             }
 
-            // NOTE: Once the LSN of *every* partition's segments [1] is higher than the journal's stored partition seqno,
+            // NOTE: Once the LSN of *every* keyspace's segments [1] is higher than the journal's stored keyspace seqno,
             // it can be deleted from disk, as we know the entire journal has been flushed to segments [2].
             //
-            // [1] We cannot use the partition's max seqno, because the memtable will get writes, which increase the seqno.
+            // [1] We cannot use the keyspace's max seqno, because the memtable will get writes, which increase the seqno.
             // We *need* to check the disk segments specifically, they are the source of truth for flushed data.
             //
             // [2] Checking the seqno is safe because the queues inside the flush manager are FIFO.
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
-            log::trace!("Removing fully flushed journal at {:?}", item.path);
+            log::trace!("Removing fully flushed journal at {}", item.path.display());
             std::fs::remove_file(&item.path).inspect_err(|e| {
                 log::error!(
-                    "Failed to clean up stale journal file at {:?}: {e:?}",
-                    item.path,
+                    "Failed to clean up stale journal file at {}: {e:?}",
+                    item.path.display(),
                 );
             })?;
 

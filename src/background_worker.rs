@@ -44,7 +44,7 @@ impl<A: Activity> BackgroundWorker<A> {
         loop {
             if self.stop_signal.is_stopped() {
                 log::trace!(
-                    "Background worker {:?} exiting because keyspace is dropping",
+                    "Background worker {:?} exiting because database is dropping",
                     self.activity.name(),
                 );
                 return;
