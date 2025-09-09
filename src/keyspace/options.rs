@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{CompressionType, TreeType};
 
 /// Default key-value separation blob size threshold
-pub const KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
+pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
 
 /// Configuration options for key-value-separated keyspaces.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,7 +69,7 @@ impl Default for KvSeparationOptions {
 
             file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
 
-            separation_threshold: KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD,
+            separation_threshold: KV_SEPARATION_DEFAULT_THRESHOLD,
         }
     }
 }

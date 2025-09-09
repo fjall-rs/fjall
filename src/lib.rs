@@ -126,7 +126,7 @@ pub use {
     journal::{error::RecoveryError, writer::PersistMode},
     keyspace::{
         options::KvSeparationOptions,
-        options::{CreateOptions as KeyspaceCreateOptions, KEY_VALUE_SEPARATION_DEFAULT_THRESHOLD},
+        options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
         Keyspace,
     },
     tracked_snapshot::TrackedSnapshot as Snapshot,
