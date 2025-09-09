@@ -23,7 +23,7 @@
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
-//! ```rs
+//! ```
 //! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 //!
 //! // A database may contain multiple keyspaces
