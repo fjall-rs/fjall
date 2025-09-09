@@ -1,4 +1,4 @@
-use fjall::{Database, TxDatabase, TxKeyspace};
+use fjall::{TxDatabase, TxKeyspace};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -37,9 +37,7 @@ fn maybe_create_item(
 fn main() -> Result<(), Error> {
     let path = Path::new(".fjall_data");
 
-    let db = Database::builder(path)
-        .temporary(true)
-        .open_transactional()?;
+    let db = TxDatabase::builder(path).temporary(true).open()?;
 
     let items = db.keyspace("items", Default::default())?;
     let uniq = db.keyspace("uniq_idx", Default::default())?;

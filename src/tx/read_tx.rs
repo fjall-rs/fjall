@@ -21,10 +21,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
@@ -62,10 +62,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
@@ -103,10 +103,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
@@ -138,10 +138,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
@@ -166,10 +166,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
@@ -200,10 +200,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value2")?;
@@ -244,10 +244,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// assert!(db.read_tx().is_empty(&tree)?);
     ///
@@ -271,10 +271,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
@@ -339,10 +339,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
@@ -377,10 +377,10 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open_transactional()?;
+    /// # let db = TxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("ab", "abc")?;

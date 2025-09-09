@@ -1,6 +1,6 @@
 use fjall::{
-    Database, GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions, PersistMode,
-    TxDatabase, TxKeyspace, UserValue, WriteTransaction,
+    GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions, PersistMode, TxDatabase,
+    TxKeyspace, UserValue, WriteTransaction,
 };
 use format_bytes::format_bytes;
 use sha2::Digest;
@@ -15,7 +15,7 @@ struct Cas {
 
 impl Cas {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
-        let db = Database::builder(path).open_transactional()?;
+        let db = TxDatabase::builder(path).open()?;
 
         let items = db.keyspace("items", Default::default())?;
         let blobs = db.keyspace(

@@ -468,9 +468,7 @@ impl BaseTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        snapshot_nonce::SnapshotNonce, Database, KeyspaceCreateOptions, TxDatabase, TxKeyspace,
-    };
+    use crate::{snapshot_nonce::SnapshotNonce, KeyspaceCreateOptions, TxDatabase, TxKeyspace};
     use tempfile::TempDir;
 
     struct TestEnv {
@@ -483,7 +481,7 @@ mod tests {
 
     fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
         let tmpdir: TempDir = tempfile::tempdir()?;
-        let db = Database::builder(tmpdir.path()).open_transactional()?;
+        let db = TxDatabase::builder(tmpdir.path()).open()?;
 
         let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 

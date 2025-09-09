@@ -72,13 +72,13 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Database, KeyspaceCreateOptions, TxKeyspace};
+    use crate::{KeyspaceCreateOptions, TxDatabase, TxKeyspace};
 
     #[allow(clippy::unwrap_used)]
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
-        let db = Database::builder(tmpdir.path()).open_transactional()?;
+        let db = TxDatabase::builder(tmpdir.path()).open()?;
 
         let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 

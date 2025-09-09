@@ -7,7 +7,10 @@ use crate::{
     batch::KeyspaceKey, snapshot_nonce::SnapshotNonce, Config, Database, KeyspaceCreateOptions,
     PersistMode, TxKeyspace,
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 #[cfg(feature = "ssi_tx")]
 use super::oracle::Oracle;
@@ -26,6 +29,11 @@ pub struct TxDatabase {
 }
 
 impl TxDatabase {
+    /// Creates a new database builder to create or open a database at `path`.
+    pub fn builder(path: impl AsRef<Path>) -> crate::TxDatabaseBuilder {
+        crate::TxDatabaseBuilder::new(path.as_ref())
+    }
+
     #[doc(hidden)]
     #[must_use]
     pub fn inner(&self) -> &Database {
@@ -100,9 +108,9 @@ impl TxDatabase {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+    /// # use fjall::{PersistMode, TxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// let db = Database::builder(folder).open_transactional()?;
+    /// let db = TxDatabase::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
@@ -177,6 +185,10 @@ impl TxDatabase {
     }
 
     /// Returns the disk space usage of the entire database.
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occurred.
     pub fn disk_space(&self) -> crate::Result<u64> {
         self.inner.disk_space()
     }

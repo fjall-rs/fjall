@@ -20,20 +20,9 @@ impl Builder {
     ///
     /// # Errors
     ///
-    /// Errors if an I/O error occured, or if the database can not be opened.
+    /// Errors if an I/O error occurred, or if the database can not be opened.
     pub fn open(self) -> crate::Result<crate::Database> {
         crate::Database::open(self.0)
-    }
-
-    // TODO: change to TxDatabase::builder::open()
-    /// Opens the database with transactional semantics, creating it if it does not exist.
-    ///
-    /// # Errors
-    ///
-    /// Errors if an I/O error occured, or if the database can not be opened.
-    #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-    pub fn open_transactional(self) -> crate::Result<crate::TxDatabase> {
-        crate::TxDatabase::open(self.0)
     }
 
     /// If `false`, write batches or transactions automatically flush data to the operating system.
@@ -141,6 +130,7 @@ impl Builder {
         self.0.fsync_ms = ms;
         self
     }
+
     /// Sets the `Database` to clean upon drop.
     ///
     /// # Examples

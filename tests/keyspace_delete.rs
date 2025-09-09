@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, TxDatabase};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -78,7 +78,7 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let db = Database::builder(&folder).open_transactional()?;
+        let db = TxDatabase::builder(&folder).open()?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
         path = tree.path();
@@ -108,7 +108,7 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
     for _ in 0..5 {
         use fjall::Database;
 
-        let db = Database::builder(&folder).open_transactional()?;
+        let db = TxDatabase::builder(&folder).open()?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
@@ -123,7 +123,7 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
     }
 
     {
-        let db = Database::builder(&folder).open_transactional()?;
+        let db = TxDatabase::builder(&folder).open()?;
 
         {
             let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;

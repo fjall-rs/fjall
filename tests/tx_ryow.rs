@@ -1,11 +1,11 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{KeyspaceCreateOptions, TxDatabase};
 
 #[test_log::test]
 #[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).open_transactional()?;
+    let db = TxDatabase::builder(&folder).open()?;
 
     let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 

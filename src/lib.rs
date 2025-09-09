@@ -136,6 +136,7 @@ pub use {
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 pub use tx::{
     db::TxDatabase, keyspace::TxKeyspace, read_tx::ReadTransaction, write_tx::WriteTransaction,
+    Builder as TxDatabaseBuilder,
 };
 
 /// Alias for [`Batch`]

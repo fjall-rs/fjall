@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
-    let db = fjall::Database::builder(".fjall_data")
+    let db = fjall::TxDatabase::builder(".fjall_data")
         .temporary(true)
-        .open_transactional()?;
+        .open()?;
 
     let items = db.keyspace("items", Default::default())?;
 
