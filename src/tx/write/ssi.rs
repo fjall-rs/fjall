@@ -755,14 +755,14 @@ impl WriteTransaction {
 mod tests {
     use crate::{
         tx::write::ssi::Conflict, Database, GarbageCollection, KeyspaceCreateOptions,
-        KvSeparationOptions, TransactionalKeyspace, TxDatabase,
+        KvSeparationOptions, TxDatabase, TxKeyspace,
     };
     use tempfile::TempDir;
     use test_log::test;
 
     struct TestEnv {
         db: TxDatabase,
-        part: TransactionalKeyspace,
+        tree: TxKeyspace,
 
         #[allow(unused)]
         tmpdir: TempDir,
@@ -770,8 +770,8 @@ mod tests {
 
     impl TestEnv {
         fn seed_hermitage_data(&self) -> crate::Result<()> {
-            self.part.insert([1u8], [10u8])?;
-            self.part.insert([2u8], [20u8])?;
+            self.tree.insert([1u8], [10u8])?;
+            self.tree.insert([2u8], [20u8])?;
             Ok(())
         }
     }
@@ -780,9 +780,9 @@ mod tests {
         let tmpdir = tempfile::tempdir()?;
         let db = TxDatabase::builder(tmpdir.path()).open()?;
 
-        let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
-        Ok(TestEnv { db, part, tmpdir })
+        Ok(TestEnv { db, tree, tmpdir })
     }
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
@@ -792,14 +792,14 @@ mod tests {
         let env = setup()?;
 
         let mut tx = env.db.write_tx()?;
-        tx.insert(&env.part, "a1", 10u64.to_be_bytes());
-        tx.insert(&env.part, "b1", 100u64.to_be_bytes());
-        tx.insert(&env.part, "b2", 200u64.to_be_bytes());
+        tx.insert(&env.tree, "a1", 10u64.to_be_bytes());
+        tx.insert(&env.tree, "b1", 100u64.to_be_bytes());
+        tx.insert(&env.tree, "b2", 200u64.to_be_bytes());
         tx.commit()??;
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
-            .range(&env.part, "a".."b")
+            .range(&env.tree, "a".."b")
             .map(|kv| {
                 let (_, v) = kv.unwrap();
 
@@ -808,12 +808,12 @@ mod tests {
                 u64::from_be_bytes(buf)
             })
             .sum::<u64>();
-        tx1.insert(&env.part, "b3", 10u64.to_be_bytes());
+        tx1.insert(&env.tree, "b3", 10u64.to_be_bytes());
         assert_eq!(10, val);
 
         let mut tx2 = env.db.write_tx()?;
         let val = tx2
-            .range(&env.part, "b".."c")
+            .range(&env.tree, "b".."c")
             .map(|kv| {
                 let (_, v) = kv.unwrap();
 
@@ -822,14 +822,14 @@ mod tests {
                 u64::from_be_bytes(buf)
             })
             .sum::<u64>();
-        tx2.insert(&env.part, "a3", 300u64.to_be_bytes());
+        tx2.insert(&env.tree, "a3", 300u64.to_be_bytes());
         assert_eq!(300, val);
         tx2.commit()??;
         assert!(matches!(tx1.commit()?, Err(Conflict)));
 
         let mut tx3 = env.db.write_tx()?;
         let val = tx3
-            .iter(&env.part)
+            .iter(&env.tree)
             .filter_map(|kv| {
                 let (k, v) = kv.unwrap();
 
@@ -854,13 +854,13 @@ mod tests {
         let env = setup()?;
 
         let mut tx = env.db.write_tx()?;
-        tx.insert(&env.part, "b1", 100u64.to_be_bytes());
-        tx.insert(&env.part, "b2", 200u64.to_be_bytes());
+        tx.insert(&env.tree, "b1", 100u64.to_be_bytes());
+        tx.insert(&env.tree, "b2", 200u64.to_be_bytes());
         tx.commit()??;
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
-            .range(&env.part, "a".."b")
+            .range(&env.tree, "a".."b")
             .map(|kv| {
                 let (_, v) = kv.unwrap();
 
@@ -869,12 +869,12 @@ mod tests {
                 u64::from_be_bytes(buf)
             })
             .sum::<u64>();
-        tx1.insert(&env.part, "b3", 0u64.to_be_bytes());
+        tx1.insert(&env.tree, "b3", 0u64.to_be_bytes());
         assert_eq!(0, val);
 
         let mut tx2 = env.db.write_tx()?;
         let val = tx2
-            .range(&env.part, "b".."c")
+            .range(&env.tree, "b".."c")
             .map(|kv| {
                 let (_, v) = kv.unwrap();
 
@@ -883,14 +883,14 @@ mod tests {
                 u64::from_be_bytes(buf)
             })
             .sum::<u64>();
-        tx2.insert(&env.part, "a3", 300u64.to_be_bytes());
+        tx2.insert(&env.tree, "a3", 300u64.to_be_bytes());
         assert_eq!(300, val);
         tx2.commit()??;
         assert!(matches!(tx1.commit()?, Err(Conflict)));
 
         let mut tx3 = env.db.write_tx()?;
         let val = tx3
-            .iter(&env.part)
+            .iter(&env.tree)
             .filter_map(|kv| {
                 let (k, v) = kv.unwrap();
 
@@ -915,23 +915,23 @@ mod tests {
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
 
-        tx1.insert(&env.part, "hello", "world");
+        tx1.insert(&env.tree, "hello", "world");
 
         tx1.commit()??;
-        assert!(env.part.contains_key("hello")?);
+        assert!(env.tree.contains_key("hello")?);
 
-        assert_eq!(tx2.get(&env.part, "hello")?, None);
+        assert_eq!(tx2.get(&env.tree, "hello")?, None);
 
-        tx2.insert(&env.part, "hello", "world2");
+        tx2.insert(&env.tree, "hello", "world2");
         assert!(matches!(tx2.commit()?, Err(Conflict)));
 
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
 
-        tx1.iter(&env.part).next();
-        tx2.insert(&env.part, "hello", "world2");
+        tx1.iter(&env.tree).next();
+        tx2.insert(&env.tree, "hello", "world2");
 
-        tx1.insert(&env.part, "hello2", "world1");
+        tx1.insert(&env.tree, "hello2", "world1");
         tx1.commit()??;
 
         tx2.commit()??;
@@ -948,16 +948,16 @@ mod tests {
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
 
-        tx1.insert(&env.part, "a", "a");
-        tx2.insert(&env.part, "b", "c");
-        tx1.insert(&env.part, "b", "b");
+        tx1.insert(&env.tree, "a", "a");
+        tx2.insert(&env.tree, "b", "c");
+        tx1.insert(&env.tree, "b", "b");
         tx1.commit()??;
 
-        tx2.insert(&env.part, "a", "c");
+        tx2.insert(&env.tree, "a", "c");
 
         tx2.commit()??;
-        assert_eq!(b"c", &*env.part.get("a")?.unwrap());
-        assert_eq!(b"c", &*env.part.get("b")?.unwrap());
+        assert_eq!(b"c", &*env.tree.get("a")?.unwrap());
+        assert_eq!(b"c", &*env.tree.get("b")?.unwrap());
 
         Ok(())
     }
@@ -967,20 +967,20 @@ mod tests {
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.part.insert("x", "x")?;
-        env.part.insert("y", "y")?;
+        env.tree.insert("x", "x")?;
+        env.tree.insert("y", "y")?;
 
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
 
         {
-            let x = tx1.get(&env.part, "x")?.unwrap();
-            tx1.insert(&env.part, "y", x);
+            let x = tx1.get(&env.tree, "x")?.unwrap();
+            tx1.insert(&env.tree, "y", x);
         }
 
         {
-            let y = tx2.get(&env.part, "y")?.unwrap();
-            tx2.insert(&env.part, "x", y);
+            let y = tx2.get(&env.tree, "y")?.unwrap();
+            tx2.insert(&env.tree, "x", y);
         }
 
         tx1.commit()??;
@@ -997,18 +997,18 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        t1.insert(&env.part, [1u8], [11u8]);
-        t2.insert(&env.part, [1u8], [12u8]);
-        t1.insert(&env.part, [2u8], [21u8]);
+        t1.insert(&env.tree, [1u8], [11u8]);
+        t2.insert(&env.tree, [1u8], [12u8]);
+        t1.insert(&env.tree, [2u8], [21u8]);
         t1.commit()??;
 
-        assert_eq!(env.part.get([1u8])?, Some([11u8].into()));
+        assert_eq!(env.tree.get([1u8])?, Some([11u8].into()));
 
-        t2.insert(&env.part, [2u8], [22u8]);
+        t2.insert(&env.tree, [2u8], [22u8]);
         t2.commit()??;
 
-        assert_eq!(env.part.get([1u8])?, Some([12u8].into()));
-        assert_eq!(env.part.get([2u8])?, Some([22u8].into()));
+        assert_eq!(env.tree.get([1u8])?, Some([12u8].into()));
+        assert_eq!(env.tree.get([2u8])?, Some([22u8].into()));
 
         Ok(())
     }
@@ -1021,13 +1021,13 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        t1.insert(&env.part, [1u8], [101u8]);
+        t1.insert(&env.tree, [1u8], [101u8]);
 
-        assert_eq!(t2.get(&env.part, [1u8])?, Some([10u8].into()));
+        assert_eq!(t2.get(&env.tree, [1u8])?, Some([10u8].into()));
 
         t1.rollback();
 
-        assert_eq!(t2.get(&env.part, [1u8])?, Some([10u8].into()));
+        assert_eq!(t2.get(&env.tree, [1u8])?, Some([10u8].into()));
 
         t2.commit()??;
 
@@ -1042,14 +1042,14 @@ mod tests {
 
         let mut t1 = env.db.write_tx()?;
         {
-            let mut iter = t1.iter(&env.part);
+            let mut iter = t1.iter(&env.tree);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
             assert_eq!(iter.next().unwrap()?, ([2u8].into(), [20u8].into()));
             assert!(iter.next().is_none());
         }
 
         let mut t2 = env.db.write_tx()?;
-        let new = t2.update_fetch(&env.part, [2u8], |v| {
+        let new = t2.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
@@ -1057,7 +1057,7 @@ mod tests {
 
         let mut t3 = env.db.write_tx()?;
         {
-            let mut iter = t3.iter(&env.part);
+            let mut iter = t3.iter(&env.tree);
             assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
             assert_eq!(iter.next().unwrap()?, ([2u8].into(), [25u8].into())); // changed here
             assert!(iter.next().is_none());
@@ -1065,7 +1065,7 @@ mod tests {
 
         t3.commit()??;
 
-        t1.insert(&env.part, [1u8], [0u8]);
+        t1.insert(&env.tree, [1u8], [0u8]);
 
         assert!(matches!(t1.commit()?, Err(Conflict)));
 
@@ -1079,29 +1079,29 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        let new = t1.update_fetch(&env.part, "hello", |_| Some("world".into()))?;
+        let new = t1.update_fetch(&env.tree, "hello", |_| Some("world".into()))?;
         assert_eq!(new, Some("world".into()));
-        let old = t2.fetch_update(&env.part, "hello", |_| Some("world2".into()))?;
+        let old = t2.fetch_update(&env.tree, "hello", |_| Some("world2".into()))?;
         assert_eq!(old, None);
 
         t1.commit()??;
         assert!(matches!(t2.commit()?, Err(Conflict)));
 
-        assert_eq!(env.part.get("hello")?, Some("world".into()));
+        assert_eq!(env.tree.get("hello")?, Some("world".into()));
 
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        let old = t1.fetch_update(&env.part, "hello", |_| Some("world3".into()))?;
+        let old = t1.fetch_update(&env.tree, "hello", |_| Some("world3".into()))?;
         assert_eq!(old, Some("world".into()));
-        let new = t2.update_fetch(&env.part, "hello2", |_| Some("world2".into()))?;
+        let new = t2.update_fetch(&env.tree, "hello2", |_| Some("world2".into()))?;
         assert_eq!(new, Some("world2".into()));
 
         t1.commit()??;
         t2.commit()??;
 
-        assert_eq!(env.part.get("hello")?, Some("world3".into()));
-        assert_eq!(env.part.get("hello2")?, Some("world2".into()));
+        assert_eq!(env.tree.get("hello")?, Some("world3".into()));
+        assert_eq!(env.tree.get("hello2")?, Some("world2".into()));
 
         Ok(())
     }
@@ -1113,11 +1113,11 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.range(&env.part, "h"..="hello");
-        t1.insert(&env.part, "foo", "bar");
+        _ = t1.range(&env.tree, "h"..="hello");
+        t1.insert(&env.tree, "foo", "bar");
 
         // insert a key INSIDE the range read by t1
-        t2.insert(&env.part, "hello", "world");
+        t2.insert(&env.tree, "hello", "world");
 
         t2.commit()??;
         assert!(matches!(t1.commit()?, Err(Conflict)));
@@ -1125,11 +1125,11 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.range(&env.part, "h"..="hello");
-        t1.insert(&env.part, "foo", "bar");
+        _ = t1.range(&env.tree, "h"..="hello");
+        t1.insert(&env.tree, "foo", "bar");
 
         // insert a key OUTSIDE the range read by t1
-        t2.insert(&env.part, "hello2", "world");
+        t2.insert(&env.tree, "hello2", "world");
 
         t2.commit()??;
         t1.commit()??;
@@ -1144,11 +1144,11 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.prefix(&env.part, "hello");
-        t1.insert(&env.part, "foo", "bar");
+        _ = t1.prefix(&env.tree, "hello");
+        t1.insert(&env.tree, "foo", "bar");
 
         // insert a key MATCHING the prefix read by t1
-        t2.insert(&env.part, "hello", "world");
+        t2.insert(&env.tree, "hello", "world");
 
         t2.commit()??;
         assert!(matches!(t1.commit()?, Err(Conflict)));
@@ -1156,11 +1156,11 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.prefix(&env.part, "hello");
-        t1.insert(&env.part, "foo", "bar");
+        _ = t1.prefix(&env.tree, "hello");
+        t1.insert(&env.tree, "foo", "bar");
 
         // insert a key NOT MATCHING the range read by t1
-        t2.insert(&env.part, "foobar", "world");
+        t2.insert(&env.tree, "foobar", "world");
 
         t2.commit()??;
         t1.commit()??;
