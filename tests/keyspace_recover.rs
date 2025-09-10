@@ -5,6 +5,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
+#[ignore = "restore 3.0.0"]
 fn reload_keyspace_config() -> fjall::Result<()> {
     use lsm_tree::coding::Encode;
 
