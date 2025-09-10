@@ -58,11 +58,15 @@ impl Journal {
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
-        log::trace!("Creating new journal at {path:?}");
+        log::trace!("Creating new journal at {}", path.display());
 
         let folder = path.parent().expect("parent should exist");
+
         std::fs::create_dir_all(folder).inspect_err(|e| {
-            log::error!("Failed to create journal folder at {path:?}: {e:?}");
+            log::error!(
+                "Failed to create journal folder at {}: {e:?}",
+                path.display(),
+            );
         })?;
 
         let writer = Writer::create_new(path)?;

@@ -7,10 +7,7 @@ use crate::{
     batch::{Batch, KeyspaceKey},
     compaction::manager::CompactionManager,
     config::Config,
-    file::{
-        fsync_directory, FJALL_MARKER, JOURNALS_FOLDER, KEYSPACES_FOLDER, KEYSPACE_DELETED_MARKER,
-        LOCK_FILE,
-    },
+    file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, KEYSPACE_DELETED_MARKER, LOCK_FILE},
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::name::is_valid_keyspace_name,
@@ -621,8 +618,7 @@ impl Database {
         // let recovery_mode = config.journal_recovery_mode;
 
         // Reload active journal
-        let journals_folder = config.path.join(JOURNALS_FOLDER);
-        let journal_recovery = Journal::recover(journals_folder)?;
+        let journal_recovery = Journal::recover(&config.path)?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
         let active_journal = Arc::new(journal_recovery.active);
@@ -755,13 +751,12 @@ impl Database {
             std::fs::TryLockError::WouldBlock => crate::Error::Locked,
         })?;
 
-        let journal_folder_path = config.path.join(JOURNALS_FOLDER);
-        let keyspace_folder_path = config.path.join(KEYSPACES_FOLDER);
+        let journal_folder_path = &config.path;
+        let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
 
-        std::fs::create_dir_all(&journal_folder_path)?;
-        std::fs::create_dir_all(&keyspace_folder_path)?;
+        std::fs::create_dir_all(&keyspaces_folder_path)?;
 
-        let active_journal_path = journal_folder_path.join("0");
+        let active_journal_path = journal_folder_path.join("0.jnl");
         let journal = Journal::create_new(&active_journal_path)?;
         let journal = Arc::new(journal);
 
@@ -771,8 +766,7 @@ impl Database {
         marker.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
-        fsync_directory(&journal_folder_path)?;
-        fsync_directory(&keyspace_folder_path)?;
+        fsync_directory(&keyspaces_folder_path)?;
         fsync_directory(&config.path)?;
 
         let inner = DatabaseInner {

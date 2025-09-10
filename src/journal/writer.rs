@@ -53,14 +53,14 @@ impl Writer {
         self.persist(PersistMode::SyncAll)?;
 
         log::debug!(
-            "Sealing active journal at {:?}, len={}B",
-            self.path,
+            "Sealing active journal at {}, len={}B",
+            self.path.display(),
             self.path
                 .metadata()
                 .inspect_err(|e| {
                     log::error!(
-                        "Failed to get file metadata of journal file at {:?}: {e:?}",
-                        self.path
+                        "Failed to get file metadata of journal file at {}: {e:?}",
+                        self.path.display()
                     );
                 })?
                 .len(),
@@ -74,17 +74,27 @@ impl Writer {
             .expect("should have parent")
             .to_path_buf();
 
-        let journal_id = self
+        let Some(basename) = self
             .path
             .file_name()
             .expect("should be valid file name")
             .to_str()
-            .expect("should be valid journal file name")
-            .parse::<JournalId>()
-            .expect("should be valid journal ID");
+            .expect("should be valid utf-8")
+            .strip_suffix(".jnl")
+        else {
+            log::error!("Invalid journal file name: {}", self.path.display());
+            return Err(crate::Error::JournalRecovery(
+                crate::RecoveryError::InvalidFileName,
+            ));
+        };
 
-        let new_path = folder.join((journal_id + 1).to_string());
-        log::debug!("Rotating active journal to {new_path:?}");
+        let journal_id = basename.parse::<JournalId>().map_err(|_| {
+            log::error!("Invalid journal file name: {}", self.path.display());
+            crate::Error::JournalRecovery(crate::RecoveryError::InvalidFileName)
+        })?;
+
+        let new_path = folder.join(format!("{}.jnl", journal_id + 1));
+        log::debug!("Rotating active journal to {}", new_path.display());
 
         *self = Self::create_new(new_path.clone())?;
 
@@ -98,17 +108,18 @@ impl Writer {
         let path = path.into();
 
         let file = File::create_new(&path).inspect_err(|e| {
-            log::error!("Failed to create journal file at {path:?}: {e:?}");
+            log::error!("Failed to create journal file at {}: {e:?}", path.display());
         })?;
 
         file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
             log::error!(
-                "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+                "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {}: {e:?}",
+                path.display(),
             );
         })?;
 
         file.sync_all().inspect_err(|e| {
-            log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+            log::error!("Failed to fsync journal file at {}: {e:?}", path.display());
         })?;
 
         Ok(Self {
@@ -128,17 +139,18 @@ impl Writer {
                 .write(true)
                 .open(path)
                 .inspect_err(|e| {
-                    log::error!("Failed to create journal file at {path:?}: {e:?}");
+                    log::error!("Failed to create journal file at {}: {e:?}", path.display());
                 })?;
 
             file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
                 log::error!(
-                    "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+                    "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {}: {e:?}",
+                    path.display(),
                 );
             })?;
 
             file.sync_all().inspect_err(|e| {
-                log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+                log::error!("Failed to fsync journal file at {}: {e:?}", path.display());
             })?;
 
             return Ok(Self {
@@ -153,7 +165,7 @@ impl Writer {
             .append(true)
             .open(path)
             .inspect_err(|e| {
-                log::error!("Failed to open journal file at {path:?}: {e:?}");
+                log::error!("Failed to open journal file at {}: {e:?}", path.display());
             })?;
 
         Ok(Self {
@@ -166,13 +178,16 @@ impl Writer {
 
     /// Persists the journal file.
     pub(crate) fn persist(&mut self, mode: PersistMode) -> std::io::Result<()> {
-        log::trace!("Persisting journal at {:?} with mode={mode:?}", self.path);
+        log::trace!(
+            "Persisting journal at {} with mode={mode:?}",
+            self.path.display(),
+        );
 
         if self.is_buffer_dirty {
             self.file.flush().inspect_err(|e| {
                 log::error!(
-                    "Failed to flush journal IO buffers at {:?}: {e:?}",
-                    self.path
+                    "Failed to flush journal IO buffers at {}: {e:?}",
+                    self.path.display(),
                 );
             })?;
             self.is_buffer_dirty = false;
@@ -180,10 +195,16 @@ impl Writer {
 
         match mode {
             PersistMode::SyncAll => self.file.get_mut().sync_all().inspect_err(|e| {
-                log::error!("Failed to fsync journal file at {:?}: {e:?}", self.path);
+                log::error!(
+                    "Failed to fsync journal file at {}: {e:?}",
+                    self.path.display(),
+                );
             }),
             PersistMode::SyncData => self.file.get_mut().sync_data().inspect_err(|e| {
-                log::error!("Failed to fsyncdata journal file at {:?}: {e:?}", self.path);
+                log::error!(
+                    "Failed to fsyncdata journal file at {}: {e:?}",
+                    self.path.display(),
+                );
             }),
             PersistMode::Buffer => Ok(()),
         }

@@ -28,26 +28,33 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
         let path = dirent.path();
         let filename = dirent.file_name();
 
-        // https://en.wikipedia.org/wiki/.DS_Store
-        if filename == ".DS_Store" {
-            continue;
-        }
+        let Some(filename) = filename.to_str() else {
+            log::error!("Invalid journal file name: {}", filename.display());
+            return Err(crate::Error::JournalRecovery(
+                crate::RecoveryError::InvalidFileName,
+            ));
+        };
 
-        // https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats
-        if filename.to_string_lossy().starts_with("._") {
+        if !std::path::Path::new(filename)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("jnl"))
+        {
             continue;
         }
 
         assert!(dirent.file_type()?.is_file());
 
-        let filename = filename.to_str().expect("should be utf-8");
+        let Some(basename) = filename.strip_suffix(".jnl") else {
+            log::error!("Invalid journal file name: {filename}");
+            return Err(crate::Error::JournalRecovery(
+                crate::RecoveryError::InvalidFileName,
+            ));
+        };
 
-        let journal_id = filename
-            .parse::<JournalId>()
-            .inspect_err(|e| {
-                log::error!("found an invalid journal file name {filename:?}: {e:?}");
-            })
-            .expect("should be a valid journal file name");
+        let journal_id = basename.parse::<JournalId>().map_err(|_| {
+            log::error!("Invalid journal file name: {filename}");
+            crate::Error::JournalRecovery(crate::RecoveryError::InvalidFileName)
+        })?;
 
         max_journal_id = max_journal_id.max(journal_id);
 
