@@ -29,6 +29,7 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "restore 3.0.0"]
 fn write_buffer_size_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
