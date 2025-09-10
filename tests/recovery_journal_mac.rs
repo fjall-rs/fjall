@@ -9,7 +9,7 @@ fn db_journal_recovery_mac_ds_store() -> fjall::Result<()> {
         let _db = Database::builder(&folder).open()?;
     }
 
-    std::fs::File::create(folder.path().join("journals").join(".DS_Store"))?;
+    std::fs::File::create(folder.path().join(".DS_Store"))?;
 
     {
         let _db = Database::builder(&folder).open()?;
@@ -26,7 +26,7 @@ fn db_journal_recovery_mac_underscore_file() -> fjall::Result<()> {
         let _db = Database::builder(&folder).open()?;
     }
 
-    std::fs::File::create(folder.path().join("journals").join("._0"))?;
+    std::fs::File::create(folder.path().join("._0"))?;
 
     {
         let _db = Database::builder(&folder).open()?;
