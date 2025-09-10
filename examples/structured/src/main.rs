@@ -1,4 +1,4 @@
-use fjall::{Database, Keyspace, UserKey, UserValue};
+use fjall::{Database, Guard, Keyspace, UserKey, UserValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -67,7 +67,10 @@ impl SongDatabase {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = fjall::Result<Song>> + '_ {
-        self.tree.iter().map(|item| item.map(Song::from))
+        self.tree
+            .iter()
+            .map(|kv| kv.into_inner().map_err(Into::into)) // TODO: 3.0.0 should not expose lsm-tree error
+            .map(|item| item.map(Song::from))
     }
 
     pub fn len(&self) -> fjall::Result<usize> {
