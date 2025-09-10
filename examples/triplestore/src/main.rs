@@ -1,4 +1,4 @@
-use fjall::{Database, Keyspace};
+use fjall::{Database, Guard, Keyspace};
 use serde_json::Value;
 use std::path::Path;
 
@@ -61,7 +61,7 @@ impl Triplestore {
         let mut result = vec![];
 
         for kv in self.verbs.prefix(format!("{subject}\0{verb}\0")) {
-            let (key, value) = kv?;
+            let (key, value) = kv.into_inner()?;
 
             let key = std::str::from_utf8(&key).expect("should be utf-8");
             let mut splits = key.split('\0');
