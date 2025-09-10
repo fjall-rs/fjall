@@ -111,8 +111,9 @@ async fn insert_item(
 
     tokio::task::spawn_blocking(move || {
         state
-            .db
+            .tree
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
+
         state.db.persist(PersistMode::SyncAll)
     })
     .await
