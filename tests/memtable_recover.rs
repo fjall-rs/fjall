@@ -1,4 +1,5 @@
 use fjall::{Database, KeyspaceCreateOptions};
+use lsm_tree::Guard;
 use test_log::test;
 
 const ITEM_COUNT: usize = 10_000;
@@ -26,8 +27,11 @@ fn reload_with_memtable() -> fjall::Result<()> {
         }
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+        assert_eq!(
+            tree.iter().rev().flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2
+        );
     }
 
     for _ in 0..5 {
@@ -35,8 +39,11 @@ fn reload_with_memtable() -> fjall::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+        assert_eq!(
+            tree.iter().rev().flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2
+        );
     }
 
     Ok(())

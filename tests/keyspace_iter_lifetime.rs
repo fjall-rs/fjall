@@ -1,11 +1,14 @@
 use fjall::{Database, KeyspaceCreateOptions};
+use lsm_tree::Guard;
 use test_log::test;
 
-struct Counter<I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> {
-    iter: I,
+// TODO: currently guards return an lsm_tree error, not fjall...
+
+struct Counter<'a, I: DoubleEndedIterator<Item = lsm_tree::Result<fjall::KvPair>>> {
+    iter: &'a mut I,
 }
 
-impl<I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> Counter<I> {
+impl<'a, I: DoubleEndedIterator<Item = lsm_tree::Result<fjall::KvPair>>> Counter<'a, I> {
     pub fn execute(self) -> usize {
         self.iter.count()
     }
@@ -25,8 +28,8 @@ fn keyspace_iter_lifetime() -> fjall::Result<()> {
     tree.insert("hij", "wer")?;
 
     {
-        let iter = tree.iter();
-        let counter = Counter { iter };
+        let mut iter = tree.iter().map(|guard| guard.into_inner());
+        let counter = Counter { iter: &mut iter };
         assert_eq!(3, counter.execute());
     }
 

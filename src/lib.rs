@@ -105,7 +105,7 @@ mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod stats;
-mod tracked_snapshot;
+// mod tracked_snapshot;
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 mod tx;
@@ -129,7 +129,7 @@ pub use {
         options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
         Keyspace,
     },
-    tracked_snapshot::TrackedSnapshot as Snapshot,
+    // tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };
 
@@ -153,4 +153,4 @@ pub type LsmError = lsm_tree::Error;
 #[doc(hidden)]
 pub use lsm_tree::AbstractTree;
 
-pub use lsm_tree::{AnyTree, CompressionType, KvPair, Slice, TreeType, UserKey, UserValue};
+pub use lsm_tree::{AnyTree, CompressionType, Guard, KvPair, Slice, TreeType, UserKey, UserValue};

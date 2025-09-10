@@ -1,4 +1,5 @@
 use fjall::{Database, KeyspaceCreateOptions};
+use lsm_tree::Guard;
 use test_log::test;
 
 #[test]
@@ -17,8 +18,8 @@ fn write_during_read() -> fjall::Result<()> {
     }
     tree.rotate_memtable_and_wait()?;
 
-    for kv in tree.iter() {
-        let (k, v) = kv?;
+    for guard in tree.iter() {
+        let (k, v) = guard.into_inner()?;
         tree.insert(k, v.repeat(4))?;
     }
 

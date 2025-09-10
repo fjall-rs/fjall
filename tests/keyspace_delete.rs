@@ -1,4 +1,5 @@
 use fjall::{Database, KeyspaceCreateOptions, TxDatabase};
+use lsm_tree::Guard;
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -32,8 +33,11 @@ fn keyspace_delete() -> fjall::Result<()> {
         }
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+        assert_eq!(
+            tree.iter().rev().flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2
+        );
     }
 
     for _ in 0..10 {
@@ -42,8 +46,11 @@ fn keyspace_delete() -> fjall::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
-        assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-        assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+        assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+        assert_eq!(
+            tree.iter().rev().flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2
+        );
 
         assert!(path.try_exists()?);
     }
@@ -78,6 +85,8 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
+        use lsm_tree::Guard;
+
         let db = TxDatabase::builder(&folder).open()?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
@@ -98,24 +107,28 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
         }
 
         assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
-        assert_eq!(db.read_tx().iter(&tree).flatten().count(), ITEM_COUNT * 2,);
         assert_eq!(
-            db.read_tx().iter(&tree).rev().flatten().count(),
+            db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2,
+        );
+        assert_eq!(
+            db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
     }
 
     for _ in 0..5 {
-        use fjall::Database;
-
         let db = TxDatabase::builder(&folder).open()?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
         assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
-        assert_eq!(db.read_tx().iter(&tree).flatten().count(), ITEM_COUNT * 2,);
         assert_eq!(
-            db.read_tx().iter(&tree).rev().flatten().count(),
+            db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
+            ITEM_COUNT * 2,
+        );
+        assert_eq!(
+            db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
 

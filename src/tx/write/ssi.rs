@@ -4,7 +4,7 @@ use crate::{
     tx::{conflict_manager::ConflictManager, oracle::CommitOutcome},
     PersistMode, TxDatabase, TxKeyspace,
 };
-use lsm_tree::{KvPair, Slice, UserKey, UserValue};
+use lsm_tree::{Guard, KvPair, Slice, UserKey, UserValue};
 use std::{
     fmt,
     ops::{Bound, RangeBounds, RangeFull},
@@ -370,7 +370,11 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&mut self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace).next().transpose()
+        self.iter(keyspace)
+            .map(|g| g.into_inner())
+            .next()
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -402,7 +406,11 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&mut self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace).next_back().transpose()
+        self.iter(keyspace)
+            .map(|g| g.into_inner())
+            .next_back()
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -443,8 +451,8 @@ impl WriteTransaction {
 
         let iter = self.iter(keyspace);
 
-        for kv in iter {
-            let _ = kv?;
+        for g in iter {
+            let _ = g.key()?;
             count += 1;
         }
 
@@ -477,37 +485,11 @@ impl WriteTransaction {
     #[must_use]
     pub fn iter<'a>(
         &'a mut self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'a {
+        keyspace: &'a TxKeyspace,
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
         self.cm.mark_range(&keyspace.inner.name, RangeFull);
 
         self.inner.iter(keyspace)
-    }
-
-    /// Iterates over the transaction's state, returning keys only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn keys<'a>(
-        &'a mut self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'a {
-        self.cm.mark_range(&keyspace.inner.name, RangeFull);
-
-        self.inner.keys(keyspace)
-    }
-
-    /// Iterates over the transaction's state, returning values only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn values<'a>(
-        &'a mut self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'a {
-        self.cm.mark_range(&keyspace.inner.name, RangeFull);
-
-        self.inner.values(keyspace)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -538,7 +520,7 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K, R>> + 'b {
         // TODO: Bound::map 1.77
         let start: Bound<Slice> = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.as_ref().into()),
@@ -584,7 +566,7 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K>> + 'b {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 
@@ -757,6 +739,7 @@ mod tests {
         tx::write::ssi::Conflict, Database, GarbageCollection, KeyspaceCreateOptions,
         KvSeparationOptions, TxDatabase, TxKeyspace,
     };
+    use lsm_tree::Guard;
     use tempfile::TempDir;
     use test_log::test;
 
@@ -801,7 +784,7 @@ mod tests {
         let val = tx1
             .range(&env.tree, "a".."b")
             .map(|kv| {
-                let (_, v) = kv.unwrap();
+                let v = kv.value().unwrap();
 
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&v);
@@ -815,7 +798,7 @@ mod tests {
         let val = tx2
             .range(&env.tree, "b".."c")
             .map(|kv| {
-                let (_, v) = kv.unwrap();
+                let v = kv.value().unwrap();
 
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&v);
@@ -831,7 +814,7 @@ mod tests {
         let val = tx3
             .iter(&env.tree)
             .filter_map(|kv| {
-                let (k, v) = kv.unwrap();
+                let (k, v) = kv.into_inner().unwrap();
 
                 if k.starts_with(b"a") {
                     let mut buf = [0u8; 8];
@@ -862,7 +845,7 @@ mod tests {
         let val = tx1
             .range(&env.tree, "a".."b")
             .map(|kv| {
-                let (_, v) = kv.unwrap();
+                let v = kv.value().unwrap();
 
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&v);
@@ -876,7 +859,7 @@ mod tests {
         let val = tx2
             .range(&env.tree, "b".."c")
             .map(|kv| {
-                let (_, v) = kv.unwrap();
+                let v = kv.value().unwrap();
 
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(&v);
@@ -892,7 +875,7 @@ mod tests {
         let val = tx3
             .iter(&env.tree)
             .filter_map(|kv| {
-                let (k, v) = kv.unwrap();
+                let (k, v) = kv.into_inner().unwrap();
 
                 if k.starts_with(b"a") {
                     let mut buf = [0u8; 8];
@@ -1043,8 +1026,14 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         {
             let mut iter = t1.iter(&env.tree);
-            assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
-            assert_eq!(iter.next().unwrap()?, ([2u8].into(), [20u8].into()));
+            assert_eq!(
+                iter.next().unwrap().into_inner()?,
+                ([1u8].into(), [10u8].into()),
+            );
+            assert_eq!(
+                iter.next().unwrap().into_inner()?,
+                ([2u8].into(), [20u8].into()),
+            );
             assert!(iter.next().is_none());
         }
 
@@ -1058,8 +1047,14 @@ mod tests {
         let mut t3 = env.db.write_tx()?;
         {
             let mut iter = t3.iter(&env.tree);
-            assert_eq!(iter.next().unwrap()?, ([1u8].into(), [10u8].into()));
-            assert_eq!(iter.next().unwrap()?, ([2u8].into(), [25u8].into())); // changed here
+            assert_eq!(
+                iter.next().unwrap().into_inner()?,
+                ([1u8].into(), [10u8].into()),
+            );
+            assert_eq!(
+                iter.next().unwrap().into_inner()?,
+                ([2u8].into(), [25u8].into()),
+            ); // changed here
             assert!(iter.next().is_none());
         }
 

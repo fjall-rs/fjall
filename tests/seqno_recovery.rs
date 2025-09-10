@@ -1,4 +1,5 @@
 use fjall::{Database, KeyspaceCreateOptions};
+use lsm_tree::Guard;
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -42,8 +43,11 @@ fn recover_seqno() -> fjall::Result<()> {
 
         for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-            assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+            assert_eq!(
+                tree.iter().rev().flat_map(|x| x.key()).count(),
+                ITEM_COUNT * 2
+            );
         }
     }
 
@@ -59,8 +63,11 @@ fn recover_seqno() -> fjall::Result<()> {
 
         for tree in keyspaces {
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(tree.iter().flatten().count(), ITEM_COUNT * 2);
-            assert_eq!(tree.iter().rev().flatten().count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+            assert_eq!(
+                tree.iter().rev().flat_map(|x| x.key()).count(),
+                ITEM_COUNT * 2
+            );
         }
     }
 

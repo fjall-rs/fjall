@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{snapshot_nonce::SnapshotNonce, TxKeyspace};
-use lsm_tree::{AbstractTree, KvPair, UserKey, UserValue};
+use lsm_tree::{AbstractTree, Guard, KvPair, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace, read-only transaction (snapshot)
@@ -52,8 +52,7 @@ impl ReadTransaction {
         keyspace
             .inner
             .tree
-            .snapshot_at(self.nonce.instant)
-            .get(key)
+            .get(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -93,8 +92,7 @@ impl ReadTransaction {
         keyspace
             .inner
             .tree
-            .snapshot_at(self.nonce.instant)
-            .size_of(key)
+            .size_of(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -127,8 +125,7 @@ impl ReadTransaction {
         keyspace
             .inner
             .tree
-            .snapshot_at(self.nonce.instant)
-            .contains_key(key)
+            .contains_key(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -157,7 +154,11 @@ impl ReadTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace).next().transpose()
+        self.iter(keyspace)
+            .next()
+            .map(|x| x.into_inner())
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -185,7 +186,11 @@ impl ReadTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace).next_back().transpose()
+        self.iter(keyspace)
+            .next_back()
+            .map(|x| x.into_inner())
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -229,8 +234,8 @@ impl ReadTransaction {
     pub fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
         let mut count = 0;
 
-        for kv in self.iter(keyspace) {
-            let _ = kv?;
+        for guard in self.iter(keyspace) {
+            let _ = guard.key()?;
             count += 1;
         }
 
@@ -286,50 +291,12 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn iter<'a>(
-        &'a self,
+        &self,
         keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        let iter = keyspace
-            .inner
-            .tree
-            .iter(Some(self.nonce.instant), None)
-            .map(|item| Ok(item?));
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
+        keyspace.inner.tree.iter(self.nonce.instant, None)
 
-        crate::iter::Iter::new(self.nonce.clone(), iter)
-    }
-
-    /// Iterates over the transaction's state, returning keys only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn keys<'a>(
-        &'a self,
-        keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        let iter = keyspace
-            .inner
-            .tree
-            .keys(Some(self.nonce.instant), None)
-            .map(|item| Ok(item?));
-
-        crate::iter::Iter::new(self.nonce.clone(), iter)
-    }
-
-    /// Iterates over the transaction's state, returning values only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn values<'a>(
-        &'a self,
-        keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        let iter = keyspace
-            .inner
-            .tree
-            .values(Some(self.nonce.instant), None)
-            .map(|item| Ok(item?));
-
-        crate::iter::Iter::new(self.nonce.clone(), iter)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -354,20 +321,15 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &'a self,
+        &self,
         keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K, R>> + 'a {
         // TODO: 3.0.0: if we bind the iterator lifetime to ReadTx, we can remove the snapshot nonce from Iter
         // TODO: for all other ReadTx::iterators too
 
-        let iter = keyspace
-            .inner
-            .tree
-            .range(range, Some(self.nonce.instant), None)
-            .map(|item| Ok(item?));
-
-        crate::iter::Iter::new(self.nonce.clone(), iter)
+        keyspace.inner.tree.range(range, self.nonce.instant, None)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -392,16 +354,12 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &'a self,
+        &self,
         keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        let iter = keyspace
-            .inner
-            .tree
-            .prefix(prefix, Some(self.nonce.instant), None)
-            .map(|item| Ok(item?));
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K>> + 'a {
+        keyspace.inner.tree.prefix(prefix, self.nonce.instant, None)
 
-        crate::iter::Iter::new(self.nonce.clone(), iter)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 }

@@ -60,6 +60,8 @@ impl KvSeparationOptions {
 
 impl Default for KvSeparationOptions {
     fn default() -> Self {
+        unimplemented!("currently not implemented");
+
         Self {
             #[cfg(feature = "lz4")]
             compression: CompressionType::Lz4,

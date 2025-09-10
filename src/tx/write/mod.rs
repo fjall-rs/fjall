@@ -13,7 +13,7 @@ use crate::{
     snapshot_nonce::SnapshotNonce,
     Batch, HashMap, PersistMode, TxDatabase, TxKeyspace,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, Guard, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
 
 fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
@@ -167,7 +167,7 @@ impl BaseTransaction {
             }
         }
 
-        let res = keyspace.inner.snapshot_at(self.nonce.instant).get(key)?;
+        let res = keyspace.inner.tree.get(key, self.nonce.instant)?;
 
         Ok(res)
     }
@@ -194,10 +194,7 @@ impl BaseTransaction {
             }
         }
 
-        let res = keyspace
-            .inner
-            .snapshot_at(self.nonce.instant)
-            .size_of(key)?;
+        let res = keyspace.inner.tree.size_of(key, self.nonce.instant)?;
 
         Ok(res)
     }
@@ -220,10 +217,7 @@ impl BaseTransaction {
             }
         }
 
-        let contains = keyspace
-            .inner
-            .snapshot_at(self.nonce.instant)
-            .contains_key(key)?;
+        let contains = keyspace.inner.tree.contains_key(key, self.nonce.instant)?;
 
         Ok(contains)
     }
@@ -236,7 +230,11 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
-        self.iter(keyspace).next().transpose()
+        self.iter(keyspace)
+            .next()
+            .map(|guard| guard.into_inner())
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -247,7 +245,11 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
-        self.iter(keyspace).next_back().transpose()
+        self.iter(keyspace)
+            .next_back()
+            .map(|guard| guard.into_inner())
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -261,8 +263,8 @@ impl BaseTransaction {
         // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
         let iter = self.iter(keyspace);
 
-        for kv in iter {
-            let _ = kv?;
+        for guard in iter {
+            let _ = guard.key()?;
             count += 1;
         }
 
@@ -273,88 +275,46 @@ impl BaseTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub(super) fn iter(
-        &self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        keyspace
-            .inner
-            .tree
-            .iter(
-                Some(self.nonce.instant),
-                self.memtables.get(&keyspace.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Iterates over the transaction's state, returning keys only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub(super) fn keys(
-        &self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        keyspace
-            .inner
-            .tree
-            .keys(Some(self.nonce.instant), None)
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Iterates over the transaction's state, returning values only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub(super) fn values(
-        &self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        keyspace
-            .inner
-            .tree
-            .values(Some(self.nonce.instant), None)
-            .map(|item| item.map_err(Into::into))
+    pub(super) fn iter<'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
+        keyspace.inner.tree.iter(
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.name).cloned(),
+        )
     }
 
     /// Iterates over a range of the transaction's state.
     ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     #[must_use]
-    pub(super) fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
-        &'b self,
-        keyspace: &'b TxKeyspace,
+    pub(super) fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        keyspace
-            .inner
-            .tree
-            .range(
-                range,
-                Some(self.nonce.instant),
-                self.memtables.get(&keyspace.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K, R>> + 'a {
+        keyspace.inner.tree.range(
+            range,
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.name).cloned(),
+        )
     }
 
     /// Iterates over a prefixed set of the transaction's state.
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     #[must_use]
-    pub(super) fn prefix<'b, K: AsRef<[u8]> + 'b>(
-        &'b self,
-        keyspace: &'b TxKeyspace,
+    pub(super) fn prefix<'a, K: AsRef<[u8]> + 'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        keyspace
-            .inner
-            .tree
-            .prefix(
-                prefix,
-                Some(self.nonce.instant),
-                self.memtables.get(&keyspace.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K>> + 'a {
+        keyspace.inner.tree.prefix(
+            prefix,
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.name).cloned(),
+        )
     }
 
     /// Inserts a key-value pair into the keyspace.

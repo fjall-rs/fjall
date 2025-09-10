@@ -25,7 +25,7 @@ use crate::{
     Database, Error,
 };
 use lsm_tree::{
-    gc::Report as GcReport, AbstractTree, AnyTree, KvPair, SequenceNumberCounter, UserKey,
+    gc::Report as GcReport, AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey,
     UserValue,
 };
 use options::CreateOptions;
@@ -400,30 +400,9 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree
-            .iter(None, None)
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Returns an iterator that scans through the entire keyspace, returning only keys.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        self.tree
-            .keys(None, None)
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Returns an iterator that scans through the entire keyspace, returning only values.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        self.tree
-            .values(None, None)
-            .map(|item| item.map_err(Into::into))
+    pub fn iter(&'_ self) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'_>> + '_ {
+        self.tree.iter(SeqNo::MAX, None)
+        //    .map(|item| item.map_err(Into::into))
     }
 
     /// Returns an iterator over a range of items.
@@ -448,10 +427,8 @@ impl Keyspace {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree
-            .range(range, None, None)
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'a, K, R>> + 'a {
+        self.tree.range(range, SeqNo::MAX, None)
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -476,10 +453,8 @@ impl Keyspace {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        self.tree
-            .prefix(prefix, None, None)
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'a, K>> + 'a {
+        self.tree.prefix(prefix, SeqNo::MAX, None)
     }
 
     /// Approximates the amount of items in the keyspace.
@@ -547,10 +522,12 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn len(&self) -> crate::Result<usize> {
+        use lsm_tree::Guard;
+
         let mut count = 0;
 
-        for kv in self.iter() {
-            let _ = kv?;
+        for guard in self.iter() {
+            let _ = guard.key();
             count += 1;
         }
 
@@ -606,7 +583,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<bool> {
-        self.tree.contains_key(key, None).map_err(Into::into)
+        self.tree.contains_key(key, SeqNo::MAX).map_err(Into::into)
     }
 
     /// Retrieves an item from the keyspace.
@@ -631,7 +608,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<lsm_tree::UserValue>> {
-        Ok(self.tree.get(key, None)?)
+        Ok(self.tree.get(key, SeqNo::MAX)?)
     }
 
     /// Retrieves the size of an item from the keyspace.
@@ -656,7 +633,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(&self, key: K) -> crate::Result<Option<u32>> {
-        Ok(self.tree.size_of(key, None)?)
+        Ok(self.tree.size_of(key, SeqNo::MAX)?)
     }
 
     /// Returns the first key-value pair in the keyspace.
@@ -684,7 +661,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.first_key_value(None, None)?)
+        Ok(self.tree.first_key_value(SeqNo::MAX, None)?)
     }
 
     /// Returns the last key-value pair in the keyspace.
@@ -712,7 +689,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.last_key_value(None, None)?)
+        Ok(self.tree.last_key_value(SeqNo::MAX, None)?)
     }
 
     /// Returns `true` if the underlying LSM-tree is key-value-separated.
@@ -930,21 +907,6 @@ impl Keyspace {
     pub fn flushes_completed(&self) -> usize {
         self.flushes_completed
             .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Opens a snapshot of this keyspace.
-    #[must_use]
-    pub fn snapshot(&self) -> crate::Snapshot {
-        self.snapshot_at(self.seqno.get())
-    }
-
-    /// Opens a snapshot of this keyspace with a given sequence number.
-    #[must_use]
-    pub fn snapshot_at(&self, seqno: crate::Instant) -> crate::Snapshot {
-        crate::Snapshot::new(
-            self.tree.snapshot(seqno),
-            SnapshotNonce::new(seqno, self.snapshot_tracker.clone()),
-        )
     }
 
     /// Performs major compaction, blocking the caller until it's done.

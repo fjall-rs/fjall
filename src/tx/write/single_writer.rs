@@ -1,6 +1,6 @@
 use super::BaseTransaction as InnerWriteTransaction;
 use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxDatabase, TxKeyspace};
-use lsm_tree::{KvPair, UserKey, UserValue};
+use lsm_tree::{Guard, KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
 
 /// A single-writer (serialized) cross-keyspace transaction
@@ -428,31 +428,9 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn iter<'b>(
         &'b self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+        keyspace: &'b TxKeyspace,
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b>> + 'b {
         self.inner.iter(keyspace)
-    }
-
-    /// Iterates over the transaction's state, returning keys only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn keys<'b>(
-        &'b self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'b {
-        self.inner.keys(keyspace)
-    }
-
-    /// Iterates over the transaction's state, returning values only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub fn values<'b>(
-        &'b self,
-        keyspace: &TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'b {
-        self.inner.values(keyspace)
     }
 
     // Iterates over a range of the transaction's state.
@@ -483,7 +461,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         keyspace: &'b TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K, R>> + 'b {
         self.inner.range(keyspace, range)
     }
 
@@ -515,7 +493,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         keyspace: &'b TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K>> + 'b {
         self.inner.prefix(keyspace, prefix)
     }
 
