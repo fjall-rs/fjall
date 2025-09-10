@@ -1,4 +1,4 @@
-use fjall::{TxDatabase, TxKeyspace};
+use fjall::{Guard, TxDatabase, TxKeyspace};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -56,7 +56,7 @@ fn main() -> Result<(), Error> {
     let mut found_count = 0;
 
     for kv in db.read_tx().iter(&uniq) {
-        let (k, v) = kv?;
+        let (k, v) = kv.into_inner()?;
 
         println!(
             "unique value: {:?} -> {:?}",
