@@ -1,4 +1,4 @@
-use fjall::{Database, Result};
+use fjall::{Database, Guard, Result};
 
 struct Permutermifier {
     term: String,
@@ -90,7 +90,7 @@ fn main() -> Result<()> {
 
         // Permuterm suffix queries are performed using: TERM$*
         for kv in tree.prefix(format!("{query}$")) {
-            let (_, v) = kv?;
+            let v = kv.value()?;
             let v = std::str::from_utf8(&v).unwrap();
             println!("*{query} => {v:?}");
         }
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         for query in ["water", "blackwater"] {
             // Permuterm exact queries are performed using: TERM$
             for kv in tree.prefix(format!("{query}$#")) {
-                let (_, v) = kv?;
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("{query:?} => {v:?}");
             }
@@ -116,7 +116,7 @@ fn main() -> Result<()> {
 
         // Permuterm prefix queries are performed using: $TERM*
         for kv in tree.prefix(format!("${query}")) {
-            let (_, v) = kv?;
+            let v = kv.value()?;
             let v = std::str::from_utf8(&v).unwrap();
             println!("{query}* => {v:?}");
         }
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
         for query in ["ter", "fos"] {
             // Permuterm partial queries are performed using: TERM*
             for kv in tree.prefix(format!("{query}")) {
-                let (_, v) = kv?;
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("*{query}* => {v:?}");
             }
@@ -141,7 +141,7 @@ fn main() -> Result<()> {
         for (q1, q2) in [("s", "foss"), ("h", "foss")] {
             // Permuterm between queries are performed using: B$A*
             for kv in tree.prefix(format!("{q2}${q1}")) {
-                let (_, v) = kv?;
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("{q1}*{q2} => {v:?}");
             }
