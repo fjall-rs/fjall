@@ -1,4 +1,4 @@
-use fjall::Database;
+use fjall::{Database, Guard};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -76,7 +76,7 @@ fn main() -> fjall::Result<()> {
 
     eprintln!("--- v1 ---");
     for kv in planets_v1.iter() {
-        let (_, v) = kv?;
+        let v = kv.value()?;
         let planet = rmp_serde::from_slice::<Planet>(&v).unwrap();
         eprintln!("{planet:?}");
     }
@@ -85,7 +85,7 @@ fn main() -> fjall::Result<()> {
     let planets_v2 = db.keyspace("v2_planets", Default::default())?;
 
     let stream = planets_v1.iter().map(|kv| {
-        let (k, v) = kv.unwrap();
+        let (k, v) = kv.into_inner().unwrap();
         let planet = rmp_serde::from_slice::<Planet>(&v).unwrap();
 
         if let Planet::V1(planet) = planet {
@@ -100,7 +100,7 @@ fn main() -> fjall::Result<()> {
 
     eprintln!("--- v2 ---");
     for kv in planets_v2.iter() {
-        let (_, v) = kv?;
+        let v = kv.value()?;
         let planet = rmp_serde::from_slice::<Planet>(&v).unwrap();
         eprintln!("{planet:?}");
     }
