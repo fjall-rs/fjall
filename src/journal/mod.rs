@@ -149,9 +149,9 @@ mod tests {
     #[test]
     fn journal_recovery_active() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
-        let next_next_path = dir.path().join("2");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
+        let next_next_path = dir.path().join("2.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
@@ -204,8 +204,8 @@ mod tests {
     #[test]
     fn journal_recovery_no_active() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
             BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
             BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
             BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
             BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
