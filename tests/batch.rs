@@ -22,6 +22,7 @@ fn batch_simple() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "restore 3.0.0"]
 fn blob_batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 

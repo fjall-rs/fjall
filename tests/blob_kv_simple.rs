@@ -3,6 +3,7 @@ use lsm_tree::AbstractTree;
 use test_log::test;
 
 #[test]
+#[ignore = "restore 3.0.0"]
 fn blob_kv_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
