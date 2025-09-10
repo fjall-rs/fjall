@@ -3,6 +3,7 @@ use std::time::Instant;
 
 const BLOB_SIZE: usize = 10_000;
 
+// TODO: 3.0.0 restore
 fn main() -> fjall::Result<()> {
     let db = Database::builder(".fjall_data").temporary(true).open()?;
     let blobs = db.keyspace(
