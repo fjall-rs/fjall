@@ -1,4 +1,4 @@
-use fjall::{Batch, BlockCache, Database, Keyspace};
+use fjall::{Batch, Database, Guard, Keyspace};
 use format_bytes::format_bytes;
 use nanoid::nanoid;
 use std::path::Path;
@@ -55,7 +55,7 @@ fn main() -> fjall::Result<()> {
     let mut found_count = 0;
 
     for kv in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
-        let (k, _) = kv?;
+        let k = kv.key()?;
 
         // Get ID
         let primary_key = &k[std::mem::size_of::<u64>() + 1..];
