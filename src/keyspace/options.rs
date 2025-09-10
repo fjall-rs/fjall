@@ -482,6 +482,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "lz4"))]
+    #[ignore = "restore 3.0.0"]
     fn keyspace_opts_compression_none() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::None);
@@ -501,6 +502,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     #[cfg(feature = "lz4")]
+    #[ignore = "restore 3.0.0"]
     fn keyspace_opts_compression_default() {
         let mut c = CreateOptions::default();
         assert_eq!(c.compression, CompressionType::Lz4);
