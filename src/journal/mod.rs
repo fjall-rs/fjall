@@ -121,8 +121,8 @@ mod tests {
     #[test]
     fn journal_rotation() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
