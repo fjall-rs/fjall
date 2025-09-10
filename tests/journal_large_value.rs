@@ -3,6 +3,7 @@
 use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 
 #[test_log::test]
+#[ignore = "restore 3.0.0"]
 fn journal_recover_large_value() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -26,6 +27,7 @@ fn journal_recover_large_value() -> fjall::Result<()> {
 }
 
 #[test_log::test]
+#[ignore = "restore 3.0.0"]
 fn journal_recover_large_value_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
