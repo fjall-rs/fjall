@@ -294,7 +294,7 @@ impl Database {
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
     /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// assert!(db.disk_space() > 0);
+    /// assert!(db.disk_space()? > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
