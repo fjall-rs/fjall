@@ -1,8 +1,8 @@
-use fjall::{KeyspaceCreateOptions, TxDatabase};
-
 #[test_log::test]
 #[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
+    use fjall::{KeyspaceCreateOptions, TxDatabase};
+
     let folder = tempfile::tempdir()?;
 
     let db = TxDatabase::builder(&folder).open()?;
