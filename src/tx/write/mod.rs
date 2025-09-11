@@ -456,10 +456,7 @@ mod tests {
 
         let mut tx = super::BaseTransaction::new(
             env.db.clone(),
-            SnapshotNonce::new(
-                env.db.inner.instant(),
-                env.db.inner.snapshot_tracker.clone(),
-            ),
+            SnapshotNonce::new(env.db.inner.seqno(), env.db.inner.snapshot_tracker.clone()),
         );
 
         let new = tx.update_fetch(&env.part, [2u8], |v| {

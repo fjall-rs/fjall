@@ -45,7 +45,7 @@ impl TxDatabase {
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction {
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
-        let instant = self.inner.instant();
+        let instant = self.inner.seqno();
 
         let mut write_tx = WriteTransaction::new(
             self.clone(),
@@ -73,7 +73,7 @@ impl TxDatabase {
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self.oracle.write_serialize_lock()?;
 
-            self.inner.instant()
+            self.inner.seqno()
         };
 
         let mut write_tx = WriteTransaction::new(
@@ -91,7 +91,7 @@ impl TxDatabase {
     /// Starts a new read-only transaction.
     #[must_use]
     pub fn read_tx(&self) -> ReadTransaction {
-        let instant = self.inner.instant();
+        let instant = self.inner.seqno();
 
         ReadTransaction::new(SnapshotNonce::new(
             instant,

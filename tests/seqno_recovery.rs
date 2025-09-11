@@ -28,7 +28,7 @@ fn recover_seqno() -> fjall::Result<()> {
                 tree.insert(key, value.as_bytes())?;
 
                 seqno += 1;
-                assert_eq!(seqno, db.instant());
+                assert_eq!(seqno, db.seqno());
             }
 
             for x in 0..ITEM_COUNT as u64 {
@@ -37,7 +37,7 @@ fn recover_seqno() -> fjall::Result<()> {
                 tree.insert(key, value.as_bytes())?;
 
                 seqno += 1;
-                assert_eq!(seqno, db.instant());
+                assert_eq!(seqno, db.seqno());
             }
         }
 
@@ -53,7 +53,7 @@ fn recover_seqno() -> fjall::Result<()> {
 
     for _ in 0..10 {
         let db = Database::builder(&folder).open()?;
-        assert_eq!(seqno, db.instant());
+        assert_eq!(seqno, db.seqno());
 
         let keyspaces = &[
             db.keyspace("default1", KeyspaceCreateOptions::default())?,
@@ -97,7 +97,7 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
                 tree.remove(key)?;
 
                 seqno += 1;
-                assert_eq!(seqno, db.instant());
+                assert_eq!(seqno, db.seqno());
             }
 
             for x in 0..ITEM_COUNT as u64 {
@@ -105,14 +105,14 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
                 tree.remove(key)?;
 
                 seqno += 1;
-                assert_eq!(seqno, db.instant());
+                assert_eq!(seqno, db.seqno());
             }
         }
     }
 
     for _ in 0..10 {
         let db = Database::builder(&folder).open()?;
-        assert_eq!(seqno, db.instant());
+        assert_eq!(seqno, db.seqno());
     }
 
     Ok(())
