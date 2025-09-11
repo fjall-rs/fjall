@@ -26,7 +26,7 @@
 //! ```
 //! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 //! #
-//! # let folder = tempfile::tempdir();
+//! # let folder = tempfile::tempdir().unwrap();
 //!
 //! // A database may contain multiple keyspaces
 //! // You should probably only use a single database for your application
