@@ -11,7 +11,7 @@ pub mod ssi;
 use crate::{
     batch::{item::Item, KeyspaceKey},
     snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, PersistMode, TxDatabase, TxKeyspace,
+    HashMap, PersistMode, TxDatabase, TxKeyspace, WriteBatch,
 };
 use lsm_tree::{AbstractTree, Guard, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -399,7 +399,7 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        let mut batch = Batch::new(self.db.inner).durability(self.durability);
+        let mut batch = WriteBatch::new(self.db.inner).durability(self.durability);
 
         for (keyspace_name, memtable) in self.memtables {
             for item in memtable.iter() {

@@ -1,5 +1,5 @@
 [package]
-name = "tx-partition-move"
+name = "tx-keyspace-move"
 version = "0.0.1"
 edition = "2021"
 

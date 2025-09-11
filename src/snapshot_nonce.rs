@@ -2,11 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{snapshot_tracker::SnapshotTracker, Instant};
+use crate::{snapshot_tracker::SnapshotTracker, SeqNo};
 
 /// Holds a snapshot instant and automatically frees it from the snapshot tracker when dropped
 pub struct SnapshotNonce {
-    pub(crate) instant: Instant,
+    pub(crate) instant: SeqNo,
     tracker: SnapshotTracker,
 }
 
@@ -29,7 +29,7 @@ impl Drop for SnapshotNonce {
 }
 
 impl SnapshotNonce {
-    pub fn new(instant: Instant, tracker: SnapshotTracker) -> Self {
+    pub fn new(instant: SeqNo, tracker: SnapshotTracker) -> Self {
         tracker.open(instant);
         Self { instant, tracker }
     }

@@ -1,3 +1,3 @@
-# tx-partition-move
+# tx-keyspace-move
 
 This example demonstrates atomically moving items between keyspaces using transactions.

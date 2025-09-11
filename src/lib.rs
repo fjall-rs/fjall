@@ -119,7 +119,7 @@ pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh
 pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh3Builder>;
 
 pub use {
-    batch::Batch,
+    batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export
     builder::Builder as DatabaseBuilder,
     config::Config,
     db::Database,
@@ -141,18 +141,9 @@ pub use tx::{
     Builder as TxDatabaseBuilder,
 };
 
-/// Alias for [`Batch`]
-pub type WriteBatch = Batch;
-
-/// A snapshot moment
-///
-/// See [`Database::instant`].
-pub type Instant = lsm_tree::SeqNo;
-
-/// Re-export of [`lsm_tree::Error`]
-pub type LsmError = lsm_tree::Error;
-
 #[doc(hidden)]
-pub use lsm_tree::AbstractTree;
+pub use lsm_tree::{AbstractTree, Error as LsmError};
 
-pub use lsm_tree::{AnyTree, CompressionType, Guard, KvPair, Slice, TreeType, UserKey, UserValue};
+pub use lsm_tree::{
+    AnyTree, CompressionType, Guard, KvPair, SeqNo, Slice, TreeType, UserKey, UserValue,
+};

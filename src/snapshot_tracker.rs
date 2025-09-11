@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::Instant;
+use crate::SeqNo;
 use dashmap::DashMap;
 use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
@@ -11,14 +11,14 @@ use std::sync::{atomic::AtomicU64, Arc, RwLock};
 pub struct SnapshotTrackerInner {
     // TODO: maybe use rustc_hash or ahash
     #[doc(hidden)]
-    pub data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
+    pub data: DashMap<SeqNo, usize, xxhash_rust::xxh3::Xxh3Builder>,
 
     #[doc(hidden)]
     pub(crate) freed_count: AtomicU64,
     safety_gap: u64,
 
     #[doc(hidden)]
-    pub(crate) lowest_freed_instant: RwLock<Instant>,
+    pub(crate) lowest_freed_instant: RwLock<SeqNo>,
 }
 
 #[derive(Clone, Default)]
@@ -44,7 +44,7 @@ impl Default for SnapshotTrackerInner {
 }
 
 impl SnapshotTrackerInner {
-    pub fn open(&self, seqno: Instant) {
+    pub fn open(&self, seqno: SeqNo) {
         log::trace!("open snapshot {seqno}");
 
         self.data
@@ -55,7 +55,7 @@ impl SnapshotTrackerInner {
             .or_insert(1);
     }
 
-    pub fn close(&self, seqno: Instant) {
+    pub fn close(&self, seqno: SeqNo) {
         log::trace!("close snapshot {seqno}");
 
         self.data.alter(&seqno, |_, v| v.saturating_sub(1));
@@ -72,11 +72,11 @@ impl SnapshotTrackerInner {
 
     // TODO: after recovery, we may need to set the GC watermark once to current_seqno - safety_gap
     // so there cannot be compactions scheduled immediately with gc_watermark=0
-    pub fn get_seqno_safe_to_gc(&self) -> Instant {
+    pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         *self.lowest_freed_instant.read().expect("lock is poisoned")
     }
 
-    fn gc(&self, watermark: Instant) {
+    fn gc(&self, watermark: SeqNo) {
         log::trace!("snapshot gc, watermark={watermark}");
 
         let mut lock = self.lowest_freed_instant.write().expect("lock is poisoned");

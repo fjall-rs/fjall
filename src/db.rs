@@ -207,6 +207,8 @@ impl Database {
         batch
     }
 
+    // TODO: allow accessor to stats(), so we don't have that many methods in DB
+
     /// Returns the current write buffer size (active + sealed memtables).
     #[must_use]
     pub fn write_buffer_size(&self) -> u64 {
@@ -545,7 +547,7 @@ impl Database {
     /// Gets the current sequence number.
     #[must_use]
     #[doc(hidden)]
-    pub fn seqno(&self) -> crate::Instant {
+    pub fn seqno(&self) -> crate::SeqNo {
         self.visible_seqno.get()
     }
 
