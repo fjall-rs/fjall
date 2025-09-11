@@ -24,7 +24,8 @@ pub trait GarbageCollection {
     ///
     /// # Examples
     ///
-    /// ```
+    /// # TODO: 3.0.0 restore
+    /// ```bash
     /// # use fjall::{GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -77,7 +78,8 @@ pub trait GarbageCollection {
     ///
     /// # Examples
     ///
-    /// ```
+    /// # TODO: 3.0.0 restore
+    /// ```bash
     /// # use fjall::{ GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -137,7 +139,8 @@ pub trait GarbageCollection {
     ///
     /// # Examples
     ///
-    /// ```
+    /// # TODO: 3.0.0 restore
+    /// ```bash
     /// # use fjall::{GarbageCollection, PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;

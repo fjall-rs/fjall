@@ -25,10 +25,12 @@
 //!
 //! ```
 //! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+//! #
+//! # let folder = tempfile::tempdir();
 //!
 //! // A database may contain multiple keyspaces
 //! // You should probably only use a single database for your application
-//! let db = Database::builder(folder).open()?;
+//! let db = Database::builder(&folder).open()?;
 //! // TxDatabase::builder for transactional semantics
 //!
 //! // Each keyspace is its own physical LSM-tree
