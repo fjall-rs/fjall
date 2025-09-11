@@ -543,45 +543,9 @@ impl Database {
     }
 
     /// Gets the current sequence number.
-    ///
-    /// Can be used to start a cross-keyspace snapshot, using [`Keyspace::snapshot_at`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open()?;
-    /// let tree1 = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// let tree2 = db.keyspace("another", KeyspaceCreateOptions::default())?;
-    ///
-    /// tree1.insert("abc1", "abc")?;
-    /// tree2.insert("abc2", "abc")?;
-    ///
-    /// let instant = db.instant();
-    /// let snapshot1 = tree1.snapshot_at(instant);
-    /// let snapshot2 = tree2.snapshot_at(instant);
-    ///
-    /// assert!(tree1.contains_key("abc1")?);
-    /// assert!(tree2.contains_key("abc2")?);
-    ///
-    /// assert!(snapshot1.contains_key("abc1")?);
-    /// assert!(snapshot2.contains_key("abc2")?);
-    ///
-    /// tree1.insert("def1", "def")?;
-    /// tree2.insert("def2", "def")?;
-    ///
-    /// assert!(!snapshot1.contains_key("def1")?);
-    /// assert!(!snapshot2.contains_key("def2")?);
-    ///
-    /// assert!(tree1.contains_key("def1")?);
-    /// assert!(tree2.contains_key("def2")?);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
     #[must_use]
-    pub fn instant(&self) -> crate::Instant {
+    #[doc(hidden)]
+    pub fn seqno(&self) -> crate::Instant {
         self.visible_seqno.get()
     }
 
