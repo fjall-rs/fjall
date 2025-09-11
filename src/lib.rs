@@ -4,7 +4,7 @@
 
 //! Fjall is a log-structured embeddable key-value storage engine written in Rust. It features:
 //!
-//! - Thread-safe BTreeMap-like API
+//! - A thread-safe BTreeMap-like API
 //! - 100% safe & stable Rust
 //! - LSM-tree-based storage similar to `RocksDB`
 //! - Range & prefix searching with forward and reverse iteration
@@ -16,8 +16,8 @@
 //!
 //! It is not:
 //!
-//! - a standalone server
-//! - a relational or wide-column database: it has no notion of columns
+//! - A standalone database server
+//! - A relational or wide-column database: it has no notion of columns or query language
 //!
 //! Keys are limited to 65536 bytes, values are limited to 2^32 bytes. As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
 //!

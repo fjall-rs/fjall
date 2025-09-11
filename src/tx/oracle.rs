@@ -1,6 +1,6 @@
 use super::conflict_manager::ConflictManager;
 use crate::snapshot_tracker::SnapshotTracker;
-use crate::Instant;
+use crate::SeqNo;
 use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -22,7 +22,7 @@ impl Oracle {
     #[allow(clippy::nursery)]
     pub(super) fn with_commit<E, F: FnOnce() -> Result<(), E>>(
         &self,
-        instant: Instant,
+        instant: SeqNo,
         conflict_checker: ConflictManager,
         f: F,
     ) -> crate::Result<CommitOutcome<E>> {
@@ -31,7 +31,7 @@ impl Oracle {
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        // If the committed_txn.ts is less than Instant that implies that the
+        // If the committed_txn.ts is less than `SeqNo` that implies that the
         // committed_txn finished before the current transaction started.
         // We don't need to check for conflict in that case.
         // This change assumes linearizability. Lack of linearizability could
