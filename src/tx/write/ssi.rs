@@ -1165,7 +1165,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    #[ignore(reason = "restore 3.0.0")]
+    #[ignore = "restore 3.0.0"]
     fn tx_ssi_gc_shadowing() -> Result<(), Box<dyn std::error::Error>> {
         let tmpdir = tempfile::tempdir()?;
         let db = TxDatabase::builder(tmpdir.path()).open()?;
