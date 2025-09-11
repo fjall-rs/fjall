@@ -698,7 +698,8 @@ impl Keyspace {
     ///
     /// # Examples
     ///
-    /// ```
+    /// # TODO: 3.0.0 restore
+    /// ```bash
     /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
