@@ -46,7 +46,7 @@
 //! items.remove("a")?;
 //!
 //! // Search by prefix
-//! for kv in items.prefix("prefix") {
+//! for kv in items.prefix("user1") {
 //!   // ...
 //! }
 //!

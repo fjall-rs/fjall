@@ -9,7 +9,7 @@ use lsm_tree::{CompressionType, TreeType};
 /// Default key-value separation blob size threshold
 pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
 
-/// Configuration options for key-value-separated keyspaces.
+/// Configuration options for key-value-separated keyspaces
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct KvSeparationOptions {
