@@ -433,7 +433,7 @@ mod tests {
 
     struct TestEnv {
         db: TxDatabase,
-        part: TxKeyspace,
+        tree: TxKeyspace,
 
         #[allow(unused)]
         tmpdir: TempDir,
@@ -443,23 +443,23 @@ mod tests {
         let tmpdir: TempDir = tempfile::tempdir()?;
         let db = TxDatabase::builder(tmpdir.path()).open()?;
 
-        let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
-        Ok(TestEnv { db, part, tmpdir })
+        Ok(TestEnv { db, tree, tmpdir })
     }
 
     #[test]
     fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.part.insert([2u8], [20u8])?;
+        env.tree.insert([2u8], [20u8])?;
 
         let mut tx = super::BaseTransaction::new(
             env.db.clone(),
             SnapshotNonce::new(env.db.inner.seqno(), env.db.inner.snapshot_tracker.clone()),
         );
 
-        let new = tx.update_fetch(&env.part, [2u8], |v| {
+        let new = tx.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
