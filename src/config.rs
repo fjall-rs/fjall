@@ -73,7 +73,7 @@ impl Config {
             path: absolute_path(path),
             clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
-            max_write_buffer_size_in_bytes: /* 64 MiB */ 64 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             fsync_ms: None,
             flush_workers_count: cpus.min(4),
@@ -81,7 +81,7 @@ impl Config {
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 
-            cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32*1_024*1_024)),
+            cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
         }
     }
 }

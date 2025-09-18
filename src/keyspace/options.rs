@@ -307,7 +307,7 @@ impl Default for CreateOptions {
         Self {
             manual_journal_persist: false,
 
-            max_memtable_size: /* 16 MiB */ 16 * 1_024 * 1_024,
+            max_memtable_size: /* 64 MiB */ 64 * 1_024 * 1_024,
 
             data_block_hash_ratio: 0.0,
 
