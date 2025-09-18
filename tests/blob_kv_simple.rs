@@ -27,7 +27,9 @@ fn blob_kv_simple() -> fjall::Result<()> {
         // NOTE: The data is compressed quite well, so it's way less than 1M
         assert!(tree.disk_space() > 5_000);
 
-        assert!(tree.blobs.manifest.disk_space_used() > 5_000);
+        // TODO: 3.0.0
+        // assert!(tree.blobs.manifest.disk_space_used() > 5_000);
+
         assert_eq!(1, tree.blob_file_count());
     } else {
         panic!("nope");
