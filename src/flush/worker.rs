@@ -8,11 +8,14 @@ use crate::{
     snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
     HashMap, Keyspace,
 };
-use lsm_tree::{AbstractTree, Segment, SeqNo};
+use lsm_tree::{AbstractTree, BlobFile, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single segment.
-fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Result<Option<Segment>> {
+fn run_flush_worker(
+    task: &Arc<Task>,
+    eviction_threshold: SeqNo,
+) -> crate::Result<Option<(Segment, Option<BlobFile>)>> {
     #[rustfmt::skip]
     let segment = task.keyspace.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
@@ -36,7 +39,7 @@ fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Resul
 
 struct MultiFlushResultItem {
     keyspace: Keyspace,
-    created_segments: Vec<Segment>,
+    created_segments: Vec<(Segment, Option<BlobFile>)>,
 
     /// Size sum of sealed memtables that have been flushed
     size: u64,
@@ -136,12 +139,22 @@ pub fn run(
                 created_segments,
                 size: memtables_size,
             }) => {
+                let (created_segments, blob_files) = created_segments.into_iter().fold(
+                    (vec![], vec![]),
+                    |(mut ssts, mut blob_files), (sst, bf)| {
+                        ssts.push(sst);
+                        blob_files.extend(bf);
+                        (ssts, blob_files)
+                    },
+                );
+
                 // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = keyspace
-                    .tree
-                    .register_segments(&created_segments, gc_watermark)
-                {
+                if let Err(e) = keyspace.tree.register_segments(
+                    &created_segments,
+                    Some(&blob_files),
+                    gc_watermark,
+                ) {
                     log::error!("Failed to register segments: {e:?}");
                     return Err(e.into());
                 }

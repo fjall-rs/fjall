@@ -27,7 +27,7 @@
   </a>
 </p>
 
-*Fjall* is a log-structured, embeddable key-value storage engine written in Rust.
+*Fjall* _(Nordic: "Mountain")_ is a log-structured, embeddable key-value storage engine written in Rust.
 It features:
 
 - A thread-safe BTreeMap-like API
