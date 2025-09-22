@@ -65,7 +65,7 @@ impl SnapshotTrackerInner {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
 
-        if (freed % self.safety_gap) == 0 {
+        if freed.is_multiple_of(self.safety_gap) == 0 {
             self.gc(seqno);
         }
     }
