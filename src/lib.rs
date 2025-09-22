@@ -141,6 +141,9 @@ pub use tx::{
     Builder as TxDatabaseBuilder,
 };
 
+#[cfg(feature = "ssi_tx")]
+pub use tx::write::ssi::Conflict;
+
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, Error as LsmError};
 

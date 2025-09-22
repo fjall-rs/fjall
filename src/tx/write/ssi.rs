@@ -10,6 +10,9 @@ use std::{
     ops::{Bound, RangeBounds, RangeFull},
 };
 
+/// Transaction conflict
+///
+/// SSI transactions can conflict which require them to be rerun.
 #[derive(Debug)]
 pub struct Conflict;
 
