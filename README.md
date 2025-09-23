@@ -31,6 +31,9 @@
   </a>
 </p>
 
+> [!WARNING]
+> This is the 3.0.0 source code - the 2.0.0 source is available at https://github.com/fjall-rs/fjall/tree/2.0.0
+
 *Fjall* _(Nordic: "Mountain")_ is a log-structured, embeddable key-value storage engine written in Rust.
 It features:
 
