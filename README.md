@@ -27,6 +27,9 @@
   </a>
 </p>
 
+> [!WARNING]
+> This is the 3.0.0 source code - the 2.0.0 source is available at https://github.com/fjall-rs/fjall/tree/2.0.0
+
 *Fjall* _(Nordic: "Mountain")_ is a log-structured, embeddable key-value storage engine written in Rust.
 It features:
 
@@ -44,14 +47,6 @@ It is not:
 
 - A standalone database server
 - A relational or wide-column database: it has no built-in notion of columns or query language
-
-> [!NOTE]
-> Keys are limited to 65536 bytes, values are limited to 2^32 bytes.
-> As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
-
-> [!TIP]
-> Like any typical key-value store, keys are stored in lexicographic order.
-> If you are storing integer keys (e.g. timeseries data), you should use the big endian form to have predicatable ordering.
 
 ## Sponsors
 
@@ -108,6 +103,10 @@ for kv in items.prefix("prefix").rev() {
 // When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
 keyspace.persist(PersistMode::SyncAll)?;
 ```
+
+> [!TIP]
+> Like any typical key-value store, keys are stored in lexicographic order.
+> If you are storing integer keys (e.g. timeseries data), you should use the big endian form to have predicatable ordering.
 
 ## Durability
 
