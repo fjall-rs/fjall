@@ -120,6 +120,14 @@ mod write_buffer_manager;
 pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh3::Xxh3Builder>;
 pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh3Builder>;
 
+/// Configuration policies
+pub mod config {
+    pub use lsm_tree::config::{
+        BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
+        FilterPolicyEntry, PinningPolicy, RestartIntervalPolicy,
+    };
+}
+
 pub use {
     batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export
     builder::Builder as DatabaseBuilder,
