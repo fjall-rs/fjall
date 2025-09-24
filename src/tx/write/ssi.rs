@@ -738,10 +738,7 @@ impl WriteTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        tx::write::ssi::Conflict, KeyspaceCreateOptions, KvSeparationOptions, TxDatabase,
-        TxKeyspace,
-    };
+    use crate::{tx::write::ssi::Conflict, KeyspaceCreateOptions, TxDatabase, TxKeyspace};
     use lsm_tree::Guard;
     use tempfile::TempDir;
     use test_log::test;
