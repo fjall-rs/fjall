@@ -992,13 +992,7 @@ mod tests {
     use super::*;
     use test_log::test;
 
-    // TODO: 3.0.0 if we store the keyspace as a monotonic integer
-    // and the keyspace's name inside the keyspace options/manifest
-    // we could allow all UTF-8 characters for keyspace names
-    //
-    // https://github.com/fjall-rs/fjall/issues/89
     #[test]
-    #[ignore = "remove"]
     pub fn test_exotic_keyspace_names() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
         let db = Database::builder(&folder).open()?;
