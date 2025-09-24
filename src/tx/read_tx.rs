@@ -156,7 +156,7 @@ impl ReadTransaction {
     pub fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next()
-            .map(|x| x.into_inner())
+            .map(Guard::into_inner)
             .transpose()
             .map_err(Into::into)
     }
@@ -188,7 +188,7 @@ impl ReadTransaction {
     pub fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next_back()
-            .map(|x| x.into_inner())
+            .map(Guard::into_inner)
             .transpose()
             .map_err(Into::into)
     }
