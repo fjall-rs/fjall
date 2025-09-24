@@ -1170,44 +1170,46 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     #[ignore = "restore 3.0.0"]
     fn tx_ssi_gc_shadowing() -> Result<(), Box<dyn std::error::Error>> {
-        let tmpdir = tempfile::tempdir()?;
-        let db = TxDatabase::builder(tmpdir.path()).open()?;
+        todo!()
 
-        let part = db.keyspace(
-            "foo",
-            KeyspaceCreateOptions::default().with_kv_separation(
-                KvSeparationOptions::default()
-                    .separation_threshold(/* IMPORTANT: always separate */ 1),
-            ),
-        )?;
+        // let tmpdir = tempfile::tempdir()?;
+        // let db = TxDatabase::builder(tmpdir.path()).open()?;
 
-        part.insert("a", "a")?;
-        part.inner().rotate_memtable_and_wait()?; // blob file #0
+        // let part = db.keyspace(
+        //     "foo",
+        //     KeyspaceCreateOptions::default().with_kv_separation(
+        //         KvSeparationOptions::default()
+        //             .separation_threshold(/* IMPORTANT: always separate */ 1),
+        //     ),
+        // )?;
 
-        part.insert("a", "b")?;
-        part.inner().rotate_memtable_and_wait()?; // blob file #1
+        // part.insert("a", "a")?;
+        // part.inner().rotate_memtable_and_wait()?; // blob file #0
 
-        // NOTE: a->a is now stale
+        // part.insert("a", "b")?;
+        // part.inner().rotate_memtable_and_wait()?; // blob file #1
 
-        let mut tx = db.write_tx()?;
-        tx.insert(&part, "a", "tx");
+        // // NOTE: a->a is now stale
 
-        log::info!("running GC");
-        // part.gc_scan()?;
-        // part.gc_with_staleness_threshold(0.0)?;
-        // NOTE: The GC has now added a new value handle to the memtable
-        // because a->b was written into blob file #2
+        // let mut tx = db.write_tx()?;
+        // tx.insert(&part, "a", "tx");
 
-        log::info!("committing tx");
-        tx.commit()??;
+        // log::info!("running GC");
+        // // part.gc_scan()?;
+        // // part.gc_with_staleness_threshold(0.0)?;
+        // // NOTE: The GC has now added a new value handle to the memtable
+        // // because a->b was written into blob file #2
 
-        // NOTE: We should see the transaction's write
-        assert_eq!(b"tx", &*part.get("a")?.unwrap());
+        // log::info!("committing tx");
+        // tx.commit()??;
 
-        // NOTE: We should still see the transaction's write
-        part.inner().rotate_memtable_and_wait()?;
-        assert_eq!(b"tx", &*part.get("a")?.unwrap());
+        // // NOTE: We should see the transaction's write
+        // assert_eq!(b"tx", &*part.get("a")?.unwrap());
 
-        Ok(())
+        // // NOTE: We should still see the transaction's write
+        // part.inner().rotate_memtable_and_wait()?;
+        // assert_eq!(b"tx", &*part.get("a")?.unwrap());
+
+        // Ok(())
     }
 }

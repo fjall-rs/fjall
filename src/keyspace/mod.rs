@@ -670,26 +670,6 @@ impl Keyspace {
     }
 
     /// Returns `true` if the underlying LSM-tree is key-value-separated.
-    ///
-    /// See [`CreateOptions::with_kv_separation`] for more information.
-    ///
-    /// # Examples
-    ///
-    /// # TODO: 3.0.0 restore
-    /// ```bash
-    /// # use fjall::{Database, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open()?;
-    /// let tree1 = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// assert!(!tree1.is_kv_separated());
-    ///
-    /// let blob_cfg = KeyspaceCreateOptions::default().with_kv_separation(Default::default());
-    /// let tree2 = db.keyspace("blobs", blob_cfg)?;
-    /// assert!(tree2.is_kv_separated());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
     #[must_use]
     pub fn is_kv_separated(&self) -> bool {
         matches!(self.tree, crate::AnyTree::Blob(_))
