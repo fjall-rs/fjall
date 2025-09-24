@@ -309,17 +309,19 @@ impl CreateOptions {
         self
     }
 
-    /// Sets the restart interval inside index blocks.
-    ///
-    /// A higher restart interval saves space while increasing lookup times
-    /// inside index blocks.
-    ///
-    /// Default = 1
-    #[must_use]
-    pub fn index_block_restart_interval_policy(mut self, policy: RestartIntervalPolicy) -> Self {
-        self.index_block_restart_interval_policy = policy;
-        self
-    }
+    // TODO: not supported yet in lsm-tree
+    // /// Sets the restart interval inside index blocks.
+    // ///
+    // /// A higher restart interval saves space while increasing lookup times
+    // /// inside index blocks.
+    // ///
+    // /// Default = 1
+    // #[must_use]
+    // #[doc(hidden)]
+    // pub fn index_block_restart_interval_policy(mut self, policy: RestartIntervalPolicy) -> Self {
+    //     self.index_block_restart_interval_policy = policy;
+    //     self
+    // }
 
     /// Sets the pinning policy for filter blocks.
     #[must_use]
