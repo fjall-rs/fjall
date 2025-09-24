@@ -1,7 +1,7 @@
 // TODO: investigate: flaky on macOS???
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-#[cfg(not(target_os = "darwin"))]
+#[cfg(not(target_os = "macos"))]
 fn whitebox_db_drop() -> fjall::Result<()> {
     use fjall::Database;
 
