@@ -2,9 +2,9 @@ use super::BaseTransaction;
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{conflict_manager::ConflictManager, oracle::CommitOutcome},
-    PersistMode, TxDatabase, TxKeyspace,
+    Guard, PersistMode, TxDatabase, TxKeyspace,
 };
-use lsm_tree::{Guard, KvPair, Slice, UserKey, UserValue};
+use lsm_tree::{KvPair, Slice, UserKey, UserValue};
 use std::{
     fmt,
     ops::{Bound, RangeBounds, RangeFull},
@@ -374,10 +374,9 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&mut self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
-            .map(|g| g.into_inner())
+            .map(Guard::into_inner)
             .next()
             .transpose()
-            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -410,10 +409,9 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&mut self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
-            .map(|g| g.into_inner())
+            .map(Guard::into_inner)
             .next_back()
             .transpose()
-            .map_err(Into::into)
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -489,10 +487,10 @@ impl WriteTransaction {
     pub fn iter<'a>(
         &'a mut self,
         keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
         self.cm.mark_range(keyspace.inner.id, RangeFull);
 
-        self.inner.iter(keyspace)
+        self.inner.iter(keyspace).map(Guard)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -523,13 +521,13 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K, R>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'b, K, R>>> + 'b {
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
         self.cm.mark_range(keyspace.inner.id, (start, end));
 
-        self.inner.range(keyspace, range)
+        self.inner.range(keyspace, range).map(Guard)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -560,7 +558,7 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'b, K>>> + 'b {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 
