@@ -8,7 +8,7 @@ const ITEM_COUNT: usize = 100;
 fn recover_seqno() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let mut seqno = 0;
+    let mut seqno;
 
     // NOTE: clippy bug
     #[allow(unused_assignments)]
@@ -20,6 +20,9 @@ fn recover_seqno() -> fjall::Result<()> {
             db.keyspace("default2", KeyspaceCreateOptions::default())?,
             db.keyspace("default3", KeyspaceCreateOptions::default())?,
         ];
+
+        // NOTE: Opening a keyspace increments the global seqno
+        seqno = db.seqno();
 
         for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
@@ -46,7 +49,7 @@ fn recover_seqno() -> fjall::Result<()> {
             assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
             assert_eq!(
                 tree.iter().rev().flat_map(|x| x.key()).count(),
-                ITEM_COUNT * 2
+                ITEM_COUNT * 2,
             );
         }
     }
@@ -66,7 +69,7 @@ fn recover_seqno() -> fjall::Result<()> {
             assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
             assert_eq!(
                 tree.iter().rev().flat_map(|x| x.key()).count(),
-                ITEM_COUNT * 2
+                ITEM_COUNT * 2,
             );
         }
     }
@@ -78,7 +81,7 @@ fn recover_seqno() -> fjall::Result<()> {
 fn recover_seqno_tombstone() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let mut seqno = 0;
+    let mut seqno;
 
     // NOTE: clippy bug
     #[allow(unused_assignments)]
@@ -90,6 +93,9 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
             db.keyspace("default2", KeyspaceCreateOptions::default())?,
             db.keyspace("default3", KeyspaceCreateOptions::default())?,
         ];
+
+        // NOTE: Opening a keyspace increments the global seqno
+        seqno = db.seqno();
 
         for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {

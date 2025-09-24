@@ -36,7 +36,7 @@ fn keyspace_delete() -> fjall::Result<()> {
         assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
         assert_eq!(
             tree.iter().rev().flat_map(|x| x.key()).count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
     }
 
@@ -49,7 +49,7 @@ fn keyspace_delete() -> fjall::Result<()> {
         assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
         assert_eq!(
             tree.iter().rev().flat_map(|x| x.key()).count(),
-            ITEM_COUNT * 2
+            ITEM_COUNT * 2,
         );
 
         assert!(path.try_exists()?);
@@ -158,40 +158,29 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
 }
 
 #[test]
-fn keyspace_deletion_and_reopening_behavior() -> fjall::Result<()> {
+fn keyspace_delete_and_reopening_behavior() -> fjall::Result<()> {
     let keyspace_name = "default";
     let folder = tempfile::tempdir()?;
 
-    let keyspace_exists = || -> std::io::Result<bool> {
+    let keyspace_exists = |id: u64| -> std::io::Result<bool> {
         folder
             .path()
             .join("keyspaces")
-            .join(keyspace_name)
+            .join(id.to_string())
             .try_exists()
     };
 
     let db = Database::builder(&folder).open()?;
-    assert!(!keyspace_exists()?);
+    assert!(!keyspace_exists(1)?);
 
     let keyspace = db.keyspace(keyspace_name, Default::default())?;
-    assert!(keyspace_exists()?);
+    assert!(keyspace_exists(1)?);
 
     db.delete_keyspace(keyspace.clone())?;
-    assert!(keyspace_exists()?);
-
-    // NOTE: Keyspace is marked as deleted but still referenced, so it's not cleaned up
-    assert!(matches!(
-        db.keyspace(keyspace_name, Default::default()),
-        Err(fjall::Error::KeyspaceDeleted)
-    ));
-    assert!(keyspace_exists()?);
-
-    // NOTE: Remove last handle, will drop keyspace folder, allowing us to recreate again
-    drop(keyspace);
-    assert!(!keyspace_exists()?);
+    assert!(keyspace_exists(1)?);
 
     assert!(db.keyspace("default", Default::default()).is_ok());
-    assert!(keyspace_exists()?);
+    assert!(keyspace_exists(2)?);
 
     Ok(())
 }
