@@ -69,7 +69,7 @@ impl SongDatabase {
     pub fn iter(&self) -> impl Iterator<Item = fjall::Result<Song>> + '_ {
         self.tree
             .iter()
-            .map(|kv| kv.into_inner().map_err(Into::into)) // TODO: 3.0.0 should not expose lsm-tree error
+            .map(|kv| kv.into_inner())
             .map(|item| item.map(Song::from))
     }
 

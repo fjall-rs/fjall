@@ -56,8 +56,7 @@ fn main() -> Result<(), Error> {
     let mut found_count = 0;
 
     for kv in db.read_tx().iter(&uniq) {
-        // TODO: 3.0.0: error needs to be fjall::Error, not lsm_tree
-        let (k, v) = kv.into_inner().map_err(|e| fjall::Error::Storage(e))?;
+        let (k, v) = kv.into_inner()?;
 
         println!(
             "unique value: {:?} -> {:?}",
