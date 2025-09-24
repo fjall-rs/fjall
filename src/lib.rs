@@ -101,6 +101,7 @@ mod flush;
 mod iter;
 mod journal;
 mod keyspace;
+mod meta_keyspace;
 mod monitor;
 mod path;
 mod poison_dart;
