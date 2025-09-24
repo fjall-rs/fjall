@@ -231,7 +231,7 @@ impl Keyspace {
     ///
     /// Panics if the keyspace is **not** initially empty.
     ///
-    /// Will panic if the input iterator is not sorted in ascending order.
+    /// Panics if the input iterator is not sorted in ascending order.
     pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
         &self,
         iter: impl Iterator<Item = (K, V)>,
