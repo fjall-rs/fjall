@@ -107,15 +107,10 @@ impl Default for CreateOptions {
             tree_type: TreeType::Standard,
 
             #[cfg(feature = "lz4")]
-            data_block_compression_policy: {
-                #[cfg(feature = "lz4")]
-                    let c = CompressionPolicy::new(&[CompressionType::None, CompressionType::None, CompressionType::Lz4]);
+            data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None, CompressionType::None, CompressionType::Lz4]),
 
-                    #[cfg(not(feature = "lz4"))]
-                    let c = CompressionPolicy::new(&[CompressionType::None]);
-
-                    c
-            },
+            #[cfg(not(feature = "lz4"))]
+            data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None]),
 
             index_block_compression_policy: CompressionPolicy::all(CompressionType::None),
 
