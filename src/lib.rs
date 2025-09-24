@@ -85,7 +85,7 @@ mod builder;
 /// Contains compaction strategies
 pub mod compaction;
 
-mod config;
+mod db_config;
 
 #[cfg(feature = "__internal_whitebox")]
 #[doc(hidden)]

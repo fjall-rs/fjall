@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-/// Global Database configuration
+/// Global database configuration
 #[derive(Clone)]
 pub struct Config {
     /// Base path of database
