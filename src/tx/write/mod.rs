@@ -228,10 +228,9 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
         self.iter(keyspace)
             .next()
-            .map(|guard| guard.into_inner())
+            .map(Guard::into_inner)
             .transpose()
             .map_err(Into::into)
     }
@@ -243,10 +242,9 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
         self.iter(keyspace)
             .next_back()
-            .map(|guard| guard.into_inner())
+            .map(Guard::into_inner)
             .transpose()
             .map_err(Into::into)
     }
@@ -259,7 +257,6 @@ impl BaseTransaction {
     pub(super) fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
         let mut count = 0;
 
-        // TODO: calling .iter will mark the keyspace as fully read, is that what we want?
         let iter = self.iter(keyspace);
 
         for guard in iter {

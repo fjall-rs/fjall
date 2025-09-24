@@ -62,7 +62,7 @@ impl Oracle {
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> crate::Result<MutexGuard<BTreeMap<u64, ConflictManager>>> {
+    ) -> crate::Result<MutexGuard<'_, BTreeMap<u64, ConflictManager>>> {
         self.write_serialize_lock
             .lock()
             .map_err(|_| crate::Error::Poisoned)

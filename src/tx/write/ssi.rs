@@ -524,18 +524,9 @@ impl WriteTransaction {
         keyspace: &'b TxKeyspace,
         range: R,
     ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K, R>> + 'b {
-        // TODO: Bound::map 1.77
-        let start: Bound<Slice> = match range.start_bound() {
-            Bound::Included(k) => Bound::Included(k.as_ref().into()),
-            Bound::Excluded(k) => Bound::Excluded(k.as_ref().into()),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-        // TODO: Bound::map 1.77
-        let end: Bound<Slice> = match range.end_bound() {
-            Bound::Included(k) => Bound::Included(k.as_ref().into()),
-            Bound::Excluded(k) => Bound::Excluded(k.as_ref().into()),
-            Bound::Unbounded => Bound::Unbounded,
-        };
+        let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
+        let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
+
         self.cm.mark_range(keyspace.inner.id, (start, end));
 
         self.inner.range(keyspace, range)
