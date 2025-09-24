@@ -29,7 +29,7 @@ __internal_whitebox = []
 byteorder = { package = "byteorder-lite", version = "0.1.0" }
 byteview = "~0.8.0"
 lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", branch = "3.0.0", default-features = false, features = [
-  "use_unsafe",
+  "use_unsafe", # TODO: remove in lsm-tree
 ] }
 log = "0.4.27"
 std-semaphore = "0.1.0"
