@@ -98,6 +98,7 @@ mod db;
 mod error;
 mod file;
 mod flush;
+mod guard;
 mod iter;
 mod journal;
 mod keyspace;
@@ -133,6 +134,7 @@ pub use {
     db::Database,
     db_config::Config,
     error::{Error, Result},
+    guard::Guard,
     journal::{error::RecoveryError, writer::PersistMode},
     keyspace::{
         options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
@@ -153,6 +155,4 @@ pub use tx::write::ssi::Conflict;
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, Error as LsmError};
 
-pub use lsm_tree::{
-    AnyTree, CompressionType, Guard, KvPair, SeqNo, Slice, TreeType, UserKey, UserValue,
-};
+pub use lsm_tree::{AnyTree, CompressionType, KvPair, SeqNo, Slice, TreeType, UserKey, UserValue};

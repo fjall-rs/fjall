@@ -1,14 +1,11 @@
 use fjall::{Database, KeyspaceCreateOptions};
-use lsm_tree::Guard;
 use test_log::test;
 
-// TODO: currently guards return an lsm_tree error, not fjall...
-
-struct Counter<'a, I: DoubleEndedIterator<Item = lsm_tree::Result<fjall::KvPair>>> {
+struct Counter<'a, I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> {
     iter: &'a mut I,
 }
 
-impl<'a, I: DoubleEndedIterator<Item = lsm_tree::Result<fjall::KvPair>>> Counter<'a, I> {
+impl<'a, I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> Counter<'a, I> {
     pub fn execute(self) -> usize {
         self.iter.count()
     }

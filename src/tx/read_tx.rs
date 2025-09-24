@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{snapshot_nonce::SnapshotNonce, TxKeyspace};
-use lsm_tree::{AbstractTree, Guard, KvPair, UserValue};
+use crate::{snapshot_nonce::SnapshotNonce, Guard, TxKeyspace};
+use lsm_tree::{AbstractTree, KvPair, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace, read-only transaction (snapshot)
@@ -158,7 +158,6 @@ impl ReadTransaction {
             .next()
             .map(Guard::into_inner)
             .transpose()
-            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -190,7 +189,6 @@ impl ReadTransaction {
             .next_back()
             .map(Guard::into_inner)
             .transpose()
-            .map_err(Into::into)
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -293,8 +291,12 @@ impl ReadTransaction {
     pub fn iter<'a>(
         &self,
         keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
-        keyspace.inner.tree.iter(self.nonce.instant, None)
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
+        keyspace
+            .inner
+            .tree
+            .iter(self.nonce.instant, None)
+            .map(Guard)
 
         // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
@@ -324,11 +326,15 @@ impl ReadTransaction {
         &self,
         keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K, R>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
         // TODO: 3.0.0: if we bind the iterator lifetime to ReadTx, we can remove the snapshot nonce from Iter
         // TODO: for all other ReadTx::iterators too
 
-        keyspace.inner.tree.range(range, self.nonce.instant, None)
+        keyspace
+            .inner
+            .tree
+            .range(range, self.nonce.instant, None)
+            .map(Guard)
         // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
@@ -357,8 +363,12 @@ impl ReadTransaction {
         &self,
         keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K>> + 'a {
-        keyspace.inner.tree.prefix(prefix, self.nonce.instant, None)
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
+        keyspace
+            .inner
+            .tree
+            .prefix(prefix, self.nonce.instant, None)
+            .map(Guard)
 
         // crate::iter::Iter::new(self.nonce.clone(), iter)
     }

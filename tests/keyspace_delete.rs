@@ -1,5 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, TxDatabase};
-use lsm_tree::Guard;
+use fjall::{Database, Guard, KeyspaceCreateOptions, TxDatabase};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
@@ -85,8 +84,6 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        use lsm_tree::Guard;
-
         let db = TxDatabase::builder(&folder).open()?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;

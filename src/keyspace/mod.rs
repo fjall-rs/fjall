@@ -20,7 +20,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     write_buffer_manager::WriteBufferManager,
-    Database,
+    Database, Guard,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
 use options::CreateOptions;
@@ -377,9 +377,10 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&'_ self) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'_>> + '_ {
-        self.tree.iter(SeqNo::MAX, None)
-        //    .map(|item| item.map_err(Into::into))
+    pub fn iter(
+        &'_ self,
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'_>>> + '_ {
+        self.tree.iter(SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns an iterator over a range of items.
@@ -404,8 +405,8 @@ impl Keyspace {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'a, K, R>> + 'a {
-        self.tree.range(range, SeqNo::MAX, None)
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
+        self.tree.range(range, SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -430,8 +431,8 @@ impl Keyspace {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl lsm_tree::Guard + use<'a, K>> + 'a {
-        self.tree.prefix(prefix, SeqNo::MAX, None)
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
+        self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard)
     }
 
     /// Approximates the amount of items in the keyspace.
@@ -499,8 +500,6 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn len(&self) -> crate::Result<usize> {
-        use lsm_tree::Guard;
-
         let mut count = 0;
 
         for guard in self.iter() {

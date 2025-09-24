@@ -1,5 +1,4 @@
 use fjall::{Database, KeyspaceCreateOptions};
-use lsm_tree::Guard;
 use test_log::test;
 
 #[test]
