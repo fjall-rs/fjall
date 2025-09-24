@@ -98,7 +98,6 @@ mod db;
 mod error;
 mod file;
 mod flush;
-mod gc;
 mod iter;
 mod journal;
 mod keyspace;
@@ -123,13 +122,11 @@ pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh
 pub use {
     batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export
     builder::Builder as DatabaseBuilder,
-    config::Config,
     db::Database,
+    db_config::Config,
     error::{Error, Result},
-    gc::GarbageCollection,
     journal::{error::RecoveryError, writer::PersistMode},
     keyspace::{
-        options::KvSeparationOptions,
         options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
         Keyspace,
     },

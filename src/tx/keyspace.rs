@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{gc::GarbageCollection, Keyspace, TxDatabase};
-use lsm_tree::{gc::Report as GcReport, KvPair, UserKey, UserValue};
+use crate::{Keyspace, TxDatabase};
+use lsm_tree::{KvPair, UserKey, UserValue};
 use std::path::PathBuf;
 
 /// Handle to a keyspace of a transactional database
@@ -11,24 +11,6 @@ use std::path::PathBuf;
 pub struct TxKeyspace {
     pub(crate) inner: Keyspace,
     pub(crate) db: TxDatabase,
-}
-
-impl GarbageCollection for TxKeyspace {
-    fn gc_scan(&self) -> crate::Result<GcReport> {
-        self.inner().gc_scan()
-    }
-
-    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        self.inner().gc_with_space_amp_target(factor)
-    }
-
-    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        self.inner().gc_with_staleness_threshold(threshold)
-    }
-
-    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
-        self.inner().gc_drop_stale_segments()
-    }
 }
 
 impl TxKeyspace {

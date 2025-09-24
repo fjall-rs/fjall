@@ -164,6 +164,9 @@ impl Drop for KeyspaceInner {
 ///
 /// A keyspace generally only takes a little bit of memory and disk space,
 /// but does not spawn its own background threads.
+///
+/// As long as a handle to a keyspace is held, its folder is not cleaned up from disk
+/// in case it is deleted from another thread.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
@@ -190,45 +193,6 @@ impl Eq for Keyspace {}
 impl std::hash::Hash for Keyspace {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write(self.name.as_bytes());
-    }
-}
-
-impl GarbageCollection for Keyspace {
-    fn gc_scan(&self) -> crate::Result<GcReport> {
-        let _nonce = SnapshotNonce::new(self.seqno.get(), self.snapshot_tracker.clone());
-        crate::gc::GarbageCollector::scan(self)
-    }
-
-    fn gc_with_space_amp_target(&self, factor: f32) -> crate::Result<u64> {
-        let start = Instant::now();
-
-        let result = crate::gc::GarbageCollector::with_space_amp_target(self, factor);
-
-        #[allow(clippy::cast_possible_truncation)]
-        self.stats.time_gc.fetch_add(
-            start.elapsed().as_micros() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        result
-    }
-
-    fn gc_with_staleness_threshold(&self, threshold: f32) -> crate::Result<u64> {
-        let start = Instant::now();
-
-        let result = crate::gc::GarbageCollector::with_staleness_threshold(self, threshold);
-
-        #[allow(clippy::cast_possible_truncation)]
-        self.stats.time_gc.fetch_add(
-            start.elapsed().as_micros() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        result
-    }
-
-    fn gc_drop_stale_segments(&self) -> crate::Result<u64> {
-        crate::gc::GarbageCollector::drop_stale_segments(self)
     }
 }
 

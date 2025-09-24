@@ -1,6 +1,6 @@
 // Regression test for https://github.com/fjall-rs/fjall/issues/68
 
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, KeyspaceCreateOptions};
 
 #[test_log::test]
 #[ignore = "restore 3.0.0"]

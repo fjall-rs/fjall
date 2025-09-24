@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, KeyspaceCreateOptions};
 use lsm_tree::AbstractTree;
 use test_log::test;
 
