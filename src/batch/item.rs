@@ -2,16 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::KeyspaceKey;
+use crate::keyspace::InternalKeyspaceId;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Item {
-    // TODO: 3.0.0: not utf-8 in 3.0.0
-    /// Keyspace key - an arbitrary UTF-8 byte array
-    ///
-    /// Supports up to 2^8 bytes
-    pub keyspace: KeyspaceKey,
+    /// Internal keyspace ID
+    pub keyspace_id: InternalKeyspaceId,
 
     /// User-defined key - an arbitrary byte array
     ///
@@ -32,7 +29,7 @@ impl std::fmt::Debug for Item {
         write!(
             f,
             "{}:{:?}:{} => {:?}",
-            self.keyspace,
+            self.keyspace_id,
             self.key,
             match self.value_type {
                 ValueType::Value => "V",
@@ -45,20 +42,17 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
-    pub fn new<N: Into<KeyspaceKey>, K: Into<UserKey>, V: Into<UserValue>>(
-        keyspace_name: N,
+    pub fn new<K: Into<UserKey>, V: Into<UserValue>>(
+        keyspace_id: InternalKeyspaceId,
         key: K,
         value: V,
         value_type: ValueType,
     ) -> Self {
-        let p = keyspace_name.into();
         let k = key.into();
         let v = value.into();
 
-        assert!(!p.is_empty());
         assert!(!k.is_empty());
 
-        assert!(u8::try_from(p.len()).is_ok(), "Keyspace name too long");
         assert!(
             u16::try_from(k.len()).is_ok(),
             "Keys can be up to 65535 bytes long"
@@ -69,7 +63,7 @@ impl Item {
         );
 
         Self {
-            keyspace: p,
+            keyspace_id,
             key: k,
             value: v,
             value_type,

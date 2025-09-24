@@ -9,9 +9,8 @@ pub mod single_writer;
 pub mod ssi;
 
 use crate::{
-    batch::{item::Item, KeyspaceKey},
-    snapshot_nonce::SnapshotNonce,
-    HashMap, PersistMode, TxDatabase, TxKeyspace, WriteBatch,
+    batch::item::Item, keyspace::InternalKeyspaceId, snapshot_nonce::SnapshotNonce, HashMap,
+    PersistMode, TxDatabase, TxKeyspace, WriteBatch,
 };
 use lsm_tree::{AbstractTree, Guard, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -36,7 +35,7 @@ pub(super) struct BaseTransaction {
     /// Ephemeral transaction changes
     ///
     /// Used for RYOW (read-your-own-writes)
-    memtables: HashMap<KeyspaceKey, Arc<Memtable>>,
+    memtables: HashMap<InternalKeyspaceId, Arc<Memtable>>,
 
     /// The snapshot, for repeatable reads
     nonce: SnapshotNonce,
@@ -161,7 +160,7 @@ impl BaseTransaction {
     ) -> crate::Result<Option<UserValue>> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&keyspace.inner.name) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
             if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
             }
@@ -186,7 +185,7 @@ impl BaseTransaction {
     ) -> crate::Result<Option<u32>> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&keyspace.inner.name) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
             if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 // NOTE: Values are limited to u32 in lsm-tree
                 #[allow(clippy::cast_possible_truncation)]
@@ -211,7 +210,7 @@ impl BaseTransaction {
     ) -> crate::Result<bool> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&keyspace.inner.name) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
             if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(!item.key.is_tombstone());
             }
@@ -281,7 +280,7 @@ impl BaseTransaction {
     ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
         keyspace.inner.tree.iter(
             self.nonce.instant,
-            self.memtables.get(&keyspace.inner.name).cloned(),
+            self.memtables.get(&keyspace.inner.id).cloned(),
         )
     }
 
@@ -297,7 +296,7 @@ impl BaseTransaction {
         keyspace.inner.tree.range(
             range,
             self.nonce.instant,
-            self.memtables.get(&keyspace.inner.name).cloned(),
+            self.memtables.get(&keyspace.inner.id).cloned(),
         )
     }
 
@@ -313,7 +312,7 @@ impl BaseTransaction {
         keyspace.inner.tree.prefix(
             prefix,
             self.nonce.instant,
-            self.memtables.get(&keyspace.inner.name).cloned(),
+            self.memtables.get(&keyspace.inner.id).cloned(),
         )
     }
 
@@ -334,15 +333,14 @@ impl BaseTransaction {
         value: V,
     ) {
         // TODO: PERF: slow??
-        self.memtables
-            .entry(keyspace.inner.name.clone())
-            .or_default()
-            .insert(lsm_tree::InternalValue::from_components(
+        self.memtables.entry(keyspace.inner.id).or_default().insert(
+            lsm_tree::InternalValue::from_components(
                 key,
                 value,
                 self.seqno,
                 lsm_tree::ValueType::Value,
-            ));
+            ),
+        );
 
         self.seqno += 1;
     }
@@ -358,7 +356,7 @@ impl BaseTransaction {
     pub(super) fn remove<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
         // TODO: PERF: slow??
         self.memtables
-            .entry(keyspace.inner.name.clone())
+            .entry(keyspace.inner.id)
             .or_default()
             .insert(lsm_tree::InternalValue::new_tombstone(key, self.seqno));
 
@@ -381,7 +379,7 @@ impl BaseTransaction {
     pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
         // TODO: PERF: slow??
         self.memtables
-            .entry(keyspace.inner.name.clone())
+            .entry(keyspace.inner.id)
             .or_default()
             .insert(lsm_tree::InternalValue::new_weak_tombstone(key, self.seqno));
 
@@ -401,10 +399,10 @@ impl BaseTransaction {
 
         let mut batch = WriteBatch::new(self.db.inner).durability(self.durability);
 
-        for (keyspace_name, memtable) in self.memtables {
+        for (keyspace_id, memtable) in self.memtables {
             for item in memtable.iter() {
                 batch.data.push(Item::new(
-                    keyspace_name.clone(),
+                    keyspace_id,
                     item.key.user_key.clone(),
                     item.value.clone(),
                     item.key.value_type,

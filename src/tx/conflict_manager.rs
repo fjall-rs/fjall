@@ -1,4 +1,4 @@
-use crate::batch::KeyspaceKey;
+use crate::keyspace::InternalKeyspaceId;
 use core::ops::Bound;
 use lsm_tree::Slice;
 use std::{
@@ -18,38 +18,35 @@ enum Read {
 
 #[derive(Default, Debug)]
 pub struct ConflictManager {
-    reads: BTreeMap<KeyspaceKey, Vec<Read>>,
-    conflict_keys: BTreeMap<KeyspaceKey, BTreeSet<Slice>>,
+    reads: BTreeMap<InternalKeyspaceId, Vec<Read>>,
+    conflict_keys: BTreeMap<InternalKeyspaceId, BTreeSet<Slice>>,
 }
 
 impl ConflictManager {
-    fn push_read(&mut self, keyspace_name: &KeyspaceKey, read: Read) {
-        if let Some(tbl) = self.reads.get_mut(keyspace_name) {
+    fn push_read(&mut self, keyspace_id: InternalKeyspaceId, read: Read) {
+        if let Some(tbl) = self.reads.get_mut(&keyspace_id) {
             tbl.push(read);
         } else {
-            self.reads
-                .entry(keyspace_name.clone())
-                .or_default()
-                .push(read);
+            self.reads.entry(keyspace_id).or_default().push(read);
         }
     }
 
-    pub fn mark_read(&mut self, keyspace_name: &KeyspaceKey, key: Slice) {
-        self.push_read(keyspace_name, Read::Single(key));
+    pub fn mark_read(&mut self, keyspace_id: InternalKeyspaceId, key: Slice) {
+        self.push_read(keyspace_id, Read::Single(key));
     }
 
-    pub fn mark_conflict(&mut self, keyspace_name: &KeyspaceKey, key: Slice) {
-        if let Some(tbl) = self.conflict_keys.get_mut(keyspace_name) {
+    pub fn mark_conflict(&mut self, keyspace_id: InternalKeyspaceId, key: Slice) {
+        if let Some(tbl) = self.conflict_keys.get_mut(&keyspace_id) {
             tbl.insert(key);
         } else {
             self.conflict_keys
-                .entry(keyspace_name.clone())
+                .entry(keyspace_id)
                 .or_default()
                 .insert(key);
         }
     }
 
-    pub fn mark_range(&mut self, keyspace_name: &KeyspaceKey, range: impl RangeBounds<Slice>) {
+    pub fn mark_range(&mut self, keyspace_id: InternalKeyspaceId, range: impl RangeBounds<Slice>) {
         let start = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.clone()),
             Bound::Excluded(k) => Bound::Excluded(k.clone()),
@@ -68,7 +65,7 @@ impl ConflictManager {
             Read::Range { start, end }
         };
 
-        self.push_read(keyspace_name, read);
+        self.push_read(keyspace_id, read);
     }
 
     #[allow(clippy::too_many_lines)]

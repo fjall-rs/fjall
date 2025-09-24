@@ -27,8 +27,8 @@ pub struct MetaKeyspace {
     #[doc(hidden)]
     pub keyspaces: Arc<RwLock<Keyspaces>>,
 
+    // TODO: maybe use separate seqnos as not to interfere with other seqno
     seqno_generator: SequenceNumberCounter,
-
     visible_seqno: SequenceNumberCounter,
 }
 

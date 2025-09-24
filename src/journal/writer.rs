@@ -3,7 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::marker::{serialize_marker_item, Marker};
-use crate::{batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId};
+use crate::{
+    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    keyspace::InternalKeyspaceId,
+};
 use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -214,12 +217,7 @@ impl Writer {
     fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, EncodeError> {
         debug_assert!(self.buf.is_empty());
 
-        Marker::Start {
-            item_count,
-            seqno,
-            compression: lsm_tree::CompressionType::None,
-        }
-        .encode_into(&mut self.buf)?;
+        Marker::Start { item_count, seqno }.encode_into(&mut self.buf)?;
 
         self.file.write_all(&self.buf)?;
 
@@ -239,7 +237,7 @@ impl Writer {
 
     pub(crate) fn write_raw(
         &mut self,
-        keyspace: &str,
+        keyspace_id: InternalKeyspaceId,
         key: &[u8],
         value: &[u8],
         value_type: ValueType,
@@ -254,7 +252,14 @@ impl Writer {
         byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(&mut self.buf, keyspace, key, value, value_type)?;
+        serialize_marker_item(
+            &mut self.buf,
+            keyspace_id,
+            key,
+            value,
+            value_type,
+            lsm_tree::CompressionType::None,
+        )?;
 
         self.file.write_all(&self.buf)?;
 
@@ -297,10 +302,11 @@ impl Writer {
 
             serialize_marker_item(
                 &mut self.buf,
-                &item.keyspace,
+                item.keyspace_id,
                 &item.key,
                 &item.value,
                 item.value_type,
+                lsm_tree::CompressionType::None,
             )?;
 
             self.file.write_all(&self.buf)?;

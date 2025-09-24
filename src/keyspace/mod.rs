@@ -8,43 +8,64 @@ pub mod options;
 mod write_delay;
 
 use crate::{
-    batch::KeyspaceKey,
     compaction::manager::CompactionManager,
-    config::Config as DatabaseConfig,
     db::Keyspaces,
-    file::{KEYSPACES_FOLDER, KEYSPACE_CONFIG_FILE, KEYSPACE_DELETED_MARKER, LSM_MANIFEST_FILE},
+    db_config::Config as DatabaseConfig,
+    file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
     flush::manager::{FlushManager, Task as FlushTask},
-    gc::GarbageCollection,
     journal::{
         manager::{EvictionWatermark, JournalManager},
         Journal,
     },
-    snapshot_nonce::SnapshotNonce,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     write_buffer_manager::WriteBufferManager,
-    Database, Error,
+    Database,
 };
-use lsm_tree::{
-    gc::Report as GcReport, AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey,
-    UserValue,
-};
+use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
-    fs::File,
     ops::RangeBounds,
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, RwLock,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 use std_semaphore::Semaphore;
 use write_delay::perform_write_stall;
 
+/// Keyspace key (a.k.a. column family, locality group)
+pub type KeyspaceKey = byteview::StrView;
+
+pub type InternalKeyspaceId = u64;
+
+pub(crate) fn apply_to_base_config(
+    config: lsm_tree::Config,
+    our_config: &CreateOptions,
+) -> lsm_tree::Config {
+    // TODO: apply KV sep options
+
+    config
+        .level_count(our_config.level_count)
+        .data_block_size_policy(our_config.data_block_size_policy.clone())
+        .index_block_size_policy(our_config.index_block_size_policy.clone())
+        .data_block_compression_policy(our_config.data_block_compression_policy.clone())
+        .index_block_compression_policy(our_config.index_block_compression_policy.clone())
+        .data_block_restart_interval_policy(our_config.data_block_restart_interval_policy.clone())
+        .index_block_restart_interval_policy(our_config.index_block_restart_interval_policy.clone())
+        .filter_block_pinning_policy(our_config.filter_block_pinning_policy.clone())
+        .index_block_pinning_policy(our_config.index_block_pinning_policy.clone())
+        .data_block_hash_ratio(our_config.data_block_hash_ratio)
+        .expect_point_read_hits(our_config.expect_point_read_hits)
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
+    /// Internal ID
+    pub(crate) id: InternalKeyspaceId,
+
     // Internal
     //
     /// Keyspace name
@@ -216,21 +237,23 @@ impl Keyspace {
         iter: impl Iterator<Item = (K, V)>,
     ) -> crate::Result<()> {
         self.tree
-            .ingest(iter.map(|(k, v)| (k.into(), v.into())))
-            .inspect(|()| {
-                self.seqno.next();
-                self.visible_seqno.next();
-            })
+            .ingest(
+                iter.map(|(k, v)| (k.into(), v.into())),
+                &self.seqno,
+                &self.visible_seqno,
+            )
             .map_err(Into::into)
     }
 
     pub(crate) fn from_database(
+        keyspace_id: InternalKeyspaceId,
         db: &Database,
         tree: AnyTree,
         name: KeyspaceKey,
         config: CreateOptions,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
+            id: keyspace_id,
             name,
             tree,
             keyspaces: db.keyspaces.clone(),
@@ -254,44 +277,26 @@ impl Keyspace {
 
     /// Creates a new keyspace.
     pub(crate) fn create_new(
+        keyspace_id: InternalKeyspaceId,
         db: &Database,
         name: KeyspaceKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        use lsm_tree::coding::Encode;
+        log::debug!("Creating keyspace {name:?}->{keyspace_id}");
 
-        log::debug!("Creating keyspace {name:?}");
-
-        let base_folder = db.config.path.join(KEYSPACES_FOLDER).join(&*name);
-
-        if base_folder.join(KEYSPACE_DELETED_MARKER).try_exists()? {
-            log::error!("Failed to open keyspace; is deleted.");
-            return Err(Error::KeyspaceDeleted);
-        }
+        let base_folder = db
+            .config
+            .path
+            .join(KEYSPACES_FOLDER)
+            .join(keyspace_id.to_string());
 
         std::fs::create_dir_all(&base_folder)?;
 
-        // Write config
-        let mut file = File::create_new(base_folder.join(KEYSPACE_CONFIG_FILE))?;
-        config.encode_into(&mut file)?;
-        file.sync_all()?;
+        let base_config = lsm_tree::Config::new(base_folder)
+            .use_descriptor_table(db.config.descriptor_table.clone())
+            .use_cache(db.config.cache.clone());
 
-        let mut base_config = lsm_tree::Config::new(base_folder)
-            .descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone())
-            .data_block_size(config.data_block_size)
-            .index_block_size(config.index_block_size)
-            .level_count(config.level_count)
-            .compression(config.compression)
-            .bloom_bits_per_key(config.bloom_bits_per_key)
-            .data_block_hash_ratio(config.data_block_hash_ratio);
-
-        if let Some(kv_opts) = &config.kv_separation {
-            base_config = base_config
-                .blob_compression(kv_opts.compression)
-                .blob_file_separation_threshold(kv_opts.separation_threshold)
-                .blob_file_target_size(kv_opts.file_target_size);
-        }
+        let base_config = apply_to_base_config(base_config, &config);
 
         let tree = match config.tree_type {
             lsm_tree::TreeType::Standard => AnyTree::Standard(base_config.open()?),
@@ -299,6 +304,7 @@ impl Keyspace {
         };
 
         Ok(Self(Arc::new(KeyspaceInner {
+            id: keyspace_id,
             name,
             config,
             keyspaces: db.keyspaces.clone(),
@@ -318,6 +324,12 @@ impl Keyspace {
             snapshot_tracker: db.snapshot_tracker.clone(),
             stats: db.stats.clone(),
         })))
+    }
+
+    #[cfg(feature = "metrics")]
+    #[doc(hidden)]
+    pub fn metrics(&self) -> &lsm_tree::Metrics {
+        &**self.tree.metrics()
     }
 
     /// Returns the underlying LSM-tree's path.
@@ -739,7 +751,7 @@ impl Keyspace {
         let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
 
         flush_manager.enqueue_task(
-            self.name.clone(),
+            self.id,
             FlushTask {
                 id: yanked_id,
                 keyspace: self.clone(),
@@ -757,6 +769,15 @@ impl Keyspace {
 
         // Notify flush worker that new work has arrived
         self.flush_semaphore.release();
+
+        // TODO: dirty monkey patch
+        // TODO: we need a mechanism to prevent the version free list from getting too large
+        // TODO: in a write only workload
+        {
+            let seqno = self.seqno.get();
+            self.snapshot_tracker.open(seqno);
+            self.snapshot_tracker.close(seqno);
+        }
 
         Ok(true)
     }
@@ -938,14 +959,14 @@ impl Keyspace {
 
         let mut journal_writer = self.journal.get_writer();
 
-        let seqno = self.seqno.next();
-
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
 
-        journal_writer.write_raw(&self.name, &key, &value, lsm_tree::ValueType::Value, seqno)?;
+        let seqno = self.seqno.next();
+
+        journal_writer.write_raw(self.id, &key, &value, lsm_tree::ValueType::Value, seqno)?;
 
         if !self.config.manual_journal_persist {
             journal_writer
@@ -1012,14 +1033,14 @@ impl Keyspace {
 
         let mut journal_writer = self.journal.get_writer();
 
-        let seqno = self.seqno.next();
-
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
 
-        journal_writer.write_raw(&self.name, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
+        let seqno = self.seqno.next();
+
+        journal_writer.write_raw(self.id, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
         if !self.config.manual_journal_persist {
             journal_writer
@@ -1097,15 +1118,15 @@ impl Keyspace {
 
         let mut journal_writer = self.journal.get_writer();
 
-        let seqno = self.seqno.next();
-
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
         }
 
+        let seqno = self.seqno.next();
+
         journal_writer.write_raw(
-            &self.name,
+            self.id,
             &key,
             &[],
             lsm_tree::ValueType::WeakTombstone,

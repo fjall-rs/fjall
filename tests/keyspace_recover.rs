@@ -1,40 +1,72 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::config::{
+    BlockSizePolicy, BloomConstructionPolicy, FilterPolicy, FilterPolicyEntry, PinningPolicy,
+    RestartIntervalPolicy,
+};
+use fjall::{Database, KeyspaceCreateOptions};
 use lsm_tree::Guard;
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
 
 #[test]
-#[ignore = "restore 3.0.0"]
 fn reload_keyspace_config() -> fjall::Result<()> {
-    use lsm_tree::coding::Encode;
-
     let folder = tempfile::tempdir()?;
 
-    let serialized_config = {
+    let data_block_size = BlockSizePolicy::all(6_666);
+    let index_block_size = BlockSizePolicy::all(7_777);
+
+    let data_block_policy = RestartIntervalPolicy::all(8);
+    let index_block_policy = RestartIntervalPolicy::all(9);
+
+    let filter_block_pinning_policy = PinningPolicy::new(&[true, true, true, false]);
+    let index_block_pinning_policy = PinningPolicy::new(&[true, true, false]);
+
+    let filter_policy = FilterPolicy::new(&[
+        FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
+        FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(9.0)),
+        FilterPolicyEntry::None,
+    ]);
+
+    {
         let db = Database::builder(&folder).open()?;
 
-        let tree = db.keyspace(
+        let _tree = db.keyspace(
             "default",
             KeyspaceCreateOptions::default()
-                .compaction_strategy(fjall::compaction::Strategy::SizeTiered(
-                    fjall::compaction::SizeTiered::default(),
-                ))
-                .block_size(10_000)
-                .with_kv_separation(
-                    KvSeparationOptions::default()
-                        .separation_threshold(4_000)
-                        .file_target_size(150_000_000),
-                ),
+                .data_block_size_policy(data_block_size.clone())
+                .index_block_size_policy(index_block_size.clone())
+                .data_block_restart_interval_policy(data_block_policy.clone())
+                .index_block_restart_interval_policy(index_block_policy.clone())
+                .filter_block_pinning_policy(filter_block_pinning_policy.clone())
+                .index_block_pinning_policy(index_block_pinning_policy.clone())
+                .expect_point_read_hits(true)
+                .filter_policy(filter_policy.clone()),
         )?;
-
-        tree.config.encode_into_vec()
     };
 
     {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-        assert_eq!(serialized_config, tree.config.encode_into_vec());
+        assert_eq!(data_block_size, tree.config.data_block_size_policy);
+        assert_eq!(index_block_size, tree.config.index_block_size_policy);
+        assert_eq!(
+            data_block_policy,
+            tree.config.data_block_restart_interval_policy,
+        );
+        assert_eq!(
+            index_block_policy,
+            tree.config.index_block_restart_interval_policy,
+        );
+        assert_eq!(
+            filter_block_pinning_policy,
+            tree.config.filter_block_pinning_policy,
+        );
+        assert_eq!(
+            index_block_pinning_policy,
+            tree.config.index_block_pinning_policy,
+        );
+        assert!(tree.config.expect_point_read_hits);
+        assert_eq!(filter_policy, tree.config.filter_policy,);
     }
 
     Ok(())

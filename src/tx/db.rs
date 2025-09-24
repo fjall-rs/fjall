@@ -4,7 +4,7 @@
 
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
-    batch::KeyspaceKey, snapshot_nonce::SnapshotNonce, Config, Database, KeyspaceCreateOptions,
+    keyspace::KeyspaceKey, snapshot_nonce::SnapshotNonce, Config, Database, KeyspaceCreateOptions,
     PersistMode, TxKeyspace,
 };
 use std::{
@@ -43,7 +43,7 @@ impl TxDatabase {
     /// Starts a new writeable transaction.
     #[cfg(feature = "single_writer_tx")]
     #[must_use]
-    pub fn write_tx(&self) -> WriteTransaction {
+    pub fn write_tx(&self) -> WriteTransaction<'_> {
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
         let instant = self.inner.seqno();
 

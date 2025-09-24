@@ -87,17 +87,7 @@ impl Iterator for JournalBatchReader {
             let journal_file_pos = self.reader.last_valid_pos;
 
             match item {
-                Marker::Start {
-                    item_count,
-                    seqno,
-                    compression,
-                } => {
-                    // TODO: journal compression maybe in the future
-                    assert!(
-                        compression == CompressionType::None,
-                        "journal compression not supported"
-                    );
-
+                Marker::Start { item_count, seqno } => {
                     if self.is_in_batch {
                         log::debug!("Invalid batch: found batch start inside batch");
 
@@ -147,16 +137,25 @@ impl Iterator for JournalBatchReader {
                     }));
                 }
                 Marker::Item {
-                    keyspace,
+                    keyspace_id,
                     key,
                     value,
                     value_type,
+                    compression,
                 } => {
+                    // TODO: journal compression maybe in the future
+                    assert_eq!(
+                        compression,
+                        CompressionType::None,
+                        "journal compression is not supported (yet)",
+                    );
+
                     let item = Marker::Item {
-                        keyspace: keyspace.clone(),
+                        keyspace_id,
                         key: key.clone(),
                         value: value.clone(),
                         value_type,
+                        compression,
                     };
                     let mut bytes = Vec::with_capacity(100);
                     fail_iter!(item.encode_into(&mut bytes));
@@ -180,7 +179,7 @@ impl Iterator for JournalBatchReader {
                     self.batch_counter -= 1;
 
                     self.items.push(BatchItem {
-                        keyspace,
+                        keyspace_id,
                         key,
                         value,
                         value_type,

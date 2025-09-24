@@ -27,7 +27,7 @@ pub struct Journal {
 
 impl std::fmt::Debug for Journal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.path())
+        write!(f, "{}", self.path().display())
     }
 }
 
@@ -130,8 +130,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -159,8 +159,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -170,8 +170,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default2", *b"c", *b"c", ValueType::Value),
-                    BatchItem::new("default2", *b"d", *b"d", ValueType::Value),
+                    BatchItem::new(1, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(1, *b"d", *b"d", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -181,8 +181,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default3", *b"c", *b"c", ValueType::Value),
-                    BatchItem::new("default3", *b"d", *b"d", ValueType::Value),
+                    BatchItem::new(2, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(2, *b"d", *b"d", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -215,8 +215,8 @@ mod tests {
 
                 writer.write_batch(
                     [
-                        BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                        BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                        BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                        BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                     ]
                     .iter(),
                     2,
@@ -246,8 +246,8 @@ mod tests {
         let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -301,8 +301,8 @@ mod tests {
         let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -325,7 +325,6 @@ mod tests {
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
-                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
             file.sync_all()?;
@@ -344,7 +343,6 @@ mod tests {
             Marker::Start {
                 item_count: 2,
                 seqno: 64,
-                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
             file.sync_all()?;
@@ -366,8 +364,8 @@ mod tests {
         let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -421,8 +419,8 @@ mod tests {
         let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -443,10 +441,11 @@ mod tests {
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
-                keyspace: "default".into(),
+                keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
+                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
 
@@ -464,10 +463,11 @@ mod tests {
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             Marker::Item {
-                keyspace: "default".into(),
+                keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
+                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
 

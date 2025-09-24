@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{batch::KeyspaceKey, file::MAGIC_BYTES};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
     CompressionType, DecodeError, EncodeError, SeqNo, UserKey, UserValue, ValueType,
@@ -24,41 +24,45 @@ pub enum Marker {
     Start {
         item_count: u32,
         seqno: SeqNo,
-        compression: CompressionType,
     },
     Item {
-        keyspace: KeyspaceKey,
+        keyspace_id: InternalKeyspaceId,
         key: UserKey,
         value: UserValue,
         value_type: ValueType,
+        compression: CompressionType,
     },
     End(u64),
 }
 
 pub fn serialize_marker_item<W: Write>(
     writer: &mut W,
-    keyspace_name: &str,
+    keyspace_id: InternalKeyspaceId,
     key: &[u8],
     value: &[u8],
     value_type: ValueType,
+    compression: CompressionType,
 ) -> Result<(), EncodeError> {
     writer.write_u8(Tag::Item.into())?;
 
     writer.write_u8(u8::from(value_type))?;
 
-    // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
-    writer.write_u8(keyspace_name.len() as u8)?;
-    writer.write_all(keyspace_name.as_bytes())?;
+    compression.encode_into(writer)?;
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    writer.write_u16::<BigEndian>(key.len() as u16)?;
+    // writer.write_u8(keyspace_name.len() as u8)?;
+    // writer.write_all(keyspace_name.as_bytes())?;
+    writer.write_u64::<LittleEndian>(keyspace_id)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u16::<LittleEndian>(key.len() as u16)?;
     writer.write_all(key)?;
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    writer.write_u32::<BigEndian>(value.len() as u32)?;
+    writer.write_u32::<LittleEndian>(value.len() as u32)?;
     writer.write_all(value)?;
 
     Ok(())
@@ -96,27 +100,23 @@ impl Encode for Marker {
         use Marker::{End, Item, Start};
 
         match self {
-            Start {
-                item_count,
-                seqno,
-                compression,
-            } => {
+            Start { item_count, seqno } => {
                 writer.write_u8(Tag::Start.into())?;
-                writer.write_u32::<BigEndian>(*item_count)?;
-                writer.write_u64::<BigEndian>(*seqno)?;
-                compression.encode_into(writer)?;
+                writer.write_u32::<LittleEndian>(*item_count)?;
+                writer.write_u64::<LittleEndian>(*seqno)?;
             }
             Item {
-                keyspace,
+                keyspace_id,
                 key,
                 value,
                 value_type,
+                compression,
             } => {
-                serialize_marker_item(writer, keyspace, key, value, *value_type)?;
+                serialize_marker_item(writer, *keyspace_id, key, value, *value_type, *compression)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
-                writer.write_u64::<BigEndian>(*val)?;
+                writer.write_u64::<LittleEndian>(*val)?;
 
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the checksum value is maybe mangled
@@ -132,21 +132,10 @@ impl Decode for Marker {
     fn decode_from<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
-                let item_count = reader.read_u32::<BigEndian>()?;
-                let seqno = reader.read_u64::<BigEndian>()?;
-                let compression = CompressionType::decode_from(reader)?;
+                let item_count = reader.read_u32::<LittleEndian>()?;
+                let seqno = reader.read_u64::<LittleEndian>()?;
 
-                assert_eq!(
-                    compression,
-                    CompressionType::None,
-                    "invalid compression type"
-                );
-
-                Ok(Self::Start {
-                    item_count,
-                    seqno,
-                    compression,
-                })
+                Ok(Self::Start { item_count, seqno })
             }
             Tag::Item => {
                 let value_type = reader.read_u8()?;
@@ -154,31 +143,37 @@ impl Decode for Marker {
                     .try_into()
                     .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
 
+                // TODO: journal compression maybe in the future
+                let compression = CompressionType::decode_from(reader)?;
+                assert_eq!(
+                    compression,
+                    CompressionType::None,
+                    "journal compression is not supported (yet)",
+                );
+
                 // Read keyspace key
-                let keyspace_name_len = reader.read_u8()?;
-                let mut keyspace_name = vec![0; keyspace_name_len.into()];
-                reader.read_exact(&mut keyspace_name)?;
-                let keyspace = std::str::from_utf8(&keyspace_name)?;
+                let keyspace_id = reader.read_u64::<LittleEndian>()?;
 
                 // Read key
-                let key_len = reader.read_u16::<BigEndian>()?;
+                let key_len = reader.read_u16::<LittleEndian>()?;
                 let mut key = vec![0; key_len.into()];
                 reader.read_exact(&mut key)?;
 
                 // Read value
-                let value_len = reader.read_u32::<BigEndian>()?;
+                let value_len = reader.read_u32::<LittleEndian>()?;
                 let mut value = vec![0; value_len as usize];
                 reader.read_exact(&mut value)?;
 
                 Ok(Self::Item {
-                    keyspace: keyspace.into(),
+                    keyspace_id,
                     key: key.into(),
                     value: value.into(),
                     value_type,
+                    compression,
                 })
             }
             Tag::End => {
-                let checksum = reader.read_u64::<BigEndian>()?;
+                let checksum = reader.read_u64::<LittleEndian>()?;
 
                 // Check trailer
                 let mut magic = [0u8; MAGIC_BYTES.len()];
@@ -202,10 +197,11 @@ mod tests {
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
         let item = Marker::Item {
-            keyspace: "default".into(),
+            keyspace_id: 0,
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
             value_type: ValueType::Value,
+            compression: CompressionType::None,
         };
 
         let serialized_data = item.encode_into_vec();

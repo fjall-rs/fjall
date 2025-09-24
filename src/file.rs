@@ -10,8 +10,6 @@ pub const KEYSPACES_FOLDER: &str = "keyspaces";
 
 pub const LOCK_FILE: &str = "lock";
 pub const FJALL_MARKER: &str = "version";
-pub const KEYSPACE_DELETED_MARKER: &str = ".deleted"; // TODO: remove
-pub const KEYSPACE_CONFIG_FILE: &str = "config"; // TODO: remove
 
 pub const LSM_MANIFEST_FILE: &str = "manifest";
 

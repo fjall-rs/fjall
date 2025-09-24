@@ -4,13 +4,14 @@
 
 use crate::{
     background_worker::{Activity, BackgroundWorker},
-    batch::{Batch, KeyspaceKey},
+    batch::Batch,
     compaction::manager::CompactionManager,
-    config::Config,
-    file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, KEYSPACE_DELETED_MARKER, LOCK_FILE},
+    db_config::Config,
+    file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
-    keyspace::name::is_valid_keyspace_name,
+    keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
+    meta_keyspace::MetaKeyspace,
     monitor::Monitor,
     poison_dart::PoisonDart,
     recovery::{recover_keyspaces, recover_sealed_memtables},
@@ -36,6 +37,8 @@ pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct DatabaseInner {
+    pub(crate) meta_keyspace: MetaKeyspace,
+
     /// Dictionary of all keyspaces
     #[doc(hidden)]
     pub keyspaces: Arc<RwLock<Keyspaces>>,
@@ -84,6 +87,8 @@ pub struct DatabaseInner {
 
     #[doc(hidden)]
     pub snapshot_tracker: SnapshotTracker,
+
+    pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
     lock_fd: File,
 }
@@ -433,18 +438,14 @@ impl Database {
 
     /// Destroys the keyspace, removing all data associated with it.
     ///
+    /// The keyspace folder will not be deleted until all references to it are dropped,
+    /// so calling this is safe, even if the keyspace is still accessed in another thread.
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        let keyspace_path = handle.path();
-
-        // TODO: just remove from meta keyspace instead
-        let file = File::create_new(keyspace_path.join(KEYSPACE_DELETED_MARKER))?;
-        file.sync_all()?;
-
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(keyspace_path)?;
+        self.meta_keyspace.remove_keyspace(&handle.name)?;
 
         handle
             .is_deleted
@@ -456,12 +457,7 @@ impl Database {
         self.flush_manager
             .write()
             .expect("lock is poisoned")
-            .remove_keyspace(&handle.name);
-
-        self.keyspaces
-            .write()
-            .expect("lock is poisoned")
-            .remove(&handle.name);
+            .remove_keyspace(handle.id);
 
         Ok(())
     }
@@ -487,15 +483,19 @@ impl Database {
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
-        let mut keyspaces = self.keyspaces.write().expect("lock is poisoned");
+        let keyspaces = self.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
             keyspace.clone()
         } else {
             let name: KeyspaceKey = name.into();
 
-            let handle = Keyspace::create_new(self, name.clone(), create_options)?;
-            keyspaces.insert(name, handle.clone());
+            let keyspace_id = self.keyspace_id_counter.next();
+
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options)?;
+
+            self.meta_keyspace
+                .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;
 
             #[cfg(feature = "__internal_whitebox")]
             crate::drop::increment_drop_counter();
@@ -538,10 +538,7 @@ impl Database {
     /// ```
     #[must_use]
     pub fn keyspace_exists(&self, name: &str) -> bool {
-        self.keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .contains_key(name)
+        self.meta_keyspace.keyspace_exists(name)
     }
 
     /// Gets the current sequence number.
@@ -594,16 +591,34 @@ impl Database {
 
         let journal_manager = JournalManager::from_active(active_journal.path());
 
+        let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
+            10,
+            xxhash_rust::xxh3::Xxh3Builder::new(),
+        )));
+
+        let meta_tree = lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"))
+            // TODO: specialized config and DRY
+            .open()?;
+
+        let seqno = SequenceNumberCounter::default();
+        let visible_seqno = SequenceNumberCounter::default();
+
+        let meta_keyspace = MetaKeyspace::new(
+            meta_tree,
+            keyspaces.clone(),
+            seqno.clone(),
+            visible_seqno.clone(),
+        );
+
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
+            keyspace_id_counter: SequenceNumberCounter::new(1),
+            meta_keyspace: meta_keyspace.clone(),
             config,
             journal: active_journal,
-            keyspaces: Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
-                10,
-                xxhash_rust::xxh3::Xxh3Builder::new(),
-            ))),
-            seqno: SequenceNumberCounter::default(),
-            visible_seqno: SequenceNumberCounter::default(),
+            keyspaces,
+            seqno,
+            visible_seqno,
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             flush_semaphore: Arc::new(Semaphore::new(0)),
@@ -620,7 +635,7 @@ impl Database {
         let db = Self(Arc::new(inner));
 
         // Recover keyspaces
-        recover_keyspaces(&db)?;
+        recover_keyspaces(&db, &meta_keyspace)?;
 
         // Recover sealed memtables by walking through old journals
         recover_sealed_memtables(
@@ -655,19 +670,26 @@ impl Database {
                     let batch = batch?;
 
                     for item in batch.items {
-                        if let Some(keyspace) = keyspaces.get(&item.keyspace) {
-                            let tree = &keyspace.tree;
+                        let Some(keyspace_name) = db.meta_keyspace.resolve_id(item.keyspace_id)?
+                        else {
+                            continue;
+                        };
 
-                            match item.value_type {
-                                lsm_tree::ValueType::Value => {
-                                    tree.insert(item.key, item.value, batch.seqno);
-                                }
-                                lsm_tree::ValueType::Tombstone => {
-                                    tree.remove(item.key, batch.seqno);
-                                }
-                                lsm_tree::ValueType::WeakTombstone => {
-                                    tree.remove_weak(item.key, batch.seqno);
-                                }
+                        let Some(keyspace) = keyspaces.get(&keyspace_name) else {
+                            continue;
+                        };
+
+                        let tree = &keyspace.tree;
+
+                        match item.value_type {
+                            lsm_tree::ValueType::Value => {
+                                tree.insert(item.key, item.value, batch.seqno);
+                            }
+                            lsm_tree::ValueType::Tombstone => {
+                                tree.remove(item.key, batch.seqno);
+                            }
+                            lsm_tree::ValueType::WeakTombstone => {
+                                tree.remove_weak(item.key, batch.seqno);
                             }
                         }
                     }
@@ -735,15 +757,31 @@ impl Database {
         fsync_directory(&keyspaces_folder_path)?;
         fsync_directory(&config.path)?;
 
+        let meta_tree = lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"))
+            // TODO: specialized config
+            .open()?;
+
+        let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
+            10,
+            xxhash_rust::xxh3::Xxh3Builder::new(),
+        )));
+
+        let seqno = SequenceNumberCounter::default();
+        let visible_seqno = SequenceNumberCounter::default();
+
         let inner = DatabaseInner {
+            keyspace_id_counter: SequenceNumberCounter::new(1),
+            meta_keyspace: MetaKeyspace::new(
+                meta_tree,
+                keyspaces.clone(),
+                seqno.clone(),
+                visible_seqno.clone(),
+            ),
             config,
             journal,
-            keyspaces: Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
-                10,
-                xxhash_rust::xxh3::Xxh3Builder::new(),
-            ))),
-            seqno: SequenceNumberCounter::default(),
-            visible_seqno: SequenceNumberCounter::default(),
+            keyspaces,
+            seqno,
+            visible_seqno,
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
                 active_journal_path,
@@ -980,11 +1018,11 @@ mod tests {
 
         {
             let db = Database::create_or_recover(Config::new(folder.path()))?;
-            let tree = db.keyspace("default", Default::default())?;
-            let tree2 = db.keyspace("default2", Default::default())?;
+            let tree = db.keyspace("default", Default::default())?; // seqno = 0
+            let tree2 = db.keyspace("default2", Default::default())?; // seqno = 1
 
-            tree.insert("a", "a")?;
-            tree2.insert("a", "a")?;
+            tree.insert("a", "a")?; // seqno = 2
+            tree2.insert("a", "a")?; // seqno = 3
             assert_eq!(1, tree.len()?);
             assert_eq!(1, tree2.len()?);
 
@@ -999,7 +1037,7 @@ mod tests {
             assert_eq!(1, tree2.len()?);
             assert_eq!(0, tree2.tree.sealed_memtable_count());
 
-            tree2.insert("b", "b")?;
+            tree2.insert("b", "b")?; // seqno = 4
             tree2.rotate_memtable()?;
 
             assert_eq!(1, tree.len()?);
@@ -1037,8 +1075,8 @@ mod tests {
 
             assert_eq!(1, db.journal_count());
 
-            assert_eq!(Some(0), tree.tree.get_highest_persisted_seqno());
-            assert_eq!(Some(2), tree2.tree.get_highest_persisted_seqno());
+            assert_eq!(Some(2), tree.tree.get_highest_persisted_seqno());
+            assert_eq!(Some(4), tree2.tree.get_highest_persisted_seqno());
         }
 
         Ok(())

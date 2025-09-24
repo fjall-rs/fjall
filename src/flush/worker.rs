@@ -4,9 +4,9 @@
 
 use super::manager::{FlushManager, Task};
 use crate::{
-    batch::KeyspaceKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
-    HashMap, Keyspace,
+    compaction::manager::CompactionManager, journal::manager::JournalManager,
+    keyspace::InternalKeyspaceId, snapshot_tracker::SnapshotTracker, stats::Stats,
+    write_buffer_manager::WriteBufferManager, HashMap, Keyspace,
 };
 use lsm_tree::{AbstractTree, BlobFile, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
@@ -51,7 +51,7 @@ type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
 ///
 /// Each thread is responsible for the tasks of one keyspace.
 fn run_multi_flush(
-    partitioned_tasks: &HashMap<KeyspaceKey, Vec<Arc<Task>>>,
+    partitioned_tasks: &HashMap<InternalKeyspaceId, Vec<Arc<Task>>>,
     eviction_threshold: SeqNo,
 ) -> MultiFlushResults {
     log::debug!("spawning {} worker threads", partitioned_tasks.len());
@@ -60,13 +60,13 @@ fn run_multi_flush(
     #[allow(clippy::needless_collect)]
     let threads = partitioned_tasks
         .iter()
-        .map(|(keyspace_name, tasks)| {
-            let keyspace_name = keyspace_name.clone();
+        .map(|(keyspace_id, tasks)| {
+            let keyspace_id = *keyspace_id;
             let tasks = tasks.clone();
 
             std::thread::spawn(move || {
                 log::trace!(
-                    "flushing {} memtables for keyspace {keyspace_name:?}",
+                    "flushing {} memtables for keyspace {keyspace_id}",
                     tasks.len()
                 );
 
@@ -167,7 +167,7 @@ pub fn run(
                     keyspace.name,
                     created_segments.len(),
                 );
-                flush_manager.dequeue_tasks(keyspace.name.clone(), created_segments.len());
+                flush_manager.dequeue_tasks(keyspace.id, created_segments.len());
 
                 write_buffer_manager.free(memtables_size);
 

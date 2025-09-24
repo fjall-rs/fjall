@@ -9,9 +9,6 @@ use item::Item;
 use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
 use std::collections::HashSet;
 
-/// Keyspace key (a.k.a. column family, locality group)
-pub type KeyspaceKey = byteview::StrView;
-
 /// An atomic write batch
 ///
 /// Allows atomically writing across keyspaces inside the [`Database`].
@@ -70,13 +67,13 @@ impl Batch {
     /// Inserts a key-value pair into the batch.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(&mut self, p: &Keyspace, key: K, value: V) {
         self.data
-            .push(Item::new(p.name.clone(), key, value, ValueType::Value));
+            .push(Item::new(p.id, key, value, ValueType::Value));
     }
 
     /// Removes a key-value pair.
     pub fn remove<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
         self.data
-            .push(Item::new(p.name.clone(), key, vec![], ValueType::Tombstone));
+            .push(Item::new(p.id, key, vec![], ValueType::Tombstone));
     }
 
     /// Adds a weak tombstone marker for a key.
@@ -91,12 +88,8 @@ impl Batch {
     /// This function is currently experimental.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
-        self.data.push(Item::new(
-            p.name.clone(),
-            key,
-            vec![],
-            ValueType::WeakTombstone,
-        ));
+        self.data
+            .push(Item::new(p.id, key, vec![], ValueType::WeakTombstone));
     }
 
     /// Commits the batch to the [`Database`] atomically.
@@ -141,7 +134,11 @@ impl Batch {
         log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
         for item in std::mem::take(&mut self.data) {
-            let Some(keyspace) = keyspaces.get(&item.keyspace) else {
+            let Some(keyspace_name) = self.db.meta_keyspace.resolve_id(item.keyspace_id)? else {
+                continue;
+            };
+
+            let Some(keyspace) = keyspaces.get(&keyspace_name) else {
                 continue;
             };
 

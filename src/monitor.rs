@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    background_worker::Activity, config::Config as DatabaseConfig, db::Keyspaces,
+    background_worker::Activity, db::Keyspaces, db_config::Config as DatabaseConfig,
     flush::manager::FlushManager, journal::manager::JournalManager,
     snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager, Database,
 };
@@ -161,7 +161,7 @@ impl Monitor {
                 .expect("lock is poisoned")
                 .get_keyspaces_with_tasks();
 
-            if keyspaces_names_with_queued_tasks.contains(&lowest_persisted_keyspace.name) {
+            if keyspaces_names_with_queued_tasks.contains(&lowest_persisted_keyspace.id) {
                 return;
             }
 
@@ -207,7 +207,7 @@ impl Monitor {
 
         let keyspaces = keyspaces
             .into_iter()
-            .filter(|x| !keyspaces_names_with_queued_tasks.contains(&x.name));
+            .filter(|x| !keyspaces_names_with_queued_tasks.contains(&x.id));
 
         for keyspace in keyspaces {
             log::debug!("monitor: WB rotating {:?}", keyspace.name);

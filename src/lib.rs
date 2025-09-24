@@ -109,7 +109,6 @@ mod recovery;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod stats;
-// mod tracked_snapshot;
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 mod tx;
@@ -139,7 +138,6 @@ pub use {
         options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
         Keyspace,
     },
-    // tracked_snapshot::TrackedSnapshot as Snapshot,
     version::Version,
 };
 
