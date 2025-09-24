@@ -3,8 +3,7 @@ use crate::snapshot_tracker::SnapshotTracker;
 use crate::SeqNo;
 use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
-use std::fmt;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 pub enum CommitOutcome<E> {
     Ok,
