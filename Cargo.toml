@@ -19,7 +19,7 @@ path = "src/lib.rs"
 [features]
 default = ["single_writer_tx", "lz4"]
 lz4 = ["lsm-tree/lz4"]
-# bytes = ["lsm-tree/bytes"]
+bytes_1 = ["lsm-tree/bytes_1"]
 single_writer_tx = []
 ssi_tx = []
 metrics = ["lsm-tree/metrics"]
