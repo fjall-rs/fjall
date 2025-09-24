@@ -23,6 +23,8 @@
 //!
 //! For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
 //!
+//! ## Basic usage
+//!
 //! ```
 //! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 //! #
