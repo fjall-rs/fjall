@@ -2,110 +2,30 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{compaction::Strategy as CompactionStrategy, file::MAGIC_BYTES};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use lsm_tree::{CompressionType, TreeType};
+use crate::{
+    compaction::Strategy as CompactionStrategy,
+    config::{
+        BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
+        FilterPolicyEntry, PinningPolicy, RestartIntervalPolicy,
+    },
+    keyspace::{config::DecodeConfig, InternalKeyspaceId},
+    meta_keyspace::{encode_config_key, MetaKeyspace},
+};
+use lsm_tree::{CompressionType, KvPair, TreeType};
 
 /// Default key-value separation blob size threshold
 pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
-
-/// Configuration options for key-value-separated keyspaces
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(clippy::module_name_repetitions)]
-pub struct KvSeparationOptions {
-    /// Compression to use for blobs.
-    pub(crate) compression: CompressionType,
-
-    /// Blob file (value log segment) target size in bytes
-    #[doc(hidden)]
-    pub file_target_size: u64,
-
-    /// Key-value separation threshold in bytes
-    #[doc(hidden)]
-    pub separation_threshold: u32,
-}
-
-impl KvSeparationOptions {
-    /// Sets the target size of blob files.
-    ///
-    /// Smaller blob files allow more granular garbage collection
-    /// which allows lower space amp for lower write I/O cost.
-    ///
-    /// Larger blob files decrease the number of files on disk and thus maintenance
-    /// overhead.
-    ///
-    /// Defaults to 128 MiB.
-    #[must_use]
-    pub fn file_target_size(mut self, bytes: u64) -> Self {
-        self.file_target_size = bytes;
-        self
-    }
-
-    /// Sets the key-value separation threshold in bytes.
-    ///
-    /// A smaller value will reduce compaction overhead and thus write amplification,
-    /// at the cost of lower read performance.
-    ///
-    /// Setting the threshold too low (~64 bytes) generally doesn't make much sense, as
-    /// at some point the blobs will become smaller than the blob pointers, decreasing
-    /// read performance while not actually improving write amplification.
-    ///
-    /// Defaults to 512 bytes.
-    #[must_use]
-    pub fn separation_threshold(mut self, bytes: u32) -> Self {
-        self.separation_threshold = bytes;
-        self
-    }
-}
-
-impl Default for KvSeparationOptions {
-    fn default() -> Self {
-        unimplemented!("currently not implemented");
-
-        Self {
-            #[cfg(feature = "lz4")]
-            compression: CompressionType::Lz4,
-
-            #[cfg(not(feature = "lz4"))]
-            compression: CompressionType::None,
-
-            file_target_size: /* 128 MiB */ 128 * 1_024 * 1_024,
-
-            separation_threshold: KV_SEPARATION_DEFAULT_THRESHOLD,
-        }
-    }
-}
-
-impl lsm_tree::coding::Encode for KvSeparationOptions {
-    fn encode_into<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::EncodeError> {
-        self.compression.encode_into(writer)?;
-        writer.write_u64::<BigEndian>(self.file_target_size)?;
-        writer.write_u32::<BigEndian>(self.separation_threshold)?;
-        Ok(())
-    }
-}
-
-impl lsm_tree::coding::Decode for KvSeparationOptions {
-    fn decode_from<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DecodeError>
-    where
-        Self: Sized,
-    {
-        let compression = CompressionType::decode_from(reader)?;
-        let file_target_size = reader.read_u64::<BigEndian>()?;
-        let separation_threshold = reader.read_u32::<BigEndian>()?;
-
-        Ok(Self {
-            compression,
-            file_target_size,
-            separation_threshold,
-        })
-    }
-}
 
 /// Options to configure a keyspace
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
+    /// Tree type, see [`TreeType`].
+    pub(crate) tree_type: TreeType,
+
+    /// Amount of levels of the LSM tree (depth of tree).
+    pub(crate) level_count: u8,
+
     /// Maximum size of this keyspace's memtable - can be changed during runtime
     pub(crate) max_memtable_size: u64,
 
@@ -114,190 +34,45 @@ pub struct CreateOptions {
 
     /// Block size of data blocks.
     #[doc(hidden)]
-    pub data_block_size: u32,
+    pub data_block_size_policy: BlockSizePolicy,
 
     /// Block size of index blocks.
     #[doc(hidden)]
-    pub index_block_size: u32,
+    pub index_block_size_policy: BlockSizePolicy,
 
-    /// Amount of levels of the LSM tree (depth of tree).
-    pub(crate) level_count: u8,
+    #[doc(hidden)]
+    pub data_block_restart_interval_policy: RestartIntervalPolicy,
 
-    /// Bits per key for levels that are not L0, L1
-    pub(crate) bloom_bits_per_key: i8,
+    #[doc(hidden)]
+    pub index_block_restart_interval_policy: RestartIntervalPolicy,
 
-    /// Tree type, see [`TreeType`].
-    pub(crate) tree_type: TreeType,
+    #[doc(hidden)]
+    pub index_block_pinning_policy: PinningPolicy,
 
-    /// Compression to use.
-    pub(crate) compression: CompressionType,
+    #[doc(hidden)]
+    pub filter_block_pinning_policy: PinningPolicy,
+
+    /// If `true`, the last level will not build filters, reducing the filter size of a database
+    /// by ~90% typically.
+    #[doc(hidden)]
+    pub expect_point_read_hits: bool,
+
+    /// Filter construction policy.
+    #[doc(hidden)]
+    pub filter_policy: FilterPolicy,
+
+    /// Compression to use for data blocks.
+    #[doc(hidden)]
+    pub data_block_compression_policy: CompressionPolicy,
+
+    /// Compression to use for index blocks.
+    #[doc(hidden)]
+    pub index_block_compression_policy: CompressionPolicy,
 
     pub(crate) manual_journal_persist: bool,
 
     #[doc(hidden)]
     pub compaction_strategy: CompactionStrategy,
-
-    pub(crate) kv_separation: Option<KvSeparationOptions>,
-}
-
-impl lsm_tree::coding::Encode for CreateOptions {
-    fn encode_into<W: std::io::Write>(&self, writer: &mut W) -> Result<(), lsm_tree::EncodeError> {
-        writer.write_all(MAGIC_BYTES)?;
-
-        writer.write_u8(self.level_count)?;
-        writer.write_u8(self.tree_type.into())?;
-
-        writer.write_u64::<BigEndian>(self.max_memtable_size)?;
-        writer.write_u32::<BigEndian>(self.data_block_size)?;
-        writer.write_u32::<BigEndian>(self.index_block_size)?;
-
-        self.compression.encode_into(writer)?;
-
-        writer.write_u8(u8::from(self.manual_journal_persist))?;
-
-        writer.write_i8(self.bloom_bits_per_key)?;
-
-        // TODO: move into compaction module
-        match &self.compaction_strategy {
-            CompactionStrategy::Leveled(s) => {
-                writer.write_u8(0)?;
-                writer.write_u8(s.l0_threshold)?;
-                writer.write_u8(s.level_ratio)?;
-                writer.write_u32::<BigEndian>(s.target_size)?;
-            }
-            CompactionStrategy::SizeTiered(s) => {
-                writer.write_u8(1)?;
-                writer.write_u8(s.level_ratio)?;
-                writer.write_u32::<BigEndian>(s.base_size)?;
-            }
-            CompactionStrategy::Fifo(s) => {
-                writer.write_u8(2)?;
-                writer.write_u64::<BigEndian>(s.limit)?;
-
-                match s.ttl_seconds {
-                    Some(s) => {
-                        writer.write_u8(1)?;
-                        writer.write_u64::<BigEndian>(s)
-                    }
-                    None => writer.write_u8(0),
-                }?;
-            }
-        }
-
-        match &self.kv_separation {
-            Some(opts) => {
-                writer.write_u8(1)?;
-                opts.encode_into(writer)?;
-            }
-            None => {
-                writer.write_u8(0)?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl lsm_tree::coding::Decode for CreateOptions {
-    fn decode_from<R: std::io::Read>(reader: &mut R) -> Result<Self, lsm_tree::DecodeError>
-    where
-        Self: Sized,
-    {
-        let mut header = [0; MAGIC_BYTES.len()];
-        reader.read_exact(&mut header)?;
-
-        if header != MAGIC_BYTES {
-            return Err(lsm_tree::DecodeError::InvalidHeader(
-                "KeyspaceCreateOptions",
-            ));
-        }
-
-        let level_count = reader.read_u8()?;
-
-        let tree_type = reader.read_u8()?;
-        let tree_type: TreeType = tree_type
-            .try_into()
-            .map_err(|()| lsm_tree::DecodeError::InvalidTag(("TreeType", tree_type)))?;
-
-        let max_memtable_size = reader.read_u64::<BigEndian>()?;
-        let data_block_size = reader.read_u32::<BigEndian>()?;
-        let index_block_size = reader.read_u32::<BigEndian>()?;
-
-        let compression = CompressionType::decode_from(reader)?;
-
-        let manual_journal_persist = reader.read_u8()? != 0;
-
-        let bloom_bits_per_key = reader.read_i8()?;
-
-        // TODO: move into compaction module
-        let compaction_tag = reader.read_u8()?;
-        let compaction_strategy = match compaction_tag {
-            0 => {
-                let l0_threshold = reader.read_u8()?;
-                let level_ratio = reader.read_u8()?;
-                let target_size = reader.read_u32::<BigEndian>()?;
-
-                CompactionStrategy::Leveled(crate::compaction::Leveled {
-                    l0_threshold,
-                    target_size,
-                    level_ratio,
-                })
-            }
-            1 => {
-                let level_ratio = reader.read_u8()?;
-                let base_size = reader.read_u32::<BigEndian>()?;
-
-                CompactionStrategy::SizeTiered(crate::compaction::SizeTiered {
-                    base_size,
-                    level_ratio,
-                })
-            }
-            2 => {
-                let limit = reader.read_u64::<BigEndian>()?;
-
-                let ttl_tag = reader.read_u8()?;
-                let ttl_seconds = match ttl_tag {
-                    0 => None,
-                    1 => Some(reader.read_u64::<BigEndian>()?),
-                    _ => return Err(lsm_tree::DecodeError::InvalidTag(("TtlSeconds", ttl_tag))),
-                };
-
-                CompactionStrategy::Fifo(crate::compaction::Fifo::new(limit, ttl_seconds))
-            }
-            _ => {
-                return Err(lsm_tree::DecodeError::InvalidTag((
-                    "CompactionStrategy",
-                    compaction_tag,
-                )));
-            }
-        };
-
-        let kv_sep_tag = reader.read_u8()?;
-        let kv_separation = match kv_sep_tag {
-            0 => None,
-            1 => Some(KvSeparationOptions::decode_from(reader)?),
-            _ => {
-                return Err(lsm_tree::DecodeError::InvalidTag((
-                    "KvSeparationOptions",
-                    kv_sep_tag,
-                )));
-            }
-        };
-
-        Ok(Self {
-            data_block_hash_ratio: 0.0, // TODO: recover
-            max_memtable_size,
-            data_block_size,
-            index_block_size,
-            level_count,
-            bloom_bits_per_key,
-            tree_type,
-            compression,
-            manual_journal_persist,
-            compaction_strategy,
-            kv_separation,
-        })
-    }
 }
 
 impl Default for CreateOptions {
@@ -311,27 +86,250 @@ impl Default for CreateOptions {
 
             data_block_hash_ratio: 0.0,
 
-            data_block_size: default_tree_config.data_block_size,
-            index_block_size: default_tree_config.index_block_size,
-            bloom_bits_per_key: default_tree_config.bloom_bits_per_key,
+            data_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
+            index_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
+
+            data_block_restart_interval_policy:  RestartIntervalPolicy::all(16),
+            index_block_restart_interval_policy:  RestartIntervalPolicy::all(1),
+
+            index_block_pinning_policy: PinningPolicy::new(&[true, true, false]),
+            filter_block_pinning_policy: PinningPolicy::new(&[true, false]),
+
+            expect_point_read_hits: false,
+
+            filter_policy: FilterPolicy::new(&[
+                FilterPolicyEntry::Bloom(BloomConstructionPolicy::FpRate(0.0001)),
+                FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
+            ]),
+
             level_count: default_tree_config.level_count,
 
             tree_type: TreeType::Standard,
 
             #[cfg(feature = "lz4")]
-            compression: CompressionType::Lz4,
+            data_block_compression_policy: {
+                #[cfg(feature = "lz4")]
+                    let c = CompressionPolicy::new(&[CompressionType::None, CompressionType::None, CompressionType::Lz4]);
 
-            #[cfg(not(feature = "lz4"))]
-            compression: CompressionType::None,
+                    #[cfg(not(feature = "lz4"))]
+                    let c = CompressionPolicy::new(&[CompressionType::None]);
 
-            kv_separation: None,
+                    c
+            },
+
+            index_block_compression_policy: CompressionPolicy::all(CompressionType::None),
 
             compaction_strategy: CompactionStrategy::default(),
         }
     }
 }
 
+macro_rules! policy {
+    ($keyspace_id:expr, $name:expr, $field:expr) => {{
+        let key = encode_config_key($keyspace_id, $name);
+        (key.into(), $field.encode())
+    }};
+}
+
 impl CreateOptions {
+    pub(crate) fn from_kvs(
+        keyspace_id: InternalKeyspaceId,
+        meta_keyspace: &MetaKeyspace,
+    ) -> crate::Result<Self> {
+        let data_block_compression_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "data_block_compression_policy")?
+            .expect("should exist");
+        let data_block_compression_policy =
+            CompressionPolicy::decode(&data_block_compression_policy);
+
+        let index_block_compression_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "index_block_compression_policy")?
+            .expect("should exist");
+        let index_block_compression_policy =
+            CompressionPolicy::decode(&index_block_compression_policy);
+
+        let data_block_size_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "data_block_size_policy")?
+            .expect("should exist");
+        let data_block_size_policy = BlockSizePolicy::decode(&data_block_size_policy);
+
+        let index_block_size_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "index_block_size_policy")?
+            .expect("should exist");
+        let index_block_size_policy = BlockSizePolicy::decode(&index_block_size_policy);
+
+        let filter_block_pinning_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "filter_block_pinning_policy")?
+            .expect("should exist");
+        let filter_block_pinning_policy = PinningPolicy::decode(&filter_block_pinning_policy);
+
+        let index_block_pinning_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "index_block_pinning_policy")?
+            .expect("should exist");
+        let index_block_pinning_policy = PinningPolicy::decode(&index_block_pinning_policy);
+
+        let data_block_restart_interval_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "data_block_restart_interval_policy")?
+            .expect("should exist");
+        let data_block_restart_interval_policy =
+            RestartIntervalPolicy::decode(&data_block_restart_interval_policy);
+
+        let index_block_restart_interval_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "index_block_restart_interval_policy")?
+            .expect("should exist");
+        let index_block_restart_interval_policy =
+            RestartIntervalPolicy::decode(&index_block_restart_interval_policy);
+
+        let expect_point_read_hits = meta_keyspace
+            .get_kv_for_config(keyspace_id, "expect_point_read_hits")?
+            .expect("should exist");
+        let expect_point_read_hits = expect_point_read_hits == [1];
+
+        let filter_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "filter_policy")?
+            .expect("should exist");
+        let filter_policy = FilterPolicy::decode(&filter_policy);
+
+        Ok(Self {
+            data_block_hash_ratio: 0.0, // TODO: 3.0.0
+
+            filter_block_pinning_policy,
+            index_block_pinning_policy,
+
+            data_block_compression_policy,
+            index_block_compression_policy,
+
+            data_block_size_policy,
+            index_block_size_policy,
+
+            data_block_restart_interval_policy,
+            index_block_restart_interval_policy,
+
+            expect_point_read_hits,
+            filter_policy,
+
+            level_count: 7, // TODO: 3.0.0
+
+            manual_journal_persist: false, // TODO: 3.0.0
+
+            max_memtable_size: 64_000_000, // TODO: 3.0.0
+
+            tree_type: TreeType::Standard, // TODO: 3.0.0
+
+            compaction_strategy: crate::compaction::Strategy::Leveled(
+                crate::compaction::Leveled::default(),
+            ), // TODO: 3.0.0
+        })
+    }
+
+    pub(crate) fn encode_kvs(&self, keyspace_id: InternalKeyspaceId) -> Vec<KvPair> {
+        use crate::keyspace::config::EncodeConfig;
+
+        // TODO: 3.0.0 unit test
+        vec![
+            policy!(
+                keyspace_id,
+                "data_block_compression_policy",
+                self.data_block_compression_policy
+            ),
+            policy!(
+                keyspace_id,
+                "data_block_restart_interval_policy",
+                self.data_block_restart_interval_policy
+            ),
+            policy!(
+                keyspace_id,
+                "data_block_size_policy",
+                self.data_block_size_policy
+            ),
+            {
+                let key = encode_config_key(keyspace_id, "expect_point_read_hits");
+
+                let value = (if self.expect_point_read_hits {
+                    [1u8]
+                } else {
+                    [0u8]
+                })
+                .into();
+
+                (key, value)
+            },
+            policy!(
+                keyspace_id,
+                "filter_block_pinning_policy",
+                self.filter_block_pinning_policy
+            ),
+            policy!(keyspace_id, "filter_policy", self.filter_policy),
+            policy!(
+                keyspace_id,
+                "index_block_compression_policy",
+                self.index_block_compression_policy
+            ),
+            policy!(
+                keyspace_id,
+                "index_block_pinning_policy",
+                self.index_block_pinning_policy
+            ),
+            policy!(
+                keyspace_id,
+                "index_block_restart_interval_policy",
+                self.index_block_restart_interval_policy
+            ),
+            policy!(
+                keyspace_id,
+                "index_block_size_policy",
+                self.index_block_size_policy
+            ),
+            {
+                let key = encode_config_key(keyspace_id, "tree_type");
+                // TODO: 3.0.0 encode blob TreeType correctly
+                (key, [u8::from(TreeType::Standard)].into())
+            },
+            {
+                let key = encode_config_key(keyspace_id, "version");
+                (key, [3u8].into())
+            },
+        ]
+    }
+
+    /// Sets the restart interval inside data blocks.
+    ///
+    /// A higher restart interval saves space while increasing lookup times
+    /// inside data blocks.
+    ///
+    /// Default = 16
+    #[must_use]
+    pub fn data_block_restart_interval_policy(mut self, policy: RestartIntervalPolicy) -> Self {
+        self.data_block_restart_interval_policy = policy;
+        self
+    }
+
+    /// Sets the restart interval inside index blocks.
+    ///
+    /// A higher restart interval saves space while increasing lookup times
+    /// inside index blocks.
+    ///
+    /// Default = 1
+    #[must_use]
+    pub fn index_block_restart_interval_policy(mut self, policy: RestartIntervalPolicy) -> Self {
+        self.index_block_restart_interval_policy = policy;
+        self
+    }
+
+    /// Sets the pinning policy for filter blocks.
+    #[must_use]
+    pub fn filter_block_pinning_policy(mut self, policy: PinningPolicy) -> Self {
+        self.filter_block_pinning_policy = policy;
+        self
+    }
+
+    /// Sets the pinning policy for index blocks.
+    #[must_use]
+    pub fn index_block_pinning_policy(mut self, policy: PinningPolicy) -> Self {
+        self.index_block_pinning_policy = policy;
+        self
+    }
+
     /// Sets the hash ratio for the hash index in data blocks.
     ///
     /// The hash index speeds up point queries by using an embedded
@@ -349,40 +347,34 @@ impl CreateOptions {
         self
     }
 
-    /// Sets the bits per key for bloom filters.
-    ///
-    /// More bits per key increases memory usage, but decreases the
-    /// false positive rate of bloom filters, which decreases unnecessary
-    /// read I/O for point reads.
-    ///
-    /// Default = 10 bits
+    /// Sets the filter policy for data blocks.
     #[must_use]
-    #[doc(hidden)]
-    pub fn bloom_filter_bits(mut self, bits: Option<u8>) -> Self {
-        // NOTE: Can simply cast because of the assert above
-        #[allow(clippy::cast_possible_wrap)]
-        if let Some(bits) = bits {
-            assert!(bits <= 20, "bloom filter bits up to 20 are supported");
-            self.bloom_bits_per_key = bits as i8;
-        } else {
-            self.bloom_bits_per_key = -1;
-        }
+    pub fn filter_policy(mut self, policy: FilterPolicy) -> Self {
+        self.filter_policy = policy;
         self
     }
 
-    /// Sets the compression method.
+    /// If `true`, the last level will not build filters, reducing the filter size of a database
+    /// by ~90% typically.
     ///
-    /// Once set for a keyspace, this property is not considered in the future.
-    ///
-    /// Default = In order: Lz4 -> None, depending on compilation flags
+    /// **Enable this only if you know that point reads generally are expected to find a key-value pair.**
     #[must_use]
-    pub fn compression(mut self, compression: CompressionType) -> Self {
-        self.compression = compression;
+    pub fn expect_point_read_hits(mut self, b: bool) -> Self {
+        self.expect_point_read_hits = b;
+        self
+    }
 
-        if let Some(opts) = &mut self.kv_separation {
-            opts.compression = compression;
-        }
+    /// Sets the compression policy for data blocks.
+    #[must_use]
+    pub fn data_block_compression_policy(mut self, policy: CompressionPolicy) -> Self {
+        self.data_block_compression_policy = policy;
+        self
+    }
 
+    /// Sets the compression policy for index blocks.
+    #[must_use]
+    pub fn index_block_compression_policy(mut self, policy: CompressionPolicy) -> Self {
+        self.index_block_compression_policy = policy;
         self
     }
 
@@ -441,81 +433,60 @@ impl CreateOptions {
     ///
     /// Panics if the block size is smaller than 1 KiB or larger than 512 KiB.
     #[must_use]
-    pub fn block_size(mut self, block_size: u32) -> Self {
-        assert!(block_size >= 1_024);
-        assert!(block_size <= 512 * 1_024);
-
-        self.data_block_size = block_size;
-        self.index_block_size = block_size;
-
+    pub fn data_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
+        self.data_block_size_policy = policy;
         self
     }
 
-    /// Enables key-value separation for this keyspace.
-    ///
-    /// Key-value separation is intended for large value scenarios (1 KiB+ per KV).
-    /// Large values will be separated into a log-structured value log, which heavily
-    /// decreases compaction overhead at the cost of slightly higher read latency
-    /// and higher temporary space usage.
-    /// Also, garbage collection for deleted or outdated values becomes lazy, so
-    /// GC needs to be triggered *manually*.
-    /// See <https://fjall-rs.github.io/post/announcing-fjall-2/#key-value-separation> for more information.
-    ///
-    /// Once set for a keyspace, this property is not considered in the future.
-    ///
-    /// Default = disabled
+    #[doc(hidden)]
     #[must_use]
-    pub fn with_kv_separation(mut self, mut opts: KvSeparationOptions) -> Self {
-        self.tree_type = TreeType::Blob;
-
-        opts.compression = self.compression;
-        self.kv_separation = Some(opts);
-
+    pub fn index_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
+        self.index_block_size_policy = policy;
         self
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use test_log::test;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use test_log::test;
 
-    #[test]
-    #[cfg(not(feature = "lz4"))]
-    #[ignore = "restore 3.0.0"]
-    fn keyspace_opts_compression_none() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(c.kv_separation, None);
+//     #[test]
+//     #[cfg(not(feature = "lz4"))]
+//     #[ignore = "restore 3.0.0"]
+//     fn keyspace_opts_compression_none() {
+//         let mut c = CreateOptions::default();
+//         assert_eq!(c.compression, CompressionType::None);
+//         assert_eq!(c.kv_separation, None);
 
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::None,
-        );
+//         c = c.with_kv_separation(KvSeparationOptions::default());
+//         assert_eq!(
+//             c.kv_separation.as_ref().unwrap().compression,
+//             CompressionType::None,
+//         );
 
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
+//         c = c.compression(CompressionType::None);
+//         assert_eq!(c.compression, CompressionType::None);
+//         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
+//     }
 
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    #[cfg(feature = "lz4")]
-    #[ignore = "restore 3.0.0"]
-    fn keyspace_opts_compression_default() {
-        let mut c = CreateOptions::default();
-        assert_eq!(c.compression, CompressionType::Lz4);
-        assert_eq!(c.kv_separation, None);
+//     #[test]
+//     #[allow(clippy::unwrap_used)]
+//     #[cfg(feature = "lz4")]
+//     #[ignore = "restore 3.0.0"]
+//     fn keyspace_opts_compression_default() {
+//         let mut c = CreateOptions::default();
+//         assert_eq!(c.compression, CompressionType::Lz4);
+//         assert_eq!(c.kv_separation, None);
 
-        c = c.with_kv_separation(KvSeparationOptions::default());
-        assert_eq!(
-            c.kv_separation.as_ref().unwrap().compression,
-            CompressionType::Lz4,
-        );
+//         c = c.with_kv_separation(KvSeparationOptions::default());
+//         assert_eq!(
+//             c.kv_separation.as_ref().unwrap().compression,
+//             CompressionType::Lz4,
+//         );
 
-        c = c.compression(CompressionType::None);
-        assert_eq!(c.compression, CompressionType::None);
-        assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-    }
-}
+//         c = c.compression(CompressionType::None);
+//         assert_eq!(c.compression, CompressionType::None);
+//         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
+//     }
+// }
