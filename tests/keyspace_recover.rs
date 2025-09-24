@@ -1,6 +1,6 @@
 use fjall::config::{
-    BlockSizePolicy, BloomConstructionPolicy, FilterPolicy, FilterPolicyEntry, PinningPolicy,
-    RestartIntervalPolicy,
+    BlockSizePolicy, BloomConstructionPolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy,
+    PinningPolicy, RestartIntervalPolicy,
 };
 use fjall::{Database, KeyspaceCreateOptions};
 use lsm_tree::Guard;
@@ -27,6 +27,8 @@ fn reload_keyspace_config() -> fjall::Result<()> {
         FilterPolicyEntry::None,
     ]);
 
+    let data_block_hash_ratio_policy = HashRatioPolicy::all(0.5);
+
     {
         let db = Database::builder(&folder).open()?;
 
@@ -40,7 +42,8 @@ fn reload_keyspace_config() -> fjall::Result<()> {
                 .filter_block_pinning_policy(filter_block_pinning_policy.clone())
                 .index_block_pinning_policy(index_block_pinning_policy.clone())
                 .expect_point_read_hits(true)
-                .filter_policy(filter_policy.clone()),
+                .filter_policy(filter_policy.clone())
+                .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone()),
         )?;
     };
 
@@ -66,7 +69,12 @@ fn reload_keyspace_config() -> fjall::Result<()> {
             tree.config.index_block_pinning_policy,
         );
         assert!(tree.config.expect_point_read_hits);
-        assert_eq!(filter_policy, tree.config.filter_policy,);
+        assert_eq!(filter_policy, tree.config.filter_policy);
+
+        assert_eq!(
+            data_block_hash_ratio_policy,
+            tree.config.data_block_hash_ratio_policy,
+        );
     }
 
     Ok(())

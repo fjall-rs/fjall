@@ -6,7 +6,7 @@ use crate::{
     compaction::Strategy as CompactionStrategy,
     config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PinningPolicy, RestartIntervalPolicy,
     },
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
     meta_keyspace::{encode_config_key, MetaKeyspace},
@@ -30,7 +30,7 @@ pub struct CreateOptions {
     pub(crate) max_memtable_size: u64,
 
     /// Data block hash ratio
-    pub data_block_hash_ratio: f32,
+    pub data_block_hash_ratio_policy: HashRatioPolicy,
 
     /// Block size of data blocks.
     #[doc(hidden)]
@@ -84,7 +84,7 @@ impl Default for CreateOptions {
 
             max_memtable_size: /* 64 MiB */ 64 * 1_024 * 1_024,
 
-            data_block_hash_ratio: 0.0,
+            data_block_hash_ratio_policy: HashRatioPolicy::all(0.0),
 
             data_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
             index_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
@@ -175,6 +175,11 @@ impl CreateOptions {
         let index_block_restart_interval_policy =
             RestartIntervalPolicy::decode(&index_block_restart_interval_policy);
 
+        let data_block_hash_ratio_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "data_block_hash_ratio_policy")?
+            .expect("should exist");
+        let data_block_hash_ratio_policy = HashRatioPolicy::decode(&data_block_hash_ratio_policy);
+
         let expect_point_read_hits = meta_keyspace
             .get_kv_for_config(keyspace_id, "expect_point_read_hits")?
             .expect("should exist");
@@ -186,7 +191,7 @@ impl CreateOptions {
         let filter_policy = FilterPolicy::decode(&filter_policy);
 
         Ok(Self {
-            data_block_hash_ratio: 0.0, // TODO: 3.0.0
+            data_block_hash_ratio_policy,
 
             filter_block_pinning_policy,
             index_block_pinning_policy,
@@ -226,6 +231,11 @@ impl CreateOptions {
                 keyspace_id,
                 "data_block_compression_policy",
                 self.data_block_compression_policy
+            ),
+            policy!(
+                keyspace_id,
+                "data_block_hash_ratio_policy",
+                self.data_block_hash_ratio_policy
             ),
             policy!(
                 keyspace_id,
@@ -330,15 +340,13 @@ impl CreateOptions {
     /// The hash index speeds up point queries by using an embedded
     /// hash map in data blocks, but uses more space/memory.
     ///
-    /// Something along the lines of 1.0 - 2.0 is sensible.
+    /// In-memory or heavily cached workloads benefit more from a higher hash ratio.
     ///
-    /// If 0, the hash index is not constructed.
-    ///
-    /// Default = 0.0
+    /// If 0.0, the hash index is not constructed.
     #[must_use]
     #[doc(hidden)]
-    pub fn data_block_hash_ratio(mut self, ratio: f32) -> Self {
-        self.data_block_hash_ratio = ratio;
+    pub fn data_block_hash_ratio_policy(mut self, policy: HashRatioPolicy) -> Self {
+        self.data_block_hash_ratio_policy = policy;
         self
     }
 

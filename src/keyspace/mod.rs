@@ -57,7 +57,7 @@ pub(crate) fn apply_to_base_config(
         .index_block_restart_interval_policy(our_config.index_block_restart_interval_policy.clone())
         .filter_block_pinning_policy(our_config.filter_block_pinning_policy.clone())
         .index_block_pinning_policy(our_config.index_block_pinning_policy.clone())
-        .data_block_hash_ratio(our_config.data_block_hash_ratio)
+        .data_block_hash_ratio_policy(our_config.data_block_hash_ratio_policy.clone())
         .expect_point_read_hits(our_config.expect_point_read_hits)
 }
 

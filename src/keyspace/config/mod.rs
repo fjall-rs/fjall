@@ -5,6 +5,7 @@
 mod block_size;
 mod compression;
 mod filter;
+mod hash_ratio;
 mod pinning;
 mod restart_interval;
 
