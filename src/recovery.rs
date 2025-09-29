@@ -168,6 +168,9 @@ pub fn recover_sealed_memtables(
                     lsm_tree::ValueType::WeakTombstone => {
                         tree.remove_weak(item.key, batch.seqno);
                     }
+                    lsm_tree::ValueType::Indirection => {
+                        unreachable!()
+                    }
                 }
             }
         }

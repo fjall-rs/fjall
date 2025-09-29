@@ -147,6 +147,7 @@ impl Batch {
                 ValueType::Value => keyspace.tree.insert(item.key, item.value, batch_seqno),
                 ValueType::Tombstone => keyspace.tree.remove(item.key, batch_seqno),
                 ValueType::WeakTombstone => keyspace.tree.remove_weak(item.key, batch_seqno),
+                ValueType::Indirection => unreachable!(),
             };
 
             batch_size += item_size;

@@ -35,6 +35,7 @@ impl std::fmt::Debug for Item {
                 ValueType::Value => "V",
                 ValueType::Tombstone => "T",
                 ValueType::WeakTombstone => "W",
+                ValueType::Indirection => "Vb",
             },
             self.value
         )
