@@ -13,7 +13,7 @@ use crate::{
     meta_keyspace::MetaKeyspace,
     Database, HashMap, Keyspace,
 };
-use lsm_tree::{AbstractTree, AnyTree};
+use lsm_tree::AbstractTree;
 use std::path::PathBuf;
 
 /// Recovers keyspaces
@@ -78,16 +78,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let base_config = apply_to_base_config(base_config, &recovered_config);
 
-        // TODO: store in config instead
-        let is_blob_tree = keyspace_path
-            .join(lsm_tree::file::BLOBS_FOLDER)
-            .try_exists()?;
-
-        let tree = if is_blob_tree {
-            AnyTree::Blob(base_config.open_as_blob_tree()?)
-        } else {
-            AnyTree::Standard(base_config.open()?)
-        };
+        let tree = base_config.open()?;
 
         let keyspace = Keyspace::from_database(
             keyspace_id,

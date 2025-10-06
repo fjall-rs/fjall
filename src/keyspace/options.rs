@@ -11,7 +11,8 @@ use crate::{
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
     meta_keyspace::{encode_config_key, MetaKeyspace},
 };
-use lsm_tree::{CompressionType, KvPair, TreeType};
+use byteorder::ReadBytesExt;
+use lsm_tree::{CompressionType, KvPair, KvSeparationOptions, TreeType};
 
 /// Default key-value separation blob size threshold
 pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
@@ -73,6 +74,8 @@ pub struct CreateOptions {
 
     #[doc(hidden)]
     pub compaction_strategy: CompactionStrategy,
+
+    pub(crate) kv_separation_opts: Option<KvSeparationOptions>,
 }
 
 impl Default for CreateOptions {
@@ -115,6 +118,8 @@ impl Default for CreateOptions {
             index_block_compression_policy: CompressionPolicy::all(CompressionType::None),
 
             compaction_strategy: CompactionStrategy::default(),
+
+            kv_separation_opts: None,
         }
     }
 }
@@ -127,10 +132,13 @@ macro_rules! policy {
 }
 
 impl CreateOptions {
+    #[allow(clippy::expect_used)]
     pub(crate) fn from_kvs(
         keyspace_id: InternalKeyspaceId,
         meta_keyspace: &MetaKeyspace,
     ) -> crate::Result<Self> {
+        let blob = meta_keyspace.get_kv_for_config(keyspace_id, "blob")?;
+
         let data_block_compression_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "data_block_compression_policy")?
             .expect("should exist");
@@ -190,6 +198,40 @@ impl CreateOptions {
             .expect("should exist");
         let filter_policy = FilterPolicy::decode(&filter_policy);
 
+        let blob_opts = blob.map(|_| {
+            use byteorder::LE;
+            use lsm_tree::coding::Decode;
+
+            let blob_compression = meta_keyspace
+                .get_kv_for_config(keyspace_id, "blob_compression")?
+                .expect("blob_compression should be defined");
+            let blob_compression = CompressionType::decode_from(&mut &blob_compression[..])?;
+
+            let file_target_size = meta_keyspace
+                .get_kv_for_config(keyspace_id, "blob_file_target_size")?
+                .expect("blob_file_target_size should be defined");
+            let file_target_size = (&mut &file_target_size[..]).read_u64::<LE>()?;
+
+            let separation_threshold = meta_keyspace
+                .get_kv_for_config(keyspace_id, "blob_separation_threshold")?
+                .expect("blob_separation_threshold should be defined");
+            let separation_threshold = (&mut &separation_threshold[..]).read_u32::<LE>()?;
+
+            let staleness_threshold = meta_keyspace
+                .get_kv_for_config(keyspace_id, "blob_staleness_threshold")?
+                .expect("blob_staleness_threshold should be defined");
+            let staleness_threshold = (&mut &staleness_threshold[..]).read_f32::<LE>()?;
+
+            Ok::<_, crate::Error>(
+                KvSeparationOptions::default()
+                    .compression(blob_compression)
+                    .file_target_size(file_target_size)
+                    .separation_threshold(separation_threshold)
+                    .staleness_threshold(staleness_threshold),
+                // TODO: 3.0.0 age cutoff... something else...?
+            )
+        });
+
         Ok(Self {
             data_block_hash_ratio_policy,
 
@@ -219,6 +261,8 @@ impl CreateOptions {
             compaction_strategy: crate::compaction::Strategy::Leveled(
                 crate::compaction::Leveled::default(),
             ), // TODO: 3.0.0
+
+            kv_separation_opts: blob_opts.transpose()?,
         })
     }
 
@@ -324,6 +368,8 @@ impl CreateOptions {
     // }
 
     /// Sets the pinning policy for filter blocks.
+    ///
+    /// By default, L0 filter blocks are pinned.
     #[must_use]
     pub fn filter_block_pinning_policy(mut self, policy: PinningPolicy) -> Self {
         self.filter_block_pinning_policy = policy;
@@ -331,6 +377,8 @@ impl CreateOptions {
     }
 
     /// Sets the pinning policy for index blocks.
+    ///
+    /// By default, L0 and L1 index blocks are pinned.
     #[must_use]
     pub fn index_block_pinning_policy(mut self, policy: PinningPolicy) -> Self {
         self.index_block_pinning_policy = policy;
@@ -431,8 +479,7 @@ impl CreateOptions {
     /// For point read heavy workloads (get) a sensible default is
     /// somewhere between 4 - 8 KiB, depending on the average value size.
     ///
-    /// For scan heavy workloads (range, prefix), use 16 - 64 KiB
-    /// which also increases compression efficiency.
+    /// For more space efficiency, block size between 16 - 64 KiB are sensible.
     ///
     /// # Panics
     ///
@@ -443,12 +490,13 @@ impl CreateOptions {
         self
     }
 
-    #[doc(hidden)]
-    #[must_use]
-    pub fn index_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
-        self.index_block_size_policy = policy;
-        self
-    }
+    // TODO: 3.0.0 does nothing until we have partitioned indexes
+    // #[doc(hidden)]
+    // #[must_use]
+    // pub fn index_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
+    //     self.index_block_size_policy = policy;
+    //     self
+    // }
 }
 
 // #[cfg(test)]

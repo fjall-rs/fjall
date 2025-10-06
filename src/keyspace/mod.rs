@@ -45,20 +45,19 @@ pub(crate) fn apply_to_base_config(
     config: lsm_tree::Config,
     our_config: &CreateOptions,
 ) -> lsm_tree::Config {
-    // TODO: apply KV sep options
-
     config
-        .level_count(our_config.level_count)
+        // .level_count(our_config.level_count)
         .data_block_size_policy(our_config.data_block_size_policy.clone())
-        .index_block_size_policy(our_config.index_block_size_policy.clone())
+        // .index_block_size_policy(our_config.index_block_size_policy.clone())
         .data_block_compression_policy(our_config.data_block_compression_policy.clone())
         .index_block_compression_policy(our_config.index_block_compression_policy.clone())
         .data_block_restart_interval_policy(our_config.data_block_restart_interval_policy.clone())
-        .index_block_restart_interval_policy(our_config.index_block_restart_interval_policy.clone())
+        // .index_block_restart_interval_policy(our_config.index_block_restart_interval_policy.clone())
         .filter_block_pinning_policy(our_config.filter_block_pinning_policy.clone())
         .index_block_pinning_policy(our_config.index_block_pinning_policy.clone())
         .data_block_hash_ratio_policy(our_config.data_block_hash_ratio_policy.clone())
         .expect_point_read_hits(our_config.expect_point_read_hits)
+        .with_kv_separation(our_config.kv_separation_opts.clone())
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -297,11 +296,7 @@ impl Keyspace {
             .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
-
-        let tree = match config.tree_type {
-            lsm_tree::TreeType::Standard => AnyTree::Standard(base_config.open()?),
-            lsm_tree::TreeType::Blob => AnyTree::Blob(base_config.open_as_blob_tree()?),
-        };
+        let tree = base_config.open()?;
 
         Ok(Self(Arc::new(KeyspaceInner {
             id: keyspace_id,

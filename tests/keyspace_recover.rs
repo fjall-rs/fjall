@@ -35,7 +35,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
             "default",
             KeyspaceCreateOptions::default()
                 .data_block_size_policy(data_block_size.clone())
-                .index_block_size_policy(index_block_size.clone())
+                // .index_block_size_policy(index_block_size.clone())
                 .data_block_restart_interval_policy(data_block_interval_policy.clone())
                 // .index_block_restart_interval_policy(index_block_policy.clone())
                 .filter_block_pinning_policy(filter_block_pinning_policy.clone())
