@@ -22,8 +22,6 @@ pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
     /// Tree type, see [`TreeType`].
-    pub(crate) tree_type: TreeType,
-
     /// Amount of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
@@ -106,8 +104,6 @@ impl Default for CreateOptions {
             ]),
 
             level_count: default_tree_config.level_count,
-
-            tree_type: TreeType::Standard,
 
             #[cfg(feature = "lz4")]
             data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None, CompressionType::None, CompressionType::Lz4]),
@@ -256,8 +252,6 @@ impl CreateOptions {
 
             max_memtable_size: 64_000_000, // TODO: 3.0.0
 
-            tree_type: TreeType::Standard, // TODO: 3.0.0
-
             compaction_strategy: crate::compaction::Strategy::Leveled(
                 crate::compaction::Leveled::default(),
             ), // TODO: 3.0.0
@@ -329,11 +323,6 @@ impl CreateOptions {
                 "index_block_size_policy",
                 self.index_block_size_policy
             ),
-            {
-                let key = encode_config_key(keyspace_id, "tree_type");
-                // TODO: 3.0.0 encode blob TreeType correctly
-                (key, [u8::from(TreeType::Standard)].into())
-            },
             {
                 let key = encode_config_key(keyspace_id, "version");
                 (key, [3u8].into())
