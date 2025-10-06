@@ -16,25 +16,13 @@ fn run_flush_worker(
     task: &Arc<Task>,
     eviction_threshold: SeqNo,
 ) -> crate::Result<Option<(Segment, Option<BlobFile>)>> {
-    #[rustfmt::skip]
-    let segment = task.keyspace.tree.flush_memtable(
+    Ok(task.keyspace.tree.flush_memtable(
         // IMPORTANT: Segment has to get the task ID
         // otherwise segment ID and memtable ID will not line up
         task.id,
         &task.sealed_memtable,
         eviction_threshold,
-    );
-
-    // TODO: test this after a failed flush
-    if segment.is_err() {
-        // IMPORTANT: Need to decrement pending segments counter
-        if let crate::AnyTree::Blob(tree) = &task.keyspace.tree {
-            tree.pending_segments
-                .fetch_sub(1, std::sync::atomic::Ordering::Release);
-        }
-    }
-
-    Ok(segment?)
+    )?) // TODO: 3.0.0 opaque struct
 }
 
 struct MultiFlushResultItem {
@@ -139,6 +127,11 @@ pub fn run(
                 created_segments,
                 size: memtables_size,
             }) => {
+                // TODO: 3.0.0 this should all be handled in lsm-tree
+                // TODO: by making the result of flushes an opaque struct
+                // TODO: and allowing to merge multiple flush results
+                //
+                // TODO: 3.0.0 make sure the order is correct when multiple sealed MTs are flushed
                 let (created_segments, blob_files) = created_segments.into_iter().fold(
                     (vec![], vec![]),
                     |(mut ssts, mut blob_files), (sst, bf)| {
@@ -153,6 +146,7 @@ pub fn run(
                 if let Err(e) = keyspace.tree.register_segments(
                     &created_segments,
                     Some(&blob_files),
+                    None, // TODO: 3.0.0
                     gc_watermark,
                 ) {
                     log::error!("Failed to register segments: {e:?}");
