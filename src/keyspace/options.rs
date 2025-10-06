@@ -12,7 +12,7 @@ use crate::{
     meta_keyspace::{encode_config_key, MetaKeyspace},
 };
 use byteorder::ReadBytesExt;
-use lsm_tree::{CompressionType, KvPair, KvSeparationOptions, TreeType};
+use lsm_tree::{CompressionType, KvPair, KvSeparationOptions};
 
 /// Default key-value separation blob size threshold
 pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
@@ -21,8 +21,8 @@ pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug)]
 pub struct CreateOptions {
-    /// Tree type, see [`TreeType`].
     /// Amount of levels of the LSM tree (depth of tree).
+    #[allow(unused)]
     pub(crate) level_count: u8,
 
     /// Maximum size of this keyspace's memtable - can be changed during runtime
