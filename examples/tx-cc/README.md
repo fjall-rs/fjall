@@ -1,3 +1,3 @@
-# tx-ssi-cc
+# tx-cc
 
-This example demonstrates concurrent transactions using SSI (serializable snapshot isolation).
+This example demonstrates concurrent transactions using the single-writer transaction DB.
