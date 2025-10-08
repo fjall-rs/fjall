@@ -330,6 +330,13 @@ impl CreateOptions {
         ]
     }
 
+    /// Toggles key-value separation.
+    #[must_use]
+    pub fn with_kv_separation(mut self, opts: KvSeparationOptions) -> Self {
+        self.kv_separation_opts = Some(opts);
+        self
+    }
+
     /// Sets the restart interval inside data blocks.
     ///
     /// A higher restart interval saves space while increasing lookup times
@@ -488,47 +495,59 @@ impl CreateOptions {
     // }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use test_log::test;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
 
-//     #[test]
-//     #[cfg(not(feature = "lz4"))]
-//     #[ignore = "restore 3.0.0"]
-//     fn keyspace_opts_compression_none() {
-//         let mut c = CreateOptions::default();
-//         assert_eq!(c.compression, CompressionType::None);
-//         assert_eq!(c.kv_separation, None);
+    #[test]
+    #[cfg(not(feature = "lz4"))]
+    fn keyspace_opts_compression_none() {
+        let mut c = CreateOptions::default();
+        assert_eq!(
+            c.data_block_compression_policy,
+            CompressionPolicy::disabled(),
+        );
+        assert_eq!(c.kv_separation_opts, None);
 
-//         c = c.with_kv_separation(KvSeparationOptions::default());
-//         assert_eq!(
-//             c.kv_separation.as_ref().unwrap().compression,
-//             CompressionType::None,
-//         );
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(
+            c.kv_separation_opts.as_ref().unwrap().compression,
+            CompressionType::None,
+        );
 
-//         c = c.compression(CompressionType::None);
-//         assert_eq!(c.compression, CompressionType::None);
-//         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-//     }
+        c = c.data_block_compression_policy(CompressionPolicy::disabled());
+        assert_eq!(
+            c.data_block_compression_policy,
+            CompressionPolicy::disabled(),
+        );
+        assert_eq!(
+            c.kv_separation_opts.unwrap().compression,
+            CompressionType::None,
+        );
+    }
 
-//     #[test]
-//     #[allow(clippy::unwrap_used)]
-//     #[cfg(feature = "lz4")]
-//     #[ignore = "restore 3.0.0"]
-//     fn keyspace_opts_compression_default() {
-//         let mut c = CreateOptions::default();
-//         assert_eq!(c.compression, CompressionType::Lz4);
-//         assert_eq!(c.kv_separation, None);
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    #[cfg(feature = "lz4")]
+    fn keyspace_opts_compression_default() {
+        use CompressionType::{Lz4, None as Uncompressed};
 
-//         c = c.with_kv_separation(KvSeparationOptions::default());
-//         assert_eq!(
-//             c.kv_separation.as_ref().unwrap().compression,
-//             CompressionType::Lz4,
-//         );
+        let mut c = CreateOptions::default();
+        assert_eq!(
+            c.data_block_compression_policy,
+            CompressionPolicy::new(&[Uncompressed, Uncompressed, Lz4]),
+        );
+        assert_eq!(c.kv_separation_opts, None);
 
-//         c = c.compression(CompressionType::None);
-//         assert_eq!(c.compression, CompressionType::None);
-//         assert_eq!(c.kv_separation.unwrap().compression, CompressionType::None);
-//     }
-// }
+        c = c.with_kv_separation(KvSeparationOptions::default());
+        assert_eq!(c.kv_separation_opts.as_ref().unwrap().compression, Lz4);
+
+        c = c.data_block_compression_policy(CompressionPolicy::disabled());
+        assert_eq!(
+            c.data_block_compression_policy,
+            CompressionPolicy::disabled(),
+        );
+        assert_eq!(c.kv_separation_opts.as_ref().unwrap().compression, Lz4);
+    }
+}

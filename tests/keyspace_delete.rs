@@ -1,4 +1,4 @@
-use fjall::{Database, Guard, KeyspaceCreateOptions, TxDatabase};
+use fjall::{Database, KeyspaceCreateOptions, TxDatabase};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;
