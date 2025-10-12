@@ -444,6 +444,7 @@ impl Database {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)] // TODO: 3.0.0 restore
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
 

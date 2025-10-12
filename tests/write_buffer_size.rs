@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
@@ -29,34 +29,31 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
 }
 
 #[test]
-#[ignore = "restore 3.0.0"]
 fn write_buffer_size_blob() -> fjall::Result<()> {
-    todo!()
+    let folder = tempfile::tempdir()?;
 
-    // let folder = tempfile::tempdir()?;
+    let db = Database::builder(&folder).open()?;
 
-    // let db = Database::builder(&folder).open()?;
+    let tree = db.keyspace(
+        "default",
+        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+    )?;
+    assert_eq!(0, db.write_buffer_size());
 
-    // let tree = db.keyspace(
-    //     "default",
-    //     KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
-    // )?;
-    // assert_eq!(0, db.write_buffer_size());
+    tree.insert("asd", "def")?;
 
-    // tree.insert("asd", "def")?;
+    let write_buffer_size_after = db.write_buffer_size();
+    assert!(write_buffer_size_after > 0);
 
-    // let write_buffer_size_after = db.write_buffer_size();
-    // assert!(write_buffer_size_after > 0);
+    let mut batch = db.batch();
+    batch.insert(&tree, "dsa", "qwe");
+    batch.commit()?;
 
-    // let mut batch = db.batch();
-    // batch.insert(&tree, "dsa", "qwe");
-    // batch.commit()?;
+    let write_buffer_size_after_batch = db.write_buffer_size();
+    assert!(write_buffer_size_after_batch > write_buffer_size_after);
 
-    // let write_buffer_size_after_batch = db.write_buffer_size();
-    // assert!(write_buffer_size_after_batch > write_buffer_size_after);
+    tree.rotate_memtable_and_wait()?;
+    assert_eq!(0, db.write_buffer_size());
 
-    // tree.rotate_memtable_and_wait()?;
-    // assert_eq!(0, db.write_buffer_size());
-
-    // Ok(())
+    Ok(())
 }
