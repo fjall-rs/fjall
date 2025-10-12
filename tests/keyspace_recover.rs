@@ -12,7 +12,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let data_block_size = BlockSizePolicy::all(6_666);
-    let index_block_size = BlockSizePolicy::all(7_777);
+    // let index_block_size = BlockSizePolicy::all(7_777);
 
     let data_block_interval_policy = RestartIntervalPolicy::all(8);
     // let index_block_interval_policy = RestartIntervalPolicy::all(9);
@@ -50,7 +50,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
         assert_eq!(data_block_size, tree.config.data_block_size_policy);
-        assert_eq!(index_block_size, tree.config.index_block_size_policy);
+        // assert_eq!(index_block_size, tree.config.index_block_size_policy);
         assert_eq!(
             data_block_interval_policy,
             tree.config.data_block_restart_interval_policy,

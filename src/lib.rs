@@ -155,4 +155,7 @@ pub use tx::write::ssi::Conflict;
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, Error as LsmError};
 
-pub use lsm_tree::{AnyTree, CompressionType, KvPair, SeqNo, Slice, TreeType, UserKey, UserValue};
+pub use lsm_tree::{
+    AnyTree, CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, TreeType, UserKey,
+    UserValue,
+};

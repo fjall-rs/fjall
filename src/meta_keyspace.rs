@@ -93,30 +93,32 @@ impl MetaKeyspace {
     }
 
     pub fn remove_keyspace(&self, name: &str) -> crate::Result<()> {
-        let mut lock = self.keyspaces.write().expect("lock is poisoned");
+        unimplemented!();
 
-        let Some(keyspace) = lock.get(name) else {
-            return Ok(());
-        };
+        // let mut lock: RwLockWriteGuard<'_, std::collections::HashMap<StrView, Keyspace, xxhash_rust::xxh3::Xxh3Builder>> = self.keyspaces.write().expect("lock is poisoned");
 
-        let seqno = self.seqno_generator.next();
+        // let Some(keyspace) = lock.get(name) else {
+        //     return Ok(());
+        // };
 
-        // TODO: remove from LSM-tree ATOMICALLY - name and config
-        // TODO: make sure the ingested stream is sorted
-        let mut ingestion = lsm_tree::Ingestion::new(&self.inner)?.with_seqno(seqno);
-        {
-            let mut key: Vec<u8> =
-                Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1);
-            key.push(b'n');
-            key.extend(keyspace.id.to_le_bytes());
-            ingestion.write_tombstone(key.into())?;
-        }
+        // let seqno = self.seqno_generator.next();
 
-        ingestion.finish()?;
+        // // TODO: remove from LSM-tree ATOMICALLY - name and config
+        // // TODO: make sure the ingested stream is sorted
+        // let mut ingestion = lsm_tree::Ingestion::new(&self.inner)?.with_seqno(seqno);
+        // {
+        //     let mut key: Vec<u8> =
+        //         Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1);
+        //     key.push(b'n');
+        //     key.extend(keyspace.id.to_le_bytes());
+        //     ingestion.write_tombstone(key.into())?;
+        // }
 
-        self.visible_seqno.fetch_max(seqno + 1);
+        // ingestion.finish()?;
 
-        lock.remove(name);
+        // self.visible_seqno.fetch_max(seqno + 1);
+
+        // lock.remove(name);
 
         Ok(())
     }

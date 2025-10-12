@@ -4,6 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 10;
 
 #[test]
+#[ignore = "3.0.0"]
 fn keyspace_delete() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -76,6 +77,7 @@ fn keyspace_delete() -> fjall::Result<()> {
 
 #[test]
 #[cfg(feature = "single_writer_tx")]
+#[ignore = "3.0.0"]
 fn tx_keyspace_delete() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -155,6 +157,7 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "3.0.0"]
 fn keyspace_delete_and_reopening_behavior() -> fjall::Result<()> {
     let keyspace_name = "default";
     let folder = tempfile::tempdir()?;

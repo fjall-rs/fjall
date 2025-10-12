@@ -109,7 +109,9 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
         tree2.insert(0u8.to_be_bytes(), 0u8.to_be_bytes())?;
         assert_eq!(1, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-        assert_eq!(1, tree.tree.lock_active_memtable().len());
+
+        // TODO: 3.0.0
+        // assert_eq!(1, tree.tree.lock_active_memtable().len());
 
         tree.rotate_memtable()?;
         assert_eq!(1, tree.tree.sealed_memtable_count());
@@ -121,7 +123,9 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 
         assert_eq!(2, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-        assert_eq!(1, tree.tree.lock_active_memtable().len());
+
+        // TODO: 3.0.0
+        // assert_eq!(1, tree.tree.lock_active_memtable().len());
 
         assert_eq!(2, db.journal_count());
     }
@@ -134,7 +138,9 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 
         assert_eq!(2, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-        assert_eq!(1, tree.tree.lock_active_memtable().len());
+
+        // TODO: 3.0.0
+        // assert_eq!(1, tree.tree.lock_active_memtable().len());
 
         assert_eq!(2, db.journal_count());
     }

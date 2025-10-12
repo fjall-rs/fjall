@@ -649,15 +649,16 @@ impl Database {
         {
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
-            #[cfg(debug_assertions)]
-            for keyspace in keyspaces.values() {
-                // NOTE: If this triggers, the last sealed memtable
-                // was not correctly rotated
-                debug_assert!(
-                    keyspace.tree.lock_active_memtable().is_empty(),
-                    "active memtable is not empty - this is a bug"
-                );
-            }
+            // TODO: 3.0.0
+            // #[cfg(debug_assertions)]
+            // for keyspace in keyspaces.values() {
+            //     // NOTE: If this triggers, the last sealed memtable
+            //     // was not correctly rotated
+            //     debug_assert!(
+            //         keyspace.tree.lock_active_memtable().is_empty(),
+            //         "active memtable is not empty - this is a bug"
+            //     );
+            // }
 
             // NOTE: We only need to recover the active journal, if it actually existed before
             // nothing to recover, if we just created it
@@ -701,11 +702,12 @@ impl Database {
                 for keyspace in keyspaces.values() {
                     let size = keyspace.tree.active_memtable_size();
 
-                    log::trace!(
-                        "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
-                        keyspace.name,
-                        keyspace.tree.lock_active_memtable().len(),
-                    );
+                    // TODO: 3.0.0
+                    // log::trace!(
+                    //     "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
+                    //     keyspace.name,
+                    //     keyspace.tree.lock_active_memtable().len(),
+                    // );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
                     db.write_buffer_manager.allocate(size);

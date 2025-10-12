@@ -128,7 +128,7 @@ macro_rules! policy {
 }
 
 impl CreateOptions {
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::too_many_lines)]
     pub(crate) fn from_kvs(
         keyspace_id: InternalKeyspaceId,
         meta_keyspace: &MetaKeyspace,
@@ -198,6 +198,11 @@ impl CreateOptions {
             use byteorder::LE;
             use lsm_tree::coding::Decode;
 
+            let blob_age_cutoff = meta_keyspace
+                .get_kv_for_config(keyspace_id, "blob_age_cutoff")?
+                .expect("blob_age_cutoff should be defined");
+            let blob_age_cutoff = (&mut &blob_age_cutoff[..]).read_f32::<LE>()?;
+
             let blob_compression = meta_keyspace
                 .get_kv_for_config(keyspace_id, "blob_compression")?
                 .expect("blob_compression should be defined");
@@ -223,8 +228,8 @@ impl CreateOptions {
                     .compression(blob_compression)
                     .file_target_size(file_target_size)
                     .separation_threshold(separation_threshold)
-                    .staleness_threshold(staleness_threshold),
-                // TODO: 3.0.0 age cutoff... something else...?
+                    .staleness_threshold(staleness_threshold)
+                    .age_cutoff(blob_age_cutoff),
             )
         });
 

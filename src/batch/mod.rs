@@ -134,6 +134,8 @@ impl Batch {
         log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
         for item in std::mem::take(&mut self.data) {
+            // TODO: 3.0.0 this resolve can actually be pretty expensive
+            // TODO: maybe use a quick cache in meta_keyspace, or do it differently...
             let Some(keyspace_name) = self.db.meta_keyspace.resolve_id(item.keyspace_id)? else {
                 continue;
             };
