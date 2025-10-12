@@ -16,7 +16,7 @@ use std::{
 };
 
 // TODO: this should be a database configuration
-pub const PRE_ALLOCATED_BYTES: u64 = 32 * 1_024 * 1_024;
+pub const PRE_ALLOCATED_BYTES: u64 = 64 * 1_024 * 1_024;
 
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
