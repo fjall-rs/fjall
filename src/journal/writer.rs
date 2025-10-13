@@ -87,13 +87,13 @@ impl Writer {
         else {
             log::error!("Invalid journal file name: {}", self.path.display());
             return Err(crate::Error::JournalRecovery(
-                crate::RecoveryError::InvalidFileName,
+                crate::JournalRecoveryError::InvalidFileName,
             ));
         };
 
         let journal_id = basename.parse::<JournalId>().map_err(|_| {
             log::error!("Invalid journal file name: {}", self.path.display());
-            crate::Error::JournalRecovery(crate::RecoveryError::InvalidFileName)
+            crate::Error::JournalRecovery(crate::JournalRecoveryError::InvalidFileName)
         })?;
 
         let new_path = folder.join(format!("{}.jnl", journal_id + 1));

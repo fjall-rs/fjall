@@ -135,11 +135,8 @@ pub use {
     db_config::Config,
     error::{Error, Result},
     guard::Guard,
-    journal::{error::RecoveryError, writer::PersistMode},
-    keyspace::{
-        options::{CreateOptions as KeyspaceCreateOptions, KV_SEPARATION_DEFAULT_THRESHOLD},
-        Keyspace,
-    },
+    journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
+    keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
     version::Version,
 };
 
@@ -153,9 +150,8 @@ pub use tx::{
 pub use tx::write::ssi::Conflict;
 
 #[doc(hidden)]
-pub use lsm_tree::{AbstractTree, Error as LsmError};
+pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
 
 pub use lsm_tree::{
-    AnyTree, CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, TreeType, UserKey,
-    UserValue,
+    CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,
 };

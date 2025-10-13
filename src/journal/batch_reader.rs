@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{batch::item::Item as BatchItem, journal::marker::Marker, RecoveryError};
+use crate::{batch::item::Item as BatchItem, journal::marker::Marker, JournalRecoveryError};
 use lsm_tree::{coding::Encode, CompressionType, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
 
@@ -104,7 +104,9 @@ impl Iterator for JournalBatchReader {
                 Marker::End(expected_checksum) => {
                     if self.batch_counter > 0 {
                         log::error!("Invalid batch: insufficient length");
-                        return Some(Err(JournalRecovery(RecoveryError::InsufficientLength)));
+                        return Some(Err(JournalRecovery(
+                            JournalRecoveryError::InsufficientLength,
+                        )));
                     }
 
                     if !self.is_in_batch {
@@ -121,7 +123,7 @@ impl Iterator for JournalBatchReader {
 
                     if got_checksum != expected_checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {expected_checksum}, got: {got_checksum}");
-                        return Some(Err(JournalRecovery(RecoveryError::ChecksumMismatch)));
+                        return Some(Err(JournalRecovery(JournalRecoveryError::ChecksumMismatch)));
                     }
 
                     // Reset all variables
@@ -173,7 +175,7 @@ impl Iterator for JournalBatchReader {
 
                     if self.batch_counter == 0 {
                         log::error!("Invalid batch: Expected end marker (too many items in batch)");
-                        return Some(Err(JournalRecovery(RecoveryError::TooManyItems)));
+                        return Some(Err(JournalRecovery(JournalRecoveryError::TooManyItems)));
                     }
 
                     self.batch_counter -= 1;
