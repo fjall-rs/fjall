@@ -1,4 +1,4 @@
-use fjall::{Database, RecoveryError, Version};
+use fjall::{Database, JournalRecoveryError, Version};
 use test_log::test;
 
 #[test]
@@ -21,7 +21,7 @@ fn db_load_v2_corrupt_journal() -> fjall::Result<()> {
     matches!(
         result,
         Err(fjall::Error::JournalRecovery(
-            RecoveryError::ChecksumMismatch
+            JournalRecoveryError::ChecksumMismatch
         )),
     );
 

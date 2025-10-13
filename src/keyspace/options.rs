@@ -14,9 +14,6 @@ use crate::{
 use byteorder::ReadBytesExt;
 use lsm_tree::{CompressionType, KvPair, KvSeparationOptions};
 
-/// Default key-value separation blob size threshold
-pub const KV_SEPARATION_DEFAULT_THRESHOLD: u32 = 512;
-
 /// Options to configure a keyspace
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug)]

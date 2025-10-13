@@ -31,7 +31,7 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
         let Some(filename) = filename.to_str() else {
             log::error!("Invalid journal file name: {}", filename.display());
             return Err(crate::Error::JournalRecovery(
-                crate::RecoveryError::InvalidFileName,
+                crate::JournalRecoveryError::InvalidFileName,
             ));
         };
 
@@ -47,13 +47,13 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
         let Some(basename) = filename.strip_suffix(".jnl") else {
             log::error!("Invalid journal file name: {filename}");
             return Err(crate::Error::JournalRecovery(
-                crate::RecoveryError::InvalidFileName,
+                crate::JournalRecoveryError::InvalidFileName,
             ));
         };
 
         let journal_id = basename.parse::<JournalId>().map_err(|_| {
             log::error!("Invalid journal file name: {filename}");
-            crate::Error::JournalRecovery(crate::RecoveryError::InvalidFileName)
+            crate::Error::JournalRecovery(crate::JournalRecoveryError::InvalidFileName)
         })?;
 
         max_journal_id = max_journal_id.max(journal_id);
