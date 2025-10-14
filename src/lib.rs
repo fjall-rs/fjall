@@ -155,3 +155,8 @@ pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
 pub use lsm_tree::{
     CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,
 };
+
+/// Utility functions
+pub mod util {
+    pub use lsm_tree::util::{prefix_to_range, prefixed_range};
+}
