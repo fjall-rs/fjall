@@ -68,6 +68,8 @@ impl Builder {
     }
 
     /// Sets the cache capacity in bytes.
+    ///
+    /// It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
     #[must_use]
     pub fn cache_size(mut self, size_bytes: u64) -> Self {
         self.0.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));

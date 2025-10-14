@@ -127,6 +127,12 @@ Fjall is internally synchronized for multi-*threaded* access, so you can clone a
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
 
+## Memory usage
+
+Generally, memory for loaded data, indexes etc. is managed on a per-block basis, and capped by the block cache capacity. Note that this also applies to returnesd values: When you hold a Slice, it keeps the backing buffer alive (which may be a block). If you know that you are going to keep a value around for a long time, you may want to copy it out into a new Vec<u8> or Box<[u8]>.
+
+It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
+
 ## Feature flags
 
 ### lz4
