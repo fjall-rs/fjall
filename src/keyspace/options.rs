@@ -481,7 +481,7 @@ impl CreateOptions {
     ///
     /// # Panics
     ///
-    /// Panics if the block size is smaller than 1 KiB or larger than 512 KiB.
+    /// Panics if the block size is smaller than 1 KiB or larger than 1 MiB.
     #[must_use]
     pub fn data_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
         self.data_block_size_policy = policy;
