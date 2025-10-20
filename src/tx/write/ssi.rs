@@ -26,9 +26,12 @@ impl fmt::Display for Conflict {
 
 /// A SSI (Serializable Snapshot Isolation) cross-keyspace transaction
 ///
-/// Use [`WriteTransaction::commit`] to commit changes to the keyspace(s).
+/// Transactions keep a consistent view of the database at the time,
+/// meaning old data will not be dropped until it is not referenced by any active transaction.
 ///
-/// Drop the transaction to rollback changes.
+/// For that reason, you should try to keep transactions short-lived, and make sure they
+/// are not held somewhere forever.
+#[clippy::has_significant_drop]
 pub struct WriteTransaction {
     inner: BaseTransaction,
     cm: ConflictManager,

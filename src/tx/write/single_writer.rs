@@ -7,7 +7,12 @@ use std::{ops::RangeBounds, sync::MutexGuard};
 ///
 /// Use [`WriteTransaction::commit`] to commit changes to the keyspace(s).
 ///
-/// Drop the transaction to rollback changes.
+/// Transactions keep a consistent view of the database at the time,
+/// meaning old data will not be dropped until it is not referenced by any active transaction.
+///
+/// For that reason, you should try to keep transactions short-lived, and make sure they
+/// are not held somewhere forever.
+#[clippy::has_significant_drop]
 pub struct WriteTransaction<'a> {
     _guard: MutexGuard<'a, ()>,
     inner: InnerWriteTransaction,

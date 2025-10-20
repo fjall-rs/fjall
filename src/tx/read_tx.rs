@@ -7,6 +7,13 @@ use lsm_tree::{AbstractTree, KvPair, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace, read-only transaction (snapshot)
+///
+/// Transactions keep a consistent view of the database at the time,
+/// meaning old data will not be dropped until it is not referenced by any active transaction.
+///
+/// For that reason, you should try to keep transactions short-lived, and make sure they
+/// are not held somewhere forever.
+#[clippy::has_significant_drop]
 pub struct ReadTransaction {
     nonce: SnapshotNonce,
 }
