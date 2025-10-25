@@ -58,6 +58,8 @@ pub(crate) fn apply_to_base_config(
         .data_block_hash_ratio_policy(our_config.data_block_hash_ratio_policy.clone())
         .expect_point_read_hits(our_config.expect_point_read_hits)
         .with_kv_separation(our_config.kv_separation_opts.clone())
+        .index_block_partitioning_policy(our_config.index_block_partitioning_policy.clone())
+        .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
 }
 
 #[allow(clippy::module_name_repetitions)]

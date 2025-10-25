@@ -124,7 +124,7 @@ pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh
 pub mod config {
     pub use lsm_tree::config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, HashRatioPolicy, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PartioningPolicy, PinningPolicy, RestartIntervalPolicy,
     };
 }
 

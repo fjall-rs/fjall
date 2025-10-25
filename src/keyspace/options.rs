@@ -6,7 +6,7 @@ use crate::{
     compaction::Strategy as CompactionStrategy,
     config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, HashRatioPolicy, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PartioningPolicy, PinningPolicy, RestartIntervalPolicy,
     },
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
     meta_keyspace::{encode_config_key, MetaKeyspace},
@@ -47,6 +47,12 @@ pub struct CreateOptions {
 
     #[doc(hidden)]
     pub filter_block_pinning_policy: PinningPolicy,
+
+    #[doc(hidden)]
+    pub filter_block_partitioning_policy: PartioningPolicy,
+
+    #[doc(hidden)]
+    pub index_block_partitioning_policy: PartioningPolicy,
 
     /// If `true`, the last level will not build filters, reducing the filter size of a database
     /// by ~90% typically.
@@ -92,6 +98,9 @@ impl Default for CreateOptions {
 
             index_block_pinning_policy: PinningPolicy::new(&[true, true, false]),
             filter_block_pinning_policy: PinningPolicy::new(&[true, false]),
+
+            index_block_partitioning_policy: PinningPolicy::new(&[false, false, false, true]),
+            filter_block_partitioning_policy: PinningPolicy::new(&[false, false, false, true]),
 
             expect_point_read_hits: false,
 
@@ -153,6 +162,18 @@ impl CreateOptions {
             .get_kv_for_config(keyspace_id, "index_block_size_policy")?
             .expect("should exist");
         let index_block_size_policy = BlockSizePolicy::decode(&index_block_size_policy);
+
+        let filter_block_partitioning_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "filter_block_partitioning_policy")?
+            .expect("should exist");
+        let filter_block_partitioning_policy =
+            PinningPolicy::decode(&filter_block_partitioning_policy);
+
+        let index_block_partitioning_policy = meta_keyspace
+            .get_kv_for_config(keyspace_id, "index_block_partitioning_policy")?
+            .expect("should exist");
+        let index_block_partitioning_policy =
+            PinningPolicy::decode(&index_block_partitioning_policy);
 
         let filter_block_pinning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "filter_block_pinning_policy")?
@@ -233,6 +254,9 @@ impl CreateOptions {
         Ok(Self {
             data_block_hash_ratio_policy,
 
+            filter_block_partitioning_policy,
+            index_block_partitioning_policy,
+
             filter_block_pinning_policy,
             index_block_pinning_policy,
 
@@ -265,6 +289,7 @@ impl CreateOptions {
     pub(crate) fn encode_kvs(&self, keyspace_id: InternalKeyspaceId) -> Vec<KvPair> {
         use crate::keyspace::config::EncodeConfig;
 
+        // TODO: 3.0.0 save partitioning policies
         // TODO: 3.0.0 unit test
         vec![
             policy!(
@@ -380,6 +405,20 @@ impl CreateOptions {
     #[must_use]
     pub fn index_block_pinning_policy(mut self, policy: PinningPolicy) -> Self {
         self.index_block_pinning_policy = policy;
+        self
+    }
+
+    /// TODO:
+    #[must_use]
+    pub fn filter_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
+        self.filter_block_partitioning_policy = policy;
+        self
+    }
+
+    /// TODO:
+    #[must_use]
+    pub fn index_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
+        self.index_block_partitioning_policy = policy;
         self
     }
 
