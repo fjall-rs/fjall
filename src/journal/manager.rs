@@ -123,11 +123,11 @@ impl JournalManager {
                 }
             }
 
-            // NOTE: Once the LSN of *every* keyspace's segments [1] is higher than the journal's stored keyspace seqno,
-            // it can be deleted from disk, as we know the entire journal has been flushed to segments [2].
+            // NOTE: Once the LSN of *every* keyspace's tables [1] is higher than the journal's stored keyspace seqno,
+            // it can be deleted from disk, as we know the entire journal has been flushed to tables [2].
             //
             // [1] We cannot use the keyspace's max seqno, because the memtable will get writes, which increase the seqno.
-            // We *need* to check the disk segments specifically, they are the source of truth for flushed data.
+            // We *need* to check the tables specifically, they are the source of truth for flushed data.
             //
             // [2] Checking the seqno is safe because the queues inside the flush manager are FIFO.
             //

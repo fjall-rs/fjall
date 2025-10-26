@@ -11,14 +11,14 @@ use crate::{
 use lsm_tree::{AbstractTree, BlobFile, Segment, SeqNo};
 use std::sync::{Arc, RwLock};
 
-/// Flushes a single segment.
+/// Flushes a single table.
 fn run_flush_worker(
     task: &Arc<Task>,
     eviction_threshold: SeqNo,
 ) -> crate::Result<Option<(Segment, Option<BlobFile>)>> {
     Ok(task.keyspace.tree.flush_memtable(
-        // IMPORTANT: Segment has to get the task ID
-        // otherwise segment ID and memtable ID will not line up
+        // IMPORTANT: Table has to get the task ID
+        // otherwise table ID and memtable ID will not line up
         task.id,
         &task.sealed_memtable,
         eviction_threshold,
@@ -27,7 +27,7 @@ fn run_flush_worker(
 
 struct MultiFlushResultItem {
     keyspace: Keyspace,
-    created_segments: Vec<(Segment, Option<BlobFile>)>,
+    created_tables: Vec<(Segment, Option<BlobFile>)>,
 
     /// Size sum of sealed memtables that have been flushed
     size: u64,
@@ -75,14 +75,14 @@ fn run_multi_flush(
                     })
                     .collect::<Vec<_>>();
 
-                let created_segments = flush_workers
+                let created_tables = flush_workers
                     .into_iter()
                     .map(|t| t.join().expect("should join"))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 Ok(MultiFlushResultItem {
                     keyspace,
-                    created_segments: created_segments.into_iter().flatten().collect(),
+                    created_tables: created_tables.into_iter().flatten().collect(),
                     size: memtables_size,
                 })
             })
@@ -124,7 +124,7 @@ pub fn run(
         match result {
             Ok(MultiFlushResultItem {
                 keyspace,
-                created_segments,
+                created_tables,
                 size: memtables_size,
             }) => {
                 // TODO: 3.0.0 this should all be handled in lsm-tree
@@ -132,7 +132,7 @@ pub fn run(
                 // TODO: and allowing to merge multiple flush results
                 //
                 // TODO: 3.0.0 make sure the order is correct when multiple sealed MTs are flushed
-                let (created_segments, blob_files) = created_segments.into_iter().fold(
+                let (created_tables, blob_files) = created_tables.into_iter().fold(
                     (vec![], vec![]),
                     |(mut ssts, mut blob_files), (sst, bf)| {
                         ssts.push(sst);
@@ -141,15 +141,15 @@ pub fn run(
                     },
                 );
 
-                // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
+                // IMPORTANT: Flushed tables need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
                 if let Err(e) = keyspace.tree.register_segments(
-                    &created_segments,
+                    &created_tables,
                     Some(&blob_files),
                     None, // TODO: 3.0.0
                     gc_watermark,
                 ) {
-                    log::error!("Failed to register segments: {e:?}");
+                    log::error!("Failed to register tables: {e:?}");
                     return Err(e.into());
                 }
 
@@ -159,9 +159,9 @@ pub fn run(
                 log::debug!(
                     "Dequeuing flush tasks: {} => {}",
                     keyspace.name,
-                    created_segments.len(),
+                    created_tables.len(),
                 );
-                flush_manager.dequeue_tasks(keyspace.id, created_segments.len());
+                flush_manager.dequeue_tasks(keyspace.id, created_tables.len());
 
                 write_buffer_manager.free(memtables_size);
 
@@ -171,11 +171,11 @@ pub fn run(
 
                 stats
                     .flushes_completed
-                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(created_tables.len(), std::sync::atomic::Ordering::Relaxed);
 
                 keyspace
                     .flushes_completed
-                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(created_tables.len(), std::sync::atomic::Ordering::Relaxed);
             }
             Err(e) => {
                 log::error!("Flush error: {e:?}");

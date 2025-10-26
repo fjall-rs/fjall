@@ -850,10 +850,10 @@ impl Keyspace {
         }
     }
 
-    /// Number of disk segments (a.k.a. SST files) in the LSM-tree.
+    /// Number of tables (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
-    pub fn segment_count(&self) -> usize {
+    pub fn table_count(&self) -> usize {
         self.tree.segment_count()
     }
 

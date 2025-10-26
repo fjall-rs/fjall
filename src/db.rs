@@ -56,8 +56,7 @@ pub struct DatabaseInner {
     /// Current visible sequence number
     pub(crate) visible_seqno: SequenceNumberCounter,
 
-    /// Caps write buffer size by flushing
-    /// memtables to disk segments
+    /// Caps write buffer size by flushing memtables to tables
     pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
 
     /// Checks on-disk journal size and flushes memtables
@@ -1127,8 +1126,8 @@ mod tests {
 
         assert_eq!(0, db.write_buffer_size());
 
-        assert_eq!(0, tree.segment_count());
-        assert_eq!(0, tree2.segment_count());
+        assert_eq!(0, tree.table_count());
+        assert_eq!(0, tree2.table_count());
 
         assert_eq!(
             0,
@@ -1181,8 +1180,8 @@ mod tests {
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, tree.segment_count());
-        assert_eq!(0, tree2.segment_count());
+        assert_eq!(0, tree.table_count());
+        assert_eq!(0, tree2.table_count());
 
         db.force_flush()?;
 
@@ -1205,8 +1204,8 @@ mod tests {
         );
 
         assert_eq!(0, db.write_buffer_size());
-        assert_eq!(1, tree.segment_count());
-        assert_eq!(1, tree2.segment_count());
+        assert_eq!(1, tree.table_count());
+        assert_eq!(1, tree2.table_count());
 
         Ok(())
     }
@@ -1220,7 +1219,7 @@ mod tests {
 
         assert_eq!(0, db.write_buffer_size());
 
-        assert_eq!(0, tree.segment_count());
+        assert_eq!(0, tree.table_count());
 
         assert_eq!(
             0,
@@ -1256,7 +1255,7 @@ mod tests {
                 .sealed_journal_count()
         );
 
-        assert_eq!(0, tree.segment_count());
+        assert_eq!(0, tree.table_count());
 
         db.force_flush()?;
 
@@ -1279,7 +1278,7 @@ mod tests {
         );
 
         assert_eq!(0, db.write_buffer_size());
-        assert_eq!(1, tree.segment_count());
+        assert_eq!(1, tree.table_count());
 
         Ok(())
     }

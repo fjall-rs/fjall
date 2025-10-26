@@ -35,9 +35,9 @@ fn main() -> fjall::Result<()> {
             let disk_space = log.disk_space();
 
             println!(
-                "key range: [{min_key}, {max_key}] - disk space used: {} MiB - # segments: {}",
+                "key range: [{min_key}, {max_key}] - disk space used: {} MiB - # tables: {}",
                 disk_space / 1_024 / 1_024,
-                log.segment_count(),
+                log.table_count(),
             );
 
             assert!(disk_space < (LIMIT as f64 * 1.5) as u64);

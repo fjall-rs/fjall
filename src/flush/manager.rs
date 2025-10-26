@@ -122,7 +122,7 @@ impl FlushManager {
         // help with flushing very active keyspaces.
         //
         // Because we are flushing them atomically inside one batch,
-        // we will never cover up a lower seqno of some other segment.
+        // we will never cover up a lower seqno of some other table.
         // For this to work, all tasks need to be successful and atomically
         // applied (all-or-nothing).
         'outer: for (keyspace_id, queue) in &self.queues {
