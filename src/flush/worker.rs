@@ -8,14 +8,14 @@ use crate::{
     keyspace::InternalKeyspaceId, snapshot_tracker::SnapshotTracker, stats::Stats,
     write_buffer_manager::WriteBufferManager, HashMap, Keyspace,
 };
-use lsm_tree::{AbstractTree, BlobFile, Segment, SeqNo};
+use lsm_tree::{AbstractTree, BlobFile, SeqNo, Table};
 use std::sync::{Arc, RwLock};
 
 /// Flushes a single table.
 fn run_flush_worker(
     task: &Arc<Task>,
     eviction_threshold: SeqNo,
-) -> crate::Result<Option<(Segment, Option<BlobFile>)>> {
+) -> crate::Result<Option<(Table, Option<BlobFile>)>> {
     Ok(task.keyspace.tree.flush_memtable(
         // IMPORTANT: Table has to get the task ID
         // otherwise table ID and memtable ID will not line up
@@ -27,7 +27,7 @@ fn run_flush_worker(
 
 struct MultiFlushResultItem {
     keyspace: Keyspace,
-    created_tables: Vec<(Segment, Option<BlobFile>)>,
+    created_tables: Vec<(Table, Option<BlobFile>)>,
 
     /// Size sum of sealed memtables that have been flushed
     size: u64,
@@ -143,7 +143,7 @@ pub fn run(
 
                 // IMPORTANT: Flushed tables need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = keyspace.tree.register_segments(
+                if let Err(e) = keyspace.tree.register_tables(
                     &created_tables,
                     Some(&blob_files),
                     None, // TODO: 3.0.0

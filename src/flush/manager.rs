@@ -4,12 +4,12 @@
 
 use super::queue::FlushQueue;
 use crate::{keyspace::InternalKeyspaceId, HashMap, HashSet, Keyspace};
-use lsm_tree::{Memtable, SegmentId};
+use lsm_tree::{Memtable, TableId};
 use std::sync::Arc;
 
 pub struct Task {
     /// ID of memtable
-    pub(crate) id: SegmentId,
+    pub(crate) id: TableId,
 
     /// Memtable to flush
     pub(crate) sealed_memtable: Arc<Memtable>,

@@ -854,7 +854,7 @@ impl Keyspace {
     #[doc(hidden)]
     #[must_use]
     pub fn table_count(&self) -> usize {
-        self.tree.segment_count()
+        self.tree.table_count()
     }
 
     /// Number of blob files in the LSM-tree.
