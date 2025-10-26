@@ -1,6 +1,6 @@
 <!-- TODO: remove at some point after 3.0.0 -->
 > [!WARNING]
-> This is the 3.0.0 source code - the 2.0.0 source is available at https://github.com/fjall-rs/fjall/tree/2.x.x
+> This is the 3.x source code - the 2.x source is available at https://github.com/fjall-rs/fjall/tree/2.x.x
 
 <p align="center">
   <img src="/kawaii.png" height="200">
