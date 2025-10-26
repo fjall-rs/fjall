@@ -1,6 +1,6 @@
 <!-- TODO: remove at some point after 3.0.0 -->
 > [!WARNING]
-> This is the 3.0.0 source code - the 2.0.0 source is available at https://github.com/fjall-rs/fjall/tree/2.0.0
+> This is the 3.x source code - the 2.x source is available at https://github.com/fjall-rs/fjall/tree/2.x.x
 
 <p align="center">
   <img src="/kawaii.png" height="200">
@@ -129,9 +129,29 @@ For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/m
 
 ## Memory usage
 
-Generally, memory for loaded data, indexes etc. is managed on a per-block basis, and capped by the block cache capacity. Note that this also applies to returnesd values: When you hold a Slice, it keeps the backing buffer alive (which may be a block). If you know that you are going to keep a value around for a long time, you may want to copy it out into a new Vec<u8> or Box<[u8]>.
+Generally, memory for loaded data, indexes etc. is managed on a per-block basis, and capped by the block cache capacity.
+Note that this also applies to returned values: When you hold a `Slice`, it keeps the backing buffer alive (which may be a block). If you know that you are going to keep a value around for a long time, you may want to copy it out into a new `Vec<u8>`, `Box<[u8]>`, `Arc<[u8]>` or new `Slice` (using `Slice::new`).
 
-It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
+It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
+
+## Transactional modes
+
+The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
+However this isolation level can not do read-modify-write operations without the chance of lost updates.
+Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
+
+TL;DR: Fjall supports both transactional and non-transactional workloads.
+
+For that reason, if you need transactional semantics, you need to use one of the `TransactionalDatabase` implementations.
+
+### single_writer_tx
+
+Allows opening a transactional database for single-writer (serialized) transactions.
+
+### ssi_tx
+
+Allows opening a transactional database for multi-writer, serializable transactions.
+Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ## Feature flags
 
@@ -140,20 +160,6 @@ It is recommended to configure the block cache capacity to be ~20-25% of the ava
 Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
 
 *Enabled by default.*
-
-### single_writer_tx
-
-Allows opening a transactional database for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
-
-*Enabled by default.*
-
-### ssi_tx
-
-Allows opening a transactional database for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
-Conflict checking is done using optimistic concurrency control.
-
-*Disabled by default.
-Mutually exclusive with `single_writer_tx`.*
 
 ### bytes
 
