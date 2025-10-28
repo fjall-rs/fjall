@@ -13,9 +13,10 @@ fn main() -> fjall::Result<()> {
 
     let log = db.keyspace(
         "log",
-        KeyspaceCreateOptions::default().compaction_strategy(fjall::compaction::Strategy::Fifo(
+        KeyspaceCreateOptions::default()
             fjall::compaction::Fifo::new(LIMIT, None),
         )),
+            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None))),
     )?;
 
     for x in 0u64..2_500_000 {
