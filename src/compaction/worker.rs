@@ -32,7 +32,7 @@ pub fn run(
 
     if let Err(e) = item
         .tree
-        .compact(strategy.inner(), snapshot_tracker.get_seqno_safe_to_gc())
+        .compact(strategy.clone(), snapshot_tracker.get_seqno_safe_to_gc())
     {
         log::error!("Compaction failed: {e:?}");
         stats.active_compaction_count.fetch_sub(1, Relaxed);

@@ -3,18 +3,19 @@ use byteview::StrView;
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, SequenceNumberCounter, UserValue};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
-pub fn encode_config_key(keyspace_id: InternalKeyspaceId, name: &str) -> crate::UserKey {
+pub fn encode_config_key(
+    keyspace_id: InternalKeyspaceId,
+    name: impl AsRef<[u8]>,
+) -> crate::UserKey {
     let mut key: Vec<u8> =
-        Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1 + name.len());
+        Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1 + name.as_ref().len());
     key.push(b'c');
     key.extend(keyspace_id.to_le_bytes());
     key.push(0);
     #[allow(clippy::string_lit_as_bytes)]
-    key.extend(name.as_bytes());
+    key.extend(name.as_ref());
     key.into()
 }
-
-// TODO: 3.0.0 run aggressive Leveled compaction
 
 /// The meta keyspace keeps mappings of keyspace names to their internal IDs and configurations
 ///
@@ -75,6 +76,8 @@ impl MetaKeyspace {
 
             (key.into(), value)
         });
+
+        kvs.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         #[cfg(debug_assertions)]
         {

@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::Strategy as CompactionStrategy,
     config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
         FilterPolicyEntry, HashRatioPolicy, PartioningPolicy, PinningPolicy, RestartIntervalPolicy,
@@ -13,10 +12,11 @@ use crate::{
 };
 use byteorder::ReadBytesExt;
 use lsm_tree::{CompressionType, KvPair, KvSeparationOptions};
+use std::sync::Arc;
 
 /// Options to configure a keyspace
 #[allow(clippy::module_name_repetitions)]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CreateOptions {
     /// Amount of levels of the LSM tree (depth of tree).
     #[allow(unused)]
@@ -74,9 +74,10 @@ pub struct CreateOptions {
     pub(crate) manual_journal_persist: bool,
 
     #[doc(hidden)]
-    pub compaction_strategy: CompactionStrategy,
+    pub compaction_strategy: Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>,
 
-    pub(crate) kv_separation_opts: Option<KvSeparationOptions>,
+    #[doc(hidden)]
+    pub kv_separation_opts: Option<KvSeparationOptions>,
 }
 
 impl Default for CreateOptions {
@@ -119,7 +120,9 @@ impl Default for CreateOptions {
 
             index_block_compression_policy: CompressionPolicy::all(CompressionType::None),
 
-            compaction_strategy: CompactionStrategy::default(),
+            compaction_strategy: Arc::new(
+                crate::compaction::Leveled::default()
+            ),
 
             kv_separation_opts: None,
         }
@@ -251,6 +254,78 @@ impl CreateOptions {
             )
         });
 
+        let compaction_strategy_name = meta_keyspace
+            .get_kv_for_config(keyspace_id, "compaction_strategy")?
+            .expect("compaction_strategy should be defined");
+
+        let compaction_strategy_name = std::str::from_utf8(&compaction_strategy_name)
+            .expect("compaction_strategy should be UTF-8");
+
+        let compaction_strategy = match compaction_strategy_name {
+            "LeveledCompaction" => {
+                use byteorder::LE;
+
+                let l0_threshold = meta_keyspace
+                    .get_kv_for_config(keyspace_id, "leveled_l0_threshold")?
+                    .expect("leveled_l0_threshold should be defined");
+                let l0_threshold = (&mut &l0_threshold[..]).read_u8()?;
+
+                let target_size = meta_keyspace
+                    .get_kv_for_config(keyspace_id, "leveled_target_size")?
+                    .expect("leveled_target_size should be defined");
+                let target_size = (&mut &target_size[..]).read_u64::<LE>()?;
+
+                let level_ratio_policy_bytes = meta_keyspace
+                    .get_kv_for_config(keyspace_id, "leveled_level_ratio_policy")?
+                    .expect("leveled_level_ratio_policy should be defined");
+                let level_ratio_policy_bytes = &mut &level_ratio_policy_bytes[..];
+
+                let level_ratio_policy_len = level_ratio_policy_bytes.read_u8()?;
+
+                let mut ratios = vec![];
+
+                for _ in 0..level_ratio_policy_len {
+                    ratios.push(level_ratio_policy_bytes.read_f32::<LE>()?);
+                }
+
+                Arc::new(crate::compaction::Leveled {
+                    l0_threshold,
+                    level_ratio_policy: ratios,
+                    target_size,
+                })
+                    as Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>
+            }
+            "FifoCompaction" => {
+                use byteorder::LE;
+
+                let fifo_limit = meta_keyspace
+                    .get_kv_for_config(keyspace_id, "fifo_limit")?
+                    .expect("fifo_limit should be defined");
+                let fifo_limit = (&mut &fifo_limit[..]).read_u64::<LE>()?;
+
+                let has_ttl = meta_keyspace
+                    .get_kv_for_config(keyspace_id, "fifo_ttl")?
+                    .expect("fifo_ttl should be defined")
+                    == [1];
+
+                let ttl_seconds = if has_ttl {
+                    let fifo_ttl_seconds = meta_keyspace
+                        .get_kv_for_config(keyspace_id, "fifo_ttl_seconds")?
+                        .expect("fifo_ttl_seconds should be defined");
+                    let fifo_ttl_seconds = (&mut &fifo_ttl_seconds[..]).read_u64::<LE>()?;
+
+                    Some(fifo_ttl_seconds)
+                } else {
+                    None
+                };
+
+                Arc::new(crate::compaction::Fifo::new(fifo_limit, ttl_seconds))
+            }
+            name => {
+                panic!("Invalid/unsupported compaction strategy: {name:?}");
+            }
+        };
+
         Ok(Self {
             data_block_hash_ratio_policy,
 
@@ -272,26 +347,27 @@ impl CreateOptions {
             expect_point_read_hits,
             filter_policy,
 
-            level_count: 7, // TODO: 3.0.0
+            level_count: 7, // TODO:
 
             manual_journal_persist: false, // TODO: 3.0.0
 
             max_memtable_size: 64_000_000, // TODO: 3.0.0
 
-            compaction_strategy: crate::compaction::Strategy::Leveled(
-                crate::compaction::Leveled::default(),
-            ), // TODO: 3.0.0
+            compaction_strategy,
 
             kv_separation_opts: blob_opts.transpose()?,
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn encode_kvs(&self, keyspace_id: InternalKeyspaceId) -> Vec<KvPair> {
         use crate::keyspace::config::EncodeConfig;
 
-        // TODO: 3.0.0 save partitioning policies
-        // TODO: 3.0.0 unit test
-        vec![
+        let mut kvs = vec![
+            {
+                let key = encode_config_key(keyspace_id, "compaction_strategy");
+                (key, self.compaction_strategy.get_name().into())
+            },
             policy!(
                 keyspace_id,
                 "data_block_compression_policy",
@@ -326,6 +402,11 @@ impl CreateOptions {
             },
             policy!(
                 keyspace_id,
+                "filter_block_partitioning_policy",
+                self.filter_block_partitioning_policy
+            ),
+            policy!(
+                keyspace_id,
                 "filter_block_pinning_policy",
                 self.filter_block_pinning_policy
             ),
@@ -334,6 +415,11 @@ impl CreateOptions {
                 keyspace_id,
                 "index_block_compression_policy",
                 self.index_block_compression_policy
+            ),
+            policy!(
+                keyspace_id,
+                "index_block_partitioning_policy",
+                self.index_block_partitioning_policy
             ),
             policy!(
                 keyspace_id,
@@ -354,7 +440,55 @@ impl CreateOptions {
                 let key = encode_config_key(keyspace_id, "version");
                 (key, [3u8].into())
             },
-        ]
+        ];
+
+        match self.compaction_strategy.get_name() {
+            "LeveledCompaction" | "FifoCompaction" => {
+                kvs.extend(
+                    self.compaction_strategy
+                        .get_config()
+                        .into_iter()
+                        .map(|(k, v)| (encode_config_key(keyspace_id, k), v)),
+                );
+                eprintln!("{kvs:#?}");
+            }
+            name => {
+                panic!("Invalid/unsupported compaction stratey: {name:?}");
+            }
+        }
+
+        if let Some(blob_opts) = &self.kv_separation_opts {
+            kvs.extend([
+                {
+                    let key = encode_config_key(keyspace_id, "blob");
+                    (key, [1u8].into())
+                },
+                {
+                    let key = encode_config_key(keyspace_id, "blob_age_cutoff");
+                    (key, blob_opts.age_cutoff.to_le_bytes().into())
+                },
+                {
+                    use lsm_tree::coding::Encode;
+
+                    let key = encode_config_key(keyspace_id, "blob_compression");
+                    (key, blob_opts.compression.encode_into_vec().into())
+                },
+                {
+                    let key = encode_config_key(keyspace_id, "blob_file_target_size");
+                    (key, blob_opts.file_target_size.to_le_bytes().into())
+                },
+                {
+                    let key = encode_config_key(keyspace_id, "blob_separation_threshold");
+                    (key, blob_opts.separation_threshold.to_le_bytes().into())
+                },
+                {
+                    let key = encode_config_key(keyspace_id, "blob_staleness_threshold");
+                    (key, blob_opts.staleness_threshold.to_le_bytes().into())
+                },
+            ]);
+        }
+
+        kvs
     }
 
     /// Toggles key-value separation.
@@ -472,7 +606,10 @@ impl CreateOptions {
     ///
     /// Default = Leveled
     #[must_use]
-    pub fn compaction_strategy(mut self, compaction_strategy: CompactionStrategy) -> Self {
+    pub fn compaction_strategy(
+        mut self,
+        compaction_strategy: Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>,
+    ) -> Self {
         self.compaction_strategy = compaction_strategy;
         self
     }

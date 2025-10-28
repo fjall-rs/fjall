@@ -41,7 +41,7 @@ pub type KeyspaceKey = byteview::StrView;
 
 pub type InternalKeyspaceId = u64;
 
-pub(crate) fn apply_to_base_config(
+pub fn apply_to_base_config(
     config: lsm_tree::Config,
     our_config: &CreateOptions,
 ) -> lsm_tree::Config {
@@ -755,6 +755,13 @@ impl Keyspace {
             self.snapshot_tracker.close(seqno);
         }
 
+        if self.tree.version_free_list_len() >= 100 {
+            log::warn!(
+                "The version free list has grown very large ({}) - maybe you are keeping a snapshot/read transaction open for too long?", 
+                self.tree.version_free_list_len(),
+            );
+        }
+
         Ok(true)
     }
 
@@ -879,18 +886,12 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        match &self.config.compaction_strategy {
-            crate::compaction::Strategy::Leveled(x) => self.tree.major_compact(
-                u64::from(x.target_size),
-                self.snapshot_tracker.get_seqno_safe_to_gc(),
-            )?,
-            crate::compaction::Strategy::SizeTiered(_) => self
-                .tree
-                .major_compact(u64::MAX, self.snapshot_tracker.get_seqno_safe_to_gc())?,
-            crate::compaction::Strategy::Fifo(_) => {
-                log::warn!("Major compaction not supported for FIFO strategy");
-            }
-        }
+        self.tree
+            .major_compact(64_000_000, self.snapshot_tracker.get_seqno_safe_to_gc())?;
+
+        // TODO: 3.0.0 ----^
+        // compaction strategy needs a method: strategy.table_target_size()
+
         Ok(())
     }
 
