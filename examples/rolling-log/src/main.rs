@@ -14,8 +14,6 @@ fn main() -> fjall::Result<()> {
     let log = db.keyspace(
         "log",
         KeyspaceCreateOptions::default()
-            fjall::compaction::Fifo::new(LIMIT, None),
-        )),
             .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None))),
     )?;
 
