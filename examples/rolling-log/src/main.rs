@@ -1,5 +1,5 @@
 use fjall::{Database, KeyspaceCreateOptions};
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 const LIMIT: u64 = 10_000_000;
 
