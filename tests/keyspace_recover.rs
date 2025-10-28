@@ -1,11 +1,83 @@
+use std::sync::Arc;
+
 use fjall::config::{
     BlockSizePolicy, BloomConstructionPolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy,
     PinningPolicy, RestartIntervalPolicy,
 };
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use lsm_tree::compaction::CompactionStrategy;
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
+
+#[test]
+fn reload_keyspace_config_fifo() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let strategy = fjall::compaction::Fifo::new(555, Some(6));
+
+    let expected_kvs = strategy.get_config();
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let _tree = db.keyspace(
+            "default",
+            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy)),
+        )?;
+    };
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+
+        assert_eq!(
+            expected_kvs,
+            tree.config.compaction_strategy.get_config(),
+            "compaction strategy config does not match",
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn reload_keyspace_config_leveled() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    // TODO: 3.0.0 builder pattern
+    let strategy = fjall::compaction::Leveled {
+        l0_threshold: 6,
+        level_ratio_policy: vec![4.0, 6.0, 8.0],
+        target_size: 100_000_000,
+    };
+
+    let expected_kvs = strategy.get_config();
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let _tree = db.keyspace(
+            "default",
+            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy)),
+        )?;
+    };
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+
+        assert_eq!(
+            expected_kvs,
+            tree.config.compaction_strategy.get_config(),
+            "compaction strategy config does not match",
+        );
+    }
+
+    Ok(())
+}
 
 #[test]
 fn reload_keyspace_config() -> fjall::Result<()> {
@@ -19,6 +91,9 @@ fn reload_keyspace_config() -> fjall::Result<()> {
 
     let filter_block_pinning_policy = PinningPolicy::new(&[true, true, true, false]);
     let index_block_pinning_policy = PinningPolicy::new(&[true, true, false]);
+
+    let filter_block_partitioning_policy = PinningPolicy::new(&[false, false, true]);
+    let index_block_partitioning_policy = PinningPolicy::new(&[false, false, false, false, true]);
 
     let filter_policy = FilterPolicy::new(&[
         FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
@@ -40,6 +115,8 @@ fn reload_keyspace_config() -> fjall::Result<()> {
                 // .index_block_restart_interval_policy(index_block_policy.clone())
                 .filter_block_pinning_policy(filter_block_pinning_policy.clone())
                 .index_block_pinning_policy(index_block_pinning_policy.clone())
+                .filter_block_partitioning_policy(filter_block_partitioning_policy.clone())
+                .index_block_partitioning_policy(index_block_partitioning_policy.clone())
                 .expect_point_read_hits(true)
                 .filter_policy(filter_policy.clone())
                 .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone()),
@@ -60,8 +137,16 @@ fn reload_keyspace_config() -> fjall::Result<()> {
         //     tree.config.index_block_restart_interval_policy,
         // );
         assert_eq!(
+            filter_block_partitioning_policy,
+            tree.config.filter_block_partitioning_policy,
+        );
+        assert_eq!(
             filter_block_pinning_policy,
             tree.config.filter_block_pinning_policy,
+        );
+        assert_eq!(
+            index_block_partitioning_policy,
+            tree.config.index_block_partitioning_policy,
         );
         assert_eq!(
             index_block_pinning_policy,
@@ -74,6 +159,42 @@ fn reload_keyspace_config() -> fjall::Result<()> {
             data_block_hash_ratio_policy,
             tree.config.data_block_hash_ratio_policy,
         );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let _tree = db.keyspace(
+            "default",
+            KeyspaceCreateOptions::default().with_kv_separation(
+                KvSeparationOptions::default()
+                    .age_cutoff(0.55)
+                    .compression(CompressionType::None)
+                    .file_target_size(124)
+                    .separation_threshold(515)
+                    .staleness_threshold(0.77),
+            ),
+        )?;
+    };
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+
+        let blob_opts = tree.config.kv_separation_opts.as_ref().unwrap();
+
+        assert_eq!(blob_opts.compression, CompressionType::None);
+        assert_eq!(blob_opts.age_cutoff, 0.55);
+        assert_eq!(blob_opts.file_target_size, 124);
+        assert_eq!(blob_opts.separation_threshold, 515);
+        assert_eq!(blob_opts.staleness_threshold, 0.77);
     }
 
     Ok(())
