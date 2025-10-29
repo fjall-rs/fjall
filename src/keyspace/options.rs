@@ -450,7 +450,6 @@ impl CreateOptions {
                         .into_iter()
                         .map(|(k, v)| (encode_config_key(keyspace_id, k), v)),
                 );
-                eprintln!("{kvs:#?}");
             }
             name => {
                 panic!("Invalid/unsupported compaction stratey: {name:?}");
