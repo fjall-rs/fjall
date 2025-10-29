@@ -48,7 +48,6 @@ pub fn apply_to_base_config(
     config
         // .level_count(our_config.level_count)
         .data_block_size_policy(our_config.data_block_size_policy.clone())
-        // .index_block_size_policy(our_config.index_block_size_policy.clone())
         .data_block_compression_policy(our_config.data_block_compression_policy.clone())
         .index_block_compression_policy(our_config.index_block_compression_policy.clone())
         .data_block_restart_interval_policy(our_config.data_block_restart_interval_policy.clone())

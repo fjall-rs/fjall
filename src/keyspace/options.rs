@@ -32,10 +32,6 @@ pub struct CreateOptions {
     #[doc(hidden)]
     pub data_block_size_policy: BlockSizePolicy,
 
-    /// Block size of index blocks.
-    #[doc(hidden)]
-    pub index_block_size_policy: BlockSizePolicy,
-
     #[doc(hidden)]
     pub data_block_restart_interval_policy: RestartIntervalPolicy,
 
@@ -92,7 +88,6 @@ impl Default for CreateOptions {
             data_block_hash_ratio_policy: HashRatioPolicy::all(0.0),
 
             data_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
-            index_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
 
             data_block_restart_interval_policy:  RestartIntervalPolicy::all(16),
             index_block_restart_interval_policy:  RestartIntervalPolicy::all(1),
@@ -160,11 +155,6 @@ impl CreateOptions {
             .get_kv_for_config(keyspace_id, "data_block_size_policy")?
             .expect("should exist");
         let data_block_size_policy = BlockSizePolicy::decode(&data_block_size_policy);
-
-        let index_block_size_policy = meta_keyspace
-            .get_kv_for_config(keyspace_id, "index_block_size_policy")?
-            .expect("should exist");
-        let index_block_size_policy = BlockSizePolicy::decode(&index_block_size_policy);
 
         let filter_block_partitioning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "filter_block_partitioning_policy")?
@@ -339,7 +329,6 @@ impl CreateOptions {
             index_block_compression_policy,
 
             data_block_size_policy,
-            index_block_size_policy,
 
             data_block_restart_interval_policy,
             index_block_restart_interval_policy,
@@ -430,11 +419,6 @@ impl CreateOptions {
                 keyspace_id,
                 "index_block_restart_interval_policy",
                 self.index_block_restart_interval_policy
-            ),
-            policy!(
-                keyspace_id,
-                "index_block_size_policy",
-                self.index_block_size_policy
             ),
             {
                 let key = encode_config_key(keyspace_id, "version");
@@ -662,14 +646,6 @@ impl CreateOptions {
         self.data_block_size_policy = policy;
         self
     }
-
-    // TODO: 3.0.0 does nothing until we have partitioned indexes
-    // #[doc(hidden)]
-    // #[must_use]
-    // pub fn index_block_size_policy(mut self, policy: BlockSizePolicy) -> Self {
-    //     self.index_block_size_policy = policy;
-    //     self
-    // }
 }
 
 #[cfg(test)]
