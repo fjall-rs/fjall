@@ -134,15 +134,21 @@ Note that this also applies to returned values: When you hold a `Slice`, it keep
 
 It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
 
+## Error handling
+
+Fjall returns an [error enum](https://docs.rs/fjall/latest/fjall/enum.Error.html), however these variants are mostly used for debugging and tracing purposes, so your application is not expected to handle specific errors.
+
+It's best to let the application crash and restart, which is the [safest way to recover from transient I/O errors](https://ramalagappan.github.io/pdfs/papers/cuttlefs.pdf).
+
 ## Transactional modes
 
 The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
 However this isolation level can not do read-modify-write operations without the chance of lost updates.
 Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
+For that reason, if you need transactional semantics, you need to use one of the `TransactionalDatabase` implementations.
 
 TL;DR: Fjall supports both transactional and non-transactional workloads.
-
-For that reason, if you need transactional semantics, you need to use one of the `TransactionalDatabase` implementations.
+Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
 
 ### single_writer_tx
 

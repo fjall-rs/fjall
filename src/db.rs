@@ -597,7 +597,7 @@ impl Database {
         )));
 
         let meta_tree = lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"))
-            // TODO: specialized config and DRY
+            // TODO: 3.0.0 specialized config and DRY
             .open()?;
 
         let seqno = SequenceNumberCounter::default();
