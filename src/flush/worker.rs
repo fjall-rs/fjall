@@ -131,13 +131,12 @@ pub fn run(
                 // TODO: by making the result of flushes an opaque struct
                 // TODO: and allowing to merge multiple flush results
                 //
-                // TODO: 3.0.0 make sure the order is correct when multiple sealed MTs are flushed
-                let (created_tables, blob_files) = created_tables.into_iter().fold(
+                let (created_tables, blob_files) = created_tables.into_iter().rev().fold(
                     (vec![], vec![]),
-                    |(mut ssts, mut blob_files), (sst, bf)| {
-                        ssts.push(sst);
+                    |(mut tables, mut blob_files), (sst, bf)| {
+                        tables.push(sst);
                         blob_files.extend(bf);
-                        (ssts, blob_files)
+                        (tables, blob_files)
                     },
                 );
 
@@ -146,7 +145,7 @@ pub fn run(
                 if let Err(e) = keyspace.tree.register_tables(
                     &created_tables,
                     Some(&blob_files),
-                    None, // TODO: 3.0.0
+                    None,
                     gc_watermark,
                 ) {
                     log::error!("Failed to register tables: {e:?}");

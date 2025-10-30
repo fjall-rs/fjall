@@ -101,7 +101,7 @@ impl Default for CreateOptions {
             expect_point_read_hits: false,
 
             filter_policy: FilterPolicy::new(&[
-                FilterPolicyEntry::Bloom(BloomConstructionPolicy::FpRate(0.0001)),
+                FilterPolicyEntry::Bloom(BloomConstructionPolicy::FalsePositiveRate(0.0001)),
                 FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
             ]),
 

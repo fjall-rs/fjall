@@ -1282,4 +1282,38 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    pub fn multi_flush_order() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        let db = Database::create_or_recover(Config::new(folder.path()))?;
+        let tree = db.keyspace("default", Default::default())?;
+
+        tree.insert("a", "a1")?;
+        tree.rotate_memtable()?;
+
+        tree.insert("a", "a2")?;
+        tree.rotate_memtable()?;
+
+        db.force_flush()?;
+
+        assert_eq!(2, tree.table_count());
+
+        assert_eq!(0, db.flush_manager.read().expect("lock is poisoned").len());
+
+        assert_eq!(
+            0,
+            db.journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .sealed_journal_count()
+        );
+
+        assert_eq!(0, db.write_buffer_size());
+
+        assert_eq!(b"a2", &*tree.get("a")?.expect("should exist"));
+
+        Ok(())
+    }
 }

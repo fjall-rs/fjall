@@ -28,7 +28,7 @@ impl EncodeConfig for crate::config::FilterPolicy {
                             v.write_f32::<byteorder::LittleEndian>(*bits)
                                 .expect("cannot fail");
                         }
-                        crate::config::BloomConstructionPolicy::FpRate(fpr) => {
+                        crate::config::BloomConstructionPolicy::FalsePositiveRate(fpr) => {
                             v.write_u8(1).expect("cannot fail");
                             v.write_f32::<byteorder::LittleEndian>(*fpr)
                                 .expect("cannot fail");
@@ -74,7 +74,7 @@ impl DecodeConfig for crate::config::FilterPolicy {
                                 .expect("cannot fail");
 
                             crate::config::FilterPolicyEntry::Bloom(
-                                crate::config::BloomConstructionPolicy::FpRate(value),
+                                crate::config::BloomConstructionPolicy::FalsePositiveRate(value),
                             )
                         }
                         _ => {
@@ -106,7 +106,7 @@ mod tests {
                 crate::config::BloomConstructionPolicy::BitsPerKey(10.0),
             ),
             crate::config::FilterPolicyEntry::Bloom(
-                crate::config::BloomConstructionPolicy::FpRate(0.01),
+                crate::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
             ),
             crate::config::FilterPolicyEntry::None,
         ]);
