@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
-use lsm_tree::{DecodeError, EncodeError};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
@@ -14,12 +13,6 @@ pub enum Error {
 
     /// I/O error
     Io(std::io::Error),
-
-    /// Serialization failed
-    Encode(EncodeError),
-
-    /// Deserialization failed
-    Decode(DecodeError),
 
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
@@ -55,18 +48,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<EncodeError> for Error {
-    fn from(value: EncodeError) -> Self {
-        Self::Encode(value)
-    }
-}
-
-impl From<DecodeError> for Error {
-    fn from(value: DecodeError) -> Self {
-        Self::Decode(value)
-    }
-}
-
 impl From<lsm_tree::Error> for Error {
     fn from(inner: lsm_tree::Error) -> Self {
         Self::Storage(inner)
@@ -78,10 +59,8 @@ impl std::error::Error for Error {
         match self {
             Self::Storage(inner) => Some(inner),
             Self::Io(inner) => Some(inner),
-            Self::Encode(inner) => Some(inner),
-            Self::Decode(inner) => Some(inner),
             Self::JournalRecovery(inner) => Some(inner),
-            Self::InvalidVersion(_) | Self::Poisoned | Self::KeyspaceDeleted | Self::Locked => None,
+            _ => None,
         }
     }
 }

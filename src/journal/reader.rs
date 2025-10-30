@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::marker::Marker;
-use lsm_tree::{coding::Decode, DecodeError};
+use lsm_tree::coding::Decode;
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
@@ -70,7 +70,7 @@ impl Iterator for JournalReader {
                 Some(Ok(item))
             }
             Err(e) => {
-                if let DecodeError::Io(e) = e {
+                if let lsm_tree::Error::Io(e) = e {
                     match e.kind() {
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
                             fail_iter!(self.maybe_truncate_file_to_last_valid_pos());

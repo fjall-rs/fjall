@@ -7,7 +7,7 @@ use crate::{
     batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
-use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
+use lsm_tree::{coding::Encode, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,
@@ -214,7 +214,7 @@ impl Writer {
     }
 
     /// Writes a batch start marker to the journal
-    fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, EncodeError> {
+    fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
         Marker::Start { item_count, seqno }.encode_into(&mut self.buf)?;
@@ -225,7 +225,7 @@ impl Writer {
     }
 
     /// Writes a batch end marker to the journal
-    fn write_end(&mut self, checksum: u64) -> Result<usize, EncodeError> {
+    fn write_end(&mut self, checksum: u64) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
         Marker::End(checksum).encode_into(&mut self.buf)?;

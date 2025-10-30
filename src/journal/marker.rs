@@ -6,7 +6,7 @@ use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
-    CompressionType, DecodeError, EncodeError, SeqNo, UserKey, UserValue, ValueType,
+    CompressionType, SeqNo, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
 
@@ -42,7 +42,7 @@ pub fn serialize_marker_item<W: Write>(
     value: &[u8],
     value_type: ValueType,
     compression: CompressionType,
-) -> Result<(), EncodeError> {
+) -> Result<(), lsm_tree::Error> {
     writer.write_u8(Tag::Item.into())?;
 
     writer.write_u8(u8::from(value_type))?;
@@ -75,7 +75,7 @@ pub enum Tag {
 }
 
 impl TryFrom<u8> for Tag {
-    type Error = DecodeError;
+    type Error = lsm_tree::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use Tag::{End, Item, Start};
@@ -84,7 +84,7 @@ impl TryFrom<u8> for Tag {
             1 => Ok(Start),
             2 => Ok(Item),
             3 => Ok(End),
-            _ => Err(DecodeError::InvalidTag(("JournalMarkerTag", value))),
+            _ => Err(lsm_tree::Error::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -96,7 +96,7 @@ impl From<Tag> for u8 {
 }
 
 impl Encode for Marker {
-    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), EncodeError> {
+    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), lsm_tree::Error> {
         use Marker::{End, Item, Start};
 
         match self {
@@ -129,7 +129,7 @@ impl Encode for Marker {
 }
 
 impl Decode for Marker {
-    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
+    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, lsm_tree::Error> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<LittleEndian>()?;
@@ -141,7 +141,7 @@ impl Decode for Marker {
                 let value_type = reader.read_u8()?;
                 let value_type = value_type
                     .try_into()
-                    .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
+                    .map_err(|()| lsm_tree::Error::InvalidTag(("ValueType", value_type)))?;
 
                 // TODO: journal compression maybe in the future
                 let compression = CompressionType::decode_from(reader)?;
@@ -180,7 +180,7 @@ impl Decode for Marker {
                 reader.read_exact(&mut magic)?;
 
                 if magic != MAGIC_BYTES {
-                    return Err(DecodeError::InvalidTrailer);
+                    return Err(lsm_tree::Error::InvalidTrailer);
                 }
 
                 Ok(Self::End(checksum))
@@ -224,7 +224,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DecodeError::Io(error) => match error.kind() {
+                lsm_tree::Error::Io(e) => match e.kind() {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
@@ -244,7 +244,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DecodeError::InvalidTag(("JournalMarkerTag", 4)) => {}
+                lsm_tree::Error::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }
