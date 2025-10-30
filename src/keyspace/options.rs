@@ -252,7 +252,7 @@ impl CreateOptions {
             .expect("compaction_strategy should be UTF-8");
 
         let compaction_strategy = match compaction_strategy_name {
-            "LeveledCompaction" => {
+            lsm_tree::compaction::LEVELED_COMPACTION_NAME => {
                 use byteorder::LE;
 
                 let l0_threshold = meta_keyspace
@@ -285,7 +285,7 @@ impl CreateOptions {
                 })
                     as Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>
             }
-            "FifoCompaction" => {
+            lsm_tree::compaction::FIFO_COMPACTION_NAME => {
                 use byteorder::LE;
 
                 let fifo_limit = meta_keyspace
