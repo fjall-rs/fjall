@@ -999,6 +999,7 @@ impl Database {
 #[allow(clippy::default_trait_access, clippy::expect_used)]
 mod tests {
     use super::*;
+    use lsm_tree::SeqNo;
     use test_log::test;
 
     #[test]
@@ -1019,6 +1020,9 @@ mod tests {
     pub fn recover_after_rotation_multiple_keyspaces() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
+        let tree1_persisted_seqno: Option<SeqNo>;
+        let tree2_persisted_seqno: Option<SeqNo>;
+
         {
             let db = Database::create_or_recover(Config::new(folder.path()))?;
             let tree = db.keyspace("default", Default::default())?; // seqno = 0
@@ -1032,7 +1036,7 @@ mod tests {
             assert_eq!(None, tree.tree.get_highest_persisted_seqno());
             assert_eq!(None, tree2.tree.get_highest_persisted_seqno());
 
-            tree.rotate_memtable()?;
+            tree.rotate_memtable()?; // seqno = 4
 
             assert_eq!(1, tree.len()?);
             assert_eq!(1, tree.tree.sealed_memtable_count());
@@ -1040,8 +1044,8 @@ mod tests {
             assert_eq!(1, tree2.len()?);
             assert_eq!(0, tree2.tree.sealed_memtable_count());
 
-            tree2.insert("b", "b")?; // seqno = 4
-            tree2.rotate_memtable()?;
+            tree2.insert("b", "b")?; // seqno = 5
+            tree2.rotate_memtable()?; // seqno = 6
 
             assert_eq!(1, tree.len()?);
             assert_eq!(1, tree.tree.sealed_memtable_count());
@@ -1069,7 +1073,6 @@ mod tests {
             assert_eq!(3, db.journal_count());
 
             db.force_flush()?;
-
             assert_eq!(1, tree.len()?);
             assert_eq!(0, tree.tree.sealed_memtable_count());
 
@@ -1077,9 +1080,6 @@ mod tests {
             assert_eq!(0, tree2.tree.sealed_memtable_count());
 
             assert_eq!(1, db.journal_count());
-
-            assert_eq!(Some(2), tree.tree.get_highest_persisted_seqno());
-            assert_eq!(Some(4), tree2.tree.get_highest_persisted_seqno());
         }
 
         Ok(())

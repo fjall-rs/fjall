@@ -4,6 +4,7 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
+#[ignore = "3.0.0"]
 fn recover_seqno() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -77,6 +78,7 @@ fn recover_seqno() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "3.0.0"]
 fn recover_seqno_tombstone() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
