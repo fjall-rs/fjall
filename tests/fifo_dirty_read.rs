@@ -1,9 +1,8 @@
 #[test_log::test]
 #[cfg(feature = "single_writer_tx")]
 fn fifo_dirty_read() -> fjall::Result<()> {
-    use std::sync::Arc;
-
     use fjall::{KeyspaceCreateOptions, TxDatabase};
+    use std::sync::Arc;
 
     let folder = tempfile::tempdir()?;
 
