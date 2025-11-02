@@ -33,7 +33,7 @@ impl DecodeConfig for crate::config::HashRatioPolicy {
             v.push(bytes.read_f32::<LittleEndian>().expect("cannot fail"));
         }
 
-        Self::new(&v)
+        Self::new(v)
     }
 }
 
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn roundtrip_hash_ratio_policy() {
-        let policy = crate::config::HashRatioPolicy::new(&[0.1, 0.2, 0.3]);
+        let policy = crate::config::HashRatioPolicy::new([0.1, 0.2, 0.3]);
         let encoded = policy.encode();
         let decoded = crate::config::HashRatioPolicy::decode(&encoded);
         assert_eq!(policy, decoded);

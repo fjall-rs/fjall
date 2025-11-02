@@ -292,7 +292,7 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(base_folder)
+        let base_config = lsm_tree::Config::new(base_folder, db.seqno.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone());
 

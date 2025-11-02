@@ -34,7 +34,7 @@ impl DecodeConfig for crate::config::PinningPolicy {
             v.push(b == 1);
         }
 
-        Self::new(&v)
+        Self::new(v)
     }
 }
 
@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn roundtrip_pinning_policy() {
-        let policy = crate::config::PinningPolicy::new(&[true, true, false]);
+        let policy = crate::config::PinningPolicy::new([true, true, false]);
         let encoded = policy.encode();
         let decoded = crate::config::PinningPolicy::decode(&encoded);
         assert_eq!(policy, decoded);

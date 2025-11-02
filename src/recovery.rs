@@ -72,7 +72,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
 
-        let base_config = lsm_tree::Config::new(path)
+        let base_config = lsm_tree::Config::new(path, db.seqno.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone());
 
@@ -196,11 +196,11 @@ pub fn recover_sealed_memtables(
                     "memtable lsn does not match what was recovered - this is a bug",
                 );
 
-                log::trace!(
-                    "sealed memtable of {} has {} items",
-                    handle.keyspace.name,
-                    sealed_memtable.len(),
-                );
+                // log::trace!(
+                //     "sealed memtable of {} has {} items",
+                //     handle.keyspace.name,
+                //     sealed_memtable.len(),
+                // );
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();

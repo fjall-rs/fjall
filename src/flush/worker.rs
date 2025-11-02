@@ -142,12 +142,11 @@ pub fn run(
 
                 // IMPORTANT: Flushed tables need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = keyspace.tree.register_tables(
-                    &created_tables,
-                    Some(&blob_files),
-                    None,
-                    gc_watermark,
-                ) {
+                if let Err(e) =
+                    keyspace
+                        .tree
+                        .register_tables(&created_tables, Some(&blob_files), None)
+                {
                     log::error!("Failed to register tables: {e:?}");
                     return Err(e.into());
                 }

@@ -33,7 +33,7 @@ impl DecodeConfig for crate::config::BlockSizePolicy {
             v.push(bytes.read_u32::<LittleEndian>().expect("cannot fail"));
         }
 
-        Self::new(&v)
+        Self::new(v)
     }
 }
 
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn roundtrip_block_size_policy() {
-        let policy = crate::config::BlockSizePolicy::new(&[1024, 2048, 4096]);
+        let policy = crate::config::BlockSizePolicy::new([1024, 2048, 4096]);
         let encoded = policy.encode();
         let decoded = crate::config::BlockSizePolicy::decode(&encoded);
         assert_eq!(policy, decoded);

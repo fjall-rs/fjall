@@ -92,11 +92,11 @@ impl Default for CreateOptions {
             data_block_restart_interval_policy:  RestartIntervalPolicy::all(16),
             index_block_restart_interval_policy:  RestartIntervalPolicy::all(1),
 
-            index_block_pinning_policy: PinningPolicy::new(&[true, true, false]),
-            filter_block_pinning_policy: PinningPolicy::new(&[true, false]),
+            index_block_pinning_policy: PinningPolicy::new([true, true, false]),
+            filter_block_pinning_policy: PinningPolicy::new([true, false]),
 
-            index_block_partitioning_policy: PinningPolicy::new(&[false, false, false, true]),
-            filter_block_partitioning_policy: PinningPolicy::new(&[false, false, false, true]),
+            index_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
+            filter_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
 
             expect_point_read_hits: false,
 
@@ -108,7 +108,7 @@ impl Default for CreateOptions {
             level_count: default_tree_config.level_count,
 
             #[cfg(feature = "lz4")]
-            data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None, CompressionType::None, CompressionType::Lz4]),
+            data_block_compression_policy: CompressionPolicy::new([CompressionType::None, CompressionType::None, CompressionType::Lz4]),
 
             #[cfg(not(feature = "lz4"))]
             data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None]),
@@ -689,7 +689,7 @@ mod tests {
         let mut c = CreateOptions::default();
         assert_eq!(
             c.data_block_compression_policy,
-            CompressionPolicy::new(&[Uncompressed, Uncompressed, Lz4]),
+            CompressionPolicy::new([Uncompressed, Uncompressed, Lz4]),
         );
         assert_eq!(c.kv_separation_opts, None);
 

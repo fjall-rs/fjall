@@ -33,7 +33,7 @@ impl DecodeConfig for crate::config::RestartIntervalPolicy {
             v.push(bytes.read_u8().expect("cannot fail"));
         }
 
-        Self::new(&v)
+        Self::new(v)
     }
 }
 
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn roundtrip_restart_interval_policy() {
-        let policy = crate::config::RestartIntervalPolicy::new(&[8, 12, 16]);
+        let policy = crate::config::RestartIntervalPolicy::new([8, 12, 16]);
         let encoded = policy.encode();
         let decoded = crate::config::RestartIntervalPolicy::decode(&encoded);
         assert_eq!(policy, decoded);

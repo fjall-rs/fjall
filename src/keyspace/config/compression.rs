@@ -37,7 +37,7 @@ impl DecodeConfig for crate::config::CompressionPolicy {
             v.push(CompressionType::decode_from(&mut bytes).expect("cannot fail"));
         }
 
-        Self::new(&v)
+        Self::new(v)
     }
 }
 
@@ -50,7 +50,7 @@ mod tests {
     #[cfg(feature = "lz4")]
     fn roundtrip_compression_policy() {
         let policy =
-            crate::config::CompressionPolicy::new(&[CompressionType::None, CompressionType::Lz4]);
+            crate::config::CompressionPolicy::new([CompressionType::None, CompressionType::Lz4]);
         let encoded = policy.encode();
         let decoded = crate::config::CompressionPolicy::decode(&encoded);
         assert_eq!(policy, decoded);

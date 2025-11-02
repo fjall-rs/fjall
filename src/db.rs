@@ -596,11 +596,13 @@ impl Database {
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree = lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"))
-            // TODO: 3.0.0 specialized config and DRY
-            .open()?;
-
         let seqno = SequenceNumberCounter::default();
+
+        let meta_tree =
+            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
+                // TODO: 3.0.0 specialized config and DRY
+                .open()?;
+
         let visible_seqno = SequenceNumberCounter::default();
 
         let meta_keyspace = MetaKeyspace::new(
@@ -762,16 +764,18 @@ impl Database {
         fsync_directory(&keyspaces_folder_path)?;
         fsync_directory(&config.path)?;
 
-        let meta_tree = lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"))
-            // TODO: specialized config
-            .open()?;
+        let seqno = SequenceNumberCounter::default();
+
+        let meta_tree =
+            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
+                // TODO: specialized config
+                .open()?;
 
         let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
             10,
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
         let inner = DatabaseInner {
