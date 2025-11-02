@@ -219,6 +219,14 @@ impl std::hash::Hash for Keyspace {
 }
 
 impl Keyspace {
+    /// Returns the number of blob bytes on disk that are not referenced.
+    ///
+    /// These will be reclaimed over time by blob garbage collection automatically.
+    #[must_use]
+    pub fn fragmented_blob_bytes(&self) -> u64 {
+        self.tree.stale_blob_bytes()
+    }
+
     /// Ingests a sorted stream of key-value pairs into the keyspace.
     ///
     /// Can only be called on a new fresh, empty keyspace.
