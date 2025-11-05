@@ -43,7 +43,7 @@ impl Oracle {
                     conflict_checker.has_conflict(other_conflict_checker)
                 });
 
-        self.snapshot_tracker.close(instant);
+        self.snapshot_tracker.close_raw(instant);
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 

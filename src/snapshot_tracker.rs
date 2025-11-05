@@ -71,9 +71,13 @@ impl SnapshotTracker {
     }
 
     pub fn close(&self, nonce: &SnapshotNonce) {
+        self.close_raw(nonce.instant);
+    }
+
+    pub(crate) fn close_raw(&self, instant: SeqNo) {
         let lock = self.gc_lock.read().expect("lock is poisoned");
 
-        self.data.alter(&nonce.instant, |_, v| v.saturating_sub(1));
+        self.data.alter(&instant, |_, v| v.saturating_sub(1));
 
         let freed = self
             .freed_count
