@@ -423,7 +423,7 @@ impl BaseTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{snapshot_nonce::SnapshotNonce, KeyspaceCreateOptions, TxDatabase, TxKeyspace};
+    use crate::{KeyspaceCreateOptions, TxDatabase, TxKeyspace};
     use tempfile::TempDir;
 
     struct TestEnv {
@@ -449,10 +449,8 @@ mod tests {
 
         env.tree.insert([2u8], [20u8])?;
 
-        let mut tx = super::BaseTransaction::new(
-            env.db.clone(),
-            SnapshotNonce::new(env.db.inner.seqno(), env.db.inner.snapshot_tracker.clone()),
-        );
+        let mut tx =
+            super::BaseTransaction::new(env.db.clone(), env.db.inner().snapshot_tracker.open());
 
         let new = tx.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())

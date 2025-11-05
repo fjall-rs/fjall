@@ -45,13 +45,9 @@ impl TxDatabase {
     #[must_use]
     pub fn write_tx(&self) -> WriteTransaction<'_> {
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
-        let instant = self.inner.seqno();
 
-        let mut write_tx = WriteTransaction::new(
-            self.clone(),
-            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-            guard,
-        );
+        let mut write_tx =
+            WriteTransaction::new(self.clone(), self.inner.snapshot_tracker.open(), guard);
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
@@ -67,19 +63,16 @@ impl TxDatabase {
     /// Will return `Err` if creation failed.
     #[cfg(feature = "ssi_tx")]
     pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
-        let instant = {
+        let snapshot = {
             // acquire a lock here to prevent getting a stale snapshot seqno
             // this will drain at least part of the commit queue, but ordering
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self.oracle.write_serialize_lock()?;
 
-            self.inner.seqno()
+            self.inner.snapshot_tracker.open()
         };
 
-        let mut write_tx = WriteTransaction::new(
-            self.clone(),
-            SnapshotNonce::new(instant, self.inner.snapshot_tracker.clone()),
-        );
+        let mut write_tx = WriteTransaction::new(self.clone(), snapshot);
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
@@ -91,12 +84,7 @@ impl TxDatabase {
     /// Starts a new read-only transaction.
     #[must_use]
     pub fn read_tx(&self) -> ReadTransaction {
-        let instant = self.inner.seqno();
-
-        ReadTransaction::new(SnapshotNonce::new(
-            instant,
-            self.inner.snapshot_tracker.clone(),
-        ))
+        ReadTransaction::new(self.inner.snapshot_tracker.open())
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]
