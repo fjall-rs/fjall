@@ -21,7 +21,7 @@ pub struct SnapshotTrackerInner {
 
     safety_gap: u64,
 
-    lowest_freed_instant: AtomicU64,
+    pub(crate) lowest_freed_instant: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -96,6 +96,16 @@ impl SnapshotTracker {
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         self.lowest_freed_instant
             .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    // TODO: 3.0.0 remove, monkey patch
+    pub(crate) fn pullup(&self) {
+        let _lock = self.gc_lock.write().expect("lock is poisoned");
+
+        self.lowest_freed_instant.store(
+            self.seqno.get().saturating_sub(self.safety_gap),
+            std::sync::atomic::Ordering::Release,
+        );
     }
 
     fn gc(&self) {

@@ -4,8 +4,7 @@
 
 use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
 use crate::{
-    keyspace::KeyspaceKey, snapshot_nonce::SnapshotNonce, Config, Database, KeyspaceCreateOptions,
-    PersistMode, TxKeyspace,
+    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, TxKeyspace,
 };
 use std::{
     path::Path,
