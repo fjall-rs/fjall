@@ -108,7 +108,7 @@ impl SnapshotTracker {
         );
     }
 
-    fn gc(&self) {
+    pub(crate) fn gc(&self) {
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         let seqno_threshold = self.seqno.get().saturating_sub(self.safety_gap);

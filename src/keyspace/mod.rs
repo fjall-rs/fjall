@@ -757,7 +757,7 @@ impl Keyspace {
         // TODO: we need a mechanism to prevent the version free list from getting too large
         // TODO: in a write only workload
         {
-            let _snapshot = self.snapshot_tracker.open();
+            self.snapshot_tracker.gc();
         }
 
         if self.tree.version_free_list_len() >= 100 {
