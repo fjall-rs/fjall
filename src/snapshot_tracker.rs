@@ -81,7 +81,7 @@ impl SnapshotTracker {
 
         let freed = self
             .freed_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1;
 
         drop(lock);
@@ -95,7 +95,7 @@ impl SnapshotTracker {
     // so there cannot be compactions scheduled immediately with gc_watermark=0
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         self.lowest_freed_instant
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     fn gc(&self) {
