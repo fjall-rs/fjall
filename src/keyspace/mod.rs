@@ -756,11 +756,9 @@ impl Keyspace {
         // TODO: 3.0.0 dirty monkey patch
         // TODO: we need a mechanism to prevent the version free list from getting too large
         // TODO: in a write only workload
-        // {
-        //     let seqno = self.seqno.get();
-        //     self.snapshot_tracker.open(seqno);
-        //     self.snapshot_tracker.close(seqno);
-        // }
+        {
+            let _snapshot = self.snapshot_tracker.open();
+        }
 
         if self.tree.version_free_list_len() >= 100 {
             log::warn!(
