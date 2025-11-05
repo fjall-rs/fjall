@@ -753,14 +753,14 @@ impl Keyspace {
         // Notify flush worker that new work has arrived
         self.flush_semaphore.release();
 
-        // TODO: dirty monkey patch
+        // TODO: 3.0.0 dirty monkey patch
         // TODO: we need a mechanism to prevent the version free list from getting too large
         // TODO: in a write only workload
-        {
-            let seqno = self.seqno.get();
-            self.snapshot_tracker.open(seqno);
-            self.snapshot_tracker.close(seqno);
-        }
+        // {
+        //     let seqno = self.seqno.get();
+        //     self.snapshot_tracker.open(seqno);
+        //     self.snapshot_tracker.close(seqno);
+        // }
 
         if self.tree.version_free_list_len() >= 100 {
             log::warn!(

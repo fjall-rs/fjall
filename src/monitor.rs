@@ -36,21 +36,21 @@ impl Activity for Monitor {
     fn run(&mut self) -> crate::Result<()> {
         std::thread::sleep(Duration::from_millis(250));
 
-        // TODO: don't do this too often
-        let current_seqno = self.seqno.get();
-        let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
+        // // TODO: 3.0.0 don't do this too often
+        // let current_seqno = self.seqno.get();
+        // let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
 
-        // NOTE: If the difference between watermark is too large, and
-        // we never opened a snapshot, we need to pull the watermark up
-        //
-        // https://github.com/fjall-rs/fjall/discussions/85
-        if (current_seqno - gc_seqno_watermark) > 100 && self.snapshot_tracker.data.is_empty() {
-            *self
-                .snapshot_tracker
-                .lowest_freed_instant
-                .write()
-                .expect("lock is poisoned") = current_seqno.saturating_sub(100);
-        }
+        // // NOTE: If the difference between watermark is too large, and
+        // // we never opened a snapshot, we need to pull the watermark up
+        // //
+        // // https://github.com/fjall-rs/fjall/discussions/85
+        // if (current_seqno - gc_seqno_watermark) > 100 && self.snapshot_tracker.data.is_empty() {
+        //     *self
+        //         .snapshot_tracker
+        //         .lowest_freed_instant
+        //         .write()
+        //         .expect("lock is poisoned") = current_seqno.saturating_sub(100);
+        // }
 
         let jm_size = self
             .journal_manager

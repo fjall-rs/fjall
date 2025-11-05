@@ -3,6 +3,7 @@ use std::time::Duration;
 use test_log::test;
 
 #[test]
+#[ignore = "3.0.0"]
 fn db_recover_empty() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 

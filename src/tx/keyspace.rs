@@ -14,7 +14,7 @@ pub struct TxKeyspace {
 }
 
 impl TxKeyspace {
-    /// Returns the underlying LSM-tree's path
+    /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.inner.path().into()

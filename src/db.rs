@@ -51,7 +51,7 @@ pub struct DatabaseInner {
     pub config: Config,
 
     /// Current sequence number
-    pub(crate) seqno: SequenceNumberCounter,
+    pub(crate) seqno: SequenceNumberCounter, // TODO: 3.0.0 remove, just use SnapshotTracker
 
     /// Current visible sequence number
     pub(crate) visible_seqno: SequenceNumberCounter,
@@ -211,7 +211,7 @@ impl Database {
         batch
     }
 
-    // TODO: allow accessor to stats(), so we don't have that many methods in DB
+    // TODO: 3.0.0 refactor: accessor to stats(), so we don't have that many methods in DB
 
     /// Returns the current write buffer size (active + sealed memtables).
     #[must_use]
@@ -612,6 +612,8 @@ impl Database {
             visible_seqno.clone(),
         );
 
+        let snapshot_tracker = SnapshotTracker::new(seqno.clone());
+
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             keyspace_id_counter: SequenceNumberCounter::new(1),
@@ -629,7 +631,7 @@ impl Database {
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
-            snapshot_tracker: SnapshotTracker::default(),
+            snapshot_tracker,
             stats: Arc::default(),
             lock_fd: lock_file,
         };
@@ -778,6 +780,8 @@ impl Database {
 
         let visible_seqno = SequenceNumberCounter::default();
 
+        let snapshot_tracker = SnapshotTracker::new(seqno.clone());
+
         let inner = DatabaseInner {
             keyspace_id_counter: SequenceNumberCounter::new(1),
             meta_keyspace: MetaKeyspace::new(
@@ -801,7 +805,7 @@ impl Database {
             active_background_threads: Arc::default(),
             write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
-            snapshot_tracker: SnapshotTracker::default(),
+            snapshot_tracker,
             stats: Arc::default(),
             lock_fd: lock_file,
         };

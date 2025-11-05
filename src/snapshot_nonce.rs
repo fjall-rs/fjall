@@ -10,27 +10,29 @@ pub struct SnapshotNonce {
     tracker: SnapshotTracker,
 }
 
-impl Clone for SnapshotNonce {
-    fn clone(&self) -> Self {
-        // IMPORTANT: Increment snapshot count in tracker
-        self.tracker.open(self.instant);
-
+impl SnapshotNonce {
+    pub(crate) fn new(seqno: SeqNo, tracker: SnapshotTracker) -> Self {
         Self {
-            instant: self.instant,
-            tracker: self.tracker.clone(),
+            instant: seqno,
+            tracker,
         }
     }
 }
 
+// impl Clone for SnapshotNonce {
+//     fn clone(&self) -> Self {
+//         // IMPORTANT: Increment snapshot count in tracker
+//         self.tracker.open();
+
+//         Self {
+//             instant: self.instant,
+//             tracker: self.tracker.clone(),
+//         }
+//     }
+// }
+
 impl Drop for SnapshotNonce {
     fn drop(&mut self) {
-        self.tracker.close(self.instant);
-    }
-}
-
-impl SnapshotNonce {
-    pub fn new(instant: SeqNo, tracker: SnapshotTracker) -> Self {
-        tracker.open(instant);
-        Self { instant, tracker }
+        self.tracker.close(self);
     }
 }
