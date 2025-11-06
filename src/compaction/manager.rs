@@ -50,6 +50,10 @@ impl std::ops::Deref for CompactionManager {
 }
 
 impl CompactionManager {
+    pub fn len(&self) -> usize {
+        self.0.keyspaces.lock().expect("lock is poisoned").len()
+    }
+
     pub fn clear(&self) {
         self.keyspaces.lock().expect("lock is poisoned").clear();
     }

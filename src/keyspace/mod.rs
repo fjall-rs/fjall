@@ -250,6 +250,9 @@ impl Keyspace {
                 &self.seqno,
                 &self.visible_seqno,
             )
+            .inspect(|()| {
+                self.compaction_manager.notify(self.clone());
+            })
             .map_err(Into::into)
     }
 

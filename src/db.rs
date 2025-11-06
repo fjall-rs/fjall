@@ -68,7 +68,8 @@ pub struct DatabaseInner {
 
     /// Keeps track of which keyspaces are most likely to be
     /// candidates for compaction
-    pub(crate) compaction_manager: CompactionManager,
+    #[doc(hidden)]
+    pub compaction_manager: CompactionManager,
 
     /// Stop signal when database is dropped to stop background threads
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
