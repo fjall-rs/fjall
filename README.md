@@ -134,6 +134,9 @@ Note that this also applies to returned values: When you hold a `Slice`, it keep
 
 It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
 
+Additionally, orthogonally to the block cache, each `Keyspace` has its own write buffer (["Memtable"](https://docs.rs/fjall/latest/fjall/struct.KeyspaceCreateOptions.html#method.max_memtable_size)) which is the unit of data flushed back into the "proper" index structure.
+The sum of all write buffers are capped by the database-wide [`max_write_buffer_size`](https://docs.rs/fjall/latest/fjall/struct.DatabaseBuilder.html#method.max_write_buffer_size).
+
 ## Error handling
 
 Fjall returns an [error enum](https://docs.rs/fjall/latest/fjall/enum.Error.html), however these variants are mostly used for debugging and tracing purposes, so your application is not expected to handle specific errors.

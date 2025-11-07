@@ -126,10 +126,15 @@ impl MetaKeyspace {
         Ok(())
     }
 
+    #[warn(clippy::indexing_slicing)]
     pub fn resolve_id(&self, id: InternalKeyspaceId) -> crate::Result<Option<StrView>> {
-        let mut key: Vec<u8> = Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1);
-        key.push(b'n');
-        key.extend(id.to_le_bytes());
+        #[warn(unsafe_code)]
+        let mut key = unsafe {
+            lsm_tree::Slice::builder_unzeroed(std::mem::size_of::<InternalKeyspaceId>() + 1)
+        };
+        key[0] = b'n';
+        key[1..].copy_from_slice(&id.to_le_bytes());
+        let key = key.freeze();
 
         Ok(self
             .inner
