@@ -11,7 +11,7 @@ mod recovery;
 pub mod writer;
 
 use self::writer::PersistMode;
-use crate::file::fsync_directory;
+use crate::{file::fsync_directory, Config};
 use batch_reader::JournalBatchReader;
 use lsm_tree::CompressionType;
 use reader::JournalReader;
@@ -111,8 +111,12 @@ impl Journal {
         lock.persist(mode).map_err(Into::into)
     }
 
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {
-        recover_journals(path)
+    pub fn recover<P: AsRef<Path>>(
+        path: P,
+        compression: CompressionType,
+        compression_threshold: usize,
+    ) -> crate::Result<RecoveryResult> {
+        recover_journals(path, compression, compression_threshold)
     }
 }
 
@@ -203,7 +207,7 @@ mod tests {
         assert!(next_path.try_exists()?);
         assert!(next_next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), next_next_path);
         assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
@@ -242,7 +246,7 @@ mod tests {
         assert!(path.try_exists()?);
         assert!(!next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), path);
         assert_eq!(journal_recovered.sealed, &[]);
 

@@ -582,7 +582,11 @@ impl Database {
         // let recovery_mode = config.journal_recovery_mode;
 
         // Reload active journal
-        let journal_recovery = Journal::recover(&config.path)?;
+        let journal_recovery = Journal::recover(
+            &config.path,
+            config.journal_compression_type,
+            config.journal_compression_threshold,
+        )?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
         let active_journal = Arc::new(journal_recovery.active);
