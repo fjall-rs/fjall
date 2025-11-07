@@ -1,4 +1,5 @@
 use crate::Config;
+use lsm_tree::CompressionType;
 use std::path::Path;
 
 /// Transactional database builder
@@ -22,6 +23,13 @@ impl Builder {
     /// Errors if an I/O error occurred, or if the database can not be opened.
     pub fn open(self) -> crate::Result<crate::TxDatabase> {
         crate::TxDatabase::open(self.0.into_config())
+    }
+
+    /// Sets the compression type to use for large values that are written into the journal file.
+    #[must_use]
+    pub fn journal_compression(mut self, comp: CompressionType) -> Self {
+        self.0 = self.0.journal_compression(comp);
+        self
     }
 
     /// If `false`, write batches or transactions automatically flush data to the operating system.

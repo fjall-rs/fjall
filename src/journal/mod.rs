@@ -13,6 +13,7 @@ pub mod writer;
 use self::writer::PersistMode;
 use crate::file::fsync_directory;
 use batch_reader::JournalBatchReader;
+use lsm_tree::CompressionType;
 use reader::JournalReader;
 use recovery::{recover_journals, RecoveryResult};
 use std::{
@@ -50,6 +51,14 @@ impl Drop for Journal {
 }
 
 impl Journal {
+    pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
+        {
+            let mut writer = self.writer.lock().expect("lock is poisoned");
+            writer.set_compression(comp, threshold);
+        }
+        self
+    }
+
     fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
             writer: Mutex::new(Writer::from_file(path)?),

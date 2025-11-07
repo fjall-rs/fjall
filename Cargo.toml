@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["single_writer_tx", "lz4"]
-lz4 = ["lsm-tree/lz4"]
+lz4 = ["lsm-tree/lz4", "dep:lz4_flex"]
 bytes_1 = ["lsm-tree/bytes_1"]
 single_writer_tx = []
 ssi_tx = []
@@ -34,6 +34,7 @@ std-semaphore = "0.1.0"
 tempfile = "3.20.0"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+lz4_flex = { version = "0.11.5", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

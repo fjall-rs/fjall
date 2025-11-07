@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId};
+use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId, Slice};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
@@ -49,21 +49,35 @@ pub fn serialize_marker_item<W: Write>(
 
     compression.encode_into(writer)?;
 
+    let compressed_value = match compression {
+        CompressionType::None => std::borrow::Cow::Borrowed(value),
+
+        #[cfg(feature = "lz4")]
+        CompressionType::Lz4 => {
+            let compressed = lz4_flex::compress(value);
+            std::borrow::Cow::Owned(compressed)
+        }
+    };
+
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    // writer.write_u8(keyspace_name.len() as u8)?;
-    // writer.write_all(keyspace_name.as_bytes())?;
     writer.write_u64::<LittleEndian>(keyspace_id)?;
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
     writer.write_u16::<LittleEndian>(key.len() as u16)?;
-    writer.write_all(key)?;
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
     writer.write_u32::<LittleEndian>(value.len() as u32)?;
-    writer.write_all(value)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u32::<LittleEndian>(compressed_value.len() as u32)?;
+
+    writer.write_all(key)?;
+
+    writer.write_all(&compressed_value)?;
 
     Ok(())
 }
@@ -134,7 +148,6 @@ impl Decode for Marker {
             Tag::Start => {
                 let item_count = reader.read_u32::<LittleEndian>()?;
                 let seqno = reader.read_u64::<LittleEndian>()?;
-
                 Ok(Self::Start { item_count, seqno })
             }
             Tag::Item => {
@@ -143,31 +156,53 @@ impl Decode for Marker {
                     .try_into()
                     .map_err(|()| lsm_tree::Error::InvalidTag(("ValueType", value_type)))?;
 
-                // TODO: journal compression maybe in the future
                 let compression = CompressionType::decode_from(reader)?;
-                assert_eq!(
-                    compression,
-                    CompressionType::None,
-                    "journal compression is not supported (yet)",
-                );
 
-                // Read keyspace key
+                // Read keyspace ID
                 let keyspace_id = reader.read_u64::<LittleEndian>()?;
 
-                // Read key
+                // Read key len
                 let key_len = reader.read_u16::<LittleEndian>()?;
-                let mut key = vec![0; key_len.into()];
-                reader.read_exact(&mut key)?;
 
-                // Read value
+                // Read real value size
                 let value_len = reader.read_u32::<LittleEndian>()?;
-                let mut value = vec![0; value_len as usize];
-                reader.read_exact(&mut value)?;
+
+                // Read on-disk value size
+                let on_disk_value_len = reader.read_u32::<LittleEndian>()?;
+
+                let key = Slice::from_reader(reader, usize::from(key_len))?;
+
+                let value = match compression {
+                    CompressionType::None => {
+                        debug_assert_eq!(value_len, on_disk_value_len);
+                        Slice::from_reader(reader, on_disk_value_len as usize)?
+                    }
+
+                    #[cfg(feature = "lz4")]
+                    CompressionType::Lz4 => {
+                        let compressed_value =
+                            Slice::from_reader(reader, on_disk_value_len as usize)?;
+
+                        #[warn(unsafe_code)]
+                        let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
+
+                        // TODO: change result type to crate::Result
+                        let size = lz4_flex::decompress_into(&compressed_value, &mut value)
+                            .expect("should decompress");
+
+                        if size != value.len() {
+                            log::error!("Decompressed size does not match expected value size");
+                            return Err(lsm_tree::Error::Decompress(CompressionType::Lz4));
+                        }
+
+                        Slice::from(value.freeze())
+                    }
+                };
 
                 Ok(Self::Item {
                     keyspace_id,
-                    key: key.into(),
-                    value: value.into(),
+                    key,
+                    value,
                     value_type,
                     compression,
                 })
