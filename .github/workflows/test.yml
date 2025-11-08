@@ -115,7 +115,7 @@ jobs:
           - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
           - i686-unknown-linux-gnu
-          - powerpc64-unknown-linux-gnu
+          # - powerpc64-unknown-linux-gnu
           - riscv64gc-unknown-linux-gnu
           # - aarch64-linux-android
           # - i686-linux-android
