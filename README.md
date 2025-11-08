@@ -130,7 +130,8 @@ For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/m
 ## Memory usage
 
 Generally, memory for loaded data, indexes etc. is managed on a per-block basis, and capped by the block cache capacity.
-Note that this also applies to returned values: When you hold a `Slice`, it keeps the backing buffer alive (which may be a block). If you know that you are going to keep a value around for a long time, you may want to copy it out into a new `Vec<u8>`, `Box<[u8]>`, `Arc<[u8]>` or new `Slice` (using `Slice::new`).
+Note that this also applies to returned values: When you hold a `Slice`, it keeps the backing buffer alive (which may be a block).
+If you know that you are going to keep a value around for a long time, you may want to copy it out into a new `Vec<u8>`, `Box<[u8]>`, `Arc<[u8]>` or new `Slice` (using `Slice::new`).
 
 It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
 
@@ -148,7 +149,7 @@ It's best to let the application crash and restart, which is the [safest way to 
 The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
 However this isolation level can not do read-modify-write operations without the chance of lost updates.
 Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
-For that reason, if you need transactional semantics, you need to use one of the `TransactionalDatabase` implementations.
+For that reason, if you need transactional semantics, you need to use one of the transactional database implementation (`OptimisticTransactionDatabase` or `SingleWriterTransactionDatabase`).
 
 TL;DR: Fjall supports both transactional and non-transactional workloads.
 Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.

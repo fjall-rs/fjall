@@ -436,10 +436,6 @@ impl Database {
             self.spawn_compaction_worker()?;
         }
 
-        if let Some(ms) = self.config.fsync_ms {
-            self.spawn_fsync_thread(ms.into())?;
-        }
-
         self.spawn_monitor_thread()
     }
 
@@ -836,46 +832,6 @@ impl Database {
         let stop_signal = self.stop_signal.clone();
 
         let worker = BackgroundWorker::new(monitor, poison_dart, thread_counter, stop_signal);
-
-        std::thread::Builder::new()
-            .name(NAME.into())
-            .spawn(move || {
-                worker.start();
-            })
-            .map(|_| ())
-            .map_err(Into::into)
-    }
-
-    fn spawn_fsync_thread(&self, ms: u64) -> crate::Result<()> {
-        const NAME: &str = "syncer";
-
-        struct Syncer {
-            journal: Arc<Journal>,
-            sleep_dur: Duration,
-        }
-
-        impl Activity for Syncer {
-            fn name(&self) -> &'static str {
-                NAME
-            }
-
-            fn run(&mut self) -> crate::Result<()> {
-                std::thread::sleep(self.sleep_dur);
-                self.journal.persist(PersistMode::SyncAll)?;
-                Ok(())
-            }
-        }
-
-        let syncer = Syncer {
-            journal: self.journal.clone(),
-            sleep_dur: Duration::from_millis(ms),
-        };
-
-        let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
-        let thread_counter = self.active_background_threads.clone();
-        let stop_signal = self.stop_signal.clone();
-
-        let worker = BackgroundWorker::new(syncer, poison_dart, thread_counter, stop_signal);
 
         std::thread::Builder::new()
             .name(NAME.into())

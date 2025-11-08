@@ -122,24 +122,6 @@ impl Builder {
         self
     }
 
-    /// If Some, starts an fsync thread that asynchronously
-    /// persists data to disk (using fsync).
-    ///
-    /// Default = off
-    ///
-    /// # Panics
-    ///
-    /// Panics if ms is 0.
-    #[must_use]
-    pub fn fsync_ms(mut self, ms: Option<u16>) -> Self {
-        if let Some(ms) = ms {
-            assert!(ms > 0);
-        }
-
-        self.0.fsync_ms = ms;
-        self
-    }
-
     /// Sets the `Database` to clean upon drop.
     ///
     /// # Examples

@@ -41,9 +41,6 @@ pub struct Config {
     /// Amount of compaction workers
     pub(crate) compaction_workers_count: usize,
 
-    /// Fsync every N ms asynchronously
-    pub(crate) fsync_ms: Option<u16>,
-
     pub(crate) journal_compression_type: CompressionType,
 
     pub(crate) journal_compression_threshold: usize,
@@ -79,7 +76,6 @@ impl Config {
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
             max_write_buffer_size_in_bytes: /* 256 MiB */ 256 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
-            fsync_ms: None,
             flush_workers_count: cpus.min(4),
             compaction_workers_count: cpus.min(4),
             // journal_recovery_mode: RecoveryMode::default(),
