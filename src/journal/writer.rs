@@ -261,7 +261,7 @@ impl Writer {
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         self.buf.clear();
@@ -311,7 +311,7 @@ impl Writer {
         #[allow(clippy::cast_possible_truncation)]
         let item_count = batch_size as u32;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         byte_count += self.write_start(item_count, seqno)?;
