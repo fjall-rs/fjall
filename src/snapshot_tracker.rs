@@ -47,6 +47,32 @@ impl SnapshotTracker {
         }))
     }
 
+    /// Increments the sequence number.
+    pub fn next(&self) -> SeqNo {
+        self.seqno.next()
+    }
+
+    /// Returns a reference to the snapshot generator.
+    ///
+    /// Used for ingestion API.
+    pub fn seqno_ref(&self) -> &SequenceNumberCounter {
+        &self.seqno
+    }
+
+    /// Used in database recovery.
+    ///
+    /// # Caution
+    ///
+    /// Don't use this to get a snapshot read.
+    pub fn get(&self) -> SeqNo {
+        self.seqno.get()
+    }
+
+    /// Used in database recovery.
+    pub fn set(&self, value: SeqNo) {
+        self.seqno.fetch_max(value);
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -116,7 +142,7 @@ impl SnapshotTracker {
         let mut lowest_retained = 0;
 
         self.data.retain(|&k, v| {
-            let should_be_retained = *v > 0 || k > seqno_threshold;
+            let should_be_retained = *v > 0 || k >= seqno_threshold;
 
             if should_be_retained {
                 lowest_retained = match lowest_retained {
@@ -129,7 +155,7 @@ impl SnapshotTracker {
         });
 
         self.lowest_freed_instant.fetch_max(
-            lowest_retained.saturating_sub(1),
+            lowest_retained.saturating_sub(self.safety_gap),
             std::sync::atomic::Ordering::AcqRel,
         );
     }

@@ -10,6 +10,12 @@ pub struct SnapshotNonce {
     tracker: SnapshotTracker,
 }
 
+impl std::fmt::Debug for SnapshotNonce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SnapshotNonce({})", self.instant)
+    }
+}
+
 impl SnapshotNonce {
     pub(crate) fn new(seqno: SeqNo, tracker: SnapshotTracker) -> Self {
         Self {

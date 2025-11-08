@@ -14,6 +14,8 @@ fn fifo_dirty_read() -> fjall::Result<()> {
             .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(1, None))),
     )?;
 
+    assert!(!tree.contains_key("a")?);
+
     let mut tx = db.write_tx();
     tx.insert(&tree, "a", "a");
     tx.commit()?;

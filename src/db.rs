@@ -50,9 +50,6 @@ pub struct DatabaseInner {
     #[doc(hidden)]
     pub config: Config,
 
-    /// Current sequence number
-    pub(crate) seqno: SequenceNumberCounter, // TODO: 3.0.0 remove, just use SnapshotTracker
-
     /// Current visible sequence number
     pub(crate) visible_seqno: SequenceNumberCounter,
 
@@ -617,7 +614,7 @@ impl Database {
             visible_seqno.clone(),
         );
 
-        let snapshot_tracker = SnapshotTracker::new(seqno.clone());
+        let snapshot_tracker = SnapshotTracker::new(seqno);
 
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
@@ -626,7 +623,6 @@ impl Database {
             config,
             journal: active_journal,
             keyspaces,
-            seqno,
             visible_seqno,
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
@@ -728,13 +724,13 @@ impl Database {
                         .map(|x| x + 1)
                         .unwrap_or_default();
 
-                    db.seqno.fetch_max(maybe_next_seqno);
-                    log::debug!("Database seqno is now {}", db.seqno.get());
+                    db.snapshot_tracker.set(maybe_next_seqno);
+                    log::debug!("Database seqno is now {}", db.snapshot_tracker.get());
                 }
             }
         }
 
-        db.visible_seqno.set(db.seqno.get());
+        db.visible_seqno.set(db.snapshot_tracker.get());
 
         log::trace!("Recovery successful");
 
@@ -795,13 +791,12 @@ impl Database {
             meta_keyspace: MetaKeyspace::new(
                 meta_tree,
                 keyspaces.clone(),
-                seqno.clone(),
+                seqno,
                 visible_seqno.clone(),
             ),
             config,
             journal,
             keyspaces,
-            seqno,
             visible_seqno,
             flush_manager: Arc::new(RwLock::new(FlushManager::new())),
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(

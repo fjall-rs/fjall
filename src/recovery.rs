@@ -72,7 +72,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
 
-        let base_config = lsm_tree::Config::new(path, db.seqno.clone())
+        let base_config = lsm_tree::Config::new(path, db.snapshot_tracker.seqno_ref().clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone());
 
@@ -204,8 +204,8 @@ pub fn recover_sealed_memtables(
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
-                db.seqno.fetch_max(maybe_next_seqno);
-                log::debug!("Database seqno is now {}", db.seqno.get());
+                db.snapshot_tracker.set(maybe_next_seqno);
+                log::debug!("Database seqno is now {}", db.snapshot_tracker.get());
 
                 // IMPORTANT: Add sealed memtable size to current write buffer size
                 db.write_buffer_manager.allocate(sealed_memtable.size());
