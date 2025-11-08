@@ -186,7 +186,7 @@ impl Decode for Marker {
                         #[warn(unsafe_code)]
                         let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
 
-                        // TODO: change result type to crate::Result
+                        // TODO: 3.0.0 change result type to crate::Result
                         let size = lz4_flex::decompress_into(&compressed_value, &mut value)
                             .expect("should decompress");
 
