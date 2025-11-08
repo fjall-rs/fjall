@@ -2,12 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{Guard, Snapshot, TxKeyspace};
+use crate::{snapshot_nonce::SnapshotNonce, Guard, Keyspace};
 use lsm_tree::{AbstractTree, KvPair, UserValue};
 use std::ops::RangeBounds;
-
-// A read transaction is basically just a snapshot,
-// but we need it as a newtype to accept TxKeyspace instead of Keyspace
 
 /// A cross-keyspace snapshot
 ///
@@ -17,11 +14,13 @@ use std::ops::RangeBounds;
 /// For that reason, you should try to keep transactions short-lived, and make sure they
 /// are not held somewhere *forever*.
 #[clippy::has_significant_drop]
-pub struct ReadTransaction(Snapshot);
+pub struct Snapshot {
+    pub(crate) nonce: SnapshotNonce,
+}
 
-impl ReadTransaction {
-    pub(crate) fn new(snapshot: Snapshot) -> Self {
-        Self(snapshot)
+impl Snapshot {
+    pub(crate) fn new(nonce: SnapshotNonce) -> Self {
+        Self { nonce }
     }
 
     /// Retrieves an item from the transaction's state.
@@ -29,21 +28,21 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
-    /// let tx = db.read_tx();
-    /// let item = tx.get(&tree, "a")?;
+    /// let snapshot = db.snapshot();
+    /// let item = snapshot.get(&tree, "a")?;
     /// assert_eq!(Some("my_value".as_bytes().into()), item);
     ///
     /// tree.insert("b", "my_updated_value")?;
     ///
     /// // Repeatable read
-    /// let item = tx.get(&tree, "a")?;
+    /// let item = snapshot.get(&tree, "a")?;
     /// assert_eq!(Some("my_value".as_bytes().into()), item);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -54,13 +53,12 @@ impl ReadTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
-        keyspace: &TxKeyspace,
+        keyspace: &Keyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
         keyspace
-            .inner()
             .tree
-            .get(key, self.0.nonce.instant)
+            .get(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -69,21 +67,21 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
-    /// let tx = db.read_tx();
-    /// let item = tx.size_of(&tree, "a")?.unwrap_or_default();
+    /// let snapshot = db.snapshot();
+    /// let item = snapshot.size_of(&tree, "a")?.unwrap_or_default();
     /// assert_eq!("my_value".len() as u32, item);
     ///
     /// tree.insert("b", "my_updated_value")?;
     ///
     /// // Repeatable read
-    /// let item = tx.size_of(&tree, "a")?.unwrap_or_default();
+    /// let item = snapshot.size_of(&tree, "a")?.unwrap_or_default();
     /// assert_eq!("my_value".len() as u32, item);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -94,13 +92,12 @@ impl ReadTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(
         &self,
-        keyspace: &TxKeyspace,
+        keyspace: &Keyspace,
         key: K,
     ) -> crate::Result<Option<u32>> {
         keyspace
-            .inner()
             .tree
-            .size_of(key, self.0.nonce.instant)
+            .size_of(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -109,15 +106,15 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
-    /// let tx = db.read_tx();
-    /// assert!(tx.contains_key(&tree, "a")?);
+    /// let snapshot = db.snapshot();
+    /// assert!(snapshot.contains_key(&tree, "a")?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -125,15 +122,10 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &TxKeyspace,
-        key: K,
-    ) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]>>(&self, keyspace: &Keyspace, key: K) -> crate::Result<bool> {
         keyspace
-            .inner()
             .tree
-            .contains_key(key, self.0.nonce.instant)
+            .contains_key(key, self.nonce.instant)
             .map_err(Into::into)
     }
 
@@ -143,16 +135,16 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = db.read_tx().first_key_value(&tree)?.expect("item should exist");
+    /// let (key, _) = db.snapshot().first_key_value(&tree)?.expect("item should exist");
     /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -161,7 +153,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+    pub fn first_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next()
             .map(Guard::into_inner)
@@ -174,16 +166,16 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = db.read_tx().last_key_value(&tree)?.expect("item should exist");
+    /// let (key, _) = db.snapshot().last_key_value(&tree)?.expect("item should exist");
     /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -192,7 +184,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+    pub fn last_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next_back()
             .map(Guard::into_inner)
@@ -211,25 +203,25 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value2")?;
     ///
-    /// let tx = db.read_tx();
-    /// assert_eq!(2, tx.len(&tree)?);
+    /// let snapshot = db.snapshot();
+    /// assert_eq!(2, snapshot.len(&tree)?);
     ///
     /// tree.insert("c", "my_value3")?;
     ///
     /// // Repeatable read
-    /// assert_eq!(2, tx.len(&tree)?);
+    /// assert_eq!(2, snapshot.len(&tree)?);
     ///
     /// // Start new snapshot
-    /// let tx = db.read_tx();
-    /// assert_eq!(3, tx.len(&tree)?);
+    /// let snapshot = db.snapshot();
+    /// assert_eq!(3, snapshot.len(&tree)?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -237,7 +229,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
+    pub fn len(&self, keyspace: &Keyspace) -> crate::Result<usize> {
         let mut count = 0;
 
         for guard in self.iter(keyspace) {
@@ -255,15 +247,15 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// assert!(db.read_tx().is_empty(&tree)?);
+    /// assert!(db.snapshot().is_empty(&tree)?);
     ///
     /// tree.insert("a", "abc")?;
-    /// assert!(!db.read_tx().is_empty(&tree)?);
+    /// assert!(!db.snapshot().is_empty(&tree)?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -271,7 +263,7 @@ impl ReadTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn is_empty(&self, keyspace: &TxKeyspace) -> crate::Result<bool> {
+    pub fn is_empty(&self, keyspace: &Keyspace) -> crate::Result<bool> {
         self.first_key_value(keyspace).map(|x| x.is_none())
     }
 
@@ -282,31 +274,27 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
     ///
-    /// assert_eq!(3, db.read_tx().iter(&tree).count());
+    /// assert_eq!(3, db.snapshot().iter(&tree).count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn iter<'a>(
         &self,
-        keyspace: &'a TxKeyspace,
+        keyspace: &'a Keyspace,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
-        keyspace
-            .inner()
-            .tree
-            .iter(self.0.nonce.instant, None)
-            .map(Guard)
+        keyspace.tree.iter(self.nonce.instant, None).map(Guard)
 
-        // crate::iter::Iter::new(self.0.nonce.clone(), iter)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -316,31 +304,33 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
     ///
-    /// assert_eq!(2, db.read_tx().range(&tree, "a"..="f").count());
+    /// assert_eq!(2, db.snapshot().range(&tree, "a"..="f").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &self,
-        keyspace: &'a TxKeyspace,
+        keyspace: &'a Keyspace,
         range: R,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
+        // TODO: 3.0.0: if we bind the iterator lifetime to ReadTx, we can remove the snapshot nonce from Iter
+        // TODO: for all other ReadTx::iterators too
+
         keyspace
-            .inner()
             .tree
-            .range(range, self.0.nonce.instant, None)
+            .range(range, self.nonce.instant, None)
             .map(Guard)
-        // crate::iter::Iter::new(self.0.nonce.clone(), iter)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -350,31 +340,30 @@ impl ReadTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = Database::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("ab", "abc")?;
     /// tree.insert("abc", "abc")?;
     ///
-    /// assert_eq!(2, db.read_tx().prefix(&tree, "ab").count());
+    /// assert_eq!(2, db.snapshot().prefix(&tree, "ab").count());
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &self,
-        keyspace: &'a TxKeyspace,
+        keyspace: &'a Keyspace,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
         keyspace
-            .inner()
             .tree
-            .prefix(prefix, self.0.nonce.instant, None)
+            .prefix(prefix, self.nonce.instant, None)
             .map(Guard)
 
-        // crate::iter::Iter::new(self.0.nonce.clone(), iter)
+        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 }

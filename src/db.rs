@@ -15,6 +15,7 @@ use crate::{
     monitor::Monitor,
     poison_dart::PoisonDart,
     recovery::{recover_keyspaces, recover_sealed_memtables},
+    snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     version::Version,
@@ -166,6 +167,15 @@ impl std::ops::Deref for Database {
 }
 
 impl Database {
+    /// Opens a cross-keyspace snapshot.
+    ///
+    /// # Caution
+    ///
+    /// Note that for serializable semantics you need to use a transactional database instead.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot::new(self.snapshot_tracker.open())
+    }
+
     /// Creates a new database builder to create or open a database at `path`.
     pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder {
         crate::DatabaseBuilder::new(path.as_ref())

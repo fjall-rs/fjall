@@ -382,7 +382,9 @@ impl Keyspace {
     pub fn iter(
         &'_ self,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'_>>> + '_ {
-        self.tree.iter(SeqNo::MAX, None).map(Guard)
+        let nonce = self.snapshot_tracker.open();
+        let iter = self.tree.iter(nonce.instant, None).map(Guard);
+        crate::iter::Iter::new(nonce, iter)
     }
 
     /// Returns an iterator over a range of items.
@@ -408,7 +410,9 @@ impl Keyspace {
         &'a self,
         range: R,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
-        self.tree.range(range, SeqNo::MAX, None).map(Guard)
+        let nonce = self.snapshot_tracker.open();
+        let iter = self.tree.range(range, SeqNo::MAX, None).map(Guard);
+        crate::iter::Iter::new(nonce, iter)
     }
 
     /// Returns an iterator over a prefixed set of items.
@@ -434,7 +438,9 @@ impl Keyspace {
         &'a self,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
-        self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard)
+        let nonce = self.snapshot_tracker.open();
+        let iter = self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard);
+        crate::iter::Iter::new(nonce, iter)
     }
 
     /// Approximates the amount of items in the keyspace.

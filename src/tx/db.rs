@@ -2,9 +2,10 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::{read_tx::ReadTransaction, write_tx::WriteTransaction};
+use super::write_tx::WriteTransaction;
 use crate::{
-    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, TxKeyspace,
+    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, ReadTransaction,
+    TxKeyspace,
 };
 use std::{
     path::Path,
@@ -83,7 +84,7 @@ impl TxDatabase {
     /// Starts a new read-only transaction.
     #[must_use]
     pub fn read_tx(&self) -> ReadTransaction {
-        ReadTransaction::new(self.inner.snapshot_tracker.open())
+        ReadTransaction::new(self.inner.snapshot())
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]

@@ -107,6 +107,7 @@ mod monitor;
 mod path;
 mod poison_dart;
 mod recovery;
+mod snapshot;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod stats;
@@ -137,6 +138,7 @@ pub use {
     guard::Guard,
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
+    snapshot::Snapshot,
     version::Version,
 };
 
