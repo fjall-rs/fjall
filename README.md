@@ -154,13 +154,15 @@ For that reason, if you need transactional semantics, you need to use one of the
 TL;DR: Fjall supports both transactional and non-transactional workloads.
 Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
 
-### single_writer_tx
+### Single writer
 
-Allows opening a transactional database for single-writer (serialized) transactions.
+Opens a transactional database for single-writer (serialized) transactions.
+Single writer means only a single **write** transaction can run at a time.
+This is trivially serializable because it _literally_ serializes write transactions.
 
-### ssi_tx
+### Optimistic
 
-Allows opening a transactional database for multi-writer, serializable transactions.
+Opens a transactional database for multi-writer, serializable transactions.
 Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ## Feature flags
@@ -174,6 +176,7 @@ Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeit
 ### bytes
 
 Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
+Otherwise, [`byteview`](https://github.com/fjall-rs/byteview) is used instead.
 
 *Disabled by default.*
 
