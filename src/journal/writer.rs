@@ -7,7 +7,7 @@ use crate::{
     batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
-use lsm_tree::{coding::Encode, SeqNo, ValueType};
+use lsm_tree::{coding::Encode, CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,
@@ -24,8 +24,10 @@ pub struct Writer {
     pub(crate) path: PathBuf,
     file: BufWriter<File>,
     buf: Vec<u8>,
-
     is_buffer_dirty: bool,
+
+    compression: CompressionType,
+    compression_threshold: usize,
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
@@ -48,6 +50,11 @@ pub enum PersistMode {
 }
 
 impl Writer {
+    pub fn set_compression(&mut self, comp: CompressionType, threshold: usize) {
+        self.compression = comp;
+        self.compression_threshold = threshold;
+    }
+
     pub fn len(&self) -> crate::Result<u64> {
         Ok(self.file.get_ref().metadata()?.len())
     }
@@ -99,7 +106,10 @@ impl Writer {
         let new_path = folder.join(format!("{}.jnl", journal_id + 1));
         log::debug!("Rotating active journal to {}", new_path.display());
 
+        let comp = self.compression;
+        let compt = self.compression_threshold;
         *self = Self::create_new(new_path.clone())?;
+        self.set_compression(comp, compt);
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&folder)?;
@@ -130,6 +140,8 @@ impl Writer {
             file: BufWriter::new(file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            compression: CompressionType::None,
+            compression_threshold: 0,
         })
     }
 
@@ -161,6 +173,8 @@ impl Writer {
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
                 buf: Vec::new(),
                 is_buffer_dirty: false,
+                compression: CompressionType::None,
+                compression_threshold: 0,
             });
         }
 
@@ -176,6 +190,8 @@ impl Writer {
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            compression: CompressionType::None,
+            compression_threshold: 0,
         })
     }
 
@@ -245,7 +261,7 @@ impl Writer {
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         self.buf.clear();
@@ -258,7 +274,11 @@ impl Writer {
             key,
             value,
             value_type,
-            lsm_tree::CompressionType::None,
+            if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
+                self.compression
+            } else {
+                CompressionType::None
+            },
         )?;
 
         self.file.write_all(&self.buf)?;
@@ -291,7 +311,7 @@ impl Writer {
         #[allow(clippy::cast_possible_truncation)]
         let item_count = batch_size as u32;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         byte_count += self.write_start(item_count, seqno)?;
@@ -306,7 +326,12 @@ impl Writer {
                 &item.key,
                 &item.value,
                 item.value_type,
-                lsm_tree::CompressionType::None,
+                if self.compression_threshold > 0 && item.value.len() >= self.compression_threshold
+                {
+                    self.compression
+                } else {
+                    CompressionType::None
+                },
             )?;
 
             self.file.write_all(&self.buf)?;

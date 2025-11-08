@@ -1,5 +1,5 @@
 use crate::Config;
-use lsm_tree::{Cache, DescriptorTable};
+use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{path::Path, sync::Arc};
 
 /// Database builder
@@ -23,6 +23,13 @@ impl Builder {
     /// Errors if an I/O error occurred, or if the database can not be opened.
     pub fn open(self) -> crate::Result<crate::Database> {
         crate::Database::open(self.0)
+    }
+
+    /// Sets the compression type to use for large values that are written into the journal file.
+    #[must_use]
+    pub fn journal_compression(mut self, comp: CompressionType) -> Self {
+        self.0.journal_compression_type = comp;
+        self
     }
 
     /// If `false`, write batches or transactions automatically flush data to the operating system.

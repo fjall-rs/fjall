@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::Journal;
+use lsm_tree::CompressionType;
 use std::path::{Path, PathBuf};
 
 pub type JournalId = u64;
@@ -15,7 +16,11 @@ pub struct RecoveryResult {
     pub(crate) was_active_created: bool,
 }
 
-pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {
+pub fn recover_journals<P: AsRef<Path>>(
+    path: P,
+    compression: CompressionType,
+    compression_threshold: usize,
+) -> crate::Result<RecoveryResult> {
     let path = path.as_ref();
 
     let mut max_journal_id: JournalId = 0;
@@ -68,14 +73,17 @@ pub fn recover_journals<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult
 
     Ok(match journal_fragments.pop() {
         Some((_, active)) => RecoveryResult {
-            active: Journal::from_file(active)?,
+            active: Journal::from_file(active)?
+                .with_compression(compression, compression_threshold),
             sealed: journal_fragments,
             was_active_created: false,
         },
         None => RecoveryResult {
             active: {
                 let id: JournalId = max_journal_id + 1;
+
                 Journal::create_new(path.join(id.to_string()))?
+                    .with_compression(compression, compression_threshold)
             },
             sealed: vec![],
             was_active_created: true,

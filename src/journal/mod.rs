@@ -13,6 +13,7 @@ pub mod writer;
 use self::writer::PersistMode;
 use crate::file::fsync_directory;
 use batch_reader::JournalBatchReader;
+use lsm_tree::CompressionType;
 use reader::JournalReader;
 use recovery::{recover_journals, RecoveryResult};
 use std::{
@@ -50,6 +51,14 @@ impl Drop for Journal {
 }
 
 impl Journal {
+    pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
+        {
+            let mut writer = self.writer.lock().expect("lock is poisoned");
+            writer.set_compression(comp, threshold);
+        }
+        self
+    }
+
     fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
             writer: Mutex::new(Writer::from_file(path)?),
@@ -102,8 +111,12 @@ impl Journal {
         lock.persist(mode).map_err(Into::into)
     }
 
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {
-        recover_journals(path)
+    pub fn recover<P: AsRef<Path>>(
+        path: P,
+        compression: CompressionType,
+        compression_threshold: usize,
+    ) -> crate::Result<RecoveryResult> {
+        recover_journals(path, compression, compression_threshold)
     }
 }
 
@@ -194,7 +207,63 @@ mod tests {
         assert!(next_path.try_exists()?);
         assert!(next_next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
+        assert_eq!(journal_recovered.active.path(), next_next_path);
+        assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "lz4")]
+    fn journal_recovery_active_lz4() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
+        let next_next_path = dir.path().join("2.jnl");
+
+        {
+            let journal = Journal::create_new(&path)?.with_compression(CompressionType::Lz4, 1);
+            let mut writer = journal.get_writer();
+
+            writer.write_batch(
+                [
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                0,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                [
+                    BatchItem::new(1, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(1, *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                1,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                [
+                    BatchItem::new(2, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(2, *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                1,
+            )?;
+        }
+
+        assert!(path.try_exists()?);
+        assert!(next_path.try_exists()?);
+        assert!(next_next_path.try_exists()?);
+
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), next_next_path);
         assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
@@ -233,7 +302,7 @@ mod tests {
         assert!(path.try_exists()?);
         assert!(!next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), path);
         assert_eq!(journal_recovered.sealed, &[]);
 

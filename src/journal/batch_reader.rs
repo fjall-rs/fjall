@@ -145,13 +145,6 @@ impl Iterator for JournalBatchReader {
                     value_type,
                     compression,
                 } => {
-                    // TODO: journal compression maybe in the future
-                    assert_eq!(
-                        compression,
-                        CompressionType::None,
-                        "journal compression is not supported (yet)",
-                    );
-
                     let item = Marker::Item {
                         keyspace_id,
                         key: key.clone(),
