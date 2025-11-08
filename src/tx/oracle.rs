@@ -1,7 +1,6 @@
 use super::conflict_manager::ConflictManager;
 use crate::snapshot_tracker::SnapshotTracker;
 use crate::SeqNo;
-use lsm_tree::SequenceNumberCounter;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 
@@ -13,7 +12,6 @@ pub enum CommitOutcome<E> {
 
 pub struct Oracle {
     pub(super) write_serialize_lock: Mutex<BTreeMap<u64, ConflictManager>>,
-    pub(super) seqno: SequenceNumberCounter,
     pub(super) snapshot_tracker: SnapshotTracker,
 }
 
@@ -55,7 +53,7 @@ impl Oracle {
             return Ok(CommitOutcome::Aborted(e));
         }
 
-        committed_txns.insert(self.seqno.get(), conflict_checker);
+        committed_txns.insert(self.snapshot_tracker.get(), conflict_checker);
 
         Ok(CommitOutcome::Ok)
     }

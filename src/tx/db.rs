@@ -193,7 +193,6 @@ impl TxDatabase {
             #[cfg(feature = "ssi_tx")]
             oracle: Arc::new(Oracle {
                 write_serialize_lock: Mutex::default(),
-                seqno: inner.seqno.clone(),
                 snapshot_tracker: inner.snapshot_tracker.clone(),
             }),
             inner,
