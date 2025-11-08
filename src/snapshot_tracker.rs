@@ -116,7 +116,7 @@ impl SnapshotTracker {
         let mut lowest_retained = 0;
 
         self.data.retain(|&k, v| {
-            let should_be_retained = *v > 0 || k > seqno_threshold;
+            let should_be_retained = *v > 0 || k >= seqno_threshold;
 
             if should_be_retained {
                 lowest_retained = match lowest_retained {
@@ -129,7 +129,7 @@ impl SnapshotTracker {
         });
 
         self.lowest_freed_instant.fetch_max(
-            lowest_retained.saturating_sub(1),
+            lowest_retained.saturating_sub(self.safety_gap),
             std::sync::atomic::Ordering::AcqRel,
         );
     }
