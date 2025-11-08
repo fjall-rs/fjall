@@ -23,7 +23,6 @@ pub struct Monitor {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
-    pub(crate) seqno: SequenceNumberCounter,
     pub(crate) snapshot_tracker: SnapshotTracker,
     pub(crate) db_poison: Arc<AtomicBool>,
 }
@@ -37,7 +36,7 @@ impl Activity for Monitor {
         std::thread::sleep(Duration::from_millis(250));
 
         // // TODO: 3.0.0 don't do this too often
-        let current_seqno = self.seqno.get();
+        let current_seqno = self.snapshot_tracker.get();
         let gc_seqno_watermark = self.snapshot_tracker.get_seqno_safe_to_gc();
 
         // NOTE: If the difference between watermark is too large, and
@@ -124,7 +123,6 @@ impl Monitor {
             db_config: db.config.clone(),
             write_buffer_manager: db.write_buffer_manager.clone(),
             keyspaces: db.keyspaces.clone(),
-            seqno: db.seqno.clone(),
             snapshot_tracker: db.snapshot_tracker.clone(),
             db_poison: db.is_poisoned.clone(),
         }

@@ -47,6 +47,32 @@ impl SnapshotTracker {
         }))
     }
 
+    /// Increments the sequence number.
+    pub fn next(&self) -> SeqNo {
+        self.seqno.next()
+    }
+
+    /// Returns a reference to the snapshot generator.
+    ///
+    /// Used for ingestion API.
+    pub fn seqno_ref(&self) -> &SequenceNumberCounter {
+        &self.seqno
+    }
+
+    /// Used in database recovery.
+    ///
+    /// # Caution
+    ///
+    /// Don't use this to get a snapshot read.
+    pub fn get(&self) -> SeqNo {
+        self.seqno.get()
+    }
+
+    /// Used in database recovery.
+    pub fn set(&self, value: SeqNo) {
+        self.seqno.fetch_max(value);
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }

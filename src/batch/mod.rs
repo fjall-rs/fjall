@@ -108,7 +108,7 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        let batch_seqno = self.db.seqno.next();
+        let batch_seqno = self.db.snapshot_tracker.next();
 
         let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
 

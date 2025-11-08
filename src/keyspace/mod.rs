@@ -112,10 +112,6 @@ pub struct KeyspaceInner {
     /// Keyspace map of database
     pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
 
-    /// Sequence number generator of database
-    #[doc(hidden)]
-    pub seqno: SequenceNumberCounter,
-
     /// Visible sequence number of database
     #[doc(hidden)]
     pub visible_seqno: SequenceNumberCounter,
@@ -247,7 +243,7 @@ impl Keyspace {
         self.tree
             .ingest(
                 iter.map(|(k, v)| (k.into(), v.into())),
-                &self.seqno,
+                self.snapshot_tracker.seqno_ref(),
                 &self.visible_seqno,
             )
             .inspect(|()| {
@@ -275,7 +271,6 @@ impl Keyspace {
             journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
             compaction_manager: db.compaction_manager.clone(),
-            seqno: db.seqno.clone(),
             visible_seqno: db.visible_seqno.clone(),
             write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
@@ -303,9 +298,10 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(base_folder, db.seqno.clone())
-            .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+        let base_config =
+            lsm_tree::Config::new(base_folder, db.snapshot_tracker.seqno_ref().clone())
+                .use_descriptor_table(db.config.descriptor_table.clone())
+                .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
@@ -322,7 +318,6 @@ impl Keyspace {
             journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
             compaction_manager: db.compaction_manager.clone(),
-            seqno: db.seqno.clone(),
             visible_seqno: db.visible_seqno.clone(),
             tree,
             write_buffer_manager: db.write_buffer_manager.clone(),
@@ -949,7 +944,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.seqno.next();
+        let seqno = self.snapshot_tracker.next();
 
         journal_writer.write_raw(self.id, &key, &value, lsm_tree::ValueType::Value, seqno)?;
 
@@ -1023,7 +1018,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.seqno.next();
+        let seqno = self.snapshot_tracker.next();
 
         journal_writer.write_raw(self.id, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
@@ -1108,7 +1103,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.seqno.next();
+        let seqno = self.snapshot_tracker.next();
 
         journal_writer.write_raw(
             self.id,
