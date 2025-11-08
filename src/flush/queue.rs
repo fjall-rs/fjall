@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::manager::Task;
+use crate::flush::Task;
 use std::sync::Arc;
 
 /// A FIFO queue of flush tasks.

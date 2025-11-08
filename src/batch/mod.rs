@@ -108,7 +108,7 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        let batch_seqno = self.db.snapshot_tracker.next();
+        let batch_seqno = self.db.supervisor.snapshot_tracker.next();
 
         let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
 
@@ -168,7 +168,7 @@ impl Batch {
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches
-        self.db.write_buffer_manager.allocate(batch_size);
+        self.db.supervisor.write_buffer_size.allocate(batch_size);
 
         // Check each affected keyspace for write stall/halt
         for keyspace in keyspaces_with_possible_stall {
@@ -180,7 +180,7 @@ impl Batch {
 
             // IMPORTANT: Check write buffer as well
             // Otherwise batch writes are never stalled/halted
-            let write_buffer_size = self.db.write_buffer_manager.get();
+            let write_buffer_size = self.db.supervisor.write_buffer_size.get();
             keyspace.check_write_buffer_size(write_buffer_size);
         }
 

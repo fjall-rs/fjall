@@ -15,22 +15,22 @@ pub fn run(
 ) -> crate::Result<()> {
     use std::sync::atomic::Ordering::Relaxed;
 
-    let Some(item) = compaction_manager.pop() else {
+    let Some(keyspace) = compaction_manager.pop() else {
         return Ok(());
     };
 
     log::trace!(
-        "compactor: calling compaction strategy for keyspace {:?}",
-        item.0.name,
+        "Checking compaction strategy for keyspace {:?}",
+        keyspace.name,
     );
 
-    let strategy = item.config.compaction_strategy.clone();
+    let strategy = keyspace.config.compaction_strategy.clone();
 
     stats.active_compaction_count.fetch_add(1, Relaxed);
 
     let start = Instant::now();
 
-    if let Err(e) = item
+    if let Err(e) = keyspace
         .tree
         .compact(strategy.clone(), snapshot_tracker.get_seqno_safe_to_gc())
     {

@@ -4,4 +4,9 @@
 
 pub mod manager;
 pub mod queue;
+pub mod task;
 pub mod worker;
+
+pub mod new_manager;
+
+pub use task::Task;

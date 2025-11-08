@@ -46,8 +46,11 @@ impl TxDatabase {
     pub fn write_tx(&self) -> WriteTransaction<'_> {
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
 
-        let mut write_tx =
-            WriteTransaction::new(self.clone(), self.inner.snapshot_tracker.open(), guard);
+        let mut write_tx = WriteTransaction::new(
+            self.clone(),
+            self.inner.supervisor.snapshot_tracker.open(),
+            guard,
+        );
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
@@ -188,7 +191,7 @@ impl TxDatabase {
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         let inner = Database::create_or_recover(config)?;
-        inner.start_background_threads()?;
+        // inner.start_background_threads()?;
 
         Ok(Self {
             #[cfg(feature = "ssi_tx")]

@@ -18,10 +18,10 @@ use std::{
 
 /// Monitors write buffer size & journal size
 pub struct Monitor {
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
+    // pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     pub(crate) db_config: DatabaseConfig,
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) write_buffer_manager: WriteBufferManager,
+    // pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+    // pub(crate) write_buffer_manager: WriteBufferManager,
     pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
     pub(crate) snapshot_tracker: SnapshotTracker,
     pub(crate) db_poison: Arc<AtomicBool>,
@@ -47,57 +47,57 @@ impl Activity for Monitor {
             self.snapshot_tracker.pullup();
         }
 
-        let jm_size = self
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used();
+        // let jm_size = self
+        //     .journal_manager
+        //     .read()
+        //     .expect("lock is poisoned")
+        //     .disk_space_used();
 
-        let max_journal_size = self.db_config.max_journaling_size_in_bytes;
+        // let max_journal_size = self.db_config.max_journaling_size_in_bytes;
 
-        if jm_size as f64 > (max_journal_size as f64 * 0.5) {
-            self.try_reduce_journal_size();
-        }
+        // if jm_size as f64 > (max_journal_size as f64 * 0.5) {
+        //     self.try_reduce_journal_size();
+        // }
 
-        let write_buffer_size = self.write_buffer_manager.get();
+        // let write_buffer_size = self.write_buffer_manager.get();
 
-        let queued_size = self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .queued_size();
+        // let queued_size = self
+        //     .flush_manager
+        //     .read()
+        //     .expect("lock is poisoned")
+        //     .queued_size();
 
-        // TODO: This should never ever overflow
-        // TODO: because that is definitely a logic error
-        // TODO: need to make sure it's impossible this can happen
-        #[cfg(debug_assertions)]
-        {
-            // NOTE: Cannot use panic because we are in a thread that should not
-            // crash
-            if queued_size > write_buffer_size {
-                log::error!(
-                    "Queued size should not be able to be greater than entire write buffer size"
-                );
-                return Ok(());
-            }
-        }
+        // // TODO: This should never ever overflow
+        // // TODO: because that is definitely a logic error
+        // // TODO: need to make sure it's impossible this can happen
+        // #[cfg(debug_assertions)]
+        // {
+        //     // NOTE: Cannot use panic because we are in a thread that should not
+        //     // crash
+        //     if queued_size > write_buffer_size {
+        //         log::error!(
+        //             "Queued size should not be able to be greater than entire write buffer size"
+        //         );
+        //         return Ok(());
+        //     }
+        // }
 
-        // NOTE: We cannot flush more stuff if the journal is already too large
-        if jm_size < max_journal_size {
-            let max_write_buffer_size = self.db_config.max_write_buffer_size_in_bytes;
+        // // NOTE: We cannot flush more stuff if the journal is already too large
+        // if jm_size < max_journal_size {
+        //     let max_write_buffer_size = self.db_config.max_write_buffer_size_in_bytes;
 
-            // NOTE: Take the queued size of unflushed memtables into account
-            // so the system isn't performing a flush storm once the threshold is reached
-            //
-            // Also, As a fail safe, use saturating_sub so it doesn't overflow
-            let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
+        //     // NOTE: Take the queued size of unflushed memtables into account
+        //     // so the system isn't performing a flush storm once the threshold is reached
+        //     //
+        //     // Also, As a fail safe, use saturating_sub so it doesn't overflow
+        //     let buffer_size_without_queued_size = write_buffer_size.saturating_sub(queued_size);
 
-            if buffer_size_without_queued_size as f64 > (max_write_buffer_size as f64 * 0.5) {
-                self.try_reduce_write_buffer_size();
-            }
-        } else {
-            log::debug!("cannot rotate memtable to free write buffer - journal too large");
-        }
+        //     if buffer_size_without_queued_size as f64 > (max_write_buffer_size as f64 * 0.5) {
+        //         self.try_reduce_write_buffer_size();
+        //     }
+        // } else {
+        //     log::debug!("cannot rotate memtable to free write buffer - journal too large");
+        // }
 
         Ok(())
     }
@@ -118,12 +118,12 @@ impl Monitor {
         crate::drop::increment_drop_counter();
 
         Self {
-            flush_manager: db.flush_manager.clone(),
-            journal_manager: db.journal_manager.clone(),
+            // flush_manager: db.flush_manager.clone(),
+            // journal_manager: db.supervisor.journal_manager.clone(),
             db_config: db.config.clone(),
-            write_buffer_manager: db.write_buffer_manager.clone(),
+            // write_buffer_manager: db.write_buffer_manager.clone(),
             keyspaces: db.keyspaces.clone(),
-            snapshot_tracker: db.snapshot_tracker.clone(),
+            snapshot_tracker: db.supervisor.snapshot_tracker.clone(),
             db_poison: db.is_poisoned.clone(),
         }
     }
@@ -148,30 +148,30 @@ impl Monitor {
 
         drop(keyspaces);
 
-        if let Some(lowest_persisted_keyspace) = lowest_persisted_keyspace {
-            let keyspaces_names_with_queued_tasks = self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .get_keyspaces_with_tasks();
+        // if let Some(lowest_persisted_keyspace) = lowest_persisted_keyspace {
+        //     let keyspaces_names_with_queued_tasks = self
+        //         .flush_manager
+        //         .read()
+        //         .expect("lock is poisoned")
+        //         .get_keyspaces_with_tasks();
 
-            if keyspaces_names_with_queued_tasks.contains(&lowest_persisted_keyspace.id) {
-                return;
-            }
+        //     if keyspaces_names_with_queued_tasks.contains(&lowest_persisted_keyspace.id) {
+        //         return;
+        //     }
 
-            match lowest_persisted_keyspace.rotate_memtable() {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!(
-                        "monitor: memtable rotation failed for {:?}: {e:?}",
-                        lowest_persisted_keyspace.name
-                    );
+        //     match lowest_persisted_keyspace.rotate_memtable() {
+        //         Ok(_) => {}
+        //         Err(e) => {
+        //             log::error!(
+        //                 "monitor: memtable rotation failed for {:?}: {e:?}",
+        //                 lowest_persisted_keyspace.name
+        //             );
 
-                    self.db_poison
-                        .store(true, std::sync::atomic::Ordering::Release);
-                }
-            }
-        }
+        //             self.db_poison
+        //                 .store(true, std::sync::atomic::Ordering::Release);
+        //         }
+        //     }
+        // }
     }
 
     fn try_reduce_write_buffer_size(&self) {
@@ -193,35 +193,35 @@ impl Monitor {
                 .cmp(&a.tree.active_memtable_size())
         });
 
-        let keyspaces_names_with_queued_tasks = self
-            .flush_manager
-            .read()
-            .expect("lock is poisoned")
-            .get_keyspaces_with_tasks();
+        // let keyspaces_names_with_queued_tasks = self
+        //     .flush_manager
+        //     .read()
+        //     .expect("lock is poisoned")
+        //     .get_keyspaces_with_tasks();
 
-        let keyspaces = keyspaces
-            .into_iter()
-            .filter(|x| !keyspaces_names_with_queued_tasks.contains(&x.id));
+        // let keyspaces = keyspaces
+        //     .into_iter()
+        //     .filter(|x| !keyspaces_names_with_queued_tasks.contains(&x.id));
 
-        for keyspace in keyspaces {
-            log::debug!("monitor: WB rotating {:?}", keyspace.name);
+        // for keyspace in keyspaces {
+        //     log::debug!("monitor: WB rotating {:?}", keyspace.name);
 
-            match keyspace.rotate_memtable() {
-                Ok(rotated) => {
-                    if rotated {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "monitor: memtable rotation failed for {:?}: {e:?}",
-                        keyspace.name
-                    );
+        //     match keyspace.rotate_memtable() {
+        //         Ok(rotated) => {
+        //             if rotated {
+        //                 break;
+        //             }
+        //         }
+        //         Err(e) => {
+        //             log::error!(
+        //                 "monitor: memtable rotation failed for {:?}: {e:?}",
+        //                 keyspace.name
+        //             );
 
-                    self.db_poison
-                        .store(true, std::sync::atomic::Ordering::Release);
-                }
-            }
-        }
+        //             self.db_poison
+        //                 .store(true, std::sync::atomic::Ordering::Release);
+        //         }
+        //     }
+        // }
     }
 }

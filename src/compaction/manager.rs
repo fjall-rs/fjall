@@ -9,6 +9,8 @@ use std::{
 };
 use std_semaphore::Semaphore;
 
+// TODO: 3.0.0 use flume instead
+
 pub struct CompactionManagerInner {
     keyspaces: Mutex<VecDeque<Keyspace>>,
     semaphore: Semaphore,

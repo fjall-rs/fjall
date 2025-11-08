@@ -3,26 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::queue::FlushQueue;
-use crate::{keyspace::InternalKeyspaceId, HashMap, HashSet, Keyspace};
-use lsm_tree::{Memtable, TableId};
+use crate::{flush::Task, keyspace::InternalKeyspaceId, HashMap};
 use std::sync::Arc;
-
-pub struct Task {
-    /// ID of memtable
-    pub(crate) id: TableId,
-
-    /// Memtable to flush
-    pub(crate) sealed_memtable: Arc<Memtable>,
-
-    /// Keyspace
-    pub(crate) keyspace: Keyspace,
-}
-
-impl std::fmt::Debug for Task {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FlushTask {}:{}", self.keyspace.name, self.id)
-    }
-}
 
 // TODO: accessing flush manager shouldn't take RwLock... but changing its internals should
 
@@ -59,15 +41,15 @@ impl FlushManager {
         self.queues.clear();
     }
 
-    /// Gets the names of keyspaces that have queued tasks.
-    pub(crate) fn get_keyspaces_with_tasks(&self) -> HashSet<InternalKeyspaceId> {
-        self.queues
-            .iter()
-            .filter(|(_, v)| !v.is_empty())
-            .map(|(k, _)| k)
-            .cloned()
-            .collect()
-    }
+    // /// Gets the names of keyspaces that have queued tasks.
+    // pub(crate) fn get_keyspaces_with_tasks(&self) -> HashSet<InternalKeyspaceId> {
+    //     self.queues
+    //         .iter()
+    //         .filter(|(_, v)| !v.is_empty())
+    //         .map(|(k, _)| k)
+    //         .cloned()
+    //         .collect()
+    // }
 
     /// Returns the number of queues.
     pub(crate) fn queue_count(&self) -> usize {

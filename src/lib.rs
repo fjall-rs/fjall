@@ -103,7 +103,6 @@ mod iter;
 mod journal;
 mod keyspace;
 mod meta_keyspace;
-mod monitor;
 mod path;
 mod poison_dart;
 mod recovery;
@@ -111,15 +110,16 @@ mod snapshot;
 mod snapshot_nonce;
 mod snapshot_tracker;
 mod stats;
+mod supervisor;
 
 #[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 mod tx;
 
 mod version;
+mod worker_pool;
 mod write_buffer_manager;
 
 pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh3::Xxh3Builder>;
-pub(crate) type HashSet<K> = std::collections::HashSet<K, xxhash_rust::xxh3::Xxh3Builder>;
 
 /// Configuration policies
 pub mod config {

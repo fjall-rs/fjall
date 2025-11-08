@@ -449,8 +449,10 @@ mod tests {
 
         env.tree.insert([2u8], [20u8])?;
 
-        let mut tx =
-            super::BaseTransaction::new(env.db.clone(), env.db.inner().snapshot_tracker.open());
+        let mut tx = super::BaseTransaction::new(
+            env.db.clone(),
+            env.db.inner().supervisor.snapshot_tracker.open(),
+        );
 
         let new = tx.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
