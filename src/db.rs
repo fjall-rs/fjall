@@ -3,16 +3,14 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    background_worker::{Activity, BackgroundWorker},
     batch::Batch,
     compaction::manager::CompactionManager,
     db_config::Config,
     file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
-    flush::{manager::FlushManager, new_manager::FlushNewManager},
+    flush::new_manager::FlushNewManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     meta_keyspace::MetaKeyspace,
-    poison_dart::PoisonDart,
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
@@ -58,22 +56,12 @@ pub struct DatabaseInner {
     #[doc(hidden)]
     pub supervisor: Supervisor,
 
-    // // /// Notifies flush threads
-    // // pub(crate) flush_semaphore: Arc<Semaphore>,
-    // pub(crate) flush_manager: FlushNewManager,
-    /// Keeps track of which keyspaces are most likely to be
-    /// candidates for compaction
-    // #[doc(hidden)]
-    // pub compaction_manager: CompactionManager,
-
     /// Stop signal when database is dropped to stop background threads
     pub(crate) stop_signal: lsm_tree::stop_signal::StopSignal,
 
     /// Counter of background threads
     pub(crate) active_background_threads: Arc<AtomicUsize>,
 
-    // /// Keeps track of write buffer size
-    // pub(crate) write_buffer_manager: WriteBufferManager,
     /// True if fsync failed
     pub(crate) is_poisoned: Arc<AtomicBool>,
 
@@ -414,36 +402,7 @@ impl Database {
         }
     }
 
-    // /// Starts background threads that maintain the database.
-    // ///
-    // /// Should not be called, unless in [`Database::open`]
-    // /// and should definitely not be user-facing.
-    // pub(crate) fn start_background_threads(&self) -> crate::Result<()> {
-    //     // if self.config.flush_workers_count > 0 {
-    //     //     self.spawn_flush_worker()?;
-
-    //     //     for _ in 0..self
-    //     //         .flush_manager
-    //     //         .read()
-    //     //         .expect("lock is poisoned")
-    //     //         .queue_count()
-    //     //     {
-    //     //         self.flush_semaphore.release();
-    //     //     }
-    //     // }
-
-    //     // log::debug!(
-    //     //     "Spawning {} compaction threads",
-    //     //     self.config.compaction_workers_count
-    //     // );
-
-    //     // for _ in 0..self.config.compaction_workers_count {
-    //     //     self.spawn_compaction_worker()?;
-    //     // }
-
-    //     self.spawn_monitor_thread()
-    // }
-
+    // TODO: 3.0.0 restore
     /// Destroys the keyspace, removing all data associated with it.
     ///
     /// The keyspace folder will not be deleted until all references to it are dropped,
@@ -452,7 +411,7 @@ impl Database {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[doc(hidden)] // TODO: 3.0.0 restore
+    #[doc(hidden)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
 
@@ -464,11 +423,6 @@ impl Database {
         self.supervisor
             .compaction_manager
             .remove_keyspace(&handle.name);
-
-        // self.flush_manager
-        //     .write()
-        //     .expect("lock is poisoned")
-        //     .remove_keyspace(handle.id);
 
         Ok(())
     }
@@ -627,10 +581,6 @@ impl Database {
             visible_seqno.clone(),
         );
 
-        // let flush_manager = Arc::new(RwLock::new(FlushManager::new()));
-
-        // let flush_manager = FlushNewManager::new();
-
         let supervisor = Supervisor::new(SupervisorInner {
             flush_manager: FlushNewManager::new(),
             write_buffer_size: WriteBufferManager::default(),
@@ -641,17 +591,12 @@ impl Database {
 
         let stats = Arc::<Stats>::default();
 
-        let (worker_pool, worker_messager) = WorkerPool::new(
-            // TODO: 3.0.0 remove flush_worker_count and compaction_worker_count, just do 1 count
-            config.flush_workers_count,
-            &supervisor,
-            &stats,
-        )?;
+        let (worker_pool, worker_messager) =
+            WorkerPool::new(config.worker_count, &supervisor, &stats)?;
 
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             supervisor,
-            // flush_manager,
             worker_pool,
             worker_messager,
             keyspace_id_counter: SequenceNumberCounter::new(1),
@@ -660,14 +605,9 @@ impl Database {
             journal: active_journal,
             keyspaces,
             visible_seqno,
-            // flush_manager,
-            // flush_semaphore: Arc::new(Semaphore::new(0)),
-            // compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
-            // write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
-            // snapshot_tracker,
             stats,
             lock_fd: lock_file,
         };
@@ -835,14 +775,8 @@ impl Database {
 
         let stats = Arc::<Stats>::default();
 
-        let (worker_pool, worker_messager) = WorkerPool::new(
-            // TODO: 3.0.0 remove flush_worker_count and compaction_worker_count, just do 1 count
-            config.flush_workers_count,
-            &supervisor,
-            &stats,
-        )?;
-
-        // let snapshot_tracker = ;
+        let (worker_pool, worker_messager) =
+            WorkerPool::new(config.worker_count, &supervisor, &stats)?;
 
         let inner = DatabaseInner {
             supervisor,
@@ -859,14 +793,9 @@ impl Database {
             journal,
             keyspaces,
             visible_seqno,
-            // flush_manager,
-            // flush_semaphore: Arc::new(Semaphore::new(0)),
-            // compaction_manager: CompactionManager::default(),
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_background_threads: Arc::default(),
-            // write_buffer_manager: WriteBufferManager::default(),
             is_poisoned: Arc::default(),
-            // snapshot_tracker,
             stats,
             lock_fd: lock_file,
         };
@@ -874,76 +803,11 @@ impl Database {
         Ok(Self(Arc::new(inner)))
     }
 
-    // fn spawn_monitor_thread(&self) -> crate::Result<()> {
-    //     const NAME: &str = "monitor";
-
-    //     let monitor = Monitor::new(self);
-
-    //     let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
-    //     let thread_counter = self.active_background_threads.clone();
-    //     let stop_signal = self.stop_signal.clone();
-
-    //     let worker = BackgroundWorker::new(monitor, poison_dart, thread_counter, stop_signal);
-
-    //     std::thread::Builder::new()
-    //         .name(NAME.into())
-    //         .spawn(move || {
-    //             worker.start();
-    //         })
-    //         .map(|_| ())
-    //         .map_err(Into::into)
-    // }
-
-    // fn spawn_compaction_worker(&self) -> crate::Result<()> {
-    //     const NAME: &str = "compactor";
-
-    //     struct Compactor {
-    //         manager: CompactionManager,
-    //         snapshot_tracker: SnapshotTracker,
-    //         stats: Arc<Stats>,
-    //     }
-
-    //     impl Activity for Compactor {
-    //         fn name(&self) -> &'static str {
-    //             NAME
-    //         }
-
-    //         fn run(&mut self) -> crate::Result<()> {
-    //             log::trace!("{:?}: waiting for work", self.name());
-    //             self.manager.wait_for();
-    //             crate::compaction::worker::run(&self.manager, &self.snapshot_tracker, &self.stats)?;
-    //             Ok(())
-    //         }
-    //     }
-
-    //     let compactor = Compactor {
-    //         manager: self.supervisor.compaction_manager.clone(),
-    //         snapshot_tracker: self.supervisor.snapshot_tracker.clone(),
-    //         stats: self.stats.clone(),
-    //     };
-
-    //     let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
-    //     let thread_counter = self.active_background_threads.clone();
-    //     let stop_signal = self.stop_signal.clone();
-
-    //     let worker = BackgroundWorker::new(compactor, poison_dart, thread_counter, stop_signal);
-
-    //     std::thread::Builder::new()
-    //         .name(NAME.into())
-    //         .spawn(move || {
-    //             worker.start();
-    //         })
-    //         .map(|_| ())
-    //         .map_err(Into::into)
-    // }
-
     /// Only used for internal testing.
     ///
     /// Should NOT be called when there is a flush worker active already!!!
     #[doc(hidden)]
     pub fn force_flush(&self) -> crate::Result<()> {
-        let parallelism = self.config.flush_workers_count;
-
         unimplemented!()
 
         // crate::flush::worker::run(
@@ -956,70 +820,6 @@ impl Database {
         //     &self.stats,
         // )
     }
-
-    // fn spawn_flush_worker(&self) -> crate::Result<()> {
-    //     const NAME: &str = "flusher";
-
-    //     struct Flusher {
-    //         parallelism: usize,
-    //         flush_semaphore: Arc<Semaphore>,
-    //         flush_manager: Arc<RwLock<FlushManager>>,
-    //         journal_manager: Arc<RwLock<JournalManager>>,
-    //         write_buffer_manager: WriteBufferManager,
-    //         compaction_manager: CompactionManager,
-    //         snapshot_tracker: SnapshotTracker,
-    //         stats: Arc<Stats>,
-    //     }
-
-    //     impl Activity for Flusher {
-    //         fn name(&self) -> &'static str {
-    //             NAME
-    //         }
-
-    //         fn run(&mut self) -> crate::Result<()> {
-    //             log::trace!("{:?}: waiting for work", self.name());
-
-    //             self.flush_semaphore.acquire();
-
-    //             crate::flush::worker::run(
-    //                 &self.flush_manager,
-    //                 &self.journal_manager,
-    //                 &self.compaction_manager,
-    //                 &self.write_buffer_manager,
-    //                 &self.snapshot_tracker,
-    //                 self.parallelism,
-    //                 &self.stats,
-    //             )?;
-
-    //             Ok(())
-    //         }
-    //     }
-
-    //     let flusher = Flusher {
-    //         flush_manager: self.flush_manager.clone(),
-    //         journal_manager: self.journal_manager.clone(),
-    //         compaction_manager: self.compaction_manager.clone(),
-    //         flush_semaphore: self.flush_semaphore.clone(),
-    //         write_buffer_manager: self.write_buffer_manager.clone(),
-    //         snapshot_tracker: self.snapshot_tracker.clone(),
-    //         stats: self.stats.clone(),
-    //         parallelism: self.config.flush_workers_count,
-    //     };
-
-    //     let poison_dart = PoisonDart::new(NAME, self.is_poisoned.clone());
-    //     let thread_counter = self.active_background_threads.clone();
-    //     let stop_signal = self.stop_signal.clone();
-
-    //     let worker = BackgroundWorker::new(flusher, poison_dart, thread_counter, stop_signal);
-
-    //     std::thread::Builder::new()
-    //         .name(NAME.into())
-    //         .spawn(move || {
-    //             worker.start();
-    //         })
-    //         .map(|_| ())
-    //         .map_err(Into::into)
-    // }
 }
 
 #[cfg(test)]
@@ -1085,7 +885,7 @@ mod tests {
             // IMPORTANT: We need to allocate enough flush workers
             // because on CI there may not be enough cores by default
             // so the result would be wrong
-            let config = Database::builder(&folder).flush_workers(16).into_config();
+            let config = Database::builder(&folder).worker_count(16).into_config();
             let db = Database::create_or_recover(config)?;
 
             let tree = db.keyspace("default", Default::default())?;

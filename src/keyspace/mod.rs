@@ -12,7 +12,7 @@ use crate::{
     db::Keyspaces,
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
-    flush::{manager::FlushManager, new_manager::FlushNewManager, Task as FlushTask},
+    flush::{new_manager::FlushNewManager, Task as FlushTask},
     journal::{
         manager::{EvictionWatermark, JournalManager},
         Journal,

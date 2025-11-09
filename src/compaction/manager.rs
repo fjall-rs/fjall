@@ -3,33 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::Keyspace;
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, sync::Mutex};
 use std_semaphore::Semaphore;
 
 // TODO: 3.0.0 use flume instead
-
-pub struct CompactionManagerInner {
-    keyspaces: Mutex<VecDeque<Keyspace>>,
-    semaphore: Semaphore,
-}
-
-impl Drop for CompactionManagerInner {
-    fn drop(&mut self) {
-        log::trace!("Dropping compaction manager");
-    }
-}
-
-impl Default for CompactionManagerInner {
-    fn default() -> Self {
-        Self {
-            keyspaces: Mutex::new(VecDeque::with_capacity(10)),
-            semaphore: Semaphore::new(0),
-        }
-    }
-}
 
 /// The compaction manager keeps track of which keyspaces
 /// have recently been flushed in a FIFO queue.
@@ -39,21 +16,30 @@ impl Default for CompactionManagerInner {
 ///
 /// The semaphore is incremented by the flush worker and optionally
 /// by the individual keyspaces in case of write halting.
-#[derive(Clone, Default)]
 #[allow(clippy::module_name_repetitions)]
-pub struct CompactionManager(Arc<CompactionManagerInner>);
+pub struct CompactionManager {
+    keyspaces: Mutex<VecDeque<Keyspace>>,
+    semaphore: Semaphore,
+}
 
-impl std::ops::Deref for CompactionManager {
-    type Target = CompactionManagerInner;
+impl Drop for CompactionManager {
+    fn drop(&mut self) {
+        log::trace!("Dropping compaction manager");
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Default for CompactionManager {
+    fn default() -> Self {
+        Self {
+            keyspaces: Mutex::new(VecDeque::with_capacity(10)),
+            semaphore: Semaphore::new(0),
+        }
     }
 }
 
 impl CompactionManager {
     pub fn len(&self) -> usize {
-        self.0.keyspaces.lock().expect("lock is poisoned").len()
+        self.keyspaces.lock().expect("lock is poisoned").len()
     }
 
     pub fn clear(&self) {

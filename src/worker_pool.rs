@@ -67,7 +67,7 @@ impl WorkerPoolInner {
                                 }
                                 Err(e) => {
                                     log::error!("Worker #{i} crashed: {e:?}");
-                                    // TODO: poison DB?
+                                    // TODO: poison DB
                                     return Err(e);
                                 }
                             }
@@ -112,9 +112,9 @@ struct WorkerState {
     worker_id: usize,
     supervisor: Supervisor,
     rx: flume::Receiver<WorkerMessage>,
+    sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
     lock: Arc<Mutex<()>>,
-    sender: flume::Sender<WorkerMessage>,
 }
 
 // TODO: 3.0.0 replace flume with simple Mutex Queue

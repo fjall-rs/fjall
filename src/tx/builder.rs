@@ -43,21 +43,19 @@ impl Builder {
         self
     }
 
-    /// Sets the amount of flush workers
+    /// Sets the number of worker threads
     ///
-    /// Default = # CPU cores
+    /// Default = min(# CPU cores, 4)
+    ///
+    /// # Panics
+    ///
+    /// Panics, if below 1.
     #[must_use]
-    pub fn flush_workers(mut self, n: usize) -> Self {
-        self.0 = self.0.flush_workers(n);
-        self
-    }
+    pub fn worker_count(mut self, n: usize) -> Self {
+        #[cfg(not(test))]
+        assert!(n > 0, "worker count must be at least 1");
 
-    /// Sets the amount of compaction workers
-    ///
-    /// Default = # CPU cores
-    #[must_use]
-    pub fn compaction_workers(mut self, n: usize) -> Self {
-        self.0 = self.0.compaction_workers(n);
+        self.0 = self.0.worker_count(n);
         self
     }
 

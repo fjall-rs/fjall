@@ -93,7 +93,6 @@ mod db_config;
 #[doc(hidden)]
 pub mod drop;
 
-mod background_worker;
 mod db;
 mod error;
 mod file;
