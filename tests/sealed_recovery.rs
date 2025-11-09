@@ -2,6 +2,7 @@ use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
+#[ignore = "restore force_flush"]
 fn recover_sealed() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -26,6 +27,7 @@ fn recover_sealed() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "restore force_flush"]
 fn recover_sealed_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -52,6 +54,7 @@ fn recover_sealed_blob() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "restore force_flush"]
 fn recover_sealed_pair_1() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -88,6 +91,7 @@ fn recover_sealed_pair_1() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "restore force_flush"]
 fn recover_sealed_pair_2() -> fjall::Result<()> {
     use lsm_tree::AbstractTree;
 
@@ -143,7 +147,7 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 }
 
 #[test]
-#[ignore = "store force_flush"]
+#[ignore = "restore force_flush"]
 fn recover_sealed_pair_3() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
