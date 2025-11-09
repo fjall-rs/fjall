@@ -61,7 +61,7 @@ impl Config {
     /// Creates a new configuration
     pub fn new(path: &Path) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
-        let worker_count = queried_cores.unwrap_or(1).min(4);
+        let worker_count = queried_cores.unwrap_or(1).min(DEFAULT_CPU_CORES);
 
         Self {
             path: absolute_path(path),

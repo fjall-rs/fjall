@@ -8,20 +8,17 @@ pub mod options;
 mod write_delay;
 
 use crate::{
-    compaction::manager::CompactionManager,
     db::Keyspaces,
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
-    flush::{new_manager::FlushNewManager, Task as FlushTask},
+    flush::Task as FlushTask,
     journal::{
         manager::{EvictionWatermark, JournalManager},
         Journal,
     },
-    snapshot_tracker::SnapshotTracker,
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::{WorkerMessage, WorkerPool},
-    write_buffer_manager::WriteBufferManager,
     Database, Guard,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
@@ -92,22 +89,7 @@ pub struct KeyspaceInner {
     pub(crate) db_config: DatabaseConfig,
 
     supervisor: Supervisor,
-    // flush_manager: FlushNewManager,
 
-    // /// Flush manager of database
-    // pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-
-    // // TODO: notifying flush worker should probably become a method in FlushManager
-    // /// Flush semaphore of database
-    // pub(crate) flush_semaphore: Arc<Semaphore>,
-
-    // /// Journal manager of database
-    // pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    /// Compaction manager of database
-    // pub(crate) compaction_manager: CompactionManager,
-
-    // /// Write buffer manager of database
-    // pub(crate) write_buffer_manager: WriteBufferManager,
     /// Journal of database
     pub(crate) journal: Arc<Journal>,
 
@@ -118,8 +100,6 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub visible_seqno: SequenceNumberCounter,
 
-    // /// Snapshot tracker
-    // pub(crate) snapshot_tracker: SnapshotTracker,
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
 
@@ -133,7 +113,7 @@ pub struct KeyspaceInner {
     // TODO: but then we need to make sure to install them in order
     flush_lock: Mutex<()>,
 
-    pub(crate) worker_pool: WorkerPool,
+    pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 }
 
@@ -280,17 +260,11 @@ impl Keyspace {
             tree,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            // flush_manager: db.flush_manager.clone(),
-            // flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            // journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
-            // compaction_manager: db.compaction_manager.clone(),
             visible_seqno: db.visible_seqno.clone(),
-            // write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            // snapshot_tracker: db.snapshot_tracker.clone(),
             config,
             stats: db.stats.clone(),
             flush_lock: Mutex::default(),
@@ -333,18 +307,12 @@ impl Keyspace {
             config,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            // flush_manager: db.flush_manager.clone(),
-            // flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            // journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
-            // compaction_manager: db.compaction_manager.clone(),
             visible_seqno: db.visible_seqno.clone(),
             tree,
-            // write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            // snapshot_tracker: db.snapshot_tracker.clone(),
             stats: db.stats.clone(),
             flush_lock: Mutex::default(),
         })))
@@ -762,15 +730,6 @@ impl Keyspace {
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
 
-        // log::trace!("keyspace: acquiring flush manager lock");
-        // let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
-
-        // flush_manager.enqueue_task(
-        //     self.id,
-
-        // );
-
-        // drop(flush_manager);
         drop(journal_manager);
         drop(journal);
 
