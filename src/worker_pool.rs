@@ -38,6 +38,7 @@ type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 pub struct WorkerPoolInner {
     thread_handles: Vec<WorkerHandle>,
     lock: Arc<Mutex<()>>,
+    pub(crate) rx: flume::Receiver<WorkerMessage>,
 }
 
 impl WorkerPoolInner {
@@ -101,6 +102,7 @@ impl WorkerPoolInner {
             Self {
                 thread_handles,
                 lock,
+                rx,
             },
             message_queue_sender,
         ))
@@ -182,7 +184,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             for _ in 0..4 {
                 ctx.supervisor
                     .compaction_manager
-                    .notify(task.keyspace.clone());
+                    .push(task.keyspace.clone());
             }
 
             ctx.sender

@@ -30,7 +30,6 @@ byteorder = { package = "byteorder-lite", version = "0.1.0" }
 byteview = "~0.8.0"
 lsm-tree = { version = "3.0.0-pre.5", default-features = false, features = [] }
 log = "0.4.27"
-std-semaphore = "0.1.0"                                                      # TODO: 3.0.0 remove
 tempfile = "3.20.0"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }

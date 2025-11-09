@@ -242,7 +242,7 @@ impl Keyspace {
                 &self.visible_seqno,
             )
             .inspect(|()| {
-                self.supervisor.compaction_manager.notify(self.clone());
+                self.supervisor.compaction_manager.push(self.clone());
             })
             .map_err(Into::into)
     }

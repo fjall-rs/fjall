@@ -4,7 +4,6 @@
 
 use crate::Keyspace;
 use std::{collections::VecDeque, sync::Mutex};
-use std_semaphore::Semaphore;
 
 // TODO: 3.0.0 use flume instead
 
@@ -19,7 +18,6 @@ use std_semaphore::Semaphore;
 #[allow(clippy::module_name_repetitions)]
 pub struct CompactionManager {
     keyspaces: Mutex<VecDeque<Keyspace>>,
-    semaphore: Semaphore,
 }
 
 impl Drop for CompactionManager {
@@ -32,7 +30,6 @@ impl Default for CompactionManager {
     fn default() -> Self {
         Self {
             keyspaces: Mutex::new(VecDeque::with_capacity(10)),
-            semaphore: Semaphore::new(0),
         }
     }
 }
@@ -51,22 +48,15 @@ impl CompactionManager {
         lock.retain(|x| &*x.name != name);
     }
 
-    pub fn wait_for(&self) {
-        self.semaphore.acquire();
-    }
-
-    pub fn notify(&self, keyspace: Keyspace) {
-        let mut lock = self.keyspaces.lock().expect("lock is poisoned");
-        lock.push_back(keyspace);
-        self.semaphore.release();
-    }
-
-    pub fn notify_empty(&self) {
-        self.semaphore.release();
-    }
-
     pub fn pop(&self) -> Option<Keyspace> {
         let mut lock = self.keyspaces.lock().expect("lock is poisoned");
         lock.pop_front()
+    }
+
+    pub fn push(&self, keyspace: Keyspace) {
+        self.keyspaces
+            .lock()
+            .expect("lock is poisoned")
+            .push_back(keyspace);
     }
 }
