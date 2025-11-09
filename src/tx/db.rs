@@ -72,7 +72,7 @@ impl TxDatabase {
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self.oracle.write_serialize_lock()?;
 
-            self.inner.snapshot_tracker.open()
+            self.inner.supervisor.snapshot_tracker.open()
         };
 
         let mut write_tx = WriteTransaction::new(self.clone(), snapshot);
@@ -197,7 +197,7 @@ impl TxDatabase {
             #[cfg(feature = "ssi_tx")]
             oracle: Arc::new(Oracle {
                 write_serialize_lock: Mutex::default(),
-                snapshot_tracker: inner.snapshot_tracker.clone(),
+                snapshot_tracker: inner.supervisor.snapshot_tracker.clone(),
             }),
             inner,
             #[cfg(feature = "single_writer_tx")]
