@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 pub mod manager;
-pub mod queue;
 pub mod task;
 pub mod worker;
 
