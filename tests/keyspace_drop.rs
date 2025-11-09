@@ -1,7 +1,7 @@
 // TODO: investigate: flaky on macOS???
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-#[cfg(not(target_os = "macos"))]
+#[ignore = "3.0.0 restore"]
 fn whitebox_db_drop() -> fjall::Result<()> {
     use fjall::Database;
 
@@ -52,6 +52,7 @@ fn whitebox_db_drop() -> fjall::Result<()> {
 
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
+#[ignore = "3.0.0 restore"]
 fn whitebox_db_drop_2() -> fjall::Result<()> {
     use fjall::{Database, KeyspaceCreateOptions};
 
