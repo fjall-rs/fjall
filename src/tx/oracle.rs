@@ -1,11 +1,8 @@
-use crate::snapshot_tracker::SnapshotTracker;
-use crate::Instant;
-
 use super::conflict_manager::ConflictManager;
-use lsm_tree::SequenceNumberCounter;
+use crate::snapshot_tracker::SnapshotTracker;
+use crate::SeqNo;
 use std::collections::BTreeMap;
-use std::fmt;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 pub enum CommitOutcome<E> {
     Ok,
@@ -15,7 +12,6 @@ pub enum CommitOutcome<E> {
 
 pub struct Oracle {
     pub(super) write_serialize_lock: Mutex<BTreeMap<u64, ConflictManager>>,
-    pub(super) seqno: SequenceNumberCounter,
     pub(super) snapshot_tracker: SnapshotTracker,
 }
 
@@ -23,7 +19,7 @@ impl Oracle {
     #[allow(clippy::nursery)]
     pub(super) fn with_commit<E, F: FnOnce() -> Result<(), E>>(
         &self,
-        instant: Instant,
+        instant: SeqNo,
         conflict_checker: ConflictManager,
         f: F,
     ) -> crate::Result<CommitOutcome<E>> {
@@ -32,7 +28,7 @@ impl Oracle {
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        // If the committed_txn.ts is less than Instant that implies that the
+        // If the committed_txn.ts is less than `SeqNo` that implies that the
         // committed_txn finished before the current transaction started.
         // We don't need to check for conflict in that case.
         // This change assumes linearizability. Lack of linearizability could
@@ -45,7 +41,7 @@ impl Oracle {
                     conflict_checker.has_conflict(other_conflict_checker)
                 });
 
-        self.snapshot_tracker.close(instant);
+        self.snapshot_tracker.close_raw(instant);
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 
@@ -57,14 +53,14 @@ impl Oracle {
             return Ok(CommitOutcome::Aborted(e));
         }
 
-        committed_txns.insert(self.seqno.get(), conflict_checker);
+        committed_txns.insert(self.snapshot_tracker.get(), conflict_checker);
 
         Ok(CommitOutcome::Ok)
     }
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> crate::Result<MutexGuard<BTreeMap<u64, ConflictManager>>> {
+    ) -> crate::Result<MutexGuard<'_, BTreeMap<u64, ConflictManager>>> {
         self.write_serialize_lock
             .lock()
             .map_err(|_| crate::Error::Poisoned)
@@ -73,34 +69,34 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Config, PartitionCreateOptions, TxKeyspace, TxPartitionHandle};
+    use crate::{KeyspaceCreateOptions, TxDatabase, TxKeyspace};
 
     #[allow(clippy::unwrap_used)]
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
-        let ks = Config::new(tmpdir.path()).open_transactional()?;
+        let db = TxDatabase::builder(tmpdir.path()).open()?;
 
-        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
+        let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
         for _ in 0..250 {
-            run_tx(&ks, &part).unwrap();
+            run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         for _ in 0..200 {
-            run_tx(&ks, &part).unwrap();
+            run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(ks.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
 
         Ok(())
     }
 
-    fn run_tx(ks: &TxKeyspace, part: &TxPartitionHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let mut tx1 = ks.write_tx()?;
-        let mut tx2 = ks.write_tx()?;
+    fn run_tx(db: &TxDatabase, part: &TxKeyspace) -> Result<(), Box<dyn std::error::Error>> {
+        let mut tx1 = db.write_tx()?;
+        let mut tx2 = db.write_tx()?;
         tx1.insert(part, "hello", "world");
 
         tx1.commit()??;

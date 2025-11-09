@@ -44,14 +44,14 @@ impl<A: Activity> BackgroundWorker<A> {
         loop {
             if self.stop_signal.is_stopped() {
                 log::trace!(
-                    "Background worker {:?} exiting because keyspace is dropping",
+                    "Background worker {:?} exiting because database is dropping",
                     self.activity.name(),
                 );
                 return;
             }
 
             if let Err(e) = self.activity.run() {
-                eprintln!("Background worker {:?} failed: {e:?}", self.activity.name());
+                log::error!("Background worker {:?} failed: {e:?}", self.activity.name());
                 self.poison_dart.poison();
                 return;
             }

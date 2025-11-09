@@ -1,4 +1,4 @@
-use fjall::Config;
+use fjall::Database;
 use test_log::test;
 
 #[test]
@@ -10,16 +10,16 @@ fn recover_from_different_folder() -> fjall::Result<()> {
     let folder = ".test/asd";
 
     {
-        let keyspace = Config::new(folder).open()?;
-        let partition = keyspace.open_partition("default", Default::default())?;
+        let db = Database::builder(folder).open()?;
+        let tree = db.keyspace("default", Default::default())?;
 
-        partition.insert("abc", "def")?;
-        partition.insert("wqewe", "def")?;
-        partition.insert("ewewq", "def")?;
-        partition.insert("asddas", "def")?;
-        partition.insert("ycxycx", "def")?;
-        partition.insert("asdsda", "def")?;
-        partition.insert("wewqe", "def")?;
+        tree.insert("abc", "def")?;
+        tree.insert("wqewe", "def")?;
+        tree.insert("ewewq", "def")?;
+        tree.insert("asddas", "def")?;
+        tree.insert("ycxycx", "def")?;
+        tree.insert("asdsda", "def")?;
+        tree.insert("wewqe", "def")?;
     }
 
     let absolute_folder = std::path::Path::new(folder).canonicalize()?;
@@ -28,7 +28,7 @@ fn recover_from_different_folder() -> fjall::Result<()> {
     std::env::set_current_dir(".test/def")?;
 
     for _ in 0..100 {
-        let _keyspace = Config::new(&absolute_folder)
+        let _db = Database::builder(&absolute_folder)
             .max_write_buffer_size(1_024 * 1_024)
             .open()?;
     }

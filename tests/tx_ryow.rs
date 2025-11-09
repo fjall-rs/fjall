@@ -1,15 +1,15 @@
 #[test_log::test]
 #[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
-    use fjall::{Config, PartitionCreateOptions};
+    use fjall::{KeyspaceCreateOptions, TxDatabase};
 
     let folder = tempfile::tempdir()?;
 
-    let keyspace = Config::new(&folder).open_transactional()?;
+    let db = TxDatabase::builder(&folder).open()?;
 
-    let tree = keyspace.open_partition("default", PartitionCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
-    let mut tx = keyspace.write_tx();
+    let mut tx = db.write_tx();
 
     assert!(!tx.contains_key(&tree, "a")?);
 

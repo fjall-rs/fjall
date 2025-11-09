@@ -1,6 +1,6 @@
 // Regression test for https://github.com/fjall-rs/fjall/issues/68
 
-use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 
 #[test_log::test]
 fn journal_recover_large_value() -> fjall::Result<()> {
@@ -9,17 +9,17 @@ fn journal_recover_large_value() -> fjall::Result<()> {
     let large_value = "a".repeat(128_000);
 
     {
-        let keyspace = Config::new(&folder).open()?;
-        let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-        partition.insert("a", &large_value)?;
-        partition.insert("b", "b")?;
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        tree.insert("a", &large_value)?;
+        tree.insert("b", "b")?;
     }
 
     {
-        let keyspace = Config::new(&folder).open()?;
-        let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-        assert_eq!(large_value.as_bytes(), &*partition.get("a")?.unwrap());
-        assert_eq!(b"b", &*partition.get("b")?.unwrap());
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        assert_eq!(large_value.as_bytes(), &*tree.get("a")?.unwrap());
+        assert_eq!(b"b", &*tree.get("b")?.unwrap());
     }
 
     Ok(())
@@ -32,23 +32,23 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
     let large_value = "a".repeat(128_000);
 
     {
-        let keyspace = Config::new(&folder).open()?;
-        let partition = keyspace.open_partition(
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace(
             "default",
-            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+            KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        partition.insert("a", &large_value)?;
-        partition.insert("b", "b")?;
+        tree.insert("a", &large_value)?;
+        tree.insert("b", "b")?;
     }
 
     {
-        let keyspace = Config::new(&folder).open()?;
-        let partition = keyspace.open_partition(
+        let db = Database::builder(&folder).open()?;
+        let tree = db.keyspace(
             "default",
-            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+            KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
-        assert_eq!(large_value.as_bytes(), &*partition.get("a")?.unwrap());
-        assert_eq!(b"b", &*partition.get("b")?.unwrap());
+        assert_eq!(large_value.as_bytes(), &*tree.get("a")?.unwrap());
+        assert_eq!(b"b", &*tree.get("b")?.unwrap());
     }
 
     Ok(())

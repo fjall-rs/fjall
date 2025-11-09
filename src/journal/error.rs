@@ -38,6 +38,9 @@ pub enum RecoveryError {
 
     /// The checksum value does not match the expected value
     ChecksumMismatch,
+
+    /// An unparseable journal file name was encountered
+    InvalidFileName,
 }
 
 impl std::fmt::Display for RecoveryError {

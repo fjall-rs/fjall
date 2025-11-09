@@ -1,22 +1,22 @@
-use fjall::{Config, KvSeparationOptions, PartitionCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
 fn batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let keyspace = Config::new(folder).open()?;
-    let partition = keyspace.open_partition("default", PartitionCreateOptions::default())?;
-    let mut batch = keyspace.batch();
+    let db = Database::builder(&folder).open()?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let mut batch = db.batch();
 
-    assert_eq!(partition.len()?, 0);
-    batch.insert(&partition, "1", "abc");
-    batch.insert(&partition, "3", "abc");
-    batch.insert(&partition, "5", "abc");
-    assert_eq!(partition.len()?, 0);
+    assert_eq!(tree.len()?, 0);
+    batch.insert(&tree, "1", "abc");
+    batch.insert(&tree, "3", "abc");
+    batch.insert(&tree, "5", "abc");
+    assert_eq!(tree.len()?, 0);
 
     batch.commit()?;
-    assert_eq!(partition.len()?, 3);
+    assert_eq!(tree.len()?, 3);
 
     Ok(())
 }
@@ -25,26 +25,26 @@ fn batch_simple() -> fjall::Result<()> {
 fn blob_batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let keyspace = Config::new(folder).open()?;
-    let partition = keyspace.open_partition(
+    let db = Database::builder(&folder).open()?;
+    let tree = db.keyspace(
         "default",
-        PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
     )?;
 
     let blob = "oxygen".repeat(128_000);
 
-    let mut batch = keyspace.batch();
+    let mut batch = db.batch();
 
-    assert_eq!(partition.len()?, 0);
-    batch.insert(&partition, "1", &blob);
-    batch.insert(&partition, "3", "abc");
-    batch.insert(&partition, "5", "abc");
-    assert_eq!(partition.len()?, 0);
+    assert_eq!(tree.len()?, 0);
+    batch.insert(&tree, "1", &blob);
+    batch.insert(&tree, "3", "abc");
+    batch.insert(&tree, "5", "abc");
+    assert_eq!(tree.len()?, 0);
 
     batch.commit()?;
-    assert_eq!(partition.len()?, 3);
+    assert_eq!(tree.len()?, 3);
 
-    assert_eq!(&*partition.get("1")?.unwrap(), blob.as_bytes());
+    assert_eq!(&*tree.get("1")?.unwrap(), blob.as_bytes());
 
     Ok(())
 }

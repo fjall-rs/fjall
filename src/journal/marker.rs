@@ -2,11 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{batch::PartitionKey, file::MAGIC_BYTES};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId, Slice};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
-    CompressionType, DecodeError, EncodeError, SeqNo, UserKey, UserValue, ValueType,
+    CompressionType, SeqNo, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
 
@@ -24,42 +24,60 @@ pub enum Marker {
     Start {
         item_count: u32,
         seqno: SeqNo,
-        compression: CompressionType,
     },
     Item {
-        partition: PartitionKey,
+        keyspace_id: InternalKeyspaceId,
         key: UserKey,
         value: UserValue,
         value_type: ValueType,
+        compression: CompressionType,
     },
     End(u64),
 }
 
 pub fn serialize_marker_item<W: Write>(
     writer: &mut W,
-    partition: &str,
+    keyspace_id: InternalKeyspaceId,
     key: &[u8],
     value: &[u8],
     value_type: ValueType,
-) -> Result<(), EncodeError> {
+    compression: CompressionType,
+) -> Result<(), lsm_tree::Error> {
     writer.write_u8(Tag::Item.into())?;
 
     writer.write_u8(u8::from(value_type))?;
 
-    // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
-    writer.write_u8(partition.len() as u8)?;
-    writer.write_all(partition.as_bytes())?;
+    compression.encode_into(writer)?;
+
+    let compressed_value = match compression {
+        CompressionType::None => std::borrow::Cow::Borrowed(value),
+
+        #[cfg(feature = "lz4")]
+        CompressionType::Lz4 => {
+            let compressed = lz4_flex::compress(value);
+            std::borrow::Cow::Owned(compressed)
+        }
+    };
 
     // NOTE: Truncation is okay and actually needed
     #[allow(clippy::cast_possible_truncation)]
-    writer.write_u16::<BigEndian>(key.len() as u16)?;
+    writer.write_u64::<LittleEndian>(keyspace_id)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u16::<LittleEndian>(key.len() as u16)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u32::<LittleEndian>(value.len() as u32)?;
+
+    // NOTE: Truncation is okay and actually needed
+    #[allow(clippy::cast_possible_truncation)]
+    writer.write_u32::<LittleEndian>(compressed_value.len() as u32)?;
+
     writer.write_all(key)?;
 
-    // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
-    writer.write_u32::<BigEndian>(value.len() as u32)?;
-    writer.write_all(value)?;
+    writer.write_all(&compressed_value)?;
 
     Ok(())
 }
@@ -71,7 +89,7 @@ pub enum Tag {
 }
 
 impl TryFrom<u8> for Tag {
-    type Error = DecodeError;
+    type Error = lsm_tree::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use Tag::{End, Item, Start};
@@ -80,7 +98,7 @@ impl TryFrom<u8> for Tag {
             1 => Ok(Start),
             2 => Ok(Item),
             3 => Ok(End),
-            _ => Err(DecodeError::InvalidTag(("JournalMarkerTag", value))),
+            _ => Err(lsm_tree::Error::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -92,31 +110,27 @@ impl From<Tag> for u8 {
 }
 
 impl Encode for Marker {
-    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), EncodeError> {
+    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), lsm_tree::Error> {
         use Marker::{End, Item, Start};
 
         match self {
-            Start {
-                item_count,
-                seqno,
-                compression,
-            } => {
+            Start { item_count, seqno } => {
                 writer.write_u8(Tag::Start.into())?;
-                writer.write_u32::<BigEndian>(*item_count)?;
-                writer.write_u64::<BigEndian>(*seqno)?;
-                compression.encode_into(writer)?;
+                writer.write_u32::<LittleEndian>(*item_count)?;
+                writer.write_u64::<LittleEndian>(*seqno)?;
             }
             Item {
-                partition,
+                keyspace_id,
                 key,
                 value,
                 value_type,
+                compression,
             } => {
-                serialize_marker_item(writer, partition, key, value, *value_type)?;
+                serialize_marker_item(writer, *keyspace_id, key, value, *value_type, *compression)?;
             }
             End(val) => {
                 writer.write_u8(Tag::End.into())?;
-                writer.write_u64::<BigEndian>(*val)?;
+                writer.write_u64::<LittleEndian>(*val)?;
 
                 // NOTE: Write some fixed trailer bytes so we know the end marker is fully written
                 // Otherwise we couldn't know if the checksum value is maybe mangled
@@ -129,63 +143,79 @@ impl Encode for Marker {
 }
 
 impl Decode for Marker {
-    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
+    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, lsm_tree::Error> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
-                let item_count = reader.read_u32::<BigEndian>()?;
-                let seqno = reader.read_u64::<BigEndian>()?;
-                let compression = CompressionType::decode_from(reader)?;
-
-                assert_eq!(
-                    compression,
-                    CompressionType::None,
-                    "invalid compression type"
-                );
-
-                Ok(Self::Start {
-                    item_count,
-                    seqno,
-                    compression,
-                })
+                let item_count = reader.read_u32::<LittleEndian>()?;
+                let seqno = reader.read_u64::<LittleEndian>()?;
+                Ok(Self::Start { item_count, seqno })
             }
             Tag::Item => {
                 let value_type = reader.read_u8()?;
                 let value_type = value_type
                     .try_into()
-                    .map_err(|()| DecodeError::InvalidTag(("ValueType", value_type)))?;
+                    .map_err(|()| lsm_tree::Error::InvalidTag(("ValueType", value_type)))?;
 
-                // Read partition key
-                let partition_len = reader.read_u8()?;
-                let mut partition = vec![0; partition_len.into()];
-                reader.read_exact(&mut partition)?;
-                let partition = std::str::from_utf8(&partition)?;
+                let compression = CompressionType::decode_from(reader)?;
 
-                // Read key
-                let key_len = reader.read_u16::<BigEndian>()?;
-                let mut key = vec![0; key_len.into()];
-                reader.read_exact(&mut key)?;
+                // Read keyspace ID
+                let keyspace_id = reader.read_u64::<LittleEndian>()?;
 
-                // Read value
-                let value_len = reader.read_u32::<BigEndian>()?;
-                let mut value = vec![0; value_len as usize];
-                reader.read_exact(&mut value)?;
+                // Read key len
+                let key_len = reader.read_u16::<LittleEndian>()?;
+
+                // Read real value size
+                let value_len = reader.read_u32::<LittleEndian>()?;
+
+                // Read on-disk value size
+                let on_disk_value_len = reader.read_u32::<LittleEndian>()?;
+
+                let key = Slice::from_reader(reader, usize::from(key_len))?;
+
+                let value = match compression {
+                    CompressionType::None => {
+                        debug_assert_eq!(value_len, on_disk_value_len);
+                        Slice::from_reader(reader, on_disk_value_len as usize)?
+                    }
+
+                    #[cfg(feature = "lz4")]
+                    CompressionType::Lz4 => {
+                        let compressed_value =
+                            Slice::from_reader(reader, on_disk_value_len as usize)?;
+
+                        #[warn(unsafe_code)]
+                        let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
+
+                        // TODO: 3.0.0 change result type to crate::Result
+                        let size = lz4_flex::decompress_into(&compressed_value, &mut value)
+                            .expect("should decompress");
+
+                        if size != value.len() {
+                            log::error!("Decompressed size does not match expected value size");
+                            return Err(lsm_tree::Error::Decompress(CompressionType::Lz4));
+                        }
+
+                        Slice::from(value.freeze())
+                    }
+                };
 
                 Ok(Self::Item {
-                    partition: partition.into(),
-                    key: key.into(),
-                    value: value.into(),
+                    keyspace_id,
+                    key,
+                    value,
                     value_type,
+                    compression,
                 })
             }
             Tag::End => {
-                let checksum = reader.read_u64::<BigEndian>()?;
+                let checksum = reader.read_u64::<LittleEndian>()?;
 
                 // Check trailer
                 let mut magic = [0u8; MAGIC_BYTES.len()];
                 reader.read_exact(&mut magic)?;
 
                 if magic != MAGIC_BYTES {
-                    return Err(DecodeError::InvalidTrailer);
+                    return Err(lsm_tree::Error::InvalidTrailer);
                 }
 
                 Ok(Self::End(checksum))
@@ -202,10 +232,11 @@ mod tests {
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
         let item = Marker::Item {
-            partition: "default".into(),
+            keyspace_id: 0,
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
             value_type: ValueType::Value,
+            compression: CompressionType::None,
         };
 
         let serialized_data = item.encode_into_vec();
@@ -228,7 +259,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DecodeError::Io(error) => match error.kind() {
+                lsm_tree::Error::Io(e) => match e.kind() {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
@@ -248,7 +279,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                DecodeError::InvalidTag(("JournalMarkerTag", 4)) => {}
+                lsm_tree::Error::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }

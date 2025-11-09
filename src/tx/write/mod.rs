@@ -9,11 +9,10 @@ pub mod single_writer;
 pub mod ssi;
 
 use crate::{
-    batch::{item::Item, PartitionKey},
-    snapshot_nonce::SnapshotNonce,
-    Batch, HashMap, PersistMode, TxKeyspace, TxPartitionHandle,
+    batch::item::Item, keyspace::InternalKeyspaceId, snapshot_nonce::SnapshotNonce, HashMap,
+    PersistMode, TxDatabase, TxKeyspace, WriteBatch,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, Guard, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
 
 fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
@@ -24,34 +23,42 @@ fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
     }
 }
 
-/// A single-writer (serialized) cross-partition transaction
+/// A single-writer (serialized) cross-keyspace transaction
 ///
-/// Use [`WriteTransaction::commit`] to commit changes to the keyspace.
+/// Use [`WriteTransaction::commit`] to commit changes to the database.
 ///
 /// Drop the transaction to rollback changes.
 pub(super) struct BaseTransaction {
-    /// Keyspace to work with
-    pub(super) keyspace: TxKeyspace,
+    /// Database to work with
+    pub(super) db: TxDatabase,
 
     /// Ephemeral transaction changes
     ///
     /// Used for RYOW (read-your-own-writes)
-    memtables: HashMap<PartitionKey, Arc<Memtable>>,
+    memtables: HashMap<InternalKeyspaceId, Arc<Memtable>>,
 
     /// The snapshot, for repeatable reads
     nonce: SnapshotNonce,
 
     /// Durability level used, see [`PersistMode`].
     durability: Option<PersistMode>,
+
+    /// Current sequence number
+    ///
+    /// The sequence number starts at 0b1000...0000 and is incremented with each write.
+    ///
+    /// This ensures that writes within the transaction are always newer than any existing data.
+    seqno: SeqNo,
 }
 
 impl BaseTransaction {
-    pub(crate) fn new(keyspace: TxKeyspace, nonce: SnapshotNonce) -> Self {
+    pub(crate) fn new(db: TxDatabase, nonce: SnapshotNonce) -> Self {
         Self {
-            keyspace,
+            db,
             memtables: HashMap::default(),
             nonce,
             durability: None,
+            seqno: 0x8000_0000_0000_0000,
         }
     }
 
@@ -69,10 +76,10 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn take<K: Into<UserKey>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        self.fetch_update(partition, key, |_| None)
+        self.fetch_update(keyspace, key, |_| None)
     }
 
     /// Atomically updates an item and returns the new value.
@@ -87,21 +94,21 @@ impl BaseTransaction {
         F: FnMut(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
-        let prev = self.get(partition, &key)?;
+        let prev = self.get(keyspace, &key)?;
         let updated = f(prev.as_ref());
 
         if let Some(value) = updated.clone() {
             // NOTE: Skip insert if the value hasn't changed
             if prev.as_ref() != Some(&value) {
-                self.insert(partition, key, value);
+                self.insert(keyspace, key, value);
             }
         } else if prev.is_some() {
-            self.remove(partition, key);
+            self.remove(keyspace, key);
         }
 
         Ok(updated)
@@ -119,21 +126,21 @@ impl BaseTransaction {
         F: FnMut(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
-        let prev = self.get(partition, &key)?;
+        let prev = self.get(keyspace, &key)?;
         let updated = f(prev.as_ref());
 
         if let Some(value) = updated {
             // NOTE: Skip insert if the value hasn't changed
             if prev.as_ref() != Some(&value) {
-                self.insert(partition, key, value);
+                self.insert(keyspace, key, value);
             }
         } else if prev.is_some() {
-            self.remove(partition, key);
+            self.remove(keyspace, key);
         }
 
         Ok(prev)
@@ -148,18 +155,18 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn get<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(ignore_tombstone_value(item).map(|x| x.value));
             }
         }
 
-        let res = partition.inner.snapshot_at(self.nonce.instant).get(key)?;
+        let res = keyspace.inner.tree.get(key, self.nonce.instant)?;
 
         Ok(res)
     }
@@ -173,21 +180,20 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn size_of<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<Option<u32>> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
+                // NOTE: Values are limited to u32 in lsm-tree
+                #[allow(clippy::cast_possible_truncation)]
                 return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
             }
         }
 
-        let res = partition
-            .inner
-            .snapshot_at(self.nonce.instant)
-            .size_of(key)?;
+        let res = keyspace.inner.tree.size_of(key, self.nonce.instant)?;
 
         Ok(res)
     }
@@ -199,21 +205,18 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn contains_key<K: AsRef<[u8]>>(
         &self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
     ) -> crate::Result<bool> {
         let key = key.as_ref();
 
-        if let Some(memtable) = self.memtables.get(&partition.inner.name) {
-            if let Some(item) = memtable.get(key, None) {
+        if let Some(memtable) = self.memtables.get(&keyspace.inner.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 return Ok(!item.key.is_tombstone());
             }
         }
 
-        let contains = partition
-            .inner
-            .snapshot_at(self.nonce.instant)
-            .contains_key(key)?;
+        let contains = keyspace.inner.tree.contains_key(key, self.nonce.instant)?;
 
         Ok(contains)
     }
@@ -224,12 +227,12 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn first_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
-        self.iter(partition).next().transpose()
+    pub(super) fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+        self.iter(keyspace)
+            .next()
+            .map(Guard::into_inner)
+            .transpose()
+            .map_err(Into::into)
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -238,27 +241,26 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn last_key_value(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> crate::Result<Option<KvPair>> {
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
-        self.iter(partition).next_back().transpose()
+    pub(super) fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
+        self.iter(keyspace)
+            .next_back()
+            .map(Guard::into_inner)
+            .transpose()
+            .map_err(Into::into)
     }
 
-    /// Scans the entire partition, returning the amount of items.
+    /// Scans the entire keyspace, returning the amount of items.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn len(&self, partition: &TxPartitionHandle) -> crate::Result<usize> {
+    pub(super) fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
         let mut count = 0;
 
-        // TODO: calling .iter will mark the partition as fully read, is that what we want?
-        let iter = self.iter(partition);
+        let iter = self.iter(keyspace);
 
-        for kv in iter {
-            let _ = kv?;
+        for guard in iter {
+            let _ = guard.key()?;
             count += 1;
         }
 
@@ -269,91 +271,49 @@ impl BaseTransaction {
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     #[must_use]
-    pub(super) fn iter(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
-            .inner
-            .tree
-            .iter(
-                Some(self.nonce.instant),
-                self.memtables.get(&partition.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Iterates over the transaction's state, returning keys only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub(super) fn keys(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserKey>> + 'static {
-        partition
-            .inner
-            .tree
-            .keys(Some(self.nonce.instant), None)
-            .map(|item| item.map_err(Into::into))
-    }
-
-    /// Iterates over the transaction's state, returning values only.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub(super) fn values(
-        &self,
-        partition: &TxPartitionHandle,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<UserValue>> + 'static {
-        partition
-            .inner
-            .tree
-            .values(Some(self.nonce.instant), None)
-            .map(|item| item.map_err(Into::into))
+    pub(super) fn iter<'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
+        keyspace.inner.tree.iter(
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.id).cloned(),
+        )
     }
 
     /// Iterates over a range of the transaction's state.
     ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     #[must_use]
-    pub(super) fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
-        &'b self,
-        partition: &'b TxPartitionHandle,
+    pub(super) fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
-            .inner
-            .tree
-            .range(
-                range,
-                Some(self.nonce.instant),
-                self.memtables.get(&partition.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K, R>> + 'a {
+        keyspace.inner.tree.range(
+            range,
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.id).cloned(),
+        )
     }
 
     /// Iterates over a prefixed set of the transaction's state.
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     #[must_use]
-    pub(super) fn prefix<'b, K: AsRef<[u8]> + 'b>(
-        &'b self,
-        partition: &'b TxPartitionHandle,
+    pub(super) fn prefix<'a, K: AsRef<[u8]> + 'a>(
+        &'a self,
+        keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = crate::Result<KvPair>> + 'static {
-        partition
-            .inner
-            .tree
-            .prefix(
-                prefix,
-                Some(self.nonce.instant),
-                self.memtables.get(&partition.inner.name).cloned(),
-            )
-            .map(|item| item.map_err(Into::into))
+    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K>> + 'a {
+        keyspace.inner.tree.prefix(
+            prefix,
+            self.nonce.instant,
+            self.memtables.get(&keyspace.inner.id).cloned(),
+        )
     }
 
-    /// Inserts a key-value pair into the partition.
+    /// Inserts a key-value pair into the keyspace.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
     /// Shorter keys and values result in better performance.
@@ -365,25 +325,24 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
-        partition: &TxPartitionHandle,
+        keyspace: &TxKeyspace,
         key: K,
         value: V,
     ) {
         // TODO: PERF: slow??
-        self.memtables
-            .entry(partition.inner.name.clone())
-            .or_default()
-            .insert(lsm_tree::InternalValue::from_components(
+        self.memtables.entry(keyspace.inner.id).or_default().insert(
+            lsm_tree::InternalValue::from_components(
                 key,
                 value,
-                // NOTE: Just take the max seqno, which should never be reached
-                // that way, the write is definitely always the newest
-                SeqNo::MAX,
+                self.seqno,
                 lsm_tree::ValueType::Value,
-            ));
+            ),
+        );
+
+        self.seqno += 1;
     }
 
-    /// Removes an item from the partition.
+    /// Removes an item from the keyspace.
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
@@ -391,20 +350,17 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn remove<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+    pub(super) fn remove<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
         // TODO: PERF: slow??
         self.memtables
-            .entry(partition.inner.name.clone())
+            .entry(keyspace.inner.id)
             .or_default()
-            .insert(lsm_tree::InternalValue::new_tombstone(
-                key,
-                // NOTE: Just take the max seqno, which should never be reached
-                // that way, the write is definitely always the newest
-                SeqNo::MAX,
-            ));
+            .insert(lsm_tree::InternalValue::new_tombstone(key, self.seqno));
+
+        self.seqno += 1;
     }
 
-    /// Removes an item from the partition, leaving behind a weak tombstone.
+    /// Removes an item from the keyspace, leaving behind a weak tombstone.
     ///
     /// The tombstone marker of this delete operation will vanish when it
     /// collides with its corresponding insertion.
@@ -417,17 +373,14 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, partition: &TxPartitionHandle, key: K) {
+    pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
         // TODO: PERF: slow??
         self.memtables
-            .entry(partition.inner.name.clone())
+            .entry(keyspace.inner.id)
             .or_default()
-            .insert(lsm_tree::InternalValue::new_weak_tombstone(
-                key,
-                // NOTE: Just take the max seqno, which should never be reached
-                // that way, the write is definitely always the newest
-                SeqNo::MAX,
-            ));
+            .insert(lsm_tree::InternalValue::new_weak_tombstone(key, self.seqno));
+
+        self.seqno += 1;
     }
 
     /// Commits the transaction.
@@ -441,12 +394,12 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        let mut batch = Batch::new(self.keyspace.inner).durability(self.durability);
+        let mut batch = WriteBatch::new(self.db.inner).durability(self.durability);
 
-        for (partition_key, memtable) in self.memtables {
+        for (keyspace_id, memtable) in self.memtables {
             for item in memtable.iter() {
                 batch.data.push(Item::new(
-                    partition_key.clone(),
+                    keyspace_id,
                     item.key.user_key.clone(),
                     item.value.clone(),
                     item.key.value_type,
@@ -470,44 +423,36 @@ impl BaseTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        snapshot_nonce::SnapshotNonce, Config, PartitionCreateOptions,
-        TransactionalPartitionHandle, TxKeyspace,
-    };
+    use crate::{KeyspaceCreateOptions, TxDatabase, TxKeyspace};
     use tempfile::TempDir;
 
     struct TestEnv {
-        ks: TxKeyspace,
-        part: TransactionalPartitionHandle,
+        db: TxDatabase,
+        tree: TxKeyspace,
 
         #[allow(unused)]
         tmpdir: TempDir,
     }
 
     fn setup() -> Result<TestEnv, Box<dyn std::error::Error>> {
-        let tmpdir = tempfile::tempdir()?;
-        let ks = Config::new(tmpdir.path()).open_transactional()?;
+        let tmpdir: TempDir = tempfile::tempdir()?;
+        let db = TxDatabase::builder(tmpdir.path()).open()?;
 
-        let part = ks.open_partition("foo", PartitionCreateOptions::default())?;
+        let tree = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
-        Ok(TestEnv { ks, part, tmpdir })
+        Ok(TestEnv { db, tree, tmpdir })
     }
 
     #[test]
     fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.part.insert([2u8], [20u8])?;
+        env.tree.insert([2u8], [20u8])?;
 
-        let mut tx = super::BaseTransaction::new(
-            env.ks.clone(),
-            SnapshotNonce::new(
-                env.ks.inner.instant(),
-                env.ks.inner.snapshot_tracker.clone(),
-            ),
-        );
+        let mut tx =
+            super::BaseTransaction::new(env.db.clone(), env.db.inner().snapshot_tracker.open());
 
-        let new = tx.update_fetch(&env.part, [2u8], |v| {
+        let new = tx.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));

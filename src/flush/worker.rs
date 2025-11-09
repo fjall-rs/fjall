@@ -4,39 +4,30 @@
 
 use super::manager::{FlushManager, Task};
 use crate::{
-    batch::PartitionKey, compaction::manager::CompactionManager, journal::manager::JournalManager,
-    snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
-    HashMap, PartitionHandle,
+    compaction::manager::CompactionManager, journal::manager::JournalManager,
+    keyspace::InternalKeyspaceId, snapshot_tracker::SnapshotTracker, stats::Stats,
+    write_buffer_manager::WriteBufferManager, HashMap, Keyspace,
 };
-use lsm_tree::{AbstractTree, Segment, SeqNo};
+use lsm_tree::{AbstractTree, BlobFile, SeqNo, Table};
 use std::sync::{Arc, RwLock};
 
-/// Flushes a single segment.
-fn run_flush_worker(task: &Arc<Task>, eviction_threshold: SeqNo) -> crate::Result<Option<Segment>> {
-    #[rustfmt::skip]
-    let segment = task.partition.tree.flush_memtable(
-        // IMPORTANT: Segment has to get the task ID
-        // otherwise segment ID and memtable ID will not line up
+/// Flushes a single table.
+fn run_flush_worker(
+    task: &Arc<Task>,
+    eviction_threshold: SeqNo,
+) -> crate::Result<Option<(Table, Option<BlobFile>)>> {
+    Ok(task.keyspace.tree.flush_memtable(
+        // IMPORTANT: Table has to get the task ID
+        // otherwise table ID and memtable ID will not line up
         task.id,
         &task.sealed_memtable,
         eviction_threshold,
-    );
-
-    // TODO: test this after a failed flush
-    if segment.is_err() {
-        // IMPORTANT: Need to decrement pending segments counter
-        if let crate::AnyTree::Blob(tree) = &task.partition.tree {
-            tree.pending_segments
-                .fetch_sub(1, std::sync::atomic::Ordering::Release);
-        }
-    }
-
-    Ok(segment?)
+    )?) // TODO: 3.0.0 opaque struct
 }
 
 struct MultiFlushResultItem {
-    partition: PartitionHandle,
-    created_segments: Vec<Segment>,
+    keyspace: Keyspace,
+    created_tables: Vec<(Table, Option<BlobFile>)>,
 
     /// Size sum of sealed memtables that have been flushed
     size: u64,
@@ -44,11 +35,11 @@ struct MultiFlushResultItem {
 
 type MultiFlushResults = Vec<crate::Result<MultiFlushResultItem>>;
 
-/// Distributes tasks of multiple partitions over multiple worker threads.
+/// Distributes tasks of multiple keyspaces over multiple worker threads.
 ///
-/// Each thread is responsible for the tasks of one partition.
+/// Each thread is responsible for the tasks of one keyspace.
 fn run_multi_flush(
-    partitioned_tasks: &HashMap<PartitionKey, Vec<Arc<Task>>>,
+    partitioned_tasks: &HashMap<InternalKeyspaceId, Vec<Arc<Task>>>,
     eviction_threshold: SeqNo,
 ) -> MultiFlushResults {
     log::debug!("spawning {} worker threads", partitioned_tasks.len());
@@ -57,26 +48,23 @@ fn run_multi_flush(
     #[allow(clippy::needless_collect)]
     let threads = partitioned_tasks
         .iter()
-        .map(|(partition_name, tasks)| {
-            let partition_name = partition_name.clone();
+        .map(|(keyspace_id, tasks)| {
+            let keyspace_id = *keyspace_id;
             let tasks = tasks.clone();
 
             std::thread::spawn(move || {
                 log::trace!(
-                    "flushing {} memtables for partition {partition_name:?}",
+                    "flushing {} memtables for keyspace {keyspace_id}",
                     tasks.len()
                 );
 
-                let partition = tasks
+                let keyspace = tasks
                     .first()
                     .expect("should always have at least one task")
-                    .partition
+                    .keyspace
                     .clone();
 
-                let memtables_size: u64 = tasks
-                    .iter()
-                    .map(|t| u64::from(t.sealed_memtable.size()))
-                    .sum();
+                let memtables_size: u64 = tasks.iter().map(|t| t.sealed_memtable.size()).sum();
 
                 // NOTE: Don't trust clippy
                 #[allow(clippy::needless_collect)]
@@ -87,14 +75,14 @@ fn run_multi_flush(
                     })
                     .collect::<Vec<_>>();
 
-                let created_segments = flush_workers
+                let created_tables = flush_workers
                     .into_iter()
                     .map(|t| t.join().expect("should join"))
                     .collect::<crate::Result<Vec<_>>>()?;
 
                 Ok(MultiFlushResultItem {
-                    partition,
-                    created_segments: created_segments.into_iter().flatten().collect(),
+                    keyspace,
+                    created_tables: created_tables.into_iter().flatten().collect(),
                     size: memtables_size,
                 })
             })
@@ -130,17 +118,36 @@ pub fn run(
         return Ok(());
     }
 
-    for result in run_multi_flush(&partitioned_tasks, snapshot_tracker.get_seqno_safe_to_gc()) {
+    let gc_watermark = snapshot_tracker.get_seqno_safe_to_gc();
+
+    for result in run_multi_flush(&partitioned_tasks, gc_watermark) {
         match result {
             Ok(MultiFlushResultItem {
-                partition,
-                created_segments,
+                keyspace,
+                created_tables,
                 size: memtables_size,
             }) => {
-                // IMPORTANT: Flushed segments need to be applied *atomically* into the tree
+                // TODO: 3.0.0 this should all be handled in lsm-tree
+                // TODO: by making the result of flushes an opaque struct
+                // TODO: and allowing to merge multiple flush results
+                //
+                let (created_tables, blob_files) = created_tables.into_iter().rev().fold(
+                    (vec![], vec![]),
+                    |(mut tables, mut blob_files), (sst, bf)| {
+                        tables.push(sst);
+                        blob_files.extend(bf);
+                        (tables, blob_files)
+                    },
+                );
+
+                // IMPORTANT: Flushed tables need to be applied *atomically* into the tree
                 // otherwise we could cover up an unwritten journal, which will result in data loss
-                if let Err(e) = partition.tree.register_segments(&created_segments) {
-                    log::error!("Failed to register segments: {e:?}");
+                if let Err(e) =
+                    keyspace
+                        .tree
+                        .register_tables(&created_tables, Some(&blob_files), None)
+                {
+                    log::error!("Failed to register tables: {e:?}");
                     return Err(e.into());
                 }
 
@@ -149,24 +156,24 @@ pub fn run(
 
                 log::debug!(
                     "Dequeuing flush tasks: {} => {}",
-                    partition.name,
-                    created_segments.len(),
+                    keyspace.name,
+                    created_tables.len(),
                 );
-                flush_manager.dequeue_tasks(partition.name.clone(), created_segments.len());
+                flush_manager.dequeue_tasks(keyspace.id, created_tables.len());
 
                 write_buffer_manager.free(memtables_size);
 
                 for _ in 0..parallelism {
-                    compaction_manager.notify(partition.clone());
+                    compaction_manager.notify(keyspace.clone());
                 }
 
                 stats
                     .flushes_completed
-                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(created_tables.len(), std::sync::atomic::Ordering::Relaxed);
 
-                partition
+                keyspace
                     .flushes_completed
-                    .fetch_add(created_segments.len(), std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(created_tables.len(), std::sync::atomic::Ordering::Relaxed);
             }
             Err(e) => {
                 log::error!("Flush error: {e:?}");
