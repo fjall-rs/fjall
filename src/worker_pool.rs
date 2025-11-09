@@ -3,13 +3,14 @@ use crate::{
     supervisor::Supervisor,
 };
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc, Mutex},
     thread::JoinHandle,
 };
 
 pub enum WorkerMessage {
     Flush,
     Compact,
+    Close,
 }
 
 impl std::fmt::Debug for WorkerMessage {
@@ -18,9 +19,9 @@ impl std::fmt::Debug for WorkerMessage {
             f,
             "{}",
             match self {
-                // Self::RotateMemtable(keyspace) => format!("Rotate({})", keyspace.name),
                 Self::Flush => "WorkerMessage:Flush",
                 Self::Compact => "WorkerMessage:Compact",
+                Self::Close => "WorkerMessage:Close",
             }
         )
     }
@@ -38,43 +39,59 @@ pub struct WorkerPoolInner {
 
 impl WorkerPoolInner {
     pub fn new(
-        thread_count: usize,
+        pool_size: usize,
         supervisor: &Supervisor,
         stats: &Arc<Stats>,
+        thread_counter: Arc<AtomicUsize>,
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
+        use std::sync::atomic::Ordering::Relaxed;
+
         let (message_queue_sender, rx) = flume::bounded(100_000);
         let lock = Arc::new(Mutex::default());
 
-        let thread_handles = (0..thread_count)
+        thread_counter.fetch_add(pool_size, Relaxed);
+
+        let thread_handles = (0..pool_size)
             .map(|i| {
-                log::debug!("Starting fjall worker thread #{i}");
-
-                let worker_state = WorkerState {
-                    worker_id: i,
-                    rx: rx.clone(),
-                    supervisor: supervisor.clone(),
-                    stats: stats.clone(),
-                    lock: lock.clone(),
-                    sender: message_queue_sender.clone(),
-                };
-
                 std::thread::Builder::new()
-                    .name("fjallworker".to_string())
-                    .spawn(move || {
-                        loop {
-                            match worker_tick(&worker_state) {
-                                Ok(should_abort) => {
-                                    if should_abort {
-                                        return Ok(());
+                    .name("fjall:worker".to_string())
+                    .spawn({
+                        log::debug!("Starting fjall worker thread #{i}");
+
+                        let worker_state = WorkerState {
+                            worker_id: i,
+                            rx: rx.clone(),
+                            supervisor: supervisor.clone(),
+                            stats: stats.clone(),
+                            lock: lock.clone(),
+                            sender: message_queue_sender.clone(),
+                        };
+
+                        let thread_counter = thread_counter.clone();
+
+                        move || {
+                            loop {
+                                match worker_tick(&worker_state) {
+                                    Ok(should_abort) => {
+                                        if should_abort {
+                                            log::debug!(
+                                                "Worker #{i} closes because DB is dropping"
+                                            );
+                                            thread_counter.fetch_sub(1, Relaxed);
+                                            return Ok(());
+                                        }
                                     }
-                                }
-                                Err(e) => {
-                                    log::error!("Worker #{i} crashed: {e:?}");
-                                    // TODO: poison DB
-                                    return Err(e);
+                                    Err(e) => {
+                                        log::error!("Worker #{i} crashed: {e:?}");
+                                        // TODO: poison DB
+                                        return Err(e);
+                                    }
                                 }
                             }
                         }
+                    })
+                    .inspect_err(|_| {
+                        thread_counter.fetch_sub(1, Relaxed);
                     })
             })
             .collect::<Result<_, _>>()?;
@@ -94,11 +111,13 @@ pub struct WorkerPool(Arc<WorkerPoolInner>);
 
 impl WorkerPool {
     pub fn new(
-        thread_count: usize,
+        pool_size: usize,
         supervisor: &Supervisor,
         stats: &Arc<Stats>,
+        thread_counter: Arc<AtomicUsize>,
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
-        let (inner, sender) = WorkerPoolInner::new(thread_count, supervisor, stats)?;
+        let (inner, sender) = WorkerPoolInner::new(pool_size, supervisor, stats, thread_counter)?;
+
         Ok((Self(Arc::new(inner)), sender))
     }
 }
@@ -130,13 +149,16 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         return Ok(true);
     };
 
-    // TODO: 3.0.0 handle stop signal
-
     log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
 
     match item {
+        WorkerMessage::Close => {
+            return Ok(true);
+        }
         WorkerMessage::Flush => {
-            let task = ctx.supervisor.flush_manager.dequeue();
+            let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
+                return Ok(false);
+            };
 
             // IMPORTANT: Lock the keyspace as long as we're doing the flush
             // to prevent a race condition that could install the tables out of order
