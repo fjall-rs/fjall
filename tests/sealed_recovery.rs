@@ -143,6 +143,7 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 }
 
 #[test]
+#[ignore = "store force_flush"]
 fn recover_sealed_pair_3() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 

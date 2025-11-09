@@ -803,6 +803,7 @@ impl Database {
         Ok(Self(Arc::new(inner)))
     }
 
+    // TODO: rename flush_and_wait
     /// Only used for internal testing.
     ///
     /// Should NOT be called when there is a flush worker active already!!!
@@ -815,7 +816,7 @@ impl Database {
         self.supervisor.flush_manager.wait_for_empty();
 
         // TODO: 3.0.0 should wait for flush COMPLETION
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(1));
 
         Ok(())
 
