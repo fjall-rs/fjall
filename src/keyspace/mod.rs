@@ -16,6 +16,7 @@ use crate::{
         manager::{EvictionWatermark, JournalManager},
         Journal,
     },
+    locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::{WorkerMessage, WorkerPool},
@@ -115,6 +116,8 @@ pub struct KeyspaceInner {
 
     pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
+
+    lock_file: LockedFileGuard,
 }
 
 impl Drop for KeyspaceInner {
@@ -268,6 +271,7 @@ impl Keyspace {
             config,
             stats: db.stats.clone(),
             flush_lock: Mutex::default(),
+            lock_file: db.lock_file.clone(),
         }))
     }
 
@@ -315,6 +319,7 @@ impl Keyspace {
             is_poisoned: db.is_poisoned.clone(),
             stats: db.stats.clone(),
             flush_lock: Mutex::default(),
+            lock_file: db.lock_file.clone(),
         })))
     }
 

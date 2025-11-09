@@ -101,6 +101,7 @@ mod guard;
 mod iter;
 mod journal;
 mod keyspace;
+mod locked_file;
 mod meta_keyspace;
 mod path;
 mod poison_dart;

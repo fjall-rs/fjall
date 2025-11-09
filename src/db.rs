@@ -10,6 +10,7 @@ use crate::{
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
+    locked_file::LockedFileGuard,
     meta_keyspace::MetaKeyspace,
     poison_dart::PoisonDart,
     recovery::{recover_keyspaces, recover_sealed_memtables},
@@ -24,7 +25,7 @@ use crate::{
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
-    fs::{remove_dir_all, File},
+    fs::remove_dir_all,
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
@@ -52,8 +53,6 @@ pub struct DatabaseInner {
     /// Current visible sequence number
     pub(crate) visible_seqno: SequenceNumberCounter,
 
-    // /// Caps write buffer size by flushing memtables to tables
-    // pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
     #[doc(hidden)]
     pub supervisor: Supervisor,
 
@@ -68,21 +67,21 @@ pub struct DatabaseInner {
 
     pub(crate) stats: Arc<Stats>,
 
-    // #[doc(hidden)]
-    // pub snapshot_tracker: SnapshotTracker,
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
     pub(crate) worker_pool: WorkerPool,
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
-    lock_fd: File,
+    pub(crate) lock_file: LockedFileGuard,
 }
 
 impl Drop for DatabaseInner {
     fn drop(&mut self) {
-        log::trace!("Dropping Database");
+        log::debug!("Dropping database");
 
         self.stop_signal.send();
+
+        let _ = self.worker_pool.rx.drain().count();
 
         while self
             .active_thread_counter
@@ -90,17 +89,11 @@ impl Drop for DatabaseInner {
             > 0
         {
             let _ = self.worker_messager.try_send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(100));
+            std::thread::sleep(std::time::Duration::from_micros(10));
         }
 
-        // TODO: 3.0.0
         // IMPORTANT: Break cyclic Arcs
-        // self.supervisor
-        //     .flush_manager
-        //     .write()
-        //     .expect("lock is poisoned")
-        //     .clear();
-
+        self.supervisor.flush_manager.clear();
         self.supervisor.compaction_manager.clear();
         self.keyspaces.write().expect("lock is poisoned").clear();
         self.supervisor
@@ -108,8 +101,6 @@ impl Drop for DatabaseInner {
             .write()
             .expect("lock is poisoned")
             .clear();
-
-        self.config.descriptor_table.clear();
 
         if self.config.clean_path_on_drop {
             log::info!(
@@ -123,11 +114,6 @@ impl Drop for DatabaseInner {
                     self.config.path.display()
                 );
             }
-        }
-
-        // Unlock for good measure
-        if let Err(e) = self.lock_fd.unlock() {
-            log::warn!("Failed to unlock lock file: {e}");
         }
 
         #[cfg(feature = "__internal_whitebox")]
@@ -534,11 +520,7 @@ impl Database {
         // Check version
         Self::check_version(&config.path)?;
 
-        let lock_file = File::open(config.path.join(LOCK_FILE))?;
-        lock_file.try_lock().map_err(|e| match e {
-            std::fs::TryLockError::Error(e) => crate::Error::Io(e),
-            std::fs::TryLockError::WouldBlock => crate::Error::Locked,
-        })?;
+        let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
 
         // TODO:
         // let recovery_mode = config.journal_recovery_mode;
@@ -614,7 +596,7 @@ impl Database {
             active_thread_counter,
             is_poisoned,
             stats,
-            lock_fd: lock_file,
+            lock_file,
         };
 
         let db = Self(Arc::new(inner));
@@ -727,11 +709,7 @@ impl Database {
 
         std::fs::create_dir_all(&config.path)?;
 
-        let lock_file = File::create_new(config.path.join(LOCK_FILE))?;
-        lock_file.try_lock().map_err(|e| match e {
-            std::fs::TryLockError::Error(e) => crate::Error::Io(e),
-            std::fs::TryLockError::WouldBlock => crate::Error::Locked,
-        })?;
+        let lock_file = LockedFileGuard::create_new(&config.path.join(LOCK_FILE))?;
 
         let journal_folder_path = &config.path;
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
@@ -811,7 +789,7 @@ impl Database {
             active_thread_counter,
             is_poisoned,
             stats,
-            lock_fd: lock_file,
+            lock_file,
         };
 
         Ok(Self(Arc::new(inner)))

@@ -20,6 +20,10 @@ impl FlushManager {
         }
     }
 
+    pub fn clear(&self) {
+        let _ = self.receiver.drain().count();
+    }
+
     pub fn wait_for_empty(&self) {
         while !self.receiver.is_empty() {
             std::thread::sleep(std::time::Duration::from_millis(10));
