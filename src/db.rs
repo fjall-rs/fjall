@@ -7,7 +7,7 @@ use crate::{
     compaction::manager::CompactionManager,
     db_config::Config,
     file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
-    flush::new_manager::FlushNewManager,
+    flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     meta_keyspace::MetaKeyspace,
@@ -582,7 +582,7 @@ impl Database {
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
-            flush_manager: FlushNewManager::new(),
+            flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(seqno),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
@@ -764,7 +764,7 @@ impl Database {
         let visible_seqno = SequenceNumberCounter::default();
 
         let supervisor = Supervisor::new(SupervisorInner {
-            flush_manager: FlushNewManager::new(),
+            flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(seqno.clone()),
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(

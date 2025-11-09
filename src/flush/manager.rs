@@ -5,12 +5,12 @@
 use crate::flush::Task;
 use std::sync::Arc;
 
-pub struct FlushNewManager {
+pub struct FlushManager {
     sender: flume::Sender<Arc<Task>>,
     receiver: flume::Receiver<Arc<Task>>,
 }
 
-impl FlushNewManager {
+impl FlushManager {
     pub fn new() -> Self {
         let (tx, rx) = flume::bounded(100_000);
 
