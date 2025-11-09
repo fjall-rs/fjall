@@ -11,6 +11,7 @@ use crate::{
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     meta_keyspace::MetaKeyspace,
+    poison_dart::PoisonDart,
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
@@ -588,11 +589,14 @@ impl Database {
         let active_thread_counter = Arc::<AtomicUsize>::default();
         let stats = Arc::<Stats>::default();
 
+        let is_poisoned = Arc::<AtomicBool>::default();
+
         let (worker_pool, worker_messager) = WorkerPool::new(
             config.worker_count,
             &supervisor,
             &stats,
-            active_thread_counter.clone(),
+            &active_thread_counter,
+            &PoisonDart::new(is_poisoned.clone()),
         )?;
 
         // Construct (empty) database, then fill back with keyspace data
@@ -608,7 +612,7 @@ impl Database {
             visible_seqno,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned: Arc::default(),
+            is_poisoned,
             stats,
             lock_fd: lock_file,
         };
@@ -783,11 +787,14 @@ impl Database {
         let active_thread_counter = Arc::<AtomicUsize>::default();
         let stats = Arc::<Stats>::default();
 
+        let is_poisoned = Arc::<AtomicBool>::default();
+
         let (worker_pool, worker_messager) = WorkerPool::new(
             config.worker_count,
             &supervisor,
             &stats,
-            active_thread_counter.clone(),
+            &active_thread_counter,
+            &PoisonDart::new(is_poisoned.clone()),
         )?;
 
         let inner = DatabaseInner {
@@ -802,7 +809,7 @@ impl Database {
             visible_seqno,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned: Arc::default(),
+            is_poisoned,
             stats,
             lock_fd: lock_file,
         };

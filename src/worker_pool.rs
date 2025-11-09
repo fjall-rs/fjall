@@ -1,5 +1,8 @@
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as flush_memtable, stats::Stats,
+    compaction::worker::run as run_compaction,
+    flush::worker::run as flush_memtable,
+    poison_dart::{self, PoisonDart},
+    stats::Stats,
     supervisor::Supervisor,
 };
 use std::{
@@ -42,7 +45,8 @@ impl WorkerPoolInner {
         pool_size: usize,
         supervisor: &Supervisor,
         stats: &Arc<Stats>,
-        thread_counter: Arc<AtomicUsize>,
+        thread_counter: &Arc<AtomicUsize>,
+        poison_dart: &PoisonDart,
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
         use std::sync::atomic::Ordering::Relaxed;
 
@@ -68,24 +72,21 @@ impl WorkerPoolInner {
                         };
 
                         let thread_counter = thread_counter.clone();
+                        let poison_dart = poison_dart.clone();
 
-                        move || {
-                            loop {
-                                match worker_tick(&worker_state) {
-                                    Ok(should_abort) => {
-                                        if should_abort {
-                                            log::debug!(
-                                                "Worker #{i} closes because DB is dropping"
-                                            );
-                                            thread_counter.fetch_sub(1, Relaxed);
-                                            return Ok(());
-                                        }
+                        move || loop {
+                            match worker_tick(&worker_state) {
+                                Ok(should_abort) => {
+                                    if should_abort {
+                                        log::debug!("Worker #{i} closes because DB is dropping");
+                                        thread_counter.fetch_sub(1, Relaxed);
+                                        return Ok(());
                                     }
-                                    Err(e) => {
-                                        log::error!("Worker #{i} crashed: {e:?}");
-                                        // TODO: poison DB
-                                        return Err(e);
-                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Worker #{i} crashed: {e:?}");
+                                    poison_dart.poison();
+                                    return Err(e);
                                 }
                             }
                         }
@@ -114,9 +115,11 @@ impl WorkerPool {
         pool_size: usize,
         supervisor: &Supervisor,
         stats: &Arc<Stats>,
-        thread_counter: Arc<AtomicUsize>,
+        thread_counter: &Arc<AtomicUsize>,
+        poison_dart: &PoisonDart,
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
-        let (inner, sender) = WorkerPoolInner::new(pool_size, supervisor, stats, thread_counter)?;
+        let (inner, sender) =
+            WorkerPoolInner::new(pool_size, supervisor, stats, thread_counter, poison_dart)?;
 
         Ok((Self(Arc::new(inner)), sender))
     }
