@@ -10,7 +10,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let db = Database::builder(&folder).worker_count(0).open()?;
+        let db = Database::builder(&folder)
+            .worker_count_unchecked(0)
+            .open()?;
 
         let keyspaces = &[
             db.keyspace("tree1", KeyspaceCreateOptions::default())?,
@@ -66,7 +68,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
     }
 
     for _ in 0..10 {
-        let db = Database::builder(&folder).worker_count(0).open()?;
+        let db = Database::builder(&folder)
+            .worker_count_unchecked(0)
+            .open()?;
 
         let keyspaces = &[
             db.keyspace("tree1", KeyspaceCreateOptions::default())?,
@@ -108,7 +112,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
     // NOTE: clippy bug
     #[allow(unused_assignments)]
     {
-        let db = Database::builder(&folder).worker_count(0).open()?;
+        let db = Database::builder(&folder)
+            .worker_count_unchecked(0)
+            .open()?;
 
         let keyspaces = &[
             db.keyspace("tree1", KeyspaceCreateOptions::default())?,
@@ -164,7 +170,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
     }
 
     for _ in 0..10 {
-        let db = Database::builder(&folder).worker_count(0).open()?;
+        let db = Database::builder(&folder)
+            .worker_count_unchecked(0)
+            .open()?;
 
         let keyspaces = &[
             db.keyspace("tree1", KeyspaceCreateOptions::default())?,

@@ -55,6 +55,12 @@ impl Builder {
         #[cfg(not(test))]
         assert!(n > 0, "worker count must be at least 1");
 
+        self.worker_count_unchecked(n)
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn worker_count_unchecked(mut self, n: usize) -> Self {
         self.0.worker_count = n;
         self
     }

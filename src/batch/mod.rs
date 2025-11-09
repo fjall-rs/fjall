@@ -181,7 +181,7 @@ impl Batch {
             // IMPORTANT: Check write buffer as well
             // Otherwise batch writes are never stalled/halted
             let write_buffer_size = self.db.supervisor.write_buffer_size.get();
-            keyspace.check_write_buffer_size(write_buffer_size);
+            // keyspace.check_write_buffer_size(write_buffer_size);
         }
 
         Ok(())

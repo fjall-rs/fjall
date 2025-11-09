@@ -20,6 +20,12 @@ impl FlushNewManager {
         }
     }
 
+    pub fn wait_for_empty(&self) {
+        while !self.receiver.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
     pub fn enqueue(&self, task: Arc<Task>) {
         self.sender.send(task).expect("3.0.0 handle error?");
     }

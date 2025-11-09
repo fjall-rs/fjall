@@ -679,12 +679,12 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        if self.rotate_memtable()? {
-            unimplemented!()
+        let watermark = self.flushes_completed();
 
-            // while  {
-            //     std::thread::sleep(std::time::Duration::from_millis(10));
-            // }
+        if self.rotate_memtable()? {
+            self.supervisor.flush_manager.wait_for_empty();
+
+            while self.flushes_completed() <= watermark {}
         }
 
         Ok(())
@@ -750,6 +750,19 @@ impl Keyspace {
         // TODO: we need a mechanism to prevent the version free list from getting too large
         // TODO: in a write only workload
         {
+            let current_seqno = self.supervisor.snapshot_tracker.get();
+            let gc_seqno_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+            // NOTE: If the difference between watermark is too large, and
+            // we never opened a snapshot, we need to pull the watermark up
+            //
+            // https://github.com/fjall-rs/fjall/discussions/85
+            if (current_seqno - gc_seqno_watermark) > 100
+                && self.supervisor.snapshot_tracker.len() == 0
+            {
+                self.supervisor.snapshot_tracker.pullup();
+            }
+
             self.supervisor.snapshot_tracker.gc();
         }
 
@@ -819,7 +832,7 @@ impl Keyspace {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
 
-            self.check_journal_size();
+            // self.check_journal_size();
         }
 
         self.check_write_stall();
@@ -965,8 +978,7 @@ impl Keyspace {
         let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
-
-        self.check_write_buffer_size(write_buffer_size);
+        // self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
     }
@@ -1039,7 +1051,7 @@ impl Keyspace {
         let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
-        self.check_write_buffer_size(write_buffer_size);
+        // self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
     }
@@ -1132,7 +1144,7 @@ impl Keyspace {
         let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
 
         self.check_memtable_overflow(memtable_size)?;
-        self.check_write_buffer_size(write_buffer_size);
+        // self.check_write_buffer_size(write_buffer_size);
 
         Ok(())
     }

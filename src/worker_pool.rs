@@ -28,6 +28,9 @@ impl std::fmt::Debug for WorkerMessage {
 
 type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 
+// TODO: 3.0.0 probably no Inner needed, just give messager to keyspaces
+// TODO: let DB own worker pool so it can consume it on drop
+
 pub struct WorkerPoolInner {
     thread_handles: Vec<WorkerHandle>,
     lock: Arc<Mutex<()>>,

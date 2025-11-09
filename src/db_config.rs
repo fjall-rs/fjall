@@ -67,7 +67,7 @@ impl Config {
             path: absolute_path(path),
             clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
-            max_write_buffer_size_in_bytes: /* 256 MiB */ 256 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_count,
             // journal_recovery_mode: RecoveryMode::default(),
