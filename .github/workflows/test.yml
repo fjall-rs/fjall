@@ -87,7 +87,7 @@ jobs:
           workspaces: >
             . -> target
       - name: Install cargo-all-features
-        run: cargo install --locked cargo-all-features
+        run: cargo install cargo-all-features
       - uses: taiki-e/install-action@nextest
       - name: Format
         run: cargo fmt --all -- --check
