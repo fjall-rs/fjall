@@ -781,52 +781,41 @@ impl Keyspace {
         Ok(true)
     }
 
-    fn check_journal_size(&self) {
-        loop {
-            let bytes = self
-                .supervisor
-                .journal_manager
-                .read()
-                .expect("lock is poisoned")
-                .disk_space_used();
-
-            if bytes <= self.db_config.max_journaling_size_in_bytes {
-                if bytes as f64 > self.db_config.max_journaling_size_in_bytes as f64 * 0.9 {
-                    log::info!(
-                        "keyspace: write stall because 90% journal threshold has been reached"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-
-                break;
-            }
-
-            log::info!(
-                "Write stall in keyspace {} because journal is too large",
-                self.name
-            );
-            std::thread::sleep(std::time::Duration::from_millis(50)); // TODO: maybe exponential backoff
-        }
-    }
-
     fn check_write_stall(&self) {
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
-            // self.supervisor.compaction_manager.notify(self.clone());
             perform_write_stall(l0_run_count);
+            self.check_write_halt();
         }
     }
 
     fn check_write_halt(&self) {
-        while self.tree.l0_run_count() >= 30 {
-            log::info!(
-                "Halting writes in keyspace {} until L0 is cleared up...",
-                self.name,
-            );
+        let start = std::time::Instant::now();
 
-            // self.supervisor.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(50));
+        while self.tree.l0_run_count() >= 30 {
+            std::thread::sleep(Duration::from_millis(10));
+
+            if start.elapsed() > std::time::Duration::from_secs(5) {
+                log::info!(
+                    "Halting writes for 5+ secs now because L0 of {:?} is still too full, starting to send compaction requests",
+                    self.name,
+                );
+
+                self.supervisor.compaction_manager.push(self.clone());
+                self.worker_messager.send(WorkerMessage::Compact).ok();
+                std::thread::sleep(Duration::from_millis(490));
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
+        }
+
+        while self.tree.sealed_memtable_count() >= 4 {
+            log::info!("Halting writes because we have 4+ sealed memtables queued up");
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 
@@ -836,42 +825,11 @@ impl Keyspace {
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
-
-            // self.check_journal_size();
         }
 
         self.check_write_stall();
-        self.check_write_halt();
 
         Ok(())
-    }
-
-    pub(crate) fn check_write_buffer_size(&self, initial_size: u64) {
-        let limit = self.db_config.max_write_buffer_size_in_bytes;
-
-        if initial_size > limit {
-            let p90_limit = (limit as f64) * 0.9;
-
-            loop {
-                let bytes = self.supervisor.write_buffer_size.get();
-
-                if bytes < limit {
-                    if bytes as f64 > p90_limit {
-                        log::info!(
-                            "keyspace: write stall because 90% write buffer threshold has been reached"
-                        );
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    break;
-                }
-
-                log::info!(
-                    "Write stall in keyspace {} because of write buffer saturation",
-                    self.name,
-                );
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
     }
 
     #[doc(hidden)]
