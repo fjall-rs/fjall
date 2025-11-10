@@ -37,7 +37,6 @@ dashmap = "6.0.1"
 xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.16"
 rand = "0.9.0"
@@ -48,8 +47,3 @@ half = "=2.4.0"
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
 skip_feature_sets = [["ssi_tx", "single_writer_tx"]]
-
-[[bench]]
-name = "lsmt"
-harness = false
-path = "benches/fjall.rs"
