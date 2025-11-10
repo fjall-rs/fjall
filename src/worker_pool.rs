@@ -185,11 +185,9 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 ctx.supervisor
                     .compaction_manager
                     .push(task.keyspace.clone());
-            }
 
-            ctx.sender
-                .try_send(WorkerMessage::Compact)
-                .expect("should work");
+                ctx.sender.try_send(WorkerMessage::Compact).ok();
+            }
 
             ctx.supervisor
                 .journal_manager
