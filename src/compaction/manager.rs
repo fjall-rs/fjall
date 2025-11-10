@@ -54,9 +54,10 @@ impl CompactionManager {
     }
 
     pub fn push(&self, keyspace: Keyspace) {
-        self.keyspaces
-            .lock()
-            .expect("lock is poisoned")
-            .push_back(keyspace);
+        let mut q = self.keyspaces.lock().expect("lock is poisoned");
+
+        if q.len() < 10_000 {
+            q.push_back(keyspace);
+        }
     }
 }

@@ -151,6 +151,7 @@ impl Database {
         Snapshot::new(self.supervisor.snapshot_tracker.open())
     }
 
+    /// Returns the number of tasks in the compaction queue.
     #[doc(hidden)]
     #[must_use]
     pub fn queued_compaction_tasks(&self) -> usize {
