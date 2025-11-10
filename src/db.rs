@@ -151,6 +151,12 @@ impl Database {
         Snapshot::new(self.supervisor.snapshot_tracker.open())
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn queued_compaction_tasks(&self) -> usize {
+        self.supervisor.compaction_manager.len()
+    }
+
     /// Creates a new database builder to create or open a database at `path`.
     pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder {
         crate::DatabaseBuilder::new(path.as_ref())

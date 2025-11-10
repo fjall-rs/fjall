@@ -51,7 +51,7 @@ impl WorkerPoolInner {
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
         use std::sync::atomic::Ordering::Relaxed;
 
-        let (message_queue_sender, rx) = flume::bounded(100_000);
+        let (message_queue_sender, rx) = flume::bounded(10_000);
         let lock = Arc::new(Mutex::default());
 
         thread_counter.fetch_add(pool_size, Relaxed);
