@@ -874,6 +874,12 @@ impl Keyspace {
         }
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn l0_table_count(&self) -> usize {
+        self.tree.level_table_count(0).unwrap_or_default()
+    }
+
     /// Number of tables (a.k.a. SST files) in the LSM-tree.
     #[doc(hidden)]
     #[must_use]
