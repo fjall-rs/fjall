@@ -1,9 +1,6 @@
 use crate::{
-    compaction::worker::run as run_compaction,
-    flush::worker::run as flush_memtable,
-    poison_dart::{self, PoisonDart},
-    stats::Stats,
-    supervisor::Supervisor,
+    compaction::worker::run as run_compaction, flush::worker::run as run_flush,
+    poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor,
 };
 use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -144,8 +141,6 @@ struct WorkerState {
     lock: Arc<Mutex<()>>,
 }
 
-// TODO: 3.0.0 replace flume with simple Mutex Queue
-
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     // NOTE: We need to lock to get serializable guarantees when looking at flushes of the same keyspace (FIFO)
     let lock = ctx.lock.lock().expect("lock is poisoned");
@@ -165,15 +160,11 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 return Ok(false);
             };
 
-            // IMPORTANT: Lock the keyspace as long as we're doing the flush
-            // to prevent a race condition that could install the tables out of order
-            let _flush_guard = task.keyspace.acquire_flush_lock();
-
             drop(lock);
 
             log::trace!("Performing flush for keyspace {:?}", task.keyspace.name);
 
-            flush_memtable(
+            run_flush(
                 &task,
                 &ctx.supervisor.write_buffer_size,
                 &ctx.supervisor.snapshot_tracker,

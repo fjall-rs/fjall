@@ -107,13 +107,6 @@ pub struct KeyspaceInner {
     /// Number of completed memtable flushes in this keyspace
     pub(crate) flushes_completed: AtomicUsize,
 
-    /// Prevents flushes to the same keyspace being performed in parallel to
-    /// prevent them being installed out of order
-    //
-    // TODO: May be improved in the future to allow parallel compactions
-    // TODO: but then we need to make sure to install them in order
-    flush_lock: Mutex<()>,
-
     pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
@@ -270,7 +263,6 @@ impl Keyspace {
             is_poisoned: db.is_poisoned.clone(),
             config,
             stats: db.stats.clone(),
-            flush_lock: Mutex::default(),
             lock_file: db.lock_file.clone(),
         }))
     }
@@ -318,7 +310,6 @@ impl Keyspace {
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
             stats: db.stats.clone(),
-            flush_lock: Mutex::default(),
             lock_file: db.lock_file.clone(),
         })))
     }
@@ -333,10 +324,6 @@ impl Keyspace {
     #[must_use]
     pub fn path(&self) -> &Path {
         self.tree.tree_config().path.as_path()
-    }
-
-    pub(crate) fn acquire_flush_lock(&self) -> MutexGuard<'_, ()> {
-        self.flush_lock.lock().expect("lock is poisoned")
     }
 
     /// Returns the disk space usage of this keyspace.
@@ -704,7 +691,7 @@ impl Keyspace {
         let mut journal = self.journal.get_writer();
 
         // Rotate memtable
-        let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
+        let Some(_) = self.tree.rotate_memtable() else {
             log::debug!("Got no sealed memtable, someone beat us to it");
             return Ok(false);
         };
@@ -739,9 +726,7 @@ impl Keyspace {
         drop(journal);
 
         self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
-            id: yanked_id,
             keyspace: self.clone(),
-            sealed_memtable: yanked_memtable,
         }));
 
         // TODO: 3.0.0 let supervisor handle this

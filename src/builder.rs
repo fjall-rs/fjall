@@ -51,7 +51,7 @@ impl Builder {
     ///
     /// Panics, if below 1.
     #[must_use]
-    pub fn worker_count(mut self, n: usize) -> Self {
+    pub fn worker_count(self, n: usize) -> Self {
         #[cfg(not(test))]
         assert!(n > 0, "worker count must be at least 1");
 
@@ -65,14 +65,21 @@ impl Builder {
         self
     }
 
-    /// Sets the upper limit for open file descriptors.
+    /// Sets the upper limit for cached file descriptors.
+    ///
+    /// # Note
+    ///
+    /// Setting to None is currently not supported.
     ///
     /// # Panics
     ///
-    /// Panics if n < 2.
+    /// Panics if n < 10 or `None`.
     #[must_use]
-    pub fn max_open_files(mut self, n: usize) -> Self {
-        assert!(n >= 2);
+    pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
+        assert!(n.is_some(), "Setting max_cached_files to None is currently not supported - see https://github.com/fjall-rs/lsm-tree/issues/195");
+
+        let n = n.expect("should be Some");
+        assert!(n >= 10);
 
         self.0.descriptor_table = Arc::new(DescriptorTable::new(n));
         self

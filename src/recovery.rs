@@ -194,7 +194,7 @@ pub fn recover_sealed_memtables(
                 continue;
             }
 
-            if let Some((memtable_id, sealed_memtable)) = tree.rotate_memtable() {
+            if let Some(sealed_memtable) = tree.rotate_memtable() {
                 assert_eq!(
                     Some(handle.lsn),
                     sealed_memtable.get_highest_seqno(),

@@ -59,14 +59,18 @@ impl Builder {
         self
     }
 
-    /// Sets the upper limit for open file descriptors.
+    /// Sets the upper limit for cached file descriptors.
+    ///
+    /// # Note
+    ///
+    /// Setting to None is currently not supported.
     ///
     /// # Panics
     ///
-    /// Panics if n < 2.
+    /// Panics if n < 10 or `None`.
     #[must_use]
-    pub fn max_open_files(mut self, n: usize) -> Self {
-        self.0 = self.0.max_open_files(n);
+    pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
+        self.0 = self.0.max_cached_files(n);
         self
     }
 
