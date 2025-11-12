@@ -27,11 +27,8 @@ pub fn run(
         .inspect_err(|e| {
             log::error!("Flush error: {e:?}");
         })? {
-        Some(result) => {
-            // TODO: 3.0.0 lsm-tree needs to give us number of bytes
-            todo!();
-
-            write_buffer_manager.free(0);
+        Some(flushed_bytes) => {
+            write_buffer_manager.free(flushed_bytes);
 
             stats
                 .flushes_completed

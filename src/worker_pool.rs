@@ -3,7 +3,7 @@ use crate::{
     poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor,
 };
 use std::{
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc},
     thread::JoinHandle,
 };
 
@@ -34,7 +34,6 @@ type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 
 pub struct WorkerPoolInner {
     thread_handles: Vec<WorkerHandle>,
-    lock: Arc<Mutex<()>>,
     pub(crate) rx: flume::Receiver<WorkerMessage>,
 }
 
@@ -49,7 +48,6 @@ impl WorkerPoolInner {
         use std::sync::atomic::Ordering::Relaxed;
 
         let (message_queue_sender, rx) = flume::bounded(10_000);
-        let lock = Arc::new(Mutex::default());
 
         thread_counter.fetch_add(pool_size, Relaxed);
 
@@ -65,7 +63,6 @@ impl WorkerPoolInner {
                             rx: rx.clone(),
                             supervisor: supervisor.clone(),
                             stats: stats.clone(),
-                            lock: lock.clone(),
                             sender: message_queue_sender.clone(),
                         };
 
@@ -95,14 +92,7 @@ impl WorkerPoolInner {
             })
             .collect::<Result<_, _>>()?;
 
-        Ok((
-            Self {
-                thread_handles,
-                lock,
-                rx,
-            },
-            message_queue_sender,
-        ))
+        Ok((Self { thread_handles, rx }, message_queue_sender))
     }
 }
 
@@ -138,13 +128,9 @@ struct WorkerState {
     rx: flume::Receiver<WorkerMessage>,
     sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
-    lock: Arc<Mutex<()>>,
 }
 
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
-    // NOTE: We need to lock to get serializable guarantees when looking at flushes of the same keyspace (FIFO)
-    let lock = ctx.lock.lock().expect("lock is poisoned");
-
     let Ok(item) = ctx.rx.recv() else {
         return Ok(true);
     };
@@ -159,8 +145,6 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
                 return Ok(false);
             };
-
-            drop(lock);
 
             log::trace!("Performing flush for keyspace {:?}", task.keyspace.name);
 
@@ -185,9 +169,18 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 .write()
                 .expect("lock is poisoned")
                 .maintenance()?;
+
+            eprintln!(
+                "compaction queue len: {}",
+                ctx.supervisor.compaction_manager.len(),
+            );
         }
         WorkerMessage::Compact => {
-            drop(lock);
+            // TODO: only do, if worker pool size > 1
+            if ctx.worker_id == 0 {
+                ctx.sender.send(item).ok();
+                return Ok(false);
+            }
 
             run_compaction(
                 &ctx.supervisor.compaction_manager,

@@ -734,7 +734,7 @@ impl Keyspace {
             .flushes_enqueued
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let _ = self.worker_messager.try_send(WorkerMessage::Flush);
+        self.worker_messager.send(WorkerMessage::Flush).ok();
 
         // TODO: 3.0.0 dirty monkey patch
         // TODO: we need a mechanism to prevent the version free list from getting too large
@@ -773,6 +773,63 @@ impl Keyspace {
             perform_write_stall(l0_run_count);
             self.check_write_halt();
         }
+
+        while self.tree.sealed_memtable_count() >= 4 {
+            log::debug!(
+                "Halting writes because we have 4+ sealed memtables in {:?} queued up",
+                self.name,
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        {
+            let start = std::time::Instant::now();
+
+            while self
+                .supervisor
+                .journal_manager
+                .read()
+                .expect("lock is poisoned")
+                .disk_space_used()
+                >= self.db_config.max_journaling_size_in_bytes
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                if start.elapsed() > std::time::Duration::from_secs(5) {
+                    log::debug!(
+                        "Halting writes for 5+ secs now because journal is still too large"
+                    );
+                    // TODO: notify?
+                    std::thread::sleep(Duration::from_millis(490));
+                }
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
+        }
+
+        {
+            let start = std::time::Instant::now();
+
+            while self.supervisor.write_buffer_size.get()
+                >= self.db_config.max_write_buffer_size_in_bytes
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                if start.elapsed() > std::time::Duration::from_secs(5) {
+                    log::debug!("Halting writes for 5+ secs now because database write buffer is still too large");
+                    // TODO: notify?
+                    std::thread::sleep(Duration::from_millis(490));
+                }
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
+        }
     }
 
     fn check_write_halt(&self) {
@@ -782,13 +839,13 @@ impl Keyspace {
             std::thread::sleep(Duration::from_millis(10));
 
             if start.elapsed() > std::time::Duration::from_secs(5) {
-                log::info!(
+                log::debug!(
                     "Halting writes for 5+ secs now because L0 of {:?} is still too full, starting to send compaction requests",
                     self.name,
                 );
 
                 self.supervisor.compaction_manager.push(self.clone());
-                self.worker_messager.send(WorkerMessage::Compact).ok();
+                self.worker_messager.try_send(WorkerMessage::Compact).ok();
                 std::thread::sleep(Duration::from_millis(490));
 
                 if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
@@ -797,16 +854,12 @@ impl Keyspace {
                 }
             }
         }
-
-        while self.tree.sealed_memtable_count() >= 4 {
-            log::info!("Halting writes because we have 4+ sealed memtables queued up");
-            std::thread::sleep(Duration::from_millis(100));
-        }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
+    pub(crate) fn backpressure(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable().inspect_err(|_| {
+            self.rotate_memtable().inspect_err(|e| {
+                log::error!("Memtable rotation failed: {e:?}");
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
@@ -929,10 +982,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-        // self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }
@@ -1002,10 +1053,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-        // self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }
@@ -1095,10 +1144,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.supervisor.write_buffer_size.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-        // self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }

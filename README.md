@@ -107,7 +107,7 @@ keyspace.persist(PersistMode::SyncAll)?;
 
 > [!TIP]
 > Like any typical key-value store, keys are stored in lexicographic order.
-> If you are storing integer keys (e.g. timeseries data), you should use the big endian form to have predicatable ordering.
+> If you are storing integer keys (e.g. timeseries data), you should use the big endian form to have predictable ordering.
 
 ## Durability
 
