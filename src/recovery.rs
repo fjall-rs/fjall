@@ -46,7 +46,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             .parse::<InternalKeyspaceId>()
             .expect("should be valid integer");
 
-        // NOTE: Is meta partition
+        // NOTE: Is meta keyspace
         if keyspace_id == 0 {
             continue;
         }

@@ -29,7 +29,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
-        Arc, Mutex, MutexGuard, RwLock,
+        Arc, RwLock,
     },
     time::Duration,
 };
@@ -800,7 +800,7 @@ impl Keyspace {
                         "Halting writes for 5+ secs now because journal is still too large"
                     );
 
-                    // // TODO: this may not scale well for many partitions
+                    // // TODO: this may not scale well for many keyspaces
                     {
                         let keyspaces = self.keyspaces.read().expect("lock is poisoned");
 
@@ -815,7 +815,10 @@ impl Keyspace {
                         keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
 
                         if let Some(lowest) = keyspaces_with_seqno.first() {
-                            log::warn!("ROTATING {:?}", lowest.0.name);
+                            log::debug!(
+                                "Rotating {:?} to try to reduce journal size",
+                                lowest.0.name,
+                            );
 
                             match lowest.0.rotate_memtable() {
                                 Ok(_) => {
@@ -826,7 +829,7 @@ impl Keyspace {
                                 }
                                 Err(e) => {
                                     log::warn!(
-                                        "Rotating inactive keyspace {:?} failed: {e:?}",
+                                        "Rotating keyspace {:?} failed: {e:?}",
                                         lowest.0.name,
                                     );
                                 }
@@ -852,9 +855,45 @@ impl Keyspace {
             {
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
-                if start.elapsed() > std::time::Duration::from_secs(5) {
-                    log::debug!("Halting writes for 5+ secs now because database write buffer is still too large");
-                    // TODO: notify?
+                if start.elapsed() > std::time::Duration::from_secs(3) {
+                    log::debug!("Halting writes for 3+ secs now because database write buffer is still too large");
+
+                    {
+                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+                        let mut keyspaces_with_seqno = keyspaces
+                            .values()
+                            .filter(|x| x.tree.active_memtable_size() > 0)
+                            .map(|x| (x.clone(), x.tree.active_memtable_size()))
+                            .collect::<Vec<_>>();
+
+                        drop(keyspaces);
+
+                        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if let Some(lowest) = keyspaces_with_seqno.last() {
+                            log::debug!(
+                                "Rotating {:?} to try to reduce database write buffer size",
+                                lowest.0.name,
+                            );
+
+                            match lowest.0.rotate_memtable() {
+                                Ok(_) => {
+                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                                        keyspace: lowest.0.clone(),
+                                    }));
+                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Rotating keyspace {:?} failed: {e:?}",
+                                        lowest.0.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     std::thread::sleep(Duration::from_millis(490));
                 }
 
