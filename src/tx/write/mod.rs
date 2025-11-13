@@ -274,7 +274,7 @@ impl BaseTransaction {
     pub(super) fn iter<'a>(
         &'a self,
         keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'a {
         keyspace.inner.tree.iter(
             self.nonce.instant,
             self.memtables.get(&keyspace.inner.id).cloned(),
@@ -289,7 +289,7 @@ impl BaseTransaction {
         &'a self,
         keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K, R>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'a {
         keyspace.inner.tree.range(
             range,
             self.nonce.instant,
@@ -305,7 +305,7 @@ impl BaseTransaction {
         &'a self,
         keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'a, K>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'a {
         keyspace.inner.tree.prefix(
             prefix,
             self.nonce.instant,

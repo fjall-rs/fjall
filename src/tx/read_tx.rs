@@ -296,10 +296,7 @@ impl ReadTransaction {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter<'a>(
-        &self,
-        keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
+    pub fn iter(&'_ self, keyspace: &'_ TxKeyspace) -> impl DoubleEndedIterator<Item = Guard> + '_ {
         keyspace
             .inner()
             .tree
@@ -331,10 +328,10 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &self,
+        &'a self,
         keyspace: &'a TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
             .inner()
             .tree
@@ -365,10 +362,10 @@ impl ReadTransaction {
     /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &self,
+        &'a self,
         keyspace: &'a TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
             .inner()
             .tree

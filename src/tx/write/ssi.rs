@@ -490,7 +490,7 @@ impl WriteTransaction {
     pub fn iter<'a>(
         &'a mut self,
         keyspace: &'a TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard>> + 'a {
         self.cm.mark_range(keyspace.inner.id, RangeFull);
 
         self.inner.iter(keyspace).map(Guard)
@@ -524,7 +524,7 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'b, K, R>>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard>> + 'b {
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
@@ -561,7 +561,7 @@ impl WriteTransaction {
         &'b mut self,
         keyspace: &'b TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'b, K>>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard>> + 'b {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 
