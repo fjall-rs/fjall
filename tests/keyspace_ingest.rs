@@ -5,7 +5,7 @@ use fjall::{Database, UserKey, UserValue};
 fn keyspace_ingest() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).worker_count(0).open()?;
+    let db = Database::builder(&folder).worker_threads(0).open()?;
 
     let items = db.keyspace("items", Default::default())?;
 

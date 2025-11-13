@@ -43,7 +43,7 @@ impl Builder {
         self
     }
 
-    /// Sets the number of worker threads
+    /// Sets the number of worker threads.
     ///
     /// Default = min(# CPU cores, 4)
     ///
@@ -51,17 +51,17 @@ impl Builder {
     ///
     /// Panics, if below 1.
     #[must_use]
-    pub fn worker_count(self, n: usize) -> Self {
+    pub fn worker_threads(self, n: usize) -> Self {
         #[cfg(not(test))]
         assert!(n > 0, "worker count must be at least 1");
 
-        self.worker_count_unchecked(n)
+        self.worker_threads_unchecked(n)
     }
 
     #[doc(hidden)]
     #[must_use]
-    pub fn worker_count_unchecked(mut self, n: usize) -> Self {
-        self.0.worker_count = n;
+    pub fn worker_threads_unchecked(mut self, n: usize) -> Self {
+        self.0.worker_threads = n;
         self
     }
 

@@ -36,7 +36,7 @@ pub struct Config {
     pub(crate) manual_journal_persist: bool,
 
     /// Amount of concurrent worker threads
-    pub(crate) worker_count: usize,
+    pub(crate) worker_threads: usize,
 
     pub(crate) journal_compression_type: CompressionType,
 
@@ -61,7 +61,7 @@ impl Config {
     /// Creates a new configuration
     pub fn new(path: &Path) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
-        let worker_count = queried_cores.unwrap_or(1).min(DEFAULT_CPU_CORES);
+        let worker_threads = queried_cores.unwrap_or(1).min(DEFAULT_CPU_CORES);
 
         Self {
             path: absolute_path(path),
@@ -69,7 +69,7 @@ impl Config {
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
             max_write_buffer_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
-            worker_count,
+            worker_threads,
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 

@@ -610,14 +610,10 @@ impl CreateOptions {
 
     /// Sets the maximum memtable size.
     ///
-    /// Default = 16 MiB
+    /// Default = 64 MiB
     ///
     /// Recommended size 8 - 64 MiB, depending on how much memory
     /// is available.
-    ///
-    /// Note that the memory usage may temporarily be `max_memtable_size * flush_worker_count`
-    /// because of parallel flushing.
-    /// Use the database's `max_write_buffer_size` to cap global memory usage.
     ///
     /// Conversely, if `max_memtable_size` is larger than 64 MiB,
     /// it may require increasing the database's `max_write_buffer_size`.

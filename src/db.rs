@@ -569,7 +569,7 @@ impl Database {
         let is_poisoned = Arc::<AtomicBool>::default();
 
         let (worker_pool, worker_messager) = WorkerPool::new(
-            config.worker_count,
+            config.worker_threads,
             &supervisor,
             &stats,
             &active_thread_counter,
@@ -762,7 +762,7 @@ impl Database {
         let is_poisoned = Arc::<AtomicBool>::default();
 
         let (worker_pool, worker_messager) = WorkerPool::new(
-            config.worker_count,
+            config.worker_threads,
             &supervisor,
             &stats,
             &active_thread_counter,
@@ -880,7 +880,7 @@ mod tests {
     //         // IMPORTANT: We need to allocate enough flush workers
     //         // because on CI there may not be enough cores by default
     //         // so the result would be wrong
-    //         let config = Database::builder(&folder).worker_count(16).into_config();
+    //         let config = Database::builder(&folder).worker_threads(16).into_config();
     //         let db = Database::create_or_recover(config)?;
 
     //         let tree = db.keyspace("default", Default::default())?;
