@@ -12,7 +12,7 @@ impl<T: lsm_tree::Guard> Guard<T> {
     /// Will return `Err` if an IO error occurs.
     pub fn into_inner_if(
         self,
-        pred: impl Fn(&[u8]) -> bool,
+        pred: impl Fn(&crate::UserKey) -> bool,
     ) -> crate::Result<Option<crate::KvPair>> {
         self.0.into_inner_if(pred).map_err(Into::into)
     }
