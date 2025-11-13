@@ -236,7 +236,8 @@ impl Keyspace {
             )
             .inspect(|()| {
                 self.worker_messager
-                    .try_send(WorkerMessage::Compact(self.clone()));
+                    .try_send(WorkerMessage::Compact(self.clone()))
+                    .ok();
             })
             .map_err(Into::into)
     }

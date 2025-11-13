@@ -69,7 +69,9 @@ pub struct DatabaseInner {
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
     pub(crate) worker_pool: WorkerPool,
-    pub(crate) worker_messager: flume::Sender<WorkerMessage>,
+
+    #[doc(hidden)]
+    pub worker_messager: flume::Sender<WorkerMessage>,
 
     pub(crate) lock_file: LockedFileGuard,
 }

@@ -41,7 +41,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
     assert_eq!(15, items.len()?);
     assert_eq!(4, items.table_count());
 
-    while db.supervisor.compaction_manager.len() > 0 {}
+    while !db.worker_messager.is_empty() {}
     assert_eq!(1, items.table_count());
 
     Ok(())
