@@ -1,6 +1,6 @@
 use crate::{
     compaction::worker::run as run_compaction, flush::worker::run as run_flush,
-    poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor,
+    poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor, Config,
 };
 use std::{
     sync::{atomic::AtomicUsize, Arc},
@@ -47,7 +47,7 @@ impl WorkerPoolInner {
     ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
         use std::sync::atomic::Ordering::Relaxed;
 
-        let (message_queue_sender, rx) = flume::bounded(10_000);
+        let (message_queue_sender, rx) = flume::bounded(1_000);
 
         thread_counter.fetch_add(pool_size, Relaxed);
 

@@ -12,7 +12,7 @@ pub struct FlushManager {
 
 impl FlushManager {
     pub fn new() -> Self {
-        let (tx, rx) = flume::bounded(10_000);
+        let (tx, rx) = flume::bounded(1_000);
 
         Self {
             sender: tx,

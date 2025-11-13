@@ -785,13 +785,13 @@ impl Keyspace {
         {
             let start = std::time::Instant::now();
 
-            while self
-                .supervisor
-                .journal_manager
-                .read()
-                .expect("lock is poisoned")
-                .disk_space_used()
-                >= self.db_config.max_journaling_size_in_bytes
+            while {
+                self.supervisor
+                    .journal_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .disk_space_used()
+            } >= self.db_config.max_journaling_size_in_bytes
             {
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
@@ -799,7 +799,41 @@ impl Keyspace {
                     log::debug!(
                         "Halting writes for 5+ secs now because journal is still too large"
                     );
-                    // TODO: notify?
+
+                    // // TODO: this may not scale well for many partitions
+                    {
+                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+                        let mut keyspaces_with_seqno = keyspaces
+                            .values()
+                            .filter(|x| x.tree.active_memtable_size() > 0)
+                            .map(|x| (x.clone(), x.tree.get_highest_persisted_seqno()))
+                            .collect::<Vec<_>>();
+
+                        drop(keyspaces);
+
+                        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if let Some(lowest) = keyspaces_with_seqno.first() {
+                            log::warn!("ROTATING {:?}", lowest.0.name);
+
+                            match lowest.0.rotate_memtable() {
+                                Ok(_) => {
+                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                                        keyspace: lowest.0.clone(),
+                                    }));
+                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Rotating inactive keyspace {:?} failed: {e:?}",
+                                        lowest.0.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     std::thread::sleep(Duration::from_millis(490));
                 }
 
