@@ -1,15 +1,16 @@
 use crate::{
     compaction::worker::run as run_compaction, flush::worker::run as run_flush,
-    poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor, Config,
+    poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor, Keyspace,
 };
 use std::{
+    borrow::Cow,
     sync::{atomic::AtomicUsize, Arc},
     thread::JoinHandle,
 };
 
 pub enum WorkerMessage {
     Flush,
-    Compact,
+    Compact(Keyspace),
     Close,
 }
 
@@ -19,9 +20,9 @@ impl std::fmt::Debug for WorkerMessage {
             f,
             "{}",
             match self {
-                Self::Flush => "WorkerMessage:Flush",
-                Self::Compact => "WorkerMessage:Compact",
-                Self::Close => "WorkerMessage:Close",
+                Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
+                Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
+                Self::Close => Cow::Borrowed("WorkerMessage:Close"),
             }
         )
     }
@@ -155,13 +156,11 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 &ctx.stats,
             )?;
 
-            // TODO: should be thread_pool_size
+            // TODO: 3.0.0 should be thread_pool_size
             for _ in 0..4 {
-                ctx.supervisor
-                    .compaction_manager
-                    .push(task.keyspace.clone());
-
-                ctx.sender.try_send(WorkerMessage::Compact).ok();
+                ctx.sender
+                    .try_send(WorkerMessage::Compact(task.keyspace.clone()))
+                    .ok();
             }
 
             ctx.supervisor
@@ -169,24 +168,15 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 .write()
                 .expect("lock is poisoned")
                 .maintenance()?;
-
-            eprintln!(
-                "compaction queue len: {}",
-                ctx.supervisor.compaction_manager.len(),
-            );
         }
-        WorkerMessage::Compact => {
-            // TODO: only do, if worker pool size > 1
-            if ctx.worker_id == 0 {
-                ctx.sender.send(item).ok();
-                return Ok(false);
-            }
+        WorkerMessage::Compact(keyspace) => {
+            // TODO: 3.0.0 only do, if worker pool size > 1
+            // if ctx.worker_id == 0 {
+            //     ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
+            //     return Ok(false);
+            // }
 
-            run_compaction(
-                &ctx.supervisor.compaction_manager,
-                &ctx.supervisor.snapshot_tracker,
-                &ctx.stats,
-            )?;
+            run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
         }
     }
 

@@ -3,9 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::manager::CompactionManager, flush::manager::FlushManager,
-    journal::manager::JournalManager, snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager,
+    flush::manager::FlushManager, journal::manager::JournalManager,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
 };
 use std::sync::{Arc, RwLock};
 
@@ -16,8 +15,6 @@ pub struct SupervisorInner {
 
     /// Tracks journal size and garbage collects sealed journals when possible
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-
-    pub compaction_manager: CompactionManager,
 }
 
 #[derive(Clone)]

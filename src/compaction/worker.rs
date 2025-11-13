@@ -2,22 +2,21 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::manager::CompactionManager;
-use crate::{snapshot_tracker::SnapshotTracker, stats::Stats};
+use crate::{snapshot_tracker::SnapshotTracker, stats::Stats, Keyspace};
 use lsm_tree::AbstractTree;
 use std::time::Instant;
 
 /// Runs a single run of compaction.
 pub fn run(
-    compaction_manager: &CompactionManager,
+    keyspace: &Keyspace,
     snapshot_tracker: &SnapshotTracker,
     stats: &Stats,
 ) -> crate::Result<()> {
     use std::sync::atomic::Ordering::Relaxed;
 
-    let Some(keyspace) = compaction_manager.pop() else {
+    if keyspace.is_deleted.load(Relaxed) {
         return Ok(());
-    };
+    }
 
     log::trace!(
         "Checking compaction strategy for keyspace {:?}",

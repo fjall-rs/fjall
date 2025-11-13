@@ -235,7 +235,8 @@ impl Keyspace {
                 &self.visible_seqno,
             )
             .inspect(|()| {
-                self.supervisor.compaction_manager.push(self.clone());
+                self.worker_messager
+                    .try_send(WorkerMessage::Compact(self.clone()));
             })
             .map_err(Into::into)
     }
@@ -917,8 +918,10 @@ impl Keyspace {
                     self.name,
                 );
 
-                self.supervisor.compaction_manager.push(self.clone());
-                self.worker_messager.try_send(WorkerMessage::Compact).ok();
+                self.worker_messager
+                    .try_send(WorkerMessage::Compact(self.clone()))
+                    .ok();
+
                 std::thread::sleep(Duration::from_millis(490));
 
                 if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {

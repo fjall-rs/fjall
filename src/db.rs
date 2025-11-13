@@ -4,7 +4,6 @@
 
 use crate::{
     batch::Batch,
-    compaction::manager::CompactionManager,
     db_config::Config,
     file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
     flush::manager::FlushManager,
@@ -94,7 +93,6 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
-        self.supervisor.compaction_manager.clear();
         self.keyspaces.write().expect("lock is poisoned").clear();
         self.supervisor
             .journal_manager
@@ -149,13 +147,6 @@ impl Database {
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         Snapshot::new(self.supervisor.snapshot_tracker.open())
-    }
-
-    /// Returns the number of tasks in the compaction queue.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn queued_compaction_tasks(&self) -> usize {
-        self.supervisor.compaction_manager.len()
     }
 
     /// Creates a new database builder to create or open a database at `path`.
@@ -403,17 +394,13 @@ impl Database {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
 
         handle
             .is_deleted
             .store(true, std::sync::atomic::Ordering::Release);
-
-        // IMPORTANT: Care, locks keyspaces map
-        self.supervisor
-            .compaction_manager
-            .remove_keyspace(&handle.name);
 
         Ok(())
     }
@@ -572,7 +559,6 @@ impl Database {
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(seqno),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
-            compaction_manager: CompactionManager::default(),
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -766,7 +752,6 @@ impl Database {
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
                 active_journal_path,
             ))),
-            compaction_manager: CompactionManager::default(),
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
