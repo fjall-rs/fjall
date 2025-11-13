@@ -88,11 +88,11 @@ fn reload_keyspace_config() -> fjall::Result<()> {
     let data_block_interval_policy = RestartIntervalPolicy::all(8);
     // let index_block_interval_policy = RestartIntervalPolicy::all(9);
 
-    let filter_block_pinning_policy = PinningPolicy::new(&[true, true, true, false]);
-    let index_block_pinning_policy = PinningPolicy::new(&[true, true, false]);
+    let filter_block_pinning_policy = PinningPolicy::new([true, true, true, false]);
+    let index_block_pinning_policy = PinningPolicy::new([true, true, false]);
 
-    let filter_block_partitioning_policy = PinningPolicy::new(&[false, false, true]);
-    let index_block_partitioning_policy = PinningPolicy::new(&[false, false, false, false, true]);
+    let filter_block_partitioning_policy = PinningPolicy::new([false, false, true]);
+    let index_block_partitioning_policy = PinningPolicy::new([false, false, false, false, true]);
 
     let filter_policy = FilterPolicy::new(&[
         FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
