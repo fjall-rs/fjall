@@ -28,7 +28,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
 
         assert_eq!(1, tree.blob_file_count());
     } else {
-        panic!("nope");
+        unreachable!();
     }
 
     Ok(())

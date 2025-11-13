@@ -46,8 +46,11 @@ impl TxDatabase {
     pub fn write_tx(&self) -> WriteTransaction<'_> {
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
 
-        let mut write_tx =
-            WriteTransaction::new(self.clone(), self.inner.snapshot_tracker.open(), guard);
+        let mut write_tx = WriteTransaction::new(
+            self.clone(),
+            self.inner.supervisor.snapshot_tracker.open(),
+            guard,
+        );
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
@@ -69,7 +72,7 @@ impl TxDatabase {
             // is platform-dependent since we use std::sync::Mutex
             let _guard = self.oracle.write_serialize_lock()?;
 
-            self.inner.snapshot_tracker.open()
+            self.inner.supervisor.snapshot_tracker.open()
         };
 
         let mut write_tx = WriteTransaction::new(self.clone(), snapshot);
@@ -188,13 +191,13 @@ impl TxDatabase {
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
         let inner = Database::create_or_recover(config)?;
-        inner.start_background_threads()?;
+        // inner.start_background_threads()?;
 
         Ok(Self {
             #[cfg(feature = "ssi_tx")]
             oracle: Arc::new(Oracle {
                 write_serialize_lock: Mutex::default(),
-                snapshot_tracker: inner.snapshot_tracker.clone(),
+                snapshot_tracker: inner.supervisor.snapshot_tracker.clone(),
             }),
             inner,
             #[cfg(feature = "single_writer_tx")]

@@ -43,32 +43,34 @@ impl Builder {
         self
     }
 
-    /// Sets the amount of flush workers
+    /// Sets the number of worker threads.
     ///
-    /// Default = # CPU cores
-    #[must_use]
-    pub fn flush_workers(mut self, n: usize) -> Self {
-        self.0 = self.0.flush_workers(n);
-        self
-    }
-
-    /// Sets the amount of compaction workers
-    ///
-    /// Default = # CPU cores
-    #[must_use]
-    pub fn compaction_workers(mut self, n: usize) -> Self {
-        self.0 = self.0.compaction_workers(n);
-        self
-    }
-
-    /// Sets the upper limit for open file descriptors.
+    /// Default = min(# CPU cores, 4)
     ///
     /// # Panics
     ///
-    /// Panics if n < 2.
+    /// Panics, if below 1.
     #[must_use]
-    pub fn max_open_files(mut self, n: usize) -> Self {
-        self.0 = self.0.max_open_files(n);
+    pub fn worker_threads(mut self, n: usize) -> Self {
+        #[cfg(not(test))]
+        assert!(n > 0, "worker count must be at least 1");
+
+        self.0 = self.0.worker_threads(n);
+        self
+    }
+
+    /// Sets the upper limit for cached file descriptors.
+    ///
+    /// # Note
+    ///
+    /// Setting to None is currently not supported.
+    ///
+    /// # Panics
+    ///
+    /// Panics if n < 10 or `None`.
+    #[must_use]
+    pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
+        self.0 = self.0.max_cached_files(n);
         self
     }
 
@@ -111,20 +113,6 @@ impl Builder {
     #[must_use]
     pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
         self.0 = self.0.max_write_buffer_size(bytes);
-        self
-    }
-
-    /// If Some, starts an fsync thread that asynchronously
-    /// persists data to disk (using fsync).
-    ///
-    /// Default = off
-    ///
-    /// # Panics
-    ///
-    /// Panics if ms is 0.
-    #[must_use]
-    pub fn fsync_ms(mut self, ms: Option<u16>) -> Self {
-        self.0 = self.0.fsync_ms(ms);
         self
     }
 

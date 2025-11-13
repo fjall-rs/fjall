@@ -35,14 +35,8 @@ pub struct Config {
 
     pub(crate) manual_journal_persist: bool,
 
-    /// Amount of concurrent flush workers
-    pub(crate) flush_workers_count: usize,
-
-    /// Amount of compaction workers
-    pub(crate) compaction_workers_count: usize,
-
-    /// Fsync every N ms asynchronously
-    pub(crate) fsync_ms: Option<u16>,
+    /// Amount of concurrent worker threads
+    pub(crate) worker_threads: usize,
 
     pub(crate) journal_compression_type: CompressionType,
 
@@ -67,21 +61,15 @@ impl Config {
     /// Creates a new configuration
     pub fn new(path: &Path) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
-
-        // Reserve 1 CPU core if possible
-        let cpus = (queried_cores.unwrap_or(DEFAULT_CPU_CORES) - 1)
-            // Should never be 0
-            .max(1);
+        let worker_threads = queried_cores.unwrap_or(1).min(DEFAULT_CPU_CORES);
 
         Self {
             path: absolute_path(path),
             clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
-            max_write_buffer_size_in_bytes: /* 256 MiB */ 256 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
-            fsync_ms: None,
-            flush_workers_count: cpus.min(4),
-            compaction_workers_count: cpus.min(4),
+            worker_threads,
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 

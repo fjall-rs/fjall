@@ -36,18 +36,17 @@ impl std::fmt::Debug for Item {
     }
 }
 
-// TODO: accessing journal manager shouldn't take RwLock... but changing its internals should
-
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different keyspaces.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
-    active_path: PathBuf, // TODO: remove?
+    // active_path: PathBuf, // TODO: remove?
     items: Vec<Item>,
 
-    // TODO: should be taking into account active journal, which is preallocated...
+    // TODO: should be taking into account active journal, which is preallocated...?
+    // but zeroed files don't really take space, so maybe not
     disk_space_in_bytes: u64,
 }
 
@@ -66,7 +65,7 @@ impl JournalManager {
         crate::drop::increment_drop_counter();
 
         Self {
-            active_path: path.into(),
+            // active_path: path.into(),
             items: Vec::with_capacity(10),
             disk_space_in_bytes: 0,
         }
@@ -99,6 +98,8 @@ impl JournalManager {
 
     /// Performs maintenance, maybe deleting some old journals
     pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
+        log::debug!("Running journal maintenance");
+
         loop {
             let Some(item) = self.items.first() else {
                 return Ok(());
@@ -153,7 +154,7 @@ impl JournalManager {
         let journal_size = journal_writer.len()?;
 
         let (sealed_path, next_journal_path) = journal_writer.rotate()?;
-        self.active_path = next_journal_path;
+        // self.active_path = next_journal_path;
 
         self.enqueue(Item {
             path: sealed_path,

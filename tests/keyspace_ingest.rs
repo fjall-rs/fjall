@@ -5,10 +5,7 @@ use fjall::{Database, UserKey, UserValue};
 fn keyspace_ingest() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder)
-        .flush_workers(0)
-        .compaction_workers(0)
-        .open()?;
+    let db = Database::builder(&folder).worker_threads(0).open()?;
 
     let items = db.keyspace("items", Default::default())?;
 
@@ -44,7 +41,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
     assert_eq!(15, items.len()?);
     assert_eq!(4, items.table_count());
 
-    while db.compaction_manager.len() > 0 {}
+    while !db.worker_messager.is_empty() {}
     assert_eq!(1, items.table_count());
 
     Ok(())

@@ -11,8 +11,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
     #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
-            .flush_workers(0)
-            .compaction_workers(0)
+            .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[
@@ -70,8 +69,7 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 
     for _ in 0..10 {
         let db = Database::builder(&folder)
-            .flush_workers(0)
-            .compaction_workers(0)
+            .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[
@@ -115,8 +113,7 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
     #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
-            .flush_workers(0)
-            .compaction_workers(0)
+            .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[
@@ -174,8 +171,7 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
 
     for _ in 0..10 {
         let db = Database::builder(&folder)
-            .flush_workers(0)
-            .compaction_workers(0)
+            .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[

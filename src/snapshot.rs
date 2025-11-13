@@ -288,13 +288,8 @@ impl Snapshot {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter<'a>(
-        &self,
-        keyspace: &'a Keyspace,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a>>> + 'a {
+    pub fn iter(&'_ self, keyspace: &'_ Keyspace) -> impl DoubleEndedIterator<Item = Guard> + '_ {
         keyspace.tree.iter(self.nonce.instant, None).map(Guard)
-
-        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a range of the transaction's state.
@@ -319,18 +314,14 @@ impl Snapshot {
     /// ```
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &self,
+        &'a self,
         keyspace: &'a Keyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
-        // TODO: 3.0.0: if we bind the iterator lifetime to ReadTx, we can remove the snapshot nonce from Iter
-        // TODO: for all other ReadTx::iterators too
-
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
             .tree
             .range(range, self.nonce.instant, None)
             .map(Guard)
-        // crate::iter::Iter::new(self.nonce.clone(), iter)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -355,10 +346,10 @@ impl Snapshot {
     /// ```
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &self,
+        &'a self,
         keyspace: &'a Keyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
             .tree
             .prefix(prefix, self.nonce.instant, None)

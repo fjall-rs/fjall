@@ -1,7 +1,9 @@
-/// Guard to access key-value pairs
-pub struct Guard<T: lsm_tree::Guard>(pub(crate) T);
+use lsm_tree::{Guard as _Guard, UserKey, UserValue};
 
-impl<T: lsm_tree::Guard> Guard<T> {
+/// Guard to access key-value pairs
+pub struct Guard(pub(crate) lsm_tree::IterGuardImpl);
+
+impl Guard {
     /// Accesses the key-value pair if the predicate returns `true`.
     ///
     /// The predicate receives the key - if returning `false`, the value
@@ -12,8 +14,8 @@ impl<T: lsm_tree::Guard> Guard<T> {
     /// Will return `Err` if an IO error occurs.
     pub fn into_inner_if(
         self,
-        pred: impl Fn(&[u8]) -> bool,
-    ) -> crate::Result<Option<crate::KvPair>> {
+        pred: impl Fn(&crate::UserKey) -> bool,
+    ) -> crate::Result<(UserKey, Option<UserValue>)> {
         self.0.into_inner_if(pred).map_err(Into::into)
     }
 

@@ -17,7 +17,7 @@ fn db_recover_empty() -> fjall::Result<()> {
     // NOTE: Wait for monitor thread tick to kick in
     std::thread::sleep(Duration::from_secs(1));
 
-    assert!(db.snapshot_tracker.get_seqno_safe_to_gc() > 0);
+    assert!(db.supervisor.snapshot_tracker.get_seqno_safe_to_gc() > 0);
 
     Ok(())
 }

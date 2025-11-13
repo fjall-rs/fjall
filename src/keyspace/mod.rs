@@ -8,18 +8,18 @@ pub mod options;
 mod write_delay;
 
 use crate::{
-    compaction::manager::CompactionManager,
     db::Keyspaces,
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
-    flush::manager::{FlushManager, Task as FlushTask},
+    flush::Task as FlushTask,
     journal::{
         manager::{EvictionWatermark, JournalManager},
         Journal,
     },
-    snapshot_tracker::SnapshotTracker,
+    locked_file::LockedFileGuard,
     stats::Stats,
-    write_buffer_manager::WriteBufferManager,
+    supervisor::Supervisor,
+    worker_pool::{WorkerMessage, WorkerPool},
     Database, Guard,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
@@ -33,7 +33,6 @@ use std::{
     },
     time::Duration,
 };
-use std_semaphore::Semaphore;
 use write_delay::perform_write_stall;
 
 /// Keyspace key (a.k.a. column family, locality group)
@@ -90,21 +89,7 @@ pub struct KeyspaceInner {
     /// Config of database
     pub(crate) db_config: DatabaseConfig,
 
-    /// Flush manager of database
-    pub(crate) flush_manager: Arc<RwLock<FlushManager>>,
-
-    /// Journal manager of database
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-
-    /// Compaction manager of database
-    pub(crate) compaction_manager: CompactionManager,
-
-    /// Write buffer manager of database
-    pub(crate) write_buffer_manager: WriteBufferManager,
-
-    // TODO: notifying flush worker should probably become a method in FlushManager
-    /// Flush semaphore of database
-    pub(crate) flush_semaphore: Arc<Semaphore>,
+    supervisor: Supervisor,
 
     /// Journal of database
     pub(crate) journal: Arc<Journal>,
@@ -116,13 +101,16 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub visible_seqno: SequenceNumberCounter,
 
-    /// Snapshot tracker
-    pub(crate) snapshot_tracker: SnapshotTracker,
-
+    /// Database-level stats
     pub(crate) stats: Arc<Stats>,
 
     /// Number of completed memtable flushes in this keyspace
     pub(crate) flushes_completed: AtomicUsize,
+
+    pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
+    pub(crate) worker_messager: flume::Sender<WorkerMessage>,
+
+    lock_file: LockedFileGuard,
 }
 
 impl Drop for KeyspaceInner {
@@ -243,11 +231,13 @@ impl Keyspace {
         self.tree
             .ingest(
                 iter.map(|(k, v)| (k.into(), v.into())),
-                self.snapshot_tracker.seqno_ref(),
+                self.supervisor.snapshot_tracker.seqno_ref(),
                 &self.visible_seqno,
             )
             .inspect(|()| {
-                self.compaction_manager.notify(self.clone());
+                self.worker_messager
+                    .try_send(WorkerMessage::Compact(self.clone()))
+                    .ok();
             })
             .map_err(Into::into)
     }
@@ -260,24 +250,22 @@ impl Keyspace {
         config: CreateOptions,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
+            supervisor: db.supervisor.clone(),
+            worker_pool: db.worker_pool.clone(),
+            worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,
             tree,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flush_manager: db.flush_manager.clone(),
-            flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
-            compaction_manager: db.compaction_manager.clone(),
             visible_seqno: db.visible_seqno.clone(),
-            write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            snapshot_tracker: db.snapshot_tracker.clone(),
             config,
             stats: db.stats.clone(),
+            lock_file: db.lock_file.clone(),
         }))
     }
 
@@ -298,33 +286,33 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config =
-            lsm_tree::Config::new(base_folder, db.snapshot_tracker.seqno_ref().clone())
-                .use_descriptor_table(db.config.descriptor_table.clone())
-                .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(
+            base_folder,
+            db.supervisor.snapshot_tracker.seqno_ref().clone(),
+        )
+        .use_descriptor_table(db.config.descriptor_table.clone())
+        .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
 
         Ok(Self(Arc::new(KeyspaceInner {
+            supervisor: db.supervisor.clone(),
+            worker_pool: db.worker_pool.clone(),
+            worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,
             config,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flush_manager: db.flush_manager.clone(),
-            flush_semaphore: db.flush_semaphore.clone(),
             flushes_completed: AtomicUsize::new(0),
-            journal_manager: db.journal_manager.clone(),
             journal: db.journal.clone(),
-            compaction_manager: db.compaction_manager.clone(),
             visible_seqno: db.visible_seqno.clone(),
             tree,
-            write_buffer_manager: db.write_buffer_manager.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            snapshot_tracker: db.snapshot_tracker.clone(),
             stats: db.stats.clone(),
+            lock_file: db.lock_file.clone(),
         })))
     }
 
@@ -379,10 +367,8 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(
-        &'_ self,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'_>>> + '_ {
-        let nonce = self.snapshot_tracker.open();
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Guard> + '_ {
+        let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.iter(nonce.instant, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)
     }
@@ -409,8 +395,8 @@ impl Keyspace {
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K, R>>> + 'a {
-        let nonce = self.snapshot_tracker.open();
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
+        let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.range(range, SeqNo::MAX, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)
     }
@@ -437,8 +423,8 @@ impl Keyspace {
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard<impl lsm_tree::Guard + use<'a, K>>> + 'a {
-        let nonce = self.snapshot_tracker.open();
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
+        let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)
     }
@@ -685,16 +671,14 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
+        let watermark = self.flushes_completed();
+
         if self.rotate_memtable()? {
-            while !self
-                .flush_manager
-                .read()
-                .expect("lock is poisoned")
-                .is_empty()
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            self.supervisor.flush_manager.wait_for_empty();
+
+            while self.flushes_completed() <= watermark {}
         }
+
         Ok(())
     }
 
@@ -707,13 +691,17 @@ impl Keyspace {
         let mut journal = self.journal.get_writer();
 
         // Rotate memtable
-        let Some((yanked_id, yanked_memtable)) = self.tree.rotate_memtable() else {
+        let Some(_) = self.tree.rotate_memtable() else {
             log::debug!("Got no sealed memtable, someone beat us to it");
             return Ok(false);
         };
 
         log::trace!("keyspace: acquiring journal manager lock");
-        let mut journal_manager = self.journal_manager.write().expect("lock is poisoned");
+        let mut journal_manager: std::sync::RwLockWriteGuard<'_, JournalManager> = self
+            .supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned");
 
         let seqno_map = {
             let keyspaces = self.keyspaces.write().expect("lock is poisoned");
@@ -734,34 +722,38 @@ impl Keyspace {
 
         journal_manager.rotate_journal(&mut journal, seqno_map)?;
 
-        log::trace!("keyspace: acquiring flush manager lock");
-        let mut flush_manager = self.flush_manager.write().expect("lock is poisoned");
+        drop(journal_manager);
+        drop(journal);
 
-        flush_manager.enqueue_task(
-            self.id,
-            FlushTask {
-                id: yanked_id,
-                keyspace: self.clone(),
-                sealed_memtable: yanked_memtable,
-            },
-        );
+        self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+            keyspace: self.clone(),
+        }));
 
+        // TODO: 3.0.0 let supervisor handle this
         self.stats
             .flushes_enqueued
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        drop(flush_manager);
-        drop(journal_manager);
-        drop(journal);
-
-        // Notify flush worker that new work has arrived
-        self.flush_semaphore.release();
+        self.worker_messager.send(WorkerMessage::Flush).ok();
 
         // TODO: 3.0.0 dirty monkey patch
         // TODO: we need a mechanism to prevent the version free list from getting too large
         // TODO: in a write only workload
         {
-            self.snapshot_tracker.gc();
+            let current_seqno = self.supervisor.snapshot_tracker.get();
+            let gc_seqno_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+            // NOTE: If the difference between watermark is too large, and
+            // we never opened a snapshot, we need to pull the watermark up
+            //
+            // https://github.com/fjall-rs/fjall/discussions/85
+            if (current_seqno - gc_seqno_watermark) > 100
+                && self.supervisor.snapshot_tracker.len() == 0
+            {
+                self.supervisor.snapshot_tracker.pullup();
+            }
+
+            self.supervisor.snapshot_tracker.gc();
         }
 
         if self.tree.version_free_list_len() >= 100 {
@@ -774,96 +766,189 @@ impl Keyspace {
         Ok(true)
     }
 
-    fn check_journal_size(&self) {
-        loop {
-            let bytes = self
-                .journal_manager
-                .read()
-                .expect("lock is poisoned")
-                .disk_space_used();
-
-            if bytes <= self.db_config.max_journaling_size_in_bytes {
-                if bytes as f64 > self.db_config.max_journaling_size_in_bytes as f64 * 0.9 {
-                    log::info!(
-                        "keyspace: write stall because 90% journal threshold has been reached"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-
-                break;
-            }
-
-            log::info!(
-                "Write stall in keyspace {} because journal is too large",
-                self.name
-            );
-            std::thread::sleep(std::time::Duration::from_millis(100)); // TODO: maybe exponential backoff
-        }
-    }
-
     fn check_write_stall(&self) {
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
-            self.compaction_manager.notify(self.clone());
             perform_write_stall(l0_run_count);
+            self.check_write_halt();
+        }
+
+        while self.tree.sealed_memtable_count() >= 4 {
+            log::debug!(
+                "Halting writes because we have 4+ sealed memtables in {:?} queued up",
+                self.name,
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        {
+            let start = std::time::Instant::now();
+
+            while {
+                self.supervisor
+                    .journal_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .disk_space_used()
+            } >= self.db_config.max_journaling_size_in_bytes
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                if start.elapsed() > std::time::Duration::from_secs(5) {
+                    log::debug!(
+                        "Halting writes for 5+ secs now because journal is still too large"
+                    );
+
+                    // // TODO: this may not scale well for many keyspaces
+                    {
+                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+                        let mut keyspaces_with_seqno = keyspaces
+                            .values()
+                            .filter(|x| x.tree.active_memtable_size() > 0)
+                            .map(|x| (x.clone(), x.tree.get_highest_persisted_seqno()))
+                            .collect::<Vec<_>>();
+
+                        drop(keyspaces);
+
+                        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if let Some(lowest) = keyspaces_with_seqno.first() {
+                            log::debug!(
+                                "Rotating {:?} to try to reduce journal size",
+                                lowest.0.name,
+                            );
+
+                            match lowest.0.rotate_memtable() {
+                                Ok(_) => {
+                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                                        keyspace: lowest.0.clone(),
+                                    }));
+                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Rotating keyspace {:?} failed: {e:?}",
+                                        lowest.0.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_millis(490));
+                }
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
+        }
+
+        {
+            let start = std::time::Instant::now();
+
+            while self.supervisor.write_buffer_size.get()
+                >= self.db_config.max_write_buffer_size_in_bytes
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                if start.elapsed() > std::time::Duration::from_secs(3) {
+                    log::debug!("Halting writes for 3+ secs now because database write buffer is still too large");
+
+                    {
+                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+                        let mut keyspaces_with_seqno = keyspaces
+                            .values()
+                            .filter(|x| x.tree.active_memtable_size() > 0)
+                            .map(|x| (x.clone(), x.tree.active_memtable_size()))
+                            .collect::<Vec<_>>();
+
+                        drop(keyspaces);
+
+                        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if let Some(lowest) = keyspaces_with_seqno.last() {
+                            log::debug!(
+                                "Rotating {:?} to try to reduce database write buffer size",
+                                lowest.0.name,
+                            );
+
+                            match lowest.0.rotate_memtable() {
+                                Ok(_) => {
+                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                                        keyspace: lowest.0.clone(),
+                                    }));
+                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Rotating keyspace {:?} failed: {e:?}",
+                                        lowest.0.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_millis(490));
+                }
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
         }
     }
 
     fn check_write_halt(&self) {
-        while self.tree.l0_run_count() >= 30 {
-            log::info!(
-                "Halting writes in keyspace {} until L0 is cleared up...",
-                self.name,
-            );
+        let start = std::time::Instant::now();
 
-            self.compaction_manager.notify(self.clone());
-            std::thread::sleep(Duration::from_millis(100));
+        while self.tree.l0_run_count() >= 30 {
+            std::thread::sleep(Duration::from_millis(10));
+
+            if start.elapsed() > std::time::Duration::from_secs(5) {
+                log::debug!(
+                    "Halting writes for 5+ secs now because L0 of {:?} is still too full, starting to send compaction requests",
+                    self.name,
+                );
+
+                self.worker_messager
+                    .try_send(WorkerMessage::Compact(self.clone()))
+                    .ok();
+
+                std::thread::sleep(Duration::from_millis(490));
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
         }
     }
 
-    pub(crate) fn check_memtable_overflow(&self, size: u64) -> crate::Result<()> {
+    pub(crate) fn backpressure(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
-            self.rotate_memtable().inspect_err(|_| {
+            self.rotate_memtable().inspect_err(|e| {
+                log::error!("Memtable rotation failed: {e:?}");
                 self.is_poisoned
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
-
-            self.check_journal_size();
         }
 
         self.check_write_stall();
-        self.check_write_halt();
 
         Ok(())
     }
 
-    pub(crate) fn check_write_buffer_size(&self, initial_size: u64) {
-        let limit = self.db_config.max_write_buffer_size_in_bytes;
-
-        if initial_size > limit {
-            let p90_limit = (limit as f64) * 0.9;
-
-            loop {
-                let bytes = self.write_buffer_manager.get();
-
-                if bytes < limit {
-                    if bytes as f64 > p90_limit {
-                        log::info!(
-                            "keyspace: write stall because 90% write buffer threshold has been reached"
-                        );
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    break;
-                }
-
-                log::info!(
-                    "Write stall in keyspace {} because of write buffer saturation",
-                    self.name,
-                );
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
+    #[doc(hidden)]
+    #[must_use]
+    pub fn l0_table_count(&self) -> usize {
+        self.tree.level_table_count(0).unwrap_or_default()
     }
 
     /// Number of tables (a.k.a. SST files) in the LSM-tree.
@@ -895,8 +980,10 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        self.tree
-            .major_compact(64_000_000, self.snapshot_tracker.get_seqno_safe_to_gc())?;
+        self.tree.major_compact(
+            64_000_000,
+            self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
+        )?;
 
         // TODO: 3.0.0 ----^
         // compaction strategy needs a method: strategy.table_target_size()
@@ -950,7 +1037,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.snapshot_tracker.next();
+        let seqno = self.supervisor.snapshot_tracker.next();
 
         journal_writer.write_raw(self.id, &key, &value, lsm_tree::ValueType::Value, seqno)?;
 
@@ -970,11 +1057,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-
-        self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }
@@ -1024,7 +1108,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.snapshot_tracker.next();
+        let seqno = self.supervisor.snapshot_tracker.next();
 
         journal_writer.write_raw(self.id, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
@@ -1044,10 +1128,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-        self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }
@@ -1109,7 +1191,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.snapshot_tracker.next();
+        let seqno = self.supervisor.snapshot_tracker.next();
 
         journal_writer.write_raw(
             self.id,
@@ -1137,10 +1219,8 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        let write_buffer_size = self.write_buffer_manager.allocate(item_size);
-
-        self.check_memtable_overflow(memtable_size)?;
-        self.check_write_buffer_size(write_buffer_size);
+        self.supervisor.write_buffer_size.allocate(item_size);
+        self.backpressure(memtable_size)?;
 
         Ok(())
     }

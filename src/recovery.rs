@@ -46,7 +46,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             .parse::<InternalKeyspaceId>()
             .expect("should be valid integer");
 
-        // NOTE: Is meta partition
+        // NOTE: Is meta keyspace
         if keyspace_id == 0 {
             continue;
         }
@@ -72,9 +72,10 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
 
-        let base_config = lsm_tree::Config::new(path, db.snapshot_tracker.seqno_ref().clone())
-            .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+        let base_config =
+            lsm_tree::Config::new(path, db.supervisor.snapshot_tracker.seqno_ref().clone())
+                .use_descriptor_table(db.config.descriptor_table.clone())
+                .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &recovered_config);
 
@@ -104,11 +105,15 @@ pub fn recover_sealed_memtables(
     db: &Database,
     sealed_journal_paths: &[PathBuf],
 ) -> crate::Result<()> {
-    #[allow(clippy::significant_drop_tightening)]
-    let mut flush_manager_lock = db.flush_manager.write().expect("lock is poisoned");
+    // #[allow(clippy::significant_drop_tightening)]
+    // let mut flush_manager_lock = db.flush_manager.write().expect("lock is poisoned");
 
     #[allow(clippy::significant_drop_tightening)]
-    let mut journal_manager_lock = db.journal_manager.write().expect("lock is poisoned");
+    let mut journal_manager_lock = db
+        .supervisor
+        .journal_manager
+        .write()
+        .expect("lock is poisoned");
 
     #[allow(clippy::significant_drop_tightening)]
     let keyspaces_lock = db.keyspaces.read().expect("lock is poisoned");
@@ -189,7 +194,7 @@ pub fn recover_sealed_memtables(
                 continue;
             }
 
-            if let Some((memtable_id, sealed_memtable)) = tree.rotate_memtable() {
+            if let Some(sealed_memtable) = tree.rotate_memtable() {
                 assert_eq!(
                     Some(handle.lsn),
                     sealed_memtable.get_highest_seqno(),
@@ -204,23 +209,31 @@ pub fn recover_sealed_memtables(
 
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
-                db.snapshot_tracker.set(maybe_next_seqno);
-                log::debug!("Database seqno is now {}", db.snapshot_tracker.get());
+                db.supervisor.snapshot_tracker.set(maybe_next_seqno);
+                log::debug!(
+                    "Database seqno is now {}",
+                    db.supervisor.snapshot_tracker.get()
+                );
 
                 // IMPORTANT: Add sealed memtable size to current write buffer size
-                db.write_buffer_manager.allocate(sealed_memtable.size());
+                db.supervisor
+                    .write_buffer_size
+                    .allocate(sealed_memtable.size());
 
                 // TODO: unit test write buffer size after recovery
 
                 // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                flush_manager_lock.enqueue_task(
-                    handle.keyspace.id,
-                    crate::flush::manager::Task {
-                        id: memtable_id,
-                        sealed_memtable,
-                        keyspace: handle.keyspace.clone(),
-                    },
-                );
+
+                // TODO: 3.0.0
+
+                // flush_manager_lock.enqueue_task(
+                //     handle.keyspace.id,
+                //     crate::flush::manager::Task {
+                //         id: memtable_id,
+                //         sealed_memtable,
+                //         keyspace: handle.keyspace.clone(),
+                //     },
+                // );
 
                 recovered_count += 1;
             }

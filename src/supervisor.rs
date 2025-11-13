@@ -1,0 +1,35 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::{
+    flush::manager::FlushManager, journal::manager::JournalManager,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
+};
+use std::sync::{Arc, RwLock};
+
+pub struct SupervisorInner {
+    pub(crate) write_buffer_size: WriteBufferManager,
+    pub(crate) flush_manager: FlushManager,
+    pub snapshot_tracker: SnapshotTracker,
+
+    /// Tracks journal size and garbage collects sealed journals when possible
+    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+}
+
+#[derive(Clone)]
+pub struct Supervisor(Arc<SupervisorInner>);
+
+impl std::ops::Deref for Supervisor {
+    type Target = SupervisorInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Supervisor {
+    pub fn new(inner: SupervisorInner) -> Self {
+        Self(Arc::new(inner))
+    }
+}

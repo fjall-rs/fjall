@@ -434,7 +434,7 @@ impl<'a> WriteTransaction<'a> {
     pub fn iter<'b>(
         &'b self,
         keyspace: &'b TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
         self.inner.iter(keyspace)
     }
 
@@ -466,7 +466,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         keyspace: &'b TxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K, R>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
         self.inner.range(keyspace, range)
     }
 
@@ -498,7 +498,7 @@ impl<'a> WriteTransaction<'a> {
         &'b self,
         keyspace: &'b TxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl Guard + use<'b, K>> + 'b {
+    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
         self.inner.prefix(keyspace, prefix)
     }
 
