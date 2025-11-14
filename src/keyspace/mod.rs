@@ -785,13 +785,87 @@ impl Keyspace {
         {
             let start = std::time::Instant::now();
 
+            loop {
+                let wb_size = self.supervisor.write_buffer_size.get();
+
+                if wb_size <= self.db_config.max_write_buffer_size_in_bytes {
+                    break;
+                }
+
+                let overshoot = wb_size - self.db_config.max_write_buffer_size_in_bytes;
+
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                if start.elapsed() > std::time::Duration::from_secs(3) {
+                    log::debug!("Halting writes for {:?} now because database write buffer is still too large", start.elapsed());
+                    log::debug!("Write buffer overshoot is {overshoot}B");
+
+                    // TODO: this needs to happen in a mutex, and also
+                    // TODO: we should somehow register that we have already queued flushes so we don't overqueue
+                    {
+                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+                        let mut keyspaces_with_sizes: Vec<(_, u64)> = keyspaces
+                            .values()
+                            .filter(|x| x.tree.active_memtable_size() > 0)
+                            .map(|x| (x.clone(), x.tree.active_memtable_size()))
+                            .collect::<Vec<_>>();
+
+                        drop(keyspaces);
+
+                        keyspaces_with_sizes.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        let mut queued_bytes = 0;
+
+                        for (keyspace, bytes) in keyspaces_with_sizes.iter().rev() {
+                            if queued_bytes >= overshoot {
+                                break;
+                            }
+
+                            log::debug!(
+                                "Rotating {:?} to try to reduce database write buffer size",
+                                keyspace.name,
+                            );
+
+                            match keyspace.rotate_memtable() {
+                                Ok(_) => {
+                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                                        keyspace: keyspace.clone(),
+                                    }));
+                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Rotating keyspace {:?} failed: {e:?}",
+                                        keyspace.name,
+                                    );
+                                }
+                            }
+
+                            queued_bytes += bytes;
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_millis(490));
+                }
+
+                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::error!("DB was poisoned while being write halted");
+                    return;
+                }
+            }
+        }
+
+        {
+            let start = std::time::Instant::now();
+
             while {
                 self.supervisor
                     .journal_manager
                     .read()
                     .expect("lock is poisoned")
                     .disk_space_used()
-            } >= self.db_config.max_journaling_size_in_bytes
+            } > self.db_config.max_journaling_size_in_bytes
             {
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
@@ -817,63 +891,6 @@ impl Keyspace {
                         if let Some(lowest) = keyspaces_with_seqno.first() {
                             log::debug!(
                                 "Rotating {:?} to try to reduce journal size",
-                                lowest.0.name,
-                            );
-
-                            match lowest.0.rotate_memtable() {
-                                Ok(_) => {
-                                    self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
-                                        keyspace: lowest.0.clone(),
-                                    }));
-                                    self.worker_messager.try_send(WorkerMessage::Flush).ok();
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Rotating keyspace {:?} failed: {e:?}",
-                                        lowest.0.name,
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    std::thread::sleep(Duration::from_millis(490));
-                }
-
-                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
-                    log::error!("DB was poisoned while being write halted");
-                    return;
-                }
-            }
-        }
-
-        {
-            let start = std::time::Instant::now();
-
-            while self.supervisor.write_buffer_size.get()
-                >= self.db_config.max_write_buffer_size_in_bytes
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-
-                if start.elapsed() > std::time::Duration::from_secs(3) {
-                    log::debug!("Halting writes for 3+ secs now because database write buffer is still too large");
-
-                    {
-                        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
-
-                        let mut keyspaces_with_seqno = keyspaces
-                            .values()
-                            .filter(|x| x.tree.active_memtable_size() > 0)
-                            .map(|x| (x.clone(), x.tree.active_memtable_size()))
-                            .collect::<Vec<_>>();
-
-                        drop(keyspaces);
-
-                        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
-
-                        if let Some(lowest) = keyspaces_with_seqno.last() {
-                            log::debug!(
-                                "Rotating {:?} to try to reduce database write buffer size",
                                 lowest.0.name,
                             );
 
