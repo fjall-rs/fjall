@@ -100,6 +100,10 @@ impl Batch {
     pub fn commit(mut self) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
+        if self.is_empty() {
+            return Ok(());
+        }
+
         log::trace!("batch: Acquiring journal writer");
         let mut journal_writer = self.db.journal.get_writer();
 
@@ -133,15 +137,29 @@ impl Batch {
 
         log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
-        for item in std::mem::take(&mut self.data) {
-            // TODO: 3.0.0 this resolve can actually be pretty expensive
-            // TODO: maybe use a quick cache in meta_keyspace, or do it differently...
-            let Some(keyspace_name) = self.db.meta_keyspace.resolve_id(item.keyspace_id)? else {
-                continue;
-            };
+        let mut keyspace_cache: Option<Keyspace> = None;
 
-            let Some(keyspace) = keyspaces.get(&keyspace_name) else {
-                continue;
+        for item in std::mem::take(&mut self.data) {
+            let keyspace = if let Some(keyspace) = keyspace_cache
+                .as_ref()
+                .filter(|cached_keyspace| cached_keyspace.id == item.keyspace_id)
+            {
+                // Fast path
+                keyspace
+            } else {
+                // Slow path
+
+                let Some(keyspace_name) = self.db.meta_keyspace.resolve_id(item.keyspace_id)?
+                else {
+                    continue;
+                };
+
+                let Some(keyspace) = keyspaces.get(&keyspace_name) else {
+                    continue;
+                };
+
+                keyspace_cache = Some(keyspace.clone());
+                keyspace
             };
 
             // TODO: need a better, generic write op
