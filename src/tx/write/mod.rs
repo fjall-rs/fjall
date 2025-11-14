@@ -330,14 +330,15 @@ impl BaseTransaction {
         value: V,
     ) {
         // TODO: PERF: slow??
-        self.memtables.entry(keyspace.inner.id).or_default().insert(
-            lsm_tree::InternalValue::from_components(
+        self.memtables
+            .entry(keyspace.inner.id)
+            .or_insert_with(|| Arc::new(Memtable::new(0)))
+            .insert(lsm_tree::InternalValue::from_components(
                 key,
                 value,
                 self.seqno,
                 lsm_tree::ValueType::Value,
-            ),
-        );
+            ));
 
         self.seqno += 1;
     }
@@ -354,7 +355,7 @@ impl BaseTransaction {
         // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.inner.id)
-            .or_default()
+            .or_insert_with(|| Arc::new(Memtable::new(0)))
             .insert(lsm_tree::InternalValue::new_tombstone(key, self.seqno));
 
         self.seqno += 1;
@@ -377,7 +378,7 @@ impl BaseTransaction {
         // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.inner.id)
-            .or_default()
+            .or_insert_with(|| Arc::new(Memtable::new(0)))
             .insert(lsm_tree::InternalValue::new_weak_tombstone(key, self.seqno));
 
         self.seqno += 1;
