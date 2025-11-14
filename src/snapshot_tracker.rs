@@ -19,8 +19,6 @@ pub struct SnapshotTrackerInner {
 
     freed_count: AtomicU64,
 
-    safety_gap: u64,
-
     pub(crate) lowest_freed_instant: AtomicU64,
 }
 
@@ -39,7 +37,6 @@ impl SnapshotTracker {
     pub fn new(seqno: SequenceNumberCounter) -> Self {
         Self(Arc::new(SnapshotTrackerInner {
             data: DashMap::default(),
-            safety_gap: 50,
             freed_count: AtomicU64::default(),
             lowest_freed_instant: AtomicU64::default(),
             seqno,
@@ -129,7 +126,7 @@ impl SnapshotTracker {
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         self.lowest_freed_instant.store(
-            self.seqno.get().saturating_sub(self.safety_gap),
+            self.seqno.get().saturating_sub(1),
             std::sync::atomic::Ordering::Release,
         );
     }
@@ -137,7 +134,7 @@ impl SnapshotTracker {
     pub(crate) fn gc(&self) {
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
-        let seqno_threshold = self.seqno.get().saturating_sub(self.safety_gap);
+        let seqno_threshold = self.seqno.get();
 
         let mut lowest_retained = 0;
 
@@ -155,7 +152,7 @@ impl SnapshotTracker {
         });
 
         self.lowest_freed_instant.fetch_max(
-            lowest_retained.saturating_sub(self.safety_gap),
+            lowest_retained.saturating_sub(1),
             std::sync::atomic::Ordering::AcqRel,
         );
     }

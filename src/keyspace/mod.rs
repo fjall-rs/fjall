@@ -846,6 +846,17 @@ impl Keyspace {
                         }
                     }
 
+                    if start.elapsed() > std::time::Duration::from_secs(10) {
+                        self.supervisor.snapshot_tracker.pullup();
+                        self.supervisor.snapshot_tracker.gc();
+                        break;
+                    }
+
+                    if start.elapsed() > std::time::Duration::from_secs(30) {
+                        log::debug!("Giving up after {:?}", start.elapsed());
+                        break;
+                    }
+
                     std::thread::sleep(Duration::from_millis(490));
                 }
 
@@ -911,6 +922,17 @@ impl Keyspace {
                         }
                     }
 
+                    if start.elapsed() > std::time::Duration::from_secs(10) {
+                        self.supervisor.snapshot_tracker.pullup();
+                        self.supervisor.snapshot_tracker.gc();
+                        break;
+                    }
+
+                    if start.elapsed() > std::time::Duration::from_secs(30) {
+                        log::debug!("Giving up after {:?}", start.elapsed());
+                        break;
+                    }
+
                     std::thread::sleep(Duration::from_millis(490));
                 }
 
@@ -937,6 +959,11 @@ impl Keyspace {
                 self.worker_messager
                     .try_send(WorkerMessage::Compact(self.clone()))
                     .ok();
+
+                if start.elapsed() > std::time::Duration::from_secs(30) {
+                    log::debug!("Giving up after {:?}", start.elapsed());
+                    break;
+                }
 
                 std::thread::sleep(Duration::from_millis(490));
 
