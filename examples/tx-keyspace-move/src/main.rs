@@ -1,4 +1,4 @@
-use fjall::{PersistMode, TxDatabase};
+use fjall::{PersistMode, SingleWriterTxDatabase};
 use std::path::Path;
 
 const ITEM_COUNT: u64 = 200;
@@ -6,7 +6,9 @@ const ITEM_COUNT: u64 = 200;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let db = TxDatabase::builder(path).temporary(true).open()?;
+    let db = SingleWriterTxDatabase::builder(path)
+        .temporary(true)
+        .open()?;
 
     let src = db.keyspace("src", Default::default())?;
     let dst = db.keyspace("dst", Default::default())?;
@@ -57,8 +59,8 @@ fn main() -> fjall::Result<()> {
         t.join().unwrap()?;
     }
 
-    assert_eq!(ITEM_COUNT, db.read_tx().len(&dst)? as u64);
-    assert!(db.read_tx().is_empty(&src)?);
+    assert_eq!(ITEM_COUNT, db.read_tx().len(dst.inner())? as u64);
+    assert!(db.read_tx().is_empty(src.inner())?);
 
     Ok(())
 }

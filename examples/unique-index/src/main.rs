@@ -1,4 +1,4 @@
-use fjall::{Guard, TxDatabase, TxKeyspace};
+use fjall::{Guard, SingleWriterTxDatabase, SingleWriterTxKeyspace};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -14,9 +14,9 @@ impl From<fjall::Error> for Error {
 }
 
 fn maybe_create_item(
-    db: &TxDatabase,
-    items: &TxKeyspace,
-    uniq: &TxKeyspace,
+    db: &SingleWriterTxDatabase,
+    items: &SingleWriterTxKeyspace,
+    uniq: &SingleWriterTxKeyspace,
     id: &str,
     name: &str,
 ) -> Result<(), Error> {
@@ -37,7 +37,9 @@ fn maybe_create_item(
 fn main() -> Result<(), Error> {
     let path = Path::new(".fjall_data");
 
-    let db = TxDatabase::builder(path).temporary(true).open()?;
+    let db = SingleWriterTxDatabase::builder(path)
+        .temporary(true)
+        .open()?;
 
     let items = db.keyspace("items", Default::default())?;
     let uniq = db.keyspace("uniq_idx", Default::default())?;
@@ -55,7 +57,7 @@ fn main() -> Result<(), Error> {
 
     let mut found_count = 0;
 
-    for kv in db.read_tx().iter(&uniq) {
+    for kv in db.read_tx().iter(uniq.inner()) {
         let (k, v) = kv.into_inner()?;
 
         println!(

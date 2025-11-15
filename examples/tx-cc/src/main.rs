@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
-    let db = fjall::TxDatabase::builder(".fjall_data")
+    let db = fjall::SingleWriterTxDatabase::builder(".fjall_data")
         .temporary(true)
         .open()?;
 
@@ -43,7 +43,7 @@ fn main() -> fjall::Result<()> {
     // ~6 seconds
     println!("Done in {:?}, items.len={}", start.elapsed(), {
         let rtx = db.read_tx();
-        rtx.len(&items)?
+        rtx.len(items.inner())?
     });
 
     Ok(())

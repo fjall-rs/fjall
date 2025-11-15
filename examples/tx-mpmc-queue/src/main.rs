@@ -1,4 +1,4 @@
-use fjall::{PersistMode, TxDatabase};
+use fjall::{PersistMode, SingleWriterTxDatabase};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -13,7 +13,9 @@ const EXPECTED_COUNT: usize = PRODUCER_COUNT * PRODUCING_COUNT;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let db = TxDatabase::builder(path).temporary(true).open()?;
+    let db = SingleWriterTxDatabase::builder(path)
+        .temporary(true)
+        .open()?;
 
     let tasks = db.keyspace("tasks", Default::default())?;
 
