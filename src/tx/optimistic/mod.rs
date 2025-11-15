@@ -86,7 +86,7 @@ impl OptimisticTxDatabase {
         Ok(write_tx)
     }
 
-    /// Starts a new read-only transaction.
+    /// Starts a new read-only transaction (a.k.a. [`Snapshot`]).
     #[must_use]
     pub fn read_tx(&self) -> Snapshot {
         self.inner.snapshot()
