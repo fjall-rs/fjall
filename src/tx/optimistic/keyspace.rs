@@ -2,18 +2,18 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{Keyspace, TxDatabase};
+use crate::{tx::optimistic::OptimisticTxDatabase, Keyspace};
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::path::PathBuf;
 
 /// Handle to a keyspace of a transactional database
 #[derive(Clone)]
-pub struct TxKeyspace {
+pub struct OptimisticTxKeyspace {
     pub(crate) inner: Keyspace,
-    pub(crate) db: TxDatabase,
+    pub(crate) db: OptimisticTxDatabase,
 }
 
-impl TxKeyspace {
+impl OptimisticTxKeyspace {
     /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> PathBuf {
@@ -140,22 +140,11 @@ impl TxKeyspace {
         key: K,
         mut f: F,
     ) -> crate::Result<Option<UserValue>> {
-        let key: UserKey = key.into();
+        let key = key.into();
 
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-
-            let prev = tx.fetch_update(self, key, f)?;
-            tx.commit()?;
-
-            Ok(prev)
-        }
-
-        #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.db.write_tx()?;
-            let prev = tx.fetch_update(self, key.clone(), &mut f)?;
+            let prev = tx.fetch_update(self.inner(), key.clone(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(prev);
             }
@@ -223,19 +212,9 @@ impl TxKeyspace {
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
 
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            let updated = tx.update_fetch(self, key, f)?;
-            tx.commit()?;
-
-            Ok(updated)
-        }
-
-        #[cfg(feature = "ssi_tx")]
         loop {
             let mut tx = self.db.write_tx()?;
-            let updated = tx.update_fetch(self, key.clone(), &mut f)?;
+            let updated = tx.update_fetch(self.inner(), key.clone(), &mut f)?;
             if tx.commit()?.is_ok() {
                 return Ok(updated);
             }
@@ -274,21 +253,13 @@ impl TxKeyspace {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.insert(self, key, value);
-            tx.commit()?;
-            Ok(())
-        }
+        let mut tx = self.db.write_tx()?;
+        tx.insert(self.inner(), key, value);
 
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.insert(self, key, value);
-            tx.commit()?.expect("blind insert should not conflict ever");
-            Ok(())
-        }
+        #[allow(clippy::expect_used)]
+        tx.commit()?.expect("blind insert should not conflict ever");
+
+        Ok(())
     }
 
     /// Removes an item from the keyspace.
@@ -319,21 +290,13 @@ impl TxKeyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.remove(self, key);
-            tx.commit()?;
-            Ok(())
-        }
+        let mut tx = self.db.write_tx()?;
+        tx.remove(self.inner(), key);
 
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.remove(self, key);
-            tx.commit()?.expect("blind remove should not conflict ever");
-            Ok(())
-        }
+        #[allow(clippy::expect_used)]
+        tx.commit()?.expect("blind remove should not conflict ever");
+
+        Ok(())
     }
 
     /// Removes an item from the keyspace, leaving behind a weak tombstone.
@@ -374,21 +337,13 @@ impl TxKeyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.remove_weak(self, key);
-            tx.commit()?;
-            Ok(())
-        }
+        let mut tx = self.db.write_tx()?;
+        tx.remove_weak(self.inner(), key);
 
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.remove_weak(self, key);
-            tx.commit()?.expect("blind remove should not conflict ever");
-            Ok(())
-        }
+        #[allow(clippy::expect_used)]
+        tx.commit()?.expect("blind remove should not conflict ever");
+
+        Ok(())
     }
 
     /// Retrieves an item from the keyspace.
@@ -471,7 +426,7 @@ impl TxKeyspace {
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
         let read_tx = self.db.read_tx();
-        read_tx.first_key_value(self)
+        read_tx.first_key_value(&self.inner)
     }
 
     /// Returns the last key-value pair in the keyspace.
@@ -500,7 +455,7 @@ impl TxKeyspace {
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
         let read_tx = self.db.read_tx();
-        read_tx.last_key_value(self)
+        read_tx.last_key_value(&self.inner)
     }
 
     /// Returns `true` if the keyspace contains the specified key.

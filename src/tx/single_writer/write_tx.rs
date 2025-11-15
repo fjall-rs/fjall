@@ -1,6 +1,9 @@
-use super::BaseTransaction as InnerWriteTransaction;
-use crate::{snapshot_nonce::SnapshotNonce, PersistMode, TxDatabase, TxKeyspace};
-use lsm_tree::{Guard, KvPair, UserKey, UserValue};
+use crate::{
+    snapshot_nonce::SnapshotNonce,
+    tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
+    Guard, PersistMode, SingleWriterTxDatabase,
+};
+use lsm_tree::{KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
 
 /// A single-writer (serialized) cross-keyspace transaction
@@ -15,14 +18,18 @@ use std::{ops::RangeBounds, sync::MutexGuard};
 #[clippy::has_significant_drop]
 pub struct WriteTransaction<'a> {
     _guard: MutexGuard<'a, ()>,
-    inner: InnerWriteTransaction,
+    inner: BaseTransaction,
 }
 
 impl<'a> WriteTransaction<'a> {
-    pub(crate) fn new(db: TxDatabase, nonce: SnapshotNonce, guard: MutexGuard<'a, ()>) -> Self {
+    pub(crate) fn new(
+        db: SingleWriterTxDatabase,
+        nonce: SnapshotNonce,
+        guard: MutexGuard<'a, ()>,
+    ) -> Self {
         Self {
             _guard: guard,
-            inner: InnerWriteTransaction::new(db, nonce),
+            inner: BaseTransaction::new(db.inner, nonce),
         }
     }
 
@@ -61,10 +68,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn take<K: Into<UserKey>>(
         &mut self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.take(keyspace, key)
+        self.inner.take(keyspace.inner(), key)
     }
 
     /// Atomically updates an item and returns the new value.
@@ -119,11 +126,11 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.update_fetch(keyspace, key, f)
+        self.inner.update_fetch(keyspace.inner(), key, f)
     }
 
     /// Atomically updates an item and returns the previous value.
@@ -178,11 +185,11 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.fetch_update(keyspace, key, f)
+        self.inner.fetch_update(keyspace.inner(), key, f)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -220,10 +227,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
-        self.inner.get(keyspace, key)
+        self.inner.get(keyspace.inner(), key)
     }
 
     /// Retrieves an item from the transaction's state.
@@ -261,10 +268,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(
         &self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
     ) -> crate::Result<Option<u32>> {
-        self.inner.size_of(keyspace, key)
+        self.inner.size_of(keyspace.inner(), key)
     }
 
     /// Returns `true` if the transaction's state contains the specified key.
@@ -300,10 +307,10 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn contains_key<K: AsRef<[u8]>>(
         &self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
     ) -> crate::Result<bool> {
-        self.inner.contains_key(keyspace, key)
+        self.inner.contains_key(keyspace.inner(), key)
     }
 
     /// Returns the first key-value pair in the transaction's state.
@@ -334,8 +341,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.inner.first_key_value(keyspace)
+    pub fn first_key_value(
+        &self,
+        keyspace: &SingleWriterTxKeyspace,
+    ) -> crate::Result<Option<KvPair>> {
+        self.inner.first_key_value(keyspace.inner())
     }
 
     /// Returns the last key-value pair in the transaction's state.
@@ -366,8 +376,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, keyspace: &TxKeyspace) -> crate::Result<Option<KvPair>> {
-        self.inner.last_key_value(keyspace)
+    pub fn last_key_value(
+        &self,
+        keyspace: &SingleWriterTxKeyspace,
+    ) -> crate::Result<Option<KvPair>> {
+        self.inner.last_key_value(keyspace.inner())
     }
 
     /// Scans the entire keyspace, returning the amount of items.
@@ -403,8 +416,8 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: &TxKeyspace) -> crate::Result<usize> {
-        self.inner.len(keyspace)
+    pub fn len(&self, keyspace: &SingleWriterTxKeyspace) -> crate::Result<usize> {
+        self.inner.len(keyspace.inner())
     }
 
     /// Iterates over the transaction's state.
@@ -433,9 +446,9 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn iter<'b>(
         &'b self,
-        keyspace: &'b TxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
-        self.inner.iter(keyspace)
+        keyspace: &'b SingleWriterTxKeyspace,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
+        self.inner.iter(keyspace.inner())
     }
 
     // Iterates over a range of the transaction's state.
@@ -464,10 +477,10 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
-        keyspace: &'b TxKeyspace,
+        keyspace: &'b SingleWriterTxKeyspace,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
-        self.inner.range(keyspace, range)
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
+        self.inner.range(keyspace.inner(), range)
     }
 
     /// Iterates over a prefixed set of the transaction's state.
@@ -496,10 +509,10 @@ impl<'a> WriteTransaction<'a> {
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
-        keyspace: &'b TxKeyspace,
+        keyspace: &'b SingleWriterTxKeyspace,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = impl Guard> + 'b {
-        self.inner.prefix(keyspace, prefix)
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
+        self.inner.prefix(keyspace.inner(), prefix)
     }
 
     // Inserts a key-value pair into the keyspace.
@@ -536,11 +549,11 @@ impl<'a> WriteTransaction<'a> {
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
-        keyspace: &TxKeyspace,
+        keyspace: &SingleWriterTxKeyspace,
         key: K,
         value: V,
     ) {
-        self.inner.insert(keyspace, key, value);
+        self.inner.insert(keyspace.inner(), key, value);
     }
 
     /// Removes an item from the keyspace.
@@ -577,8 +590,8 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
-        self.inner.remove(keyspace, key);
+    pub fn remove<K: Into<UserKey>>(&mut self, keyspace: &SingleWriterTxKeyspace, key: K) {
+        self.inner.remove(keyspace.inner(), key);
     }
 
     /// Removes an item from the keyspace, leaving behind a weak tombstone.
@@ -622,8 +635,8 @@ impl<'a> WriteTransaction<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &TxKeyspace, key: K) {
-        self.inner.remove_weak(keyspace, key);
+    pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &SingleWriterTxKeyspace, key: K) {
+        self.inner.remove_weak(keyspace.inner(), key);
     }
 
     /// Commits the transaction.

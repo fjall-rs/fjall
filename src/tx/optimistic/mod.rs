@@ -2,36 +2,57 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::write_tx::WriteTransaction;
+mod conflict_manager;
+mod keyspace;
+mod oracle;
+mod write_tx;
+
 use crate::{
-    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, ReadTransaction,
-    TxKeyspace,
+    keyspace::KeyspaceKey,
+    tx::{
+        optimistic::{oracle::Oracle, write_tx::WriteTransaction},
+        single_writer::Openable,
+    },
+    Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
 };
 use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
 
-#[cfg(feature = "ssi_tx")]
-use super::oracle::Oracle;
+pub use keyspace::OptimisticTxKeyspace;
+pub use write_tx::Conflict;
 
 /// Transactional database
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
-pub struct TxDatabase {
+pub struct OptimisticTxDatabase {
     pub(crate) inner: Database,
-
-    #[cfg(feature = "ssi_tx")]
     pub(super) oracle: Arc<Oracle>,
-
-    #[cfg(feature = "single_writer_tx")]
-    single_writer_lock: Arc<Mutex<()>>,
 }
 
-impl TxDatabase {
+impl Openable for OptimisticTxDatabase {
+    fn open(config: Config) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let inner = Database::create_or_recover(config)?;
+        // inner.start_background_threads()?;
+
+        Ok(Self {
+            oracle: Arc::new(Oracle {
+                write_serialize_lock: Mutex::default(),
+                snapshot_tracker: inner.supervisor.snapshot_tracker.clone(),
+            }),
+            inner,
+        })
+    }
+}
+
+impl OptimisticTxDatabase {
     /// Creates a new database builder to create or open a database at `path`.
-    pub fn builder(path: impl AsRef<Path>) -> crate::TxDatabaseBuilder {
-        crate::TxDatabaseBuilder::new(path.as_ref())
+    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder<Self> {
+        crate::DatabaseBuilder::new(path.as_ref())
     }
 
     #[doc(hidden)]
@@ -41,30 +62,10 @@ impl TxDatabase {
     }
 
     /// Starts a new writeable transaction.
-    #[cfg(feature = "single_writer_tx")]
-    #[must_use]
-    pub fn write_tx(&self) -> WriteTransaction<'_> {
-        let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
-
-        let mut write_tx = WriteTransaction::new(
-            self.clone(),
-            self.inner.supervisor.snapshot_tracker.open(),
-            guard,
-        );
-
-        if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(PersistMode::Buffer));
-        }
-
-        write_tx
-    }
-
-    /// Starts a new writeable transaction.
     ///
     /// # Errors
     ///
     /// Will return `Err` if creation failed.
-    #[cfg(feature = "ssi_tx")]
     pub fn write_tx(&self) -> crate::Result<WriteTransaction> {
         let snapshot = {
             // acquire a lock here to prevent getting a stale snapshot seqno
@@ -75,7 +76,8 @@ impl TxDatabase {
             self.inner.supervisor.snapshot_tracker.open()
         };
 
-        let mut write_tx = WriteTransaction::new(self.clone(), snapshot);
+        let mut write_tx =
+            WriteTransaction::new(self.inner().clone(), snapshot, self.oracle.clone());
 
         if !self.inner.config.manual_journal_persist {
             write_tx = write_tx.durability(Some(PersistMode::Buffer));
@@ -86,8 +88,8 @@ impl TxDatabase {
 
     /// Starts a new read-only transaction.
     #[must_use]
-    pub fn read_tx(&self) -> ReadTransaction {
-        ReadTransaction::new(self.inner.snapshot())
+    pub fn read_tx(&self) -> Snapshot {
+        self.inner.snapshot()
     }
 
     /// Flushes the active journal. The durability depends on the [`PersistMode`]
@@ -136,10 +138,10 @@ impl TxDatabase {
         &self,
         name: &str,
         create_options: KeyspaceCreateOptions,
-    ) -> crate::Result<TxKeyspace> {
+    ) -> crate::Result<OptimisticTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 
-        Ok(TxKeyspace {
+        Ok(OptimisticTxKeyspace {
             inner: keyspace,
             db: self.clone(),
         })
@@ -182,26 +184,5 @@ impl TxDatabase {
     /// Returns error, if an IO error occurred.
     pub fn disk_space(&self) -> crate::Result<u64> {
         self.inner.disk_space()
-    }
-
-    /// Opens a database in the given directory.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occurred.
-    pub fn open(config: Config) -> crate::Result<Self> {
-        let inner = Database::create_or_recover(config)?;
-        // inner.start_background_threads()?;
-
-        Ok(Self {
-            #[cfg(feature = "ssi_tx")]
-            oracle: Arc::new(Oracle {
-                write_serialize_lock: Mutex::default(),
-                snapshot_tracker: inner.supervisor.snapshot_tracker.clone(),
-            }),
-            inner,
-            #[cfg(feature = "single_writer_tx")]
-            single_writer_lock: Arc::default(),
-        })
     }
 }

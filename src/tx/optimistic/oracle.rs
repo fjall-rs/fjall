@@ -43,6 +43,8 @@ impl Oracle {
 
         self.snapshot_tracker.close_raw(instant);
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
+        eprintln!("watermark={safe_to_gc}");
+        eprintln!("snapshot tracker len={}", self.snapshot_tracker.len());
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 
         if conflicted {
@@ -69,43 +71,47 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{KeyspaceCreateOptions, TxDatabase, TxKeyspace};
+    use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace};
+
+    #[allow(clippy::significant_drop_tightening)]
+    fn run_tx(
+        db: &OptimisticTxDatabase,
+        tree: &OptimisticTxKeyspace,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut tx1 = db.write_tx()?;
+        let mut tx2 = db.write_tx()?;
+        tx1.insert(tree.inner(), "hello", "world");
+
+        tx1.commit()??;
+        assert!(tree.contains_key("hello")?);
+
+        _ = tx2.get(tree.inner(), "hello")?;
+
+        tx2.insert(tree.inner(), "hello", "world2");
+        assert!(tx2.commit()?.is_err()); // intended to conflict
+
+        Ok(())
+    }
 
     #[allow(clippy::unwrap_used)]
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
-        let db = TxDatabase::builder(tmpdir.path()).open()?;
+        let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
 
         let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
 
-        for _ in 0..250 {
+        for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
 
-        for _ in 0..200 {
+        for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 200);
-
-        Ok(())
-    }
-
-    fn run_tx(db: &TxDatabase, part: &TxKeyspace) -> Result<(), Box<dyn std::error::Error>> {
-        let mut tx1 = db.write_tx()?;
-        let mut tx2 = db.write_tx()?;
-        tx1.insert(part, "hello", "world");
-
-        tx1.commit()??;
-        assert!(part.contains_key("hello")?);
-
-        _ = tx2.get(part, "hello")?;
-
-        tx2.insert(part, "hello", "world2");
-        assert!(tx2.commit()?.is_err()); // intended to conflict
+        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
 
         Ok(())
     }

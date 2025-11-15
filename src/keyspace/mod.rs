@@ -673,6 +673,7 @@ impl Keyspace {
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         let watermark = self.flushes_completed();
 
+        // TODO: not reliable...?
         if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
 

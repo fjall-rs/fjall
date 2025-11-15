@@ -1,19 +1,25 @@
-use crate::Config;
+use crate::{tx::single_writer::Openable, Config};
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
-use std::{path::Path, sync::Arc};
+use std::{marker::PhantomData, path::Path, sync::Arc};
 
 /// Database builder
-pub struct Builder(Config);
+pub struct Builder<O: Openable> {
+    inner: Config,
+    _phantom: PhantomData<O>,
+}
 
-impl Builder {
+impl<O: Openable> Builder<O> {
     pub(crate) fn new(path: &Path) -> Self {
-        Self(Config::new(path))
+        Self {
+            inner: Config::new(path),
+            _phantom: PhantomData,
+        }
     }
 
     #[doc(hidden)]
     #[must_use]
     pub fn into_config(self) -> Config {
-        self.0
+        self.inner
     }
 
     /// Opens the database, creating it if it does not exist.
@@ -21,14 +27,14 @@ impl Builder {
     /// # Errors
     ///
     /// Errors if an I/O error occurred, or if the database can not be opened.
-    pub fn open(self) -> crate::Result<crate::Database> {
-        crate::Database::open(self.0)
+    pub fn open(self) -> crate::Result<O> {
+        O::open(self.inner)
     }
 
     /// Sets the compression type to use for large values that are written into the journal file.
     #[must_use]
     pub fn journal_compression(mut self, comp: CompressionType) -> Self {
-        self.0.journal_compression_type = comp;
+        self.inner.journal_compression_type = comp;
         self
     }
 
@@ -39,7 +45,7 @@ impl Builder {
     /// Set to `true` to handle persistence manually, e.g. manually using `PersistMode::SyncData` for ACID transactions.
     #[must_use]
     pub fn manual_journal_persist(mut self, flag: bool) -> Self {
-        self.0.manual_journal_persist = flag;
+        self.inner.manual_journal_persist = flag;
         self
     }
 
@@ -61,7 +67,7 @@ impl Builder {
     #[doc(hidden)]
     #[must_use]
     pub fn worker_threads_unchecked(mut self, n: usize) -> Self {
-        self.0.worker_threads = n;
+        self.inner.worker_threads = n;
         self
     }
 
@@ -81,7 +87,7 @@ impl Builder {
         let n = n.expect("should be Some");
         assert!(n >= 10);
 
-        self.0.descriptor_table = Arc::new(DescriptorTable::new(n));
+        self.inner.descriptor_table = Arc::new(DescriptorTable::new(n));
         self
     }
 
@@ -90,7 +96,7 @@ impl Builder {
     /// It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
     #[must_use]
     pub fn cache_size(mut self, size_bytes: u64) -> Self {
-        self.0.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
+        self.inner.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
         self
     }
 
@@ -110,7 +116,7 @@ impl Builder {
     pub fn max_journaling_size(mut self, bytes: u64) -> Self {
         assert!(bytes >= 24 * 1_024 * 1_024);
 
-        self.0.max_journaling_size_in_bytes = bytes;
+        self.inner.max_journaling_size_in_bytes = bytes;
         self
     }
 
@@ -129,7 +135,7 @@ impl Builder {
     pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
         assert!(bytes >= 1_024 * 1_024);
 
-        self.0.max_write_buffer_size_in_bytes = bytes;
+        self.inner.max_write_buffer_size_in_bytes = bytes;
         self
     }
 
@@ -150,7 +156,7 @@ impl Builder {
     /// ```
     #[must_use]
     pub fn temporary(mut self, flag: bool) -> Self {
-        self.0.clean_path_on_drop = flag;
+        self.inner.clean_path_on_drop = flag;
         self
     }
 }
