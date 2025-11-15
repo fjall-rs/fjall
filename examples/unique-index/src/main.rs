@@ -1,4 +1,4 @@
-use fjall::{Guard, SingleWriterTxDatabase, SingleWriterTxKeyspace};
+use fjall::{SingleWriterTxDatabase, SingleWriterTxKeyspace};
 use std::path::Path;
 
 #[derive(Debug)]
