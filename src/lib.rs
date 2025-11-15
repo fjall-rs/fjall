@@ -81,6 +81,7 @@
 #![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod backpressure;
 mod batch;
 mod builder;
 
@@ -111,10 +112,7 @@ mod snapshot_nonce;
 mod snapshot_tracker;
 mod stats;
 mod supervisor;
-
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
 mod tx;
-
 mod version;
 mod worker_pool;
 mod write_buffer_manager;
@@ -142,14 +140,12 @@ pub use {
     version::Version,
 };
 
-#[cfg(any(feature = "single_writer_tx", feature = "ssi_tx"))]
-pub use tx::{
-    db::TxDatabase, keyspace::TxKeyspace, read_tx::ReadTransaction, write_tx::WriteTransaction,
-    Builder as TxDatabaseBuilder,
+pub use tx::single_writer::{
+    SingleWriterTxKeyspace, TxDatabase as SingleWriterTxDatabase,
+    WriteTransaction as SingleWriterWriteTx,
 };
 
-#[cfg(feature = "ssi_tx")]
-pub use tx::write::ssi::Conflict;
+pub use tx::optimistic::{Conflict, OptimisticTxDatabase, OptimisticTxKeyspace};
 
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};

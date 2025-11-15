@@ -17,18 +17,17 @@ name = "fjall"
 path = "src/lib.rs"
 
 [features]
-default = ["single_writer_tx", "lz4"]
+default = ["lz4"]
 lz4 = ["lsm-tree/lz4", "dep:lz4_flex"]
 bytes_1 = ["lsm-tree/bytes_1"]
-single_writer_tx = []
-ssi_tx = []
 metrics = ["lsm-tree/metrics"]
 __internal_whitebox = []
 
 [dependencies]
 byteorder = { package = "byteorder-lite", version = "0.1.0" }
 byteview = "~0.8.0"
-lsm-tree = { version = "3.0.0-pre.6", default-features = false, features = [] }
+lsm-tree = { git = "https://github.com/fjall-rs/lsm-tree", default-features = false, features = [
+] }
 log = "0.4.27"
 tempfile = "3.20.0"
 dashmap = "6.1.0"
@@ -49,4 +48,3 @@ path = "benches/fjall.rs"
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
-skip_feature_sets = [["ssi_tx", "single_writer_tx"]]

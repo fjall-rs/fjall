@@ -9,11 +9,11 @@ mod hash_ratio;
 mod pinning;
 mod restart_interval;
 
-pub(crate) trait EncodeConfig {
+pub trait EncodeConfig {
     fn encode(&self) -> crate::Slice;
 }
 
 // TODO: result
-pub(crate) trait DecodeConfig {
+pub trait DecodeConfig {
     fn decode(bytes: &[u8]) -> Self;
 }

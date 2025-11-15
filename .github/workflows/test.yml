@@ -99,13 +99,9 @@ jobs:
         env:
           RUST_LOG: trace
       - name: Run tests
-        run: cargo nextest run --features lz4,single_writer_tx
-      - name: Run SSI tests
-        run: cargo nextest run --no-default-features --features ssi_tx tx_ssi_
+        run: cargo nextest run --features lz4
       - name: Run doc tests
         run: cargo test --doc
-      - name: Run SSI doc tests
-        run: cargo test --no-default-features --features ssi_tx --doc
   cross:
     timeout-minutes: 15
     name: cross

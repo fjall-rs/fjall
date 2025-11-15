@@ -137,8 +137,11 @@ impl SnapshotTracker {
         let seqno_threshold = self.seqno.get();
 
         let mut lowest_retained = 0;
+        let mut none_retained = true;
 
         self.data.retain(|&k, v| {
+            log::error!("{k}->{v}");
+
             let should_be_retained = *v > 0 || k >= seqno_threshold;
 
             if should_be_retained {
@@ -146,10 +149,15 @@ impl SnapshotTracker {
                     0 => k,
                     lo => lo.min(k),
                 };
+                none_retained = false;
             }
 
             should_be_retained
         });
+
+        if none_retained {
+            lowest_retained = seqno_threshold;
+        }
 
         self.lowest_freed_instant.fetch_max(
             lowest_retained.saturating_sub(1),

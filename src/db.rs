@@ -17,6 +17,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
+    tx::single_writer::Openable,
     version::Version,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
@@ -140,6 +141,15 @@ impl std::ops::Deref for Database {
     }
 }
 
+impl Openable for Database {
+    fn open(config: Config) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::open(config)
+    }
+}
+
 impl Database {
     /// Opens a cross-keyspace snapshot.
     ///
@@ -152,7 +162,7 @@ impl Database {
     }
 
     /// Creates a new database builder to create or open a database at `path`.
-    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder {
+    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder<Self> {
         crate::DatabaseBuilder::new(path.as_ref())
     }
 

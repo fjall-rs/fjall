@@ -4,7 +4,7 @@
 
 use super::reader::JournalReader;
 use crate::{batch::item::Item as BatchItem, journal::marker::Marker, JournalRecoveryError};
-use lsm_tree::{coding::Encode, CompressionType, SeqNo};
+use lsm_tree::{coding::Encode, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
 
 macro_rules! fail_iter {

@@ -1,11 +1,10 @@
 #[test_log::test]
-#[cfg(feature = "single_writer_tx")]
 fn tx_ryow() -> fjall::Result<()> {
-    use fjall::{KeyspaceCreateOptions, TxDatabase};
+    use fjall::{KeyspaceCreateOptions, SingleWriterTxDatabase};
 
     let folder = tempfile::tempdir()?;
 
-    let db = TxDatabase::builder(&folder).open()?;
+    let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
     let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 

@@ -33,9 +33,9 @@ impl EncodeConfig for crate::config::FilterPolicy {
                             v.write_f32::<byteorder::LittleEndian>(*fpr)
                                 .expect("cannot fail");
                         }
-                    };
+                    }
                 }
-            };
+            }
         }
 
         v.into()

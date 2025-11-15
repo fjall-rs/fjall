@@ -2,18 +2,24 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{Keyspace, TxDatabase};
+use crate::{Keyspace, SingleWriterTxDatabase};
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::path::PathBuf;
 
 /// Handle to a keyspace of a transactional database
 #[derive(Clone)]
-pub struct TxKeyspace {
+pub struct SingleWriterTxKeyspace {
     pub(crate) inner: Keyspace,
-    pub(crate) db: TxDatabase,
+    pub(crate) db: SingleWriterTxDatabase,
 }
 
-impl TxKeyspace {
+impl AsRef<Keyspace> for SingleWriterTxKeyspace {
+    fn as_ref(&self) -> &Keyspace {
+        self.inner()
+    }
+}
+
+impl SingleWriterTxKeyspace {
     /// Returns the underlying LSM-tree's path.
     #[must_use]
     pub fn path(&self) -> PathBuf {
@@ -142,24 +148,12 @@ impl TxKeyspace {
     ) -> crate::Result<Option<UserValue>> {
         let key: UserKey = key.into();
 
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
+        let mut tx = self.db.write_tx();
 
-            let prev = tx.fetch_update(self, key, f)?;
-            tx.commit()?;
+        let prev = tx.fetch_update(self, key, f)?;
+        tx.commit()?;
 
-            Ok(prev)
-        }
-
-        #[cfg(feature = "ssi_tx")]
-        loop {
-            let mut tx = self.db.write_tx()?;
-            let prev = tx.fetch_update(self, key.clone(), &mut f)?;
-            if tx.commit()?.is_ok() {
-                return Ok(prev);
-            }
-        }
+        Ok(prev)
     }
 
     /// Atomically updates an item and returns the new value.
@@ -223,23 +217,11 @@ impl TxKeyspace {
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
 
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            let updated = tx.update_fetch(self, key, f)?;
-            tx.commit()?;
+        let mut tx = self.db.write_tx();
+        let updated = tx.update_fetch(self, key, f)?;
+        tx.commit()?;
 
-            Ok(updated)
-        }
-
-        #[cfg(feature = "ssi_tx")]
-        loop {
-            let mut tx = self.db.write_tx()?;
-            let updated = tx.update_fetch(self, key.clone(), &mut f)?;
-            if tx.commit()?.is_ok() {
-                return Ok(updated);
-            }
-        }
+        Ok(updated)
     }
 
     /// Inserts a key-value pair into the keyspace.
@@ -274,21 +256,10 @@ impl TxKeyspace {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.insert(self, key, value);
-            tx.commit()?;
-            Ok(())
-        }
-
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.insert(self, key, value);
-            tx.commit()?.expect("blind insert should not conflict ever");
-            Ok(())
-        }
+        let mut tx = self.db.write_tx();
+        tx.insert(self, key, value);
+        tx.commit()?;
+        Ok(())
     }
 
     /// Removes an item from the keyspace.
@@ -319,21 +290,10 @@ impl TxKeyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.remove(self, key);
-            tx.commit()?;
-            Ok(())
-        }
-
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.remove(self, key);
-            tx.commit()?.expect("blind remove should not conflict ever");
-            Ok(())
-        }
+        let mut tx = self.db.write_tx();
+        tx.remove(self, key);
+        tx.commit()?;
+        Ok(())
     }
 
     /// Removes an item from the keyspace, leaving behind a weak tombstone.
@@ -374,21 +334,10 @@ impl TxKeyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        #[cfg(feature = "single_writer_tx")]
-        {
-            let mut tx = self.db.write_tx();
-            tx.remove_weak(self, key);
-            tx.commit()?;
-            Ok(())
-        }
-
-        #[cfg(feature = "ssi_tx")]
-        {
-            let mut tx = self.db.write_tx()?;
-            tx.remove_weak(self, key);
-            tx.commit()?.expect("blind remove should not conflict ever");
-            Ok(())
-        }
+        let mut tx = self.db.write_tx();
+        tx.remove_weak(self, key);
+        tx.commit()?;
+        Ok(())
     }
 
     /// Retrieves an item from the keyspace.

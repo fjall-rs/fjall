@@ -53,10 +53,11 @@ impl Snapshot {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
         keyspace
+            .as_ref()
             .tree
             .get(key, self.nonce.instant)
             .map_err(Into::into)
@@ -92,10 +93,11 @@ impl Snapshot {
     /// Will return `Err` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(
         &self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
     ) -> crate::Result<Option<u32>> {
         keyspace
+            .as_ref()
             .tree
             .size_of(key, self.nonce.instant)
             .map_err(Into::into)
@@ -122,8 +124,13 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(&self, keyspace: &Keyspace, key: K) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
         keyspace
+            .as_ref()
             .tree
             .contains_key(key, self.nonce.instant)
             .map_err(Into::into)
@@ -153,7 +160,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
+    pub fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next()
             .map(Guard::into_inner)
@@ -184,7 +191,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
+    pub fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
         self.iter(keyspace)
             .next_back()
             .map(Guard::into_inner)
@@ -229,7 +236,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: &Keyspace) -> crate::Result<usize> {
+    pub fn len(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<usize> {
         let mut count = 0;
 
         for guard in self.iter(keyspace) {
@@ -263,7 +270,7 @@ impl Snapshot {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn is_empty(&self, keyspace: &Keyspace) -> crate::Result<bool> {
+    pub fn is_empty(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<bool> {
         self.first_key_value(keyspace).map(|x| x.is_none())
     }
 
@@ -288,8 +295,15 @@ impl Snapshot {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&'_ self, keyspace: &'_ Keyspace) -> impl DoubleEndedIterator<Item = Guard> + '_ {
-        keyspace.tree.iter(self.nonce.instant, None).map(Guard)
+    pub fn iter(
+        &'_ self,
+        keyspace: impl AsRef<Keyspace>,
+    ) -> impl DoubleEndedIterator<Item = Guard> + '_ {
+        keyspace
+            .as_ref()
+            .tree
+            .iter(self.nonce.instant, None)
+            .map(Guard)
     }
 
     /// Iterates over a range of the transaction's state.
