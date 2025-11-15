@@ -13,6 +13,12 @@ pub struct OptimisticTxKeyspace {
     pub(crate) db: OptimisticTxDatabase,
 }
 
+impl AsRef<Keyspace> for OptimisticTxKeyspace {
+    fn as_ref(&self) -> &Keyspace {
+        self.inner()
+    }
+}
+
 impl OptimisticTxKeyspace {
     /// Returns the underlying LSM-tree's path.
     #[must_use]
@@ -426,7 +432,7 @@ impl OptimisticTxKeyspace {
     /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
         let read_tx = self.db.read_tx();
-        read_tx.first_key_value(&self.inner)
+        read_tx.first_key_value(self)
     }
 
     /// Returns the last key-value pair in the keyspace.
@@ -455,7 +461,7 @@ impl OptimisticTxKeyspace {
     /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
         let read_tx = self.db.read_tx();
-        read_tx.last_key_value(&self.inner)
+        read_tx.last_key_value(self)
     }
 
     /// Returns `true` if the keyspace contains the specified key.
