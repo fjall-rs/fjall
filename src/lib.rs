@@ -81,6 +81,7 @@
 #![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod backpressure;
 mod batch;
 mod builder;
 
