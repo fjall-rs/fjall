@@ -97,14 +97,14 @@ mod tests {
     #[test]
     #[allow(clippy::expect_used)]
     pub fn version_deserialize_success() {
-        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 1]);
+        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'A', 1]);
         assert_eq!(version, Some(FormatVersion::V1));
     }
 
     #[test]
     #[allow(clippy::expect_used)]
     pub fn version_deserialize_success_2() {
-        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 2]);
+        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'A', 2]);
         assert_eq!(version, Some(FormatVersion::V2));
     }
 
