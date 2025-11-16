@@ -20,12 +20,12 @@ fn fifo_dirty_read() -> fjall::Result<()> {
     tx.commit()?;
 
     let snapshot = db.read_tx();
-    assert!(snapshot.contains_key(tree.inner(), "a")?);
+    assert!(snapshot.contains_key(&tree, "a")?);
 
     tree.inner().rotate_memtable_and_wait()?;
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    assert!(snapshot.contains_key(tree.inner(), "a")?);
+    assert!(snapshot.contains_key(&tree, "a")?);
 
     Ok(())
 }

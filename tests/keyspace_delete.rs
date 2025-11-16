@@ -104,20 +104,13 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
             tree.insert(key, value.as_bytes())?;
         }
 
-        assert_eq!(db.read_tx().len(tree.inner())?, ITEM_COUNT * 2);
+        assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
         assert_eq!(
-            db.read_tx()
-                .iter(tree.inner())
-                .flat_map(|x| x.key())
-                .count(),
+            db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
         assert_eq!(
-            db.read_tx()
-                .iter(tree.inner())
-                .rev()
-                .flat_map(|x| x.key())
-                .count(),
+            db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
     }
@@ -127,20 +120,13 @@ fn tx_keyspace_delete() -> fjall::Result<()> {
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
 
-        assert_eq!(db.read_tx().len(tree.inner())?, ITEM_COUNT * 2);
+        assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
         assert_eq!(
-            db.read_tx()
-                .iter(tree.inner())
-                .flat_map(|x| x.key())
-                .count(),
+            db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
         assert_eq!(
-            db.read_tx()
-                .iter(tree.inner())
-                .rev()
-                .flat_map(|x| x.key())
-                .count(),
+            db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
             ITEM_COUNT * 2,
         );
 
