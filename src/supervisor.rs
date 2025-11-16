@@ -6,7 +6,7 @@ use crate::{
     flush::manager::FlushManager, journal::manager::JournalManager,
     snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub struct SupervisorInner {
     pub(crate) write_buffer_size: WriteBufferManager,
@@ -15,6 +15,8 @@ pub struct SupervisorInner {
 
     /// Tracks journal size and garbage collects sealed journals when possible
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
+
+    pub(crate) backpressure_lock: Mutex<()>,
 }
 
 #[derive(Clone)]

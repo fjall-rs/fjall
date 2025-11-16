@@ -29,7 +29,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
 };
 
@@ -577,6 +577,7 @@ impl Database {
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(seqno),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
+            backpressure_lock: Mutex::default(),
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -770,6 +771,7 @@ impl Database {
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
                 active_journal_path,
             ))),
+            backpressure_lock: Mutex::default(),
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();

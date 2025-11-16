@@ -19,8 +19,14 @@ pub fn handle_journal(keyspace: &Keyspace) {
         if start.elapsed() > std::time::Duration::from_secs(5) {
             log::debug!("Halting writes for 5+ secs now because journal is still too large");
 
-            // // TODO: this may not scale well for many keyspaces
+            // TODO: this may not scale well for many keyspaces
             {
+                let _lock = keyspace
+                    .supervisor
+                    .backpressure_lock
+                    .lock()
+                    .expect("lock is poisoned");
+
                 let keyspaces = keyspace.keyspaces.read().expect("lock is poisoned");
 
                 let mut keyspaces_with_seqno = keyspaces
@@ -98,9 +104,14 @@ pub fn handle_write_buffer(keyspace: &Keyspace) {
             );
             log::debug!("Write buffer overshoot is {overshoot}B");
 
-            // TODO: this needs to happen in a mutex, and also
             // TODO: we should somehow register that we have already queued flushes so we don't overqueue
             {
+                let _lock = keyspace
+                    .supervisor
+                    .backpressure_lock
+                    .lock()
+                    .expect("lock is poisoned");
+
                 let keyspaces = keyspace.keyspaces.read().expect("lock is poisoned");
 
                 let mut keyspaces_with_sizes: Vec<(_, u64)> = keyspaces
