@@ -43,11 +43,11 @@ impl<'a> WriteTransaction<'a> {
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -81,10 +81,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -101,11 +101,11 @@ impl<'a> WriteTransaction<'a> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -140,10 +140,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -160,11 +160,11 @@ impl<'a> WriteTransaction<'a> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -199,10 +199,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
@@ -240,10 +240,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
@@ -279,10 +279,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// assert!(db.read_tx().contains_key(&tree, "a")?);
@@ -319,10 +319,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
     /// let mut tx = db.write_tx();
@@ -354,10 +354,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
     /// let mut tx = db.write_tx();
@@ -388,10 +388,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value2")?;
@@ -427,10 +427,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
     /// let mut tx = db.write_tx();
@@ -458,10 +458,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
     /// let mut tx = db.write_tx();
@@ -490,10 +490,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// #
     /// let mut tx = db.write_tx();
@@ -525,10 +525,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
@@ -564,10 +564,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
@@ -608,10 +608,10 @@ impl<'a> WriteTransaction<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());

@@ -94,7 +94,7 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn take<K: Into<UserKey>>(
         &mut self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
         self.fetch_update(keyspace, key, |_| None)
@@ -152,10 +152,11 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let keyspace = keyspace.as_ref();
         let key: UserKey = key.into();
 
         let updated = self.inner.update_fetch(keyspace, key.clone(), f)?;
@@ -218,10 +219,11 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
         f: F,
     ) -> crate::Result<Option<UserValue>> {
+        let keyspace = keyspace.as_ref();
         let key = key.into();
 
         let prev = self.inner.fetch_update(keyspace, key.clone(), f)?;
@@ -267,9 +269,11 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn get<K: AsRef<[u8]>>(
         &self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
     ) -> crate::Result<Option<UserValue>> {
+        let keyspace = keyspace.as_ref();
+
         let res = self.inner.get(keyspace, key.as_ref())?;
 
         self.cm.mark_read(keyspace.id, key.as_ref().into());
@@ -312,9 +316,11 @@ impl WriteTransaction {
     /// Will return `Ersr` if an IO error occurs.
     pub fn size_of<K: AsRef<[u8]>>(
         &self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
     ) -> crate::Result<Option<u32>> {
+        let keyspace = keyspace.as_ref();
+
         self.inner.size_of(keyspace, key)
     }
 
@@ -349,7 +355,13 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(&self, keyspace: &Keyspace, key: K) -> crate::Result<bool> {
+    pub fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
+        let keyspace = keyspace.as_ref();
+
         let contains = self.inner.contains_key(keyspace, key.as_ref())?;
 
         self.cm.mark_read(keyspace.id, key.as_ref().into());
@@ -385,8 +397,8 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
+    pub fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(&keyspace)
             .map(Guard::into_inner)
             .next()
             .transpose()
@@ -420,8 +432,8 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
+    pub fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(&keyspace)
             .map(Guard::into_inner)
             .next_back()
             .transpose()
@@ -460,10 +472,10 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: &Keyspace) -> crate::Result<usize> {
+    pub fn len(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<usize> {
         let mut count = 0;
 
-        let iter = self.iter(keyspace);
+        let iter = self.iter(&keyspace);
 
         for g in iter {
             let _ = g.key()?;
@@ -499,8 +511,10 @@ impl WriteTransaction {
     #[must_use]
     pub fn iter<'a>(
         &'a self,
-        keyspace: &'a Keyspace,
+        keyspace: &'a impl AsRef<Keyspace>,
     ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
+        let keyspace = keyspace.as_ref();
+
         self.cm.mark_range(keyspace.id, RangeFull);
 
         self.inner.iter(keyspace)
@@ -532,9 +546,11 @@ impl WriteTransaction {
     #[must_use]
     pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
         &'b self,
-        keyspace: &'b Keyspace,
+        keyspace: &'b impl AsRef<Keyspace>,
         range: R,
     ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
+        let keyspace = keyspace.as_ref();
+
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
@@ -569,7 +585,7 @@ impl WriteTransaction {
     #[must_use]
     pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
         &'b self,
-        keyspace: &'b Keyspace,
+        keyspace: &'b impl AsRef<Keyspace>,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
@@ -609,10 +625,11 @@ impl WriteTransaction {
     /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
-        keyspace: &Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         key: K,
         value: V,
     ) {
+        let keyspace = keyspace.as_ref();
         let key: UserKey = key.into();
 
         self.inner.insert(keyspace, key.clone(), value);
@@ -653,7 +670,8 @@ impl WriteTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
+    pub fn remove<K: Into<UserKey>>(&mut self, keyspace: impl AsRef<Keyspace>, key: K) {
+        let keyspace = keyspace.as_ref();
         let key: UserKey = key.into();
 
         self.inner.remove(keyspace, key.clone());
@@ -701,7 +719,8 @@ impl WriteTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
+    pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: impl AsRef<Keyspace>, key: K) {
+        let keyspace = keyspace.as_ref();
         let key: UserKey = key.into();
 
         self.inner.remove_weak(keyspace, key.clone());
@@ -783,7 +802,7 @@ mod tests {
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
-            .range(env.tree.inner(), "a".."b")
+            .range(&env.tree, "a".."b")
             .map(|kv| {
                 let v = kv.value().unwrap();
 
@@ -797,7 +816,7 @@ mod tests {
 
         let mut tx2 = env.db.write_tx()?;
         let val = tx2
-            .range(env.tree.inner(), "b".."c")
+            .range(&env.tree, "b".."c")
             .map(|kv| {
                 let v = kv.value().unwrap();
 
@@ -811,9 +830,9 @@ mod tests {
         tx2.commit()??;
         assert!(matches!(tx1.commit()?, Err(Conflict)));
 
-        let mut tx3 = env.db.write_tx()?;
+        let tx3 = env.db.write_tx()?;
         let val = tx3
-            .iter(env.tree.inner())
+            .iter(&env.tree)
             .filter_map(|kv| {
                 let (k, v) = kv.into_inner().unwrap();
 
@@ -844,7 +863,7 @@ mod tests {
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
-            .range(env.tree.inner(), "a".."b")
+            .range(&env.tree, "a".."b")
             .map(|kv| {
                 let v = kv.value().unwrap();
 
@@ -858,7 +877,7 @@ mod tests {
 
         let mut tx2 = env.db.write_tx()?;
         let val = tx2
-            .range(env.tree.inner(), "b".."c")
+            .range(&env.tree, "b".."c")
             .map(|kv| {
                 let v = kv.value().unwrap();
 
@@ -872,9 +891,9 @@ mod tests {
         tx2.commit()??;
         assert!(matches!(tx1.commit()?, Err(Conflict)));
 
-        let mut tx3 = env.db.write_tx()?;
+        let tx3 = env.db.write_tx()?;
         let val = tx3
-            .iter(env.tree.inner())
+            .iter(&env.tree)
             .filter_map(|kv| {
                 let (k, v) = kv.into_inner().unwrap();
 
@@ -912,7 +931,7 @@ mod tests {
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
 
-        tx1.iter(env.tree.inner()).next();
+        tx1.iter(&env.tree).next();
         tx2.insert(env.tree.inner(), "hello", "world2");
 
         tx1.insert(env.tree.inner(), "hello2", "world1");
@@ -1003,7 +1022,7 @@ mod tests {
         env.seed_hermitage_data()?;
 
         let mut t1 = env.db.write_tx()?;
-        let mut t2 = env.db.write_tx()?;
+        let t2 = env.db.write_tx()?;
 
         t1.insert(env.tree.inner(), [1u8], [101u8]);
 
@@ -1026,7 +1045,7 @@ mod tests {
 
         let mut t1 = env.db.write_tx()?;
         {
-            let mut iter = t1.iter(env.tree.inner());
+            let mut iter = t1.iter(&env.tree);
             assert_eq!(
                 iter.next().unwrap().into_inner()?,
                 ([1u8].into(), [10u8].into()),
@@ -1039,15 +1058,15 @@ mod tests {
         }
 
         let mut t2 = env.db.write_tx()?;
-        let new = t2.update_fetch(env.tree.inner(), [2u8], |v| {
+        let new = t2.update_fetch(&env.tree, [2u8], |v| {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
         t2.commit()??;
 
-        let mut t3 = env.db.write_tx()?;
+        let t3 = env.db.write_tx()?;
         {
-            let mut iter = t3.iter(env.tree.inner());
+            let mut iter = t3.iter(&env.tree);
             assert_eq!(
                 iter.next().unwrap().into_inner()?,
                 ([1u8].into(), [10u8].into()),
@@ -1109,7 +1128,7 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.range(env.tree.inner(), "h"..="hello");
+        _ = t1.range(&env.tree, "h"..="hello");
         t1.insert(env.tree.inner(), "foo", "bar");
 
         // insert a key INSIDE the range read by t1
@@ -1121,7 +1140,7 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.range(env.tree.inner(), "h"..="hello");
+        _ = t1.range(&env.tree, "h"..="hello");
         t1.insert(env.tree.inner(), "foo", "bar");
 
         // insert a key OUTSIDE the range read by t1
@@ -1140,7 +1159,7 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.prefix(env.tree.inner(), "hello");
+        _ = t1.prefix(&env.tree, "hello");
         t1.insert(env.tree.inner(), "foo", "bar");
 
         // insert a key MATCHING the prefix read by t1
@@ -1152,7 +1171,7 @@ mod tests {
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
 
-        _ = t1.prefix(env.tree.inner(), "hello");
+        _ = t1.prefix(&env.tree, "hello");
         t1.insert(env.tree.inner(), "foo", "bar");
 
         // insert a key NOT MATCHING the range read by t1

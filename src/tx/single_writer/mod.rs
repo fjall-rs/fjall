@@ -87,9 +87,9 @@ impl TxDatabase {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{PersistMode, SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// let db = TxDatabase::builder(folder).open()?;
+    /// let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;

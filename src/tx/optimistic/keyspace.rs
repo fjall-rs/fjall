@@ -37,10 +37,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// assert_eq!(tree.approximate_len(), 0);
     ///
@@ -63,11 +63,11 @@ impl OptimisticTxKeyspace {
     /// The operation will run wrapped in a transaction.
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -102,11 +102,11 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, Slice, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, Slice, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -120,11 +120,11 @@ impl OptimisticTxKeyspace {
     /// ```
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -172,11 +172,11 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, Slice, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, Slice, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -190,11 +190,11 @@ impl OptimisticTxKeyspace {
     /// ```
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -239,10 +239,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     ///
@@ -278,10 +278,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// assert!(!db.read_tx().is_empty(&tree)?);
@@ -324,10 +324,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "abc")?;
     /// assert!(!db.read_tx().is_empty(&tree)?);
@@ -359,10 +359,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
@@ -386,10 +386,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///
@@ -414,10 +414,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
@@ -443,10 +443,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
@@ -471,10 +471,10 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
-    /// # let db = TxDatabase::builder(folder).open()?;
+    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
     /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
     /// tree.insert("a", "my_value")?;
     ///

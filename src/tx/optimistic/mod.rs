@@ -101,9 +101,9 @@ impl OptimisticTxDatabase {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, TxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{PersistMode, OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
-    /// let db = TxDatabase::builder(folder).open()?;
+    /// let db = OptimisticTxDatabase::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
     ///
     /// items.insert("a", "hello")?;
