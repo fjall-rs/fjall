@@ -151,7 +151,7 @@ impl WriteTransaction {
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -189,7 +189,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -209,7 +209,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -256,7 +256,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -276,7 +276,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -326,7 +326,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -369,7 +369,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -417,7 +417,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;

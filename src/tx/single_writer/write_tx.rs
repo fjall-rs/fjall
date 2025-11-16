@@ -100,7 +100,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -138,7 +138,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -158,7 +158,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -197,7 +197,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -217,7 +217,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// ```
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -259,7 +259,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -298,7 +298,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -342,7 +342,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;

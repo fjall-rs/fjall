@@ -37,7 +37,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -63,7 +63,7 @@ impl SingleWriterTxKeyspace {
     /// The operation will run wrapped in a transaction.
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -102,7 +102,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, Slice, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, Slice, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -171,7 +171,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, Slice, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, Slice, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -189,7 +189,7 @@ impl SingleWriterTxKeyspace {
     /// ```
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -236,7 +236,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -272,7 +272,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -315,7 +315,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -347,7 +347,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -374,7 +374,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -402,7 +402,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -431,7 +431,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -459,7 +459,7 @@ impl SingleWriterTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;

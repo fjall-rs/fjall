@@ -38,7 +38,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -64,7 +64,7 @@ impl OptimisticTxKeyspace {
     /// The operation will run wrapped in a transaction.
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -121,7 +121,7 @@ impl OptimisticTxKeyspace {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -191,7 +191,7 @@ impl OptimisticTxKeyspace {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -240,7 +240,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -279,7 +279,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -325,7 +325,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -360,7 +360,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -387,7 +387,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -415,7 +415,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -444,7 +444,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -472,7 +472,7 @@ impl OptimisticTxKeyspace {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
