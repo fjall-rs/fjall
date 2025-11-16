@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
-    let db = fjall::TxDatabase::builder(".fjall_data")
+    let db = fjall::OptimisticTxDatabase::builder(".fjall_data")
         .temporary(true)
         .open()?;
 

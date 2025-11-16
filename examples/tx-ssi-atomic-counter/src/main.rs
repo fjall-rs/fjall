@@ -1,4 +1,4 @@
-use fjall::{PersistMode, TxDatabase};
+use fjall::{OptimisticTxDatabase, PersistMode};
 use std::path::Path;
 
 const LIMIT: u64 = 100;
@@ -6,7 +6,7 @@ const LIMIT: u64 = 100;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let db = TxDatabase::builder(path).temporary(true).open()?;
+    let db = OptimisticTxDatabase::builder(path).temporary(true).open()?;
 
     let counters = db.keyspace("counters", Default::default())?;
 
