@@ -46,7 +46,7 @@ impl TryFrom<u8> for FormatVersion {
     }
 }
 
-const MAGIC_BYTES: [u8; 3] = [b'F', b'J', b'L'];
+const MAGIC_BYTES: [u8; 3] = *b"FJA";
 
 impl FormatVersion {
     pub(crate) fn parse_file_header(bytes: &[u8]) -> Option<Self> {
@@ -55,7 +55,6 @@ impl FormatVersion {
         if first_three == MAGIC_BYTES {
             let version = *bytes.get(3)?;
             let version = Self::try_from(version).ok()?;
-
             Some(version)
         } else {
             None

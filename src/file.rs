@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 3];
+pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'A', 3];
 
 pub const KEYSPACES_FOLDER: &str = "keyspaces";
 
