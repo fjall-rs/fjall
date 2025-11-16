@@ -1,4 +1,4 @@
-use fjall::{PersistMode, SingleWriterTxDatabase};
+use fjall::{PersistMode, Readable, SingleWriterTxDatabase};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},

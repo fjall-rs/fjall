@@ -1,4 +1,4 @@
-use fjall::{PersistMode, SingleWriterTxDatabase};
+use fjall::{PersistMode, Readable, SingleWriterTxDatabase};
 use std::path::Path;
 
 const LIMIT: u64 = 100;

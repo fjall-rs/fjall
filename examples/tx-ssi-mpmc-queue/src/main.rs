@@ -1,4 +1,4 @@
-use fjall::{OptimisticTxDatabase, PersistMode};
+use fjall::{OptimisticTxDatabase, PersistMode, Readable};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},

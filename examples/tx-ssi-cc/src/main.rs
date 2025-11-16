@@ -1,3 +1,4 @@
+use fjall::Readable;
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
