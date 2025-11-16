@@ -81,7 +81,7 @@ mod tests {
     pub fn version_serialize() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V1.write_file_header(&mut bytes)?;
-        assert_eq!(bytes, &[b'F', b'J', b'L', 1]);
+        assert_eq!(bytes, &[b'F', b'J', b'A', 1]);
         Ok(())
     }
 
@@ -90,7 +90,7 @@ mod tests {
     pub fn version_serialize_2() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V2.write_file_header(&mut bytes)?;
-        assert_eq!(bytes, &[b'F', b'J', b'L', 2]);
+        assert_eq!(bytes, &[b'F', b'J', b'A', 2]);
         Ok(())
     }
 
