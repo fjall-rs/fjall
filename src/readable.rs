@@ -16,7 +16,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -50,7 +50,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -78,7 +78,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -104,7 +104,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -129,7 +129,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -165,7 +165,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -192,7 +192,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -222,7 +222,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -266,7 +266,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -292,7 +292,7 @@ pub trait Readable {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, KeyspaceCreateOptions, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
