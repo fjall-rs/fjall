@@ -180,6 +180,12 @@ impl Drop for KeyspaceInner {
 #[doc(alias = "table")]
 pub struct Keyspace(pub(crate) Arc<KeyspaceInner>);
 
+impl AsRef<Keyspace> for &Keyspace {
+    fn as_ref(&self) -> &Keyspace {
+        self
+    }
+}
+
 impl std::ops::Deref for Keyspace {
     type Target = KeyspaceInner;
 

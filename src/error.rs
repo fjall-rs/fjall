@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
+use crate::{journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub enum Error {
     JournalRecovery(JournalRecoveryError),
 
     /// Invalid or unparsable data format version
-    InvalidVersion(Option<Version>),
+    InvalidVersion(Option<FormatVersion>),
 
     /// A previous flush / commit operation failed, indicating a hardware-related failure
     ///

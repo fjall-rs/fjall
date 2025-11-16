@@ -329,10 +329,11 @@ impl Snapshot {
     #[must_use]
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
         &'a self,
-        keyspace: &'a Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         range: R,
     ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
+            .as_ref()
             .tree
             .range(range, self.nonce.instant, None)
             .map(Guard)
@@ -361,10 +362,11 @@ impl Snapshot {
     #[must_use]
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
         &'a self,
-        keyspace: &'a Keyspace,
+        keyspace: impl AsRef<Keyspace>,
         prefix: K,
     ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
         keyspace
+            .as_ref()
             .tree
             .prefix(prefix, self.nonce.instant, None)
             .map(Guard)

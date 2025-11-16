@@ -137,7 +137,7 @@ pub use {
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
     snapshot::Snapshot,
-    version::Version,
+    version::FormatVersion,
 };
 
 pub use tx::single_writer::{

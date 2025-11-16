@@ -18,7 +18,7 @@ use crate::{
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
     tx::single_writer::Openable,
-    version::Version,
+    version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
     HashMap, Keyspace, KeyspaceCreateOptions,
@@ -506,8 +506,14 @@ impl Database {
     fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
         let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
 
-        if let Some(version) = Version::parse_file_header(&bytes) {
-            if version != Version::V3 {
+        if let Some(version) = FormatVersion::parse_file_header(&bytes) {
+            if version == FormatVersion::V2 {
+                log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at <TODO: 3.0.0 LINK>.");
+            }
+            if version as u8 > 3 {
+                log::error!("It looks like you are trying to open a database from the future. Are you a time traveller?");
+            }
+            if version != FormatVersion::V3 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -730,7 +736,7 @@ impl Database {
 
         // NOTE: Lastly, fsync .fjall marker, which contains the version
         let mut marker = std::fs::File::create_new(config.path.join(FJALL_MARKER))?;
-        Version::V3.write_file_header(&mut marker)?;
+        FormatVersion::V3.write_file_header(&mut marker)?;
         marker.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix

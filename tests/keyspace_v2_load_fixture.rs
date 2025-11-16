@@ -1,4 +1,4 @@
-use fjall::{Database, JournalRecoveryError, Version};
+use fjall::{Database, FormatVersion, JournalRecoveryError};
 use test_log::test;
 
 #[test]
@@ -7,7 +7,10 @@ fn db_load_v2() -> fjall::Result<()> {
 
     let result = Database::builder(folder).open();
 
-    matches!(result, Err(fjall::Error::InvalidVersion(Some(Version::V2))));
+    matches!(
+        result,
+        Err(fjall::Error::InvalidVersion(Some(FormatVersion::V2)))
+    );
 
     Ok(())
 }

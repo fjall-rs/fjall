@@ -9,7 +9,7 @@ fn db_load_v1() -> fjall::Result<()> {
 
     matches!(
         result,
-        Err(fjall::Error::InvalidVersion(Some(fjall::Version::V1)))
+        Err(fjall::Error::InvalidVersion(Some(fjall::FormatVersion::V1)))
     );
 
     Ok(())
@@ -23,7 +23,7 @@ fn db_load_v1_corrupt_journal() -> fjall::Result<()> {
 
     matches!(
         result,
-        Err(fjall::Error::InvalidVersion(Some(fjall::Version::V1)))
+        Err(fjall::Error::InvalidVersion(Some(fjall::FormatVersion::V1)))
     );
 
     Ok(())
