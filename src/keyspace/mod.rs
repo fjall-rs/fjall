@@ -373,7 +373,7 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Guard> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Guard> + 'static {
         let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.iter(nonce.instant, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)
@@ -399,9 +399,9 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &'a self,
+        &self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
         let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.range(range, SeqNo::MAX, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)
@@ -427,9 +427,9 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &'a self,
+        &self,
         prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
         let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard);
         crate::iter::Iter::new(nonce, iter)

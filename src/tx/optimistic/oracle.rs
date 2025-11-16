@@ -69,7 +69,7 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace};
+    use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable};
 
     #[allow(clippy::significant_drop_tightening)]
     fn run_tx(

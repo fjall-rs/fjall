@@ -4,7 +4,7 @@
 
 use crate::{
     batch::item::Item, keyspace::InternalKeyspaceId, snapshot_nonce::SnapshotNonce, Database,
-    Guard, HashMap, Keyspace, PersistMode, WriteBatch,
+    Guard, HashMap, Keyspace, PersistMode, Readable, WriteBatch,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -38,6 +38,130 @@ pub(super) struct BaseTransaction {
     ///
     /// This ensures that writes within the transaction are always newer than any existing data.
     pub(crate) seqno: SeqNo,
+}
+
+impl Readable for BaseTransaction {
+    fn get<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        let keyspace = keyspace.as_ref();
+        let key = key.as_ref();
+
+        if let Some(memtable) = self.memtables.get(&keyspace.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
+                return Ok(ignore_tombstone_value(item).map(|x| x.value));
+            }
+        }
+
+        let res = keyspace.tree.get(key, self.nonce.instant)?;
+
+        Ok(res)
+    }
+
+    fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
+        let keyspace = keyspace.as_ref();
+        let key = key.as_ref();
+
+        if let Some(memtable) = self.memtables.get(&keyspace.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
+                return Ok(!item.key.is_tombstone());
+            }
+        }
+
+        let contains = keyspace.tree.contains_key(key, self.nonce.instant)?;
+
+        Ok(contains)
+    }
+
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(keyspace.as_ref())
+            .next()
+            .map(Guard::into_inner)
+            .transpose()
+    }
+
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(keyspace.as_ref())
+            .next_back()
+            .map(Guard::into_inner)
+            .transpose()
+    }
+
+    fn size_of<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        let keyspace = keyspace.as_ref();
+        let key = key.as_ref();
+
+        if let Some(memtable) = self.memtables.get(&keyspace.id) {
+            if let Some(item) = memtable.get(key, SeqNo::MAX) {
+                // NOTE: Values are limited to u32 in lsm-tree
+                #[allow(clippy::cast_possible_truncation)]
+                return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
+            }
+        }
+
+        let res = keyspace.tree.size_of(key, self.nonce.instant)?;
+
+        Ok(res)
+    }
+
+    fn iter(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        let keyspace = keyspace.as_ref();
+
+        keyspace
+            .tree
+            .iter(
+                self.nonce.instant,
+                self.memtables.get(&keyspace.id).cloned(),
+            )
+            .map(Guard)
+    }
+
+    fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        let keyspace = keyspace.as_ref();
+
+        keyspace
+            .tree
+            .range(
+                range,
+                self.nonce.instant,
+                self.memtables.get(&keyspace.id).cloned(),
+            )
+            .map(Guard)
+    }
+
+    fn prefix<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        let keyspace = keyspace.as_ref();
+
+        keyspace
+            .tree
+            .prefix(
+                prefix,
+                self.nonce.instant,
+                self.memtables.get(&keyspace.id).cloned(),
+            )
+            .map(Guard)
+    }
 }
 
 impl BaseTransaction {
@@ -133,180 +257,6 @@ impl BaseTransaction {
         }
 
         Ok(prev)
-    }
-
-    /// Retrieves an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn get<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &Keyspace,
-        key: K,
-    ) -> crate::Result<Option<UserValue>> {
-        let key = key.as_ref();
-
-        if let Some(memtable) = self.memtables.get(&keyspace.id) {
-            if let Some(item) = memtable.get(key, SeqNo::MAX) {
-                return Ok(ignore_tombstone_value(item).map(|x| x.value));
-            }
-        }
-
-        let res = keyspace.tree.get(key, self.nonce.instant)?;
-
-        Ok(res)
-    }
-
-    /// Retrieves the size of an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn size_of<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &Keyspace,
-        key: K,
-    ) -> crate::Result<Option<u32>> {
-        let key = key.as_ref();
-
-        if let Some(memtable) = self.memtables.get(&keyspace.id) {
-            if let Some(item) = memtable.get(key, SeqNo::MAX) {
-                // NOTE: Values are limited to u32 in lsm-tree
-                #[allow(clippy::cast_possible_truncation)]
-                return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
-            }
-        }
-
-        let res = keyspace.tree.size_of(key, self.nonce.instant)?;
-
-        Ok(res)
-    }
-
-    /// Returns `true` if the transaction's state contains the specified key.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn contains_key<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &Keyspace,
-        key: K,
-    ) -> crate::Result<bool> {
-        let key = key.as_ref();
-
-        if let Some(memtable) = self.memtables.get(&keyspace.id) {
-            if let Some(item) = memtable.get(key, SeqNo::MAX) {
-                return Ok(!item.key.is_tombstone());
-            }
-        }
-
-        let contains = keyspace.tree.contains_key(key, self.nonce.instant)?;
-
-        Ok(contains)
-    }
-
-    /// Returns the first key-value pair in the transaction's state.
-    /// The key in this pair is the minimum key in the transaction's state.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn first_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
-            .next()
-            .map(Guard::into_inner)
-            .transpose()
-    }
-
-    /// Returns the last key-value pair in the transaction's state.
-    /// The key in this pair is the maximum key in the transaction's state.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn last_key_value(&self, keyspace: &Keyspace) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
-            .next_back()
-            .map(Guard::into_inner)
-            .transpose()
-    }
-
-    /// Scans the entire keyspace, returning the amount of items.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn len(&self, keyspace: &Keyspace) -> crate::Result<usize> {
-        let mut count = 0;
-
-        let iter = self.iter(keyspace);
-
-        for guard in iter {
-            let _ = guard.key()?;
-            count += 1;
-        }
-
-        Ok(count)
-    }
-
-    /// Iterates over the transaction's state.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    #[must_use]
-    pub(super) fn iter<'a>(
-        &'a self,
-        keyspace: &'a Keyspace,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
-        keyspace
-            .tree
-            .iter(
-                self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
-            )
-            .map(Guard)
-    }
-
-    /// Iterates over a range of the transaction's state.
-    ///
-    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
-    #[must_use]
-    pub(super) fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &'a self,
-        keyspace: &'a Keyspace,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
-        keyspace
-            .tree
-            .range(
-                range,
-                self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
-            )
-            .map(Guard)
-    }
-
-    /// Iterates over a prefixed set of the transaction's state.
-    ///
-    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
-    #[must_use]
-    pub(super) fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &'a self,
-        keyspace: &'a Keyspace,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
-        keyspace
-            .tree
-            .prefix(
-                prefix,
-                self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
-            )
-            .map(Guard)
     }
 
     /// Inserts a key-value pair into the keyspace.

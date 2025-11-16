@@ -7,7 +7,7 @@ use crate::{
         },
         write_tx::BaseTransaction,
     },
-    Database, Guard, Keyspace, PersistMode,
+    Database, Guard, Keyspace, PersistMode, Readable,
 };
 use lsm_tree::{KvPair, Slice, UserKey, UserValue};
 use std::{
@@ -48,6 +48,88 @@ pub struct WriteTransaction {
     inner: BaseTransaction,
     cm: ConflictManager,
     oracle: Arc<Oracle>,
+}
+
+impl Readable for WriteTransaction {
+    fn get<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        let keyspace = keyspace.as_ref();
+
+        let res = self.inner.get(keyspace, key.as_ref())?;
+
+        self.cm.mark_read(keyspace.id, key.as_ref().into());
+
+        Ok(res)
+    }
+
+    fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
+        let keyspace = keyspace.as_ref();
+
+        let contains = self.inner.contains_key(keyspace, key.as_ref())?;
+
+        self.cm.mark_read(keyspace.id, key.as_ref().into());
+
+        Ok(contains)
+    }
+
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(&keyspace)
+            .map(Guard::into_inner)
+            .next()
+            .transpose()
+    }
+
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.iter(&keyspace)
+            .map(Guard::into_inner)
+            .next_back()
+            .transpose()
+    }
+
+    fn size_of<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        let keyspace = keyspace.as_ref();
+        self.inner.size_of(keyspace, key)
+    }
+
+    fn iter(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        self.cm.mark_range(keyspace.as_ref().id, RangeFull);
+        self.inner.iter(keyspace)
+    }
+
+    fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
+        let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
+
+        self.cm.mark_range(keyspace.as_ref().id, (start, end));
+
+        self.inner.range(keyspace, range)
+    }
+
+    fn prefix<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
+    }
 }
 
 impl WriteTransaction {
@@ -234,363 +316,6 @@ impl WriteTransaction {
         Ok(prev)
     }
 
-    /// Retrieves an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    ///
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "a", "new_value");
-    ///
-    /// // Read-your-own-write
-    /// let item = tx.get(&tree, "a")?;
-    /// assert_eq!(Some("new_value".as_bytes().into()), item);
-    ///
-    /// drop(tx);
-    ///
-    /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        key: K,
-    ) -> crate::Result<Option<UserValue>> {
-        let keyspace = keyspace.as_ref();
-
-        let res = self.inner.get(keyspace, key.as_ref())?;
-
-        self.cm.mark_read(keyspace.id, key.as_ref().into());
-
-        Ok(res)
-    }
-
-    /// Retrieves the size of an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    ///
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "a", "new_value");
-    ///
-    /// // Read-your-own-write
-    /// let len = tx.size_of(&tree, "a")?.unwrap_or_default();
-    /// assert_eq!("new_value".len() as u32, len);
-    ///
-    /// drop(tx);
-    ///
-    /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Ersr` if an IO error occurs.
-    pub fn size_of<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        key: K,
-    ) -> crate::Result<Option<u32>> {
-        let keyspace = keyspace.as_ref();
-
-        self.inner.size_of(keyspace, key)
-    }
-
-    /// Returns `true` if the transaction's state contains the specified key.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "my_value")?;
-    /// assert!(db.read_tx().contains_key(&tree, "a")?);
-    ///
-    /// let mut tx = db.write_tx()?;
-    /// assert!(tx.contains_key(&tree, "a")?);
-    ///
-    /// tx.insert(&tree, "b", "my_value2");
-    /// assert!(tx.contains_key(&tree, "b")?);
-    ///
-    /// // Transaction not committed yet
-    /// assert!(!db.read_tx().contains_key(&tree, "b")?);
-    ///
-    /// tx.commit()?;
-    /// assert!(db.read_tx().contains_key(&tree, "b")?);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        key: K,
-    ) -> crate::Result<bool> {
-        let keyspace = keyspace.as_ref();
-
-        let contains = self.inner.contains_key(keyspace, key.as_ref())?;
-
-        self.cm.mark_read(keyspace.id, key.as_ref().into());
-
-        Ok(contains)
-    }
-
-    /// Returns the first key-value pair in the transaction's state.
-    /// The key in this pair is the minimum key in the transaction's state.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "1", "abc");
-    /// tx.insert(&tree, "3", "abc");
-    /// tx.insert(&tree, "5", "abc");
-    ///
-    /// let (key, _) = tx.first_key_value(&tree)?.expect("item should exist");
-    /// assert_eq!(&*key, "1".as_bytes());
-    ///
-    /// assert!(db.read_tx().first_key_value(&tree)?.is_none());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(&keyspace)
-            .map(Guard::into_inner)
-            .next()
-            .transpose()
-    }
-
-    /// Returns the last key-value pair in the transaction's state.
-    /// The key in this pair is the maximum key in the transaction's state.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "1", "abc");
-    /// tx.insert(&tree, "3", "abc");
-    /// tx.insert(&tree, "5", "abc");
-    ///
-    /// let (key, _) = tx.last_key_value(&tree)?.expect("item should exist");
-    /// assert_eq!(&*key, "5".as_bytes());
-    ///
-    /// assert!(db.read_tx().last_key_value(&tree)?.is_none());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(&keyspace)
-            .map(Guard::into_inner)
-            .next_back()
-            .transpose()
-    }
-
-    /// Scans the entire keyspace, returning the amount of items.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "my_value")?;
-    /// tree.insert("b", "my_value2")?;
-    ///
-    /// let mut tx = db.write_tx()?;
-    /// assert_eq!(2, tx.len(&tree)?);
-    ///
-    /// tx.insert(&tree, "c", "my_value3");
-    ///
-    /// // read-your-own write
-    /// assert_eq!(3, tx.len(&tree)?);
-    ///
-    /// // Transaction is not committed yet
-    /// assert_eq!(2, db.read_tx().len(&tree)?);
-    ///
-    /// tx.commit()?;
-    /// assert_eq!(3, db.read_tx().len(&tree)?);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<usize> {
-        let mut count = 0;
-
-        let iter = self.iter(&keyspace);
-
-        for g in iter {
-            let _ = g.key()?;
-            count += 1;
-        }
-
-        Ok(count)
-    }
-
-    /// Iterates over the transaction's state.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "f", "abc");
-    /// tx.insert(&tree, "g", "abc");
-    ///
-    /// assert_eq!(3, tx.iter(&tree).count());
-    /// assert_eq!(0, db.read_tx().iter(&tree).count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn iter<'a>(
-        &'a self,
-        keyspace: &'a impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'a {
-        let keyspace = keyspace.as_ref();
-
-        self.cm.mark_range(keyspace.id, RangeFull);
-
-        self.inner.iter(keyspace)
-    }
-
-    /// Iterates over a range of the transaction's state.
-    ///
-    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "f", "abc");
-    /// tx.insert(&tree, "g", "abc");
-    ///
-    /// assert_eq!(2, tx.range(&tree, "a"..="f").count());
-    /// assert_eq!(0, db.read_tx().range(&tree, "a"..="f").count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
-        &'b self,
-        keyspace: &'b impl AsRef<Keyspace>,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
-        let keyspace = keyspace.as_ref();
-
-        let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
-        let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
-
-        self.cm.mark_range(keyspace.id, (start, end));
-
-        self.inner.range(keyspace, range)
-    }
-
-    /// Iterates over a prefixed set of the transaction's state.
-    ///
-    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx()?;
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "ab", "abc");
-    /// tx.insert(&tree, "abc", "abc");
-    ///
-    /// assert_eq!(2, tx.prefix(&tree, "ab").count());
-    /// assert_eq!(0, db.read_tx().prefix(&tree, "ab").count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
-        &'b self,
-        keyspace: &'b impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
-        self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
-    }
-
     /// Inserts a key-value pair into the keyspace.
     ///
     /// Keys may be up to 65536 bytes long, values up to 2^32 bytes.
@@ -759,7 +484,9 @@ impl WriteTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Conflict, KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace};
+    use crate::{
+        Conflict, KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable,
+    };
     use tempfile::TempDir;
     use test_log::test;
 

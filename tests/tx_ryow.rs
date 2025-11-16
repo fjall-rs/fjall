@@ -1,3 +1,5 @@
+use fjall::Readable;
+
 #[test_log::test]
 fn tx_ryow() -> fjall::Result<()> {
     use fjall::{KeyspaceCreateOptions, SingleWriterTxDatabase};

@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{Keyspace, SingleWriterTxDatabase};
+use crate::{Keyspace, Readable, SingleWriterTxDatabase};
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::path::PathBuf;
 

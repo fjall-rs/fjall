@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, SingleWriterTxDatabase};
+use fjall::{Database, KeyspaceCreateOptions, Readable, SingleWriterTxDatabase};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10;

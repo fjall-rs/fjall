@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, Readable};
 use test_log::test;
 
 #[test]

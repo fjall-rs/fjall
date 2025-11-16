@@ -1,3 +1,5 @@
+use fjall::Readable;
+
 #[test_log::test]
 fn fifo_dirty_read() -> fjall::Result<()> {
     use fjall::{KeyspaceCreateOptions, SingleWriterTxDatabase};

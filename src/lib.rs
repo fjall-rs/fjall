@@ -106,6 +106,7 @@ mod locked_file;
 mod meta_keyspace;
 mod path;
 mod poison_dart;
+mod readable;
 mod recovery;
 mod snapshot;
 mod snapshot_nonce;
@@ -128,7 +129,7 @@ pub mod config {
 }
 
 pub use {
-    batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export
+    batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export?
     builder::Builder as DatabaseBuilder,
     db::Database,
     db_config::Config,
@@ -136,6 +137,7 @@ pub use {
     guard::Guard,
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
+    readable::Readable,
     snapshot::Snapshot,
     version::FormatVersion,
 };

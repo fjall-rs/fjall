@@ -1,7 +1,7 @@
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
-    Guard, PersistMode, SingleWriterTxDatabase,
+    Guard, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
 };
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
@@ -21,11 +21,68 @@ pub struct WriteTransaction<'a> {
     inner: BaseTransaction,
 }
 
-impl<'a> WriteTransaction<'a> {
+impl Readable for WriteTransaction<'_> {
+    fn get<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        self.inner.get(keyspace, key)
+    }
+
+    fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
+        self.inner.contains_key(keyspace, key)
+    }
+
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.inner.first_key_value(keyspace)
+    }
+
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+        self.inner.last_key_value(keyspace)
+    }
+
+    fn size_of<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        self.inner.size_of(keyspace, key)
+    }
+
+    fn iter(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        self.inner.iter(keyspace)
+    }
+
+    fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        range: R,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        self.inner.range(keyspace, range)
+    }
+
+    fn prefix<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        prefix: K,
+    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+        self.inner.prefix(keyspace, prefix)
+    }
+}
+
+impl<'tx> WriteTransaction<'tx> {
     pub(crate) fn new(
         db: SingleWriterTxDatabase,
         nonce: SnapshotNonce,
-        guard: MutexGuard<'a, ()>,
+        guard: MutexGuard<'tx, ()>,
     ) -> Self {
         Self {
             _guard: guard,
@@ -190,329 +247,6 @@ impl<'a> WriteTransaction<'a> {
         f: F,
     ) -> crate::Result<Option<UserValue>> {
         self.inner.fetch_update(keyspace.inner(), key, f)
-    }
-
-    /// Retrieves an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    ///
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "a", "new_value");
-    ///
-    /// // Read-your-own-write
-    /// let item = tx.get(&tree, "a")?;
-    /// assert_eq!(Some("new_value".as_bytes().into()), item);
-    ///
-    /// drop(tx);
-    ///
-    /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn get<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &SingleWriterTxKeyspace,
-        key: K,
-    ) -> crate::Result<Option<UserValue>> {
-        self.inner.get(keyspace.inner(), key)
-    }
-
-    /// Retrieves an item from the transaction's state.
-    ///
-    /// The transaction allows reading your own writes (RYOW).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "previous_value")?;
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    ///
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "a", "new_value");
-    ///
-    /// // Read-your-own-write
-    /// let len = tx.size_of(&tree, "a")?.unwrap_or_default();
-    /// assert_eq!("new_value".len() as u32, len);
-    ///
-    /// drop(tx);
-    ///
-    /// // Write was not committed
-    /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn size_of<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &SingleWriterTxKeyspace,
-        key: K,
-    ) -> crate::Result<Option<u32>> {
-        self.inner.size_of(keyspace.inner(), key)
-    }
-
-    /// Returns `true` if the transaction's state contains the specified key.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "my_value")?;
-    /// assert!(db.read_tx().contains_key(&tree, "a")?);
-    ///
-    /// let mut tx = db.write_tx();
-    /// assert!(tx.contains_key(&tree, "a")?);
-    ///
-    /// tx.insert(&tree, "b", "my_value2");
-    /// assert!(tx.contains_key(&tree, "b")?);
-    ///
-    /// // Transaction not committed yet
-    /// assert!(!db.read_tx().contains_key(&tree, "b")?);
-    ///
-    /// tx.commit()?;
-    /// assert!(db.read_tx().contains_key(&tree, "b")?);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn contains_key<K: AsRef<[u8]>>(
-        &self,
-        keyspace: &SingleWriterTxKeyspace,
-        key: K,
-    ) -> crate::Result<bool> {
-        self.inner.contains_key(keyspace.inner(), key)
-    }
-
-    /// Returns the first key-value pair in the transaction's state.
-    /// The key in this pair is the minimum key in the transaction's state.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "1", "abc");
-    /// tx.insert(&tree, "3", "abc");
-    /// tx.insert(&tree, "5", "abc");
-    ///
-    /// let (key, _) = tx.first_key_value(&tree)?.expect("item should exist");
-    /// assert_eq!(&*key, "1".as_bytes());
-    ///
-    /// assert!(db.read_tx().first_key_value(&tree)?.is_none());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(
-        &self,
-        keyspace: &SingleWriterTxKeyspace,
-    ) -> crate::Result<Option<KvPair>> {
-        self.inner.first_key_value(keyspace.inner())
-    }
-
-    /// Returns the last key-value pair in the transaction's state.
-    /// The key in this pair is the maximum key in the transaction's state.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "1", "abc");
-    /// tx.insert(&tree, "3", "abc");
-    /// tx.insert(&tree, "5", "abc");
-    ///
-    /// let (key, _) = tx.last_key_value(&tree)?.expect("item should exist");
-    /// assert_eq!(&*key, "5".as_bytes());
-    ///
-    /// assert!(db.read_tx().last_key_value(&tree)?.is_none());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(
-        &self,
-        keyspace: &SingleWriterTxKeyspace,
-    ) -> crate::Result<Option<KvPair>> {
-        self.inner.last_key_value(keyspace.inner())
-    }
-
-    /// Scans the entire keyspace, returning the amount of items.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// tree.insert("a", "my_value")?;
-    /// tree.insert("b", "my_value2")?;
-    ///
-    /// let mut tx = db.write_tx();
-    /// assert_eq!(2, tx.len(&tree)?);
-    ///
-    /// tx.insert(&tree, "c", "my_value3");
-    ///
-    /// // read-your-own write
-    /// assert_eq!(3, tx.len(&tree)?);
-    ///
-    /// // Transaction is not committed yet
-    /// assert_eq!(2, db.read_tx().len(&tree)?);
-    ///
-    /// tx.commit()?;
-    /// assert_eq!(3, db.read_tx().len(&tree)?);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub fn len(&self, keyspace: &SingleWriterTxKeyspace) -> crate::Result<usize> {
-        self.inner.len(keyspace.inner())
-    }
-
-    /// Iterates over the transaction's state.
-    ///
-    /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "f", "abc");
-    /// tx.insert(&tree, "g", "abc");
-    ///
-    /// assert_eq!(3, tx.iter(&tree).count());
-    /// assert_eq!(0, db.read_tx().iter(&tree).count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn iter<'b>(
-        &'b self,
-        keyspace: &'b SingleWriterTxKeyspace,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
-        self.inner.iter(keyspace.inner())
-    }
-
-    // Iterates over a range of the transaction's state.
-    ///
-    /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "f", "abc");
-    /// tx.insert(&tree, "g", "abc");
-    ///
-    /// assert_eq!(2, tx.range(&tree, "a"..="f").count());
-    /// assert_eq!(0, db.read_tx().range(&tree, "a"..="f").count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn range<'b, K: AsRef<[u8]> + 'b, R: RangeBounds<K> + 'b>(
-        &'b self,
-        keyspace: &'b SingleWriterTxKeyspace,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
-        self.inner.range(keyspace.inner(), range)
-    }
-
-    /// Iterates over a prefixed set of the transaction's state.
-    ///
-    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
-    /// #
-    /// let mut tx = db.write_tx();
-    /// tx.insert(&tree, "a", "abc");
-    /// tx.insert(&tree, "ab", "abc");
-    /// tx.insert(&tree, "abc", "abc");
-    ///
-    /// assert_eq!(2, tx.prefix(&tree, "ab").count());
-    /// assert_eq!(0, db.read_tx().prefix(&tree, "ab").count());
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    #[must_use]
-    pub fn prefix<'b, K: AsRef<[u8]> + 'b>(
-        &'b self,
-        keyspace: &'b SingleWriterTxKeyspace,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'b {
-        self.inner.prefix(keyspace.inner(), prefix)
     }
 
     // Inserts a key-value pair into the keyspace.
