@@ -11,7 +11,7 @@ pub const KEYSPACES_FOLDER: &str = "keyspaces";
 pub const LOCK_FILE: &str = "lock";
 pub const FJALL_MARKER: &str = "version";
 
-pub const LSM_MANIFEST_FILE: &str = "manifest";
+pub const LSM_CURRENT_VERSION_MARKER: &str = "current";
 
 #[cfg(not(target_os = "windows"))]
 pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {

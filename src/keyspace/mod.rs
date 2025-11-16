@@ -10,7 +10,7 @@ mod write_delay;
 use crate::{
     db::Keyspaces,
     db_config::Config as DatabaseConfig,
-    file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
+    file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
     journal::{
         manager::{EvictionWatermark, JournalManager},
@@ -127,7 +127,7 @@ impl Drop for KeyspaceInner {
             // This is important, because if somehow `remove_dir_all` ends up
             // deleting the `.deleted` marker first, we would end up resurrecting
             // the keyspace
-            let manifest_file = path.join(LSM_MANIFEST_FILE);
+            let manifest_file = path.join(LSM_CURRENT_VERSION_MARKER);
 
             // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
             #[allow(clippy::collapsible_else_if)]

@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    file::{KEYSPACES_FOLDER, LSM_MANIFEST_FILE},
+    file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     journal::{
         batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
     },
@@ -62,7 +62,10 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
         log::trace!("Recovering keyspace {keyspace_id}");
 
         // NOTE: Check for marker, maybe the keyspace is not fully initialized
-        if !keyspace_path.join(LSM_MANIFEST_FILE).try_exists()? {
+        if !keyspace_path
+            .join(LSM_CURRENT_VERSION_MARKER)
+            .try_exists()?
+        {
             log::debug!("Deleting uninitialized keyspace {keyspace_name:?}");
             std::fs::remove_dir_all(keyspace_path)?;
             continue;
