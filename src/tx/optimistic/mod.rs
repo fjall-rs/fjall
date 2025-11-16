@@ -9,10 +9,7 @@ mod write_tx;
 
 use crate::{
     keyspace::KeyspaceKey,
-    tx::{
-        optimistic::{oracle::Oracle, write_tx::WriteTransaction},
-        single_writer::Openable,
-    },
+    tx::{optimistic::oracle::Oracle, single_writer::Openable},
     Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
 };
 use std::{
@@ -21,7 +18,7 @@ use std::{
 };
 
 pub use keyspace::OptimisticTxKeyspace;
-pub use write_tx::Conflict;
+pub use write_tx::{Conflict, WriteTransaction};
 
 /// Transactional database
 #[derive(Clone)]

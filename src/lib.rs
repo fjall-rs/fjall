@@ -145,7 +145,9 @@ pub use tx::single_writer::{
     WriteTransaction as SingleWriterWriteTx,
 };
 
-pub use tx::optimistic::{Conflict, OptimisticTxDatabase, OptimisticTxKeyspace};
+pub use tx::optimistic::{
+    Conflict, OptimisticTxDatabase, OptimisticTxKeyspace, WriteTransaction as OptimisticWriteTx,
+};
 
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
