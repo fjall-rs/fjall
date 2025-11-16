@@ -46,7 +46,7 @@ impl TryFrom<u8> for FormatVersion {
     }
 }
 
-const MAGIC_BYTES: [u8; 3] = *b"FJA";
+const MAGIC_BYTES: [u8; 3] = *b"FJL";
 
 impl FormatVersion {
     pub(crate) fn parse_file_header(bytes: &[u8]) -> Option<Self> {
@@ -81,7 +81,7 @@ mod tests {
     pub fn version_serialize() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V1.write_file_header(&mut bytes)?;
-        assert_eq!(bytes, &[b'F', b'J', b'A', 1]);
+        assert_eq!(bytes, &[b'F', b'J', b'L', 1]);
         Ok(())
     }
 
@@ -90,21 +90,21 @@ mod tests {
     pub fn version_serialize_2() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V2.write_file_header(&mut bytes)?;
-        assert_eq!(bytes, &[b'F', b'J', b'A', 2]);
+        assert_eq!(bytes, &[b'F', b'J', b'L', 2]);
         Ok(())
     }
 
     #[test]
     #[allow(clippy::expect_used)]
     pub fn version_deserialize_success() {
-        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'A', 1]);
+        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 1]);
         assert_eq!(version, Some(FormatVersion::V1));
     }
 
     #[test]
     #[allow(clippy::expect_used)]
     pub fn version_deserialize_success_2() {
-        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'A', 2]);
+        let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 2]);
         assert_eq!(version, Some(FormatVersion::V2));
     }
 
