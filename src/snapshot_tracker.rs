@@ -140,8 +140,6 @@ impl SnapshotTracker {
         let mut none_retained = true;
 
         self.data.retain(|&k, v| {
-            log::error!("{k}->{v}");
-
             let should_be_retained = *v > 0 || k >= seqno_threshold;
 
             if should_be_retained {

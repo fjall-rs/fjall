@@ -43,8 +43,6 @@ impl Oracle {
 
         self.snapshot_tracker.close_raw(instant);
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
-        eprintln!("watermark={safe_to_gc}");
-        eprintln!("snapshot tracker len={}", self.snapshot_tracker.len());
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 
         if conflicted {
