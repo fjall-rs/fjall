@@ -38,7 +38,7 @@ fn recover_sealed_blob() -> fjall::Result<()> {
             "default",
             KeyspaceCreateOptions::default()
                 .max_memtable_size(1_000)
-                .with_kv_separation(KvSeparationOptions::default()),
+                .with_kv_separation(Some(KvSeparationOptions::default())),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());
@@ -69,7 +69,7 @@ fn recover_sealed_pair_1() -> fjall::Result<()> {
             "default2",
             KeyspaceCreateOptions::default()
                 .max_memtable_size(1_000)
-                .with_kv_separation(KvSeparationOptions::default()),
+                .with_kv_separation(Some(KvSeparationOptions::default())),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());
@@ -162,7 +162,7 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
             "default2",
             KeyspaceCreateOptions::default()
                 .max_memtable_size(1_000)
-                .with_kv_separation(KvSeparationOptions::default()),
+                .with_kv_separation(Some(KvSeparationOptions::default())),
         )?;
 
         assert_eq!(item, tree.len()?.try_into().unwrap());

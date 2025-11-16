@@ -9,7 +9,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     let db = Database::builder(&folder).open()?;
     let tree = db.keyspace(
         "default",
-        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default())),
     )?;
 
     assert_eq!(tree.len()?, 0);

@@ -476,8 +476,8 @@ impl CreateOptions {
 
     /// Toggles key-value separation.
     #[must_use]
-    pub fn with_kv_separation(mut self, opts: KvSeparationOptions) -> Self {
-        self.kv_separation_opts = Some(opts);
+    pub fn with_kv_separation(mut self, opts: Option<KvSeparationOptions>) -> Self {
+        self.kv_separation_opts = opts;
         self
     }
 
@@ -689,7 +689,7 @@ mod tests {
         );
         assert_eq!(c.kv_separation_opts, None);
 
-        c = c.with_kv_separation(KvSeparationOptions::default());
+        c = c.with_kv_separation(Some(KvSeparationOptions::default()));
         assert_eq!(c.kv_separation_opts.as_ref().unwrap().compression, Lz4);
 
         c = c.data_block_compression_policy(CompressionPolicy::disabled());

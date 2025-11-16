@@ -36,7 +36,7 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
 
     let tree = db.keyspace(
         "default",
-        KeyspaceCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default())),
     )?;
     assert_eq!(0, db.write_buffer_size());
 

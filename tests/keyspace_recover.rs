@@ -170,14 +170,14 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
 
         let _tree = db.keyspace(
             "default",
-            KeyspaceCreateOptions::default().with_kv_separation(
+            KeyspaceCreateOptions::default().with_kv_separation(Some(
                 KvSeparationOptions::default()
                     .age_cutoff(0.55)
                     .compression(CompressionType::None)
                     .file_target_size(124)
                     .separation_threshold(515)
                     .staleness_threshold(0.77),
-            ),
+            )),
         )?;
     };
 
