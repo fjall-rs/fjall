@@ -20,6 +20,10 @@ impl FlushManager {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.receiver.len()
+    }
+
     pub fn clear(&self) {
         let _ = self.receiver.drain().count();
     }

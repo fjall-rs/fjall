@@ -104,9 +104,6 @@ pub struct KeyspaceInner {
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
 
-    /// Number of completed memtable flushes in this keyspace
-    pub(crate) flushes_completed: AtomicUsize,
-
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
     lock_file: LockedFileGuard,
@@ -267,7 +264,6 @@ impl Keyspace {
             tree,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flushes_completed: AtomicUsize::new(0),
             journal: db.journal.clone(),
             visible_seqno: db.visible_seqno.clone(),
             is_deleted: AtomicBool::default(),
@@ -313,7 +309,6 @@ impl Keyspace {
             config,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flushes_completed: AtomicUsize::new(0),
             journal: db.journal.clone(),
             visible_seqno: db.visible_seqno.clone(),
             tree,
@@ -684,13 +679,8 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        let watermark = self.flushes_completed();
-
-        // TODO: not reliable...?
         if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
-
-            while self.flushes_completed() <= watermark {}
         }
 
         Ok(())
@@ -742,11 +732,6 @@ impl Keyspace {
         self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
             keyspace: self.clone(),
         }));
-
-        // TODO: 3.0.0 let supervisor handle this
-        self.stats
-            .flushes_enqueued
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         self.worker_messager.send(WorkerMessage::Flush).ok();
 
@@ -879,14 +864,6 @@ impl Keyspace {
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
-    }
-
-    /// Number of completed memtable flushes in this keyspace.
-    #[must_use]
-    #[doc(hidden)]
-    pub fn flushes_completed(&self) -> usize {
-        self.flushes_completed
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Performs major compaction, blocking the caller until it's done.

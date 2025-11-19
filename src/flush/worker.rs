@@ -30,14 +30,6 @@ pub fn run(
         Some(flushed_bytes) => {
             write_buffer_manager.free(flushed_bytes);
 
-            stats
-                .flushes_completed
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-            task.keyspace
-                .flushes_completed
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
             log::debug!("Flush completed");
         }
         None => {

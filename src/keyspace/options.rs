@@ -316,6 +316,16 @@ impl CreateOptions {
             }
         };
 
+        let manual_journal_persist = meta_keyspace
+            .get_kv_for_config(keyspace_id, "manual_journal_persist")?
+            .expect("should exist")
+            == [1];
+
+        let max_memtable_size = meta_keyspace
+            .get_kv_for_config(keyspace_id, "max_memtable_size")?
+            .expect("should exist");
+        let max_memtable_size = (&mut &max_memtable_size[..]).read_u64::<byteorder::LE>()?;
+
         Ok(Self {
             data_block_hash_ratio_policy,
 
@@ -336,11 +346,11 @@ impl CreateOptions {
             expect_point_read_hits,
             filter_policy,
 
-            level_count: 7, // TODO:
+            level_count: 7, // Levels are currently hard coded to 7
 
-            manual_journal_persist: false, // TODO: 3.0.0
+            manual_journal_persist,
 
-            max_memtable_size: 64_000_000, // TODO: 3.0.0
+            max_memtable_size,
 
             compaction_strategy,
 
@@ -420,6 +430,18 @@ impl CreateOptions {
                 "index_block_restart_interval_policy",
                 self.index_block_restart_interval_policy
             ),
+            {
+                let key = encode_config_key(keyspace_id, "level_count");
+                (key, [self.level_count].into())
+            },
+            {
+                let key = encode_config_key(keyspace_id, "manual_journal_persist");
+                (key, [u8::from(self.manual_journal_persist)].into())
+            },
+            {
+                let key = encode_config_key(keyspace_id, "max_memtable_size");
+                (key, self.max_memtable_size.to_le_bytes().into())
+            },
             {
                 let key = encode_config_key(keyspace_id, "version");
                 (key, [3u8].into())

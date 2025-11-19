@@ -31,7 +31,7 @@ pub struct MetaKeyspace {
 }
 
 impl MetaKeyspace {
-    pub fn new(
+    pub(crate) fn new(
         inner: AnyTree,
         keyspaces: Arc<RwLock<Keyspaces>>,
         seqno_generator: SequenceNumberCounter,
@@ -46,7 +46,7 @@ impl MetaKeyspace {
     }
 
     #[cfg(test)]
-    pub fn len(&self) -> crate::Result<usize> {
+    fn len(&self) -> crate::Result<usize> {
         self.inner.len(SeqNo::MAX, None).map_err(Into::into)
     }
 
@@ -59,7 +59,20 @@ impl MetaKeyspace {
         self.inner.get(key, SeqNo::MAX).map_err(Into::into)
     }
 
-    pub fn create_keyspace(
+    fn maintenance(&self) -> crate::Result<()> {
+        self.inner
+            .compact(
+                Arc::new(
+                    crate::compaction::Leveled::default()
+                        .with_l0_threshold(2)
+                        .with_level_ratio_policy(vec![20.0]),
+                ),
+                0,
+            )
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn create_keyspace(
         &self,
         keyspace_id: InternalKeyspaceId,
         name: &str,
@@ -103,10 +116,16 @@ impl MetaKeyspace {
 
         keyspaces.insert(name.into(), keyspace);
 
+        self.maintenance()
+            .inspect_err(|e| {
+                log::warn!("Meta keyspace maintenance failed: {e:?}");
+            })
+            .ok();
+
         Ok(())
     }
 
-    pub fn remove_keyspace(&self, name: &str) -> crate::Result<()> {
+    pub(crate) fn remove_keyspace(&self, name: &str) -> crate::Result<()> {
         let mut lock = self.keyspaces.write().expect("lock is poisoned");
 
         let Some(keyspace) = lock.get(name) else {
@@ -145,10 +164,16 @@ impl MetaKeyspace {
 
         lock.remove(name);
 
+        self.maintenance()
+            .inspect_err(|e| {
+                log::warn!("Meta keyspace maintenance failed: {e:?}");
+            })
+            .ok();
+
         Ok(())
     }
 
-    pub fn resolve_id(&self, id: InternalKeyspaceId) -> crate::Result<Option<StrView>> {
+    pub(crate) fn resolve_id(&self, id: InternalKeyspaceId) -> crate::Result<Option<StrView>> {
         #[warn(unsafe_code, clippy::indexing_slicing)]
         let key = {
             let mut builder = unsafe {
@@ -165,7 +190,7 @@ impl MetaKeyspace {
             .map(|v| std::str::from_utf8(&v).expect("should be utf-8").into()))
     }
 
-    pub fn keyspace_exists(&self, name: &str) -> bool {
+    pub(crate) fn keyspace_exists(&self, name: &str) -> bool {
         self.keyspaces
             .read()
             .expect("lock is poisoned")

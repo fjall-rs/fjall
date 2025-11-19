@@ -212,13 +212,11 @@ impl Database {
         self.supervisor.write_buffer_size.get()
     }
 
-    /// Returns the amount of completed memtable flushes.
+    /// Returns the number of queued memtable flush tasks.
     #[doc(hidden)]
     #[must_use]
-    pub fn flushes_completed(&self) -> usize {
-        self.stats
-            .flushes_completed
-            .load(std::sync::atomic::Ordering::Relaxed)
+    pub fn outstanding_flushes(&self) -> usize {
+        self.supervisor.flush_manager.len()
     }
 
     /// Returns the time all compactions took until now.
@@ -561,7 +559,17 @@ impl Database {
 
         let meta_tree =
             lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                // TODO: 3.0.0 specialized config and DRY
+                .expect_point_read_hits(true)
+                .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+                .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+                .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+                .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+                .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+                .filter_policy(crate::config::FilterPolicy::all(
+                    lsm_tree::config::FilterPolicyEntry::Bloom(
+                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+                    ),
+                ))
                 .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
