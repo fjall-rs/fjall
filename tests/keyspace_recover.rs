@@ -46,12 +46,10 @@ fn reload_keyspace_config_fifo() -> fjall::Result<()> {
 fn reload_keyspace_config_leveled() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // TODO: 3.0.0 builder pattern
-    let strategy = fjall::compaction::Leveled {
-        l0_threshold: 6,
-        level_ratio_policy: vec![4.0, 6.0, 8.0],
-        target_size: 100_000_000,
-    };
+    let strategy = fjall::compaction::Leveled::default()
+        .with_l0_threshold(6)
+        .with_level_ratio_policy(vec![4.0, 6.0, 8.0])
+        .with_table_target_size(100_000_000);
 
     let expected_kvs = strategy.get_config();
 
