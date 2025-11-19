@@ -396,7 +396,6 @@ impl Database {
         }
     }
 
-    // TODO: 3.0.0 restore
     /// Destroys the keyspace, removing all data associated with it.
     ///
     /// The keyspace folder will not be deleted until all references to it are dropped,

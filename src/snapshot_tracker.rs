@@ -121,7 +121,6 @@ impl SnapshotTracker {
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    // TODO: 3.0.0 remove, monkey patch
     pub(crate) fn pullup(&self) {
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 

@@ -8,11 +8,7 @@ const examplesFolder = "examples";
 for (const exampleName of await readdir(examplesFolder)) {
 
   if (exampleName === "actix-kv") {
-    // TODO: 3.0.0 restore
-    continue;
-  }
-  if (exampleName === "gc-simple") {
-    // TODO: 3.0.0 restore
+    // TODO: restore
     continue;
   }
 
