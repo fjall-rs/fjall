@@ -278,12 +278,12 @@ impl CreateOptions {
                     ratios.push(level_ratio_policy_bytes.read_f32::<LE>()?);
                 }
 
-                Arc::new(crate::compaction::Leveled {
-                    l0_threshold,
-                    level_ratio_policy: ratios,
-                    target_size,
-                })
-                    as Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>
+                Arc::new(
+                    crate::compaction::Leveled::default()
+                        .with_l0_threshold(l0_threshold)
+                        .with_table_target_size(target_size)
+                        .with_level_ratio_policy(ratios),
+                ) as Arc<dyn lsm_tree::compaction::CompactionStrategy + Send + Sync>
             }
             lsm_tree::compaction::FIFO_COMPACTION_NAME => {
                 use byteorder::LE;

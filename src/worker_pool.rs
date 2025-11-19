@@ -33,12 +33,12 @@ type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 // TODO: 3.0.0 probably no Inner needed, just give messager to keyspaces
 // TODO: let DB own worker pool so it can consume it on drop
 
-pub struct WorkerPoolInner {
+pub struct WorkerPool {
     thread_handles: Vec<WorkerHandle>,
     pub(crate) rx: flume::Receiver<WorkerMessage>,
 }
 
-impl WorkerPoolInner {
+impl WorkerPool {
     pub fn new(
         pool_size: usize,
         supervisor: &Supervisor,
@@ -60,6 +60,7 @@ impl WorkerPoolInner {
                         log::debug!("Starting fjall worker thread #{i}");
 
                         let worker_state = WorkerState {
+                            pool_size,
                             worker_id: i,
                             rx: rx.clone(),
                             supervisor: supervisor.clone(),
@@ -97,33 +98,8 @@ impl WorkerPoolInner {
     }
 }
 
-#[derive(Clone)]
-pub struct WorkerPool(Arc<WorkerPoolInner>);
-
-impl WorkerPool {
-    pub fn new(
-        pool_size: usize,
-        supervisor: &Supervisor,
-        stats: &Arc<Stats>,
-        thread_counter: &Arc<AtomicUsize>,
-        poison_dart: &PoisonDart,
-    ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
-        let (inner, sender) =
-            WorkerPoolInner::new(pool_size, supervisor, stats, thread_counter, poison_dart)?;
-
-        Ok((Self(Arc::new(inner)), sender))
-    }
-}
-
-impl std::ops::Deref for WorkerPool {
-    type Target = WorkerPoolInner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 struct WorkerState {
+    pool_size: usize,
     worker_id: usize,
     supervisor: Supervisor,
     rx: flume::Receiver<WorkerMessage>,
@@ -170,11 +146,13 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 .maintenance()?;
         }
         WorkerMessage::Compact(keyspace) => {
-            // TODO: 3.0.0 only do, if worker pool size > 1
-            // if ctx.worker_id == 0 {
-            //     ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
-            //     return Ok(false);
-            // }
+            // NOTE: Let one worker prioritize flushing if there are pending flushes
+            //
+            // Disable when only 1 worker exists to avoid deadlock
+            if ctx.pool_size > 1 && ctx.worker_id == 0 {
+                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
+                return Ok(false);
+            }
 
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
         }

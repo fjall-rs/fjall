@@ -107,7 +107,6 @@ pub struct KeyspaceInner {
     /// Number of completed memtable flushes in this keyspace
     pub(crate) flushes_completed: AtomicUsize,
 
-    pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
     lock_file: LockedFileGuard,
@@ -262,7 +261,6 @@ impl Keyspace {
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_pool: db.worker_pool.clone(),
             worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,
@@ -309,7 +307,6 @@ impl Keyspace {
 
         Ok(Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_pool: db.worker_pool.clone(),
             worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,

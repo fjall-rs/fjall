@@ -507,7 +507,7 @@ impl Database {
 
         if let Some(version) = FormatVersion::parse_file_header(&bytes) {
             if version == FormatVersion::V2 {
-                log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at <TODO: 3.0.0 LINK>.");
+                log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at https://github.com/fjall-rs/migrate-v2-v3.");
             }
             if version as u8 > 3 {
                 log::error!("It looks like you are trying to open a database from the future. Are you a time traveller?");
