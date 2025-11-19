@@ -11,8 +11,6 @@ pub fn encode_config_key(
         Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1 + name.as_ref().len());
     key.push(b'c');
     key.extend(keyspace_id.to_be_bytes());
-    key.push(0);
-    #[allow(clippy::string_lit_as_bytes)]
     key.extend(name.as_ref());
     key.into()
 }
@@ -28,7 +26,6 @@ pub struct MetaKeyspace {
     #[doc(hidden)]
     pub keyspaces: Arc<RwLock<Keyspaces>>,
 
-    // TODO: maybe use separate seqnos as not to interfere with other seqno
     seqno_generator: SequenceNumberCounter,
     visible_seqno: SequenceNumberCounter,
 }
@@ -151,15 +148,16 @@ impl MetaKeyspace {
         Ok(())
     }
 
-    #[warn(clippy::indexing_slicing)]
     pub fn resolve_id(&self, id: InternalKeyspaceId) -> crate::Result<Option<StrView>> {
-        #[warn(unsafe_code)]
-        let mut key = unsafe {
-            lsm_tree::Slice::builder_unzeroed(std::mem::size_of::<InternalKeyspaceId>() + 1)
+        #[warn(unsafe_code, clippy::indexing_slicing)]
+        let key = {
+            let mut builder = unsafe {
+                lsm_tree::Slice::builder_unzeroed(std::mem::size_of::<InternalKeyspaceId>() + 1)
+            };
+            builder[0] = b'n';
+            builder[1..].copy_from_slice(&id.to_be_bytes());
+            builder.freeze()
         };
-        key[0] = b'n';
-        key[1..].copy_from_slice(&id.to_be_bytes());
-        let key = key.freeze();
 
         Ok(self
             .inner
@@ -177,7 +175,7 @@ impl MetaKeyspace {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Database, KeyspaceCreateOptions, Readable, SingleWriterTxDatabase};
+    use crate::{Database, Guard, KeyspaceCreateOptions, Readable, SingleWriterTxDatabase};
     use test_log::test;
 
     const ITEM_COUNT: usize = 10;
@@ -214,9 +212,9 @@ mod tests {
             }
 
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().flat_map(Guard::key).count(), ITEM_COUNT * 2);
             assert_eq!(
-                tree.iter().rev().flat_map(|x| x.key()).count(),
+                tree.iter().rev().flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
         }
@@ -230,9 +228,9 @@ mod tests {
             assert!(db.meta_keyspace.len()? > 0);
 
             assert_eq!(tree.len()?, ITEM_COUNT * 2);
-            assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);
+            assert_eq!(tree.iter().flat_map(Guard::key).count(), ITEM_COUNT * 2);
             assert_eq!(
-                tree.iter().rev().flat_map(|x| x.key()).count(),
+                tree.iter().rev().flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
         }
@@ -288,11 +286,11 @@ mod tests {
 
             assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
             assert_eq!(
-                db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
+                db.read_tx().iter(&tree).flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
             assert_eq!(
-                db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
+                db.read_tx().iter(&tree).rev().flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
         }
@@ -304,11 +302,11 @@ mod tests {
 
             assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
             assert_eq!(
-                db.read_tx().iter(&tree).flat_map(|x| x.key()).count(),
+                db.read_tx().iter(&tree).flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
             assert_eq!(
-                db.read_tx().iter(&tree).rev().flat_map(|x| x.key()).count(),
+                db.read_tx().iter(&tree).rev().flat_map(Guard::key).count(),
                 ITEM_COUNT * 2,
             );
 
@@ -353,13 +351,15 @@ mod tests {
         let db = Database::builder(&folder).open()?;
         assert!(!keyspace_exists(1)?);
 
-        let keyspace = db.keyspace(keyspace_name, Default::default())?;
+        let keyspace = db.keyspace(keyspace_name, KeyspaceCreateOptions::default())?;
         assert!(keyspace_exists(1)?);
 
-        db.delete_keyspace(keyspace.clone())?;
+        db.delete_keyspace(keyspace)?;
         assert!(keyspace_exists(1)?);
 
-        assert!(db.keyspace("default", Default::default()).is_ok());
+        assert!(db
+            .keyspace("default", KeyspaceCreateOptions::default())
+            .is_ok());
         assert!(keyspace_exists(2)?);
 
         Ok(())
