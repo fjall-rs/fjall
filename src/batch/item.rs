@@ -2,15 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::PartitionKey;
+use crate::keyspace::InternalKeyspaceId;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Item {
-    /// Partition key - an arbitrary byte array
-    ///
-    /// Supports up to 2^8 bytes
-    pub partition: PartitionKey,
+    /// Internal keyspace ID
+    pub keyspace_id: InternalKeyspaceId,
 
     /// User-defined key - an arbitrary byte array
     ///
@@ -31,12 +29,13 @@ impl std::fmt::Debug for Item {
         write!(
             f,
             "{}:{:?}:{} => {:?}",
-            self.partition,
+            self.keyspace_id,
             self.key,
             match self.value_type {
                 ValueType::Value => "V",
                 ValueType::Tombstone => "T",
                 ValueType::WeakTombstone => "W",
+                ValueType::Indirection => "Vb",
             },
             self.value
         )
@@ -44,20 +43,17 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
-    pub fn new<P: Into<PartitionKey>, K: Into<UserKey>, V: Into<UserValue>>(
-        partition: P,
+    pub fn new<K: Into<UserKey>, V: Into<UserValue>>(
+        keyspace_id: InternalKeyspaceId,
         key: K,
         value: V,
         value_type: ValueType,
     ) -> Self {
-        let p = partition.into();
         let k = key.into();
         let v = value.into();
 
-        assert!(!p.is_empty());
         assert!(!k.is_empty());
 
-        assert!(u8::try_from(p.len()).is_ok(), "Partition name too long");
         assert!(
             u16::try_from(k.len()).is_ok(),
             "Keys can be up to 65535 bytes long"
@@ -68,7 +64,7 @@ impl Item {
         );
 
         Self {
-            partition: p,
+            keyspace_id,
             key: k,
             value: v,
             value_type,

@@ -11,28 +11,28 @@ use crate::snapshot_nonce::SnapshotNonce;
 ///
 /// This may not be strictly needed because an iterator holds a read lock to a memtable anyway
 /// but for correctness it's probably better.
-pub struct Iter<T, I: DoubleEndedIterator<Item = crate::Result<T>>> {
+pub struct Iter<T, I: DoubleEndedIterator<Item = T>> {
     iter: I,
 
     #[allow(unused)]
     nonce: SnapshotNonce,
 }
 
-impl<T, I: DoubleEndedIterator<Item = crate::Result<T>>> Iter<T, I> {
+impl<T, I: DoubleEndedIterator<Item = T>> Iter<T, I> {
     pub fn new(nonce: SnapshotNonce, iter: I) -> Self {
         Self { iter, nonce }
     }
 }
 
-impl<T, I: DoubleEndedIterator<Item = crate::Result<T>>> Iterator for Iter<T, I> {
-    type Item = crate::Result<T>;
+impl<T, I: DoubleEndedIterator<Item = T>> Iterator for Iter<T, I> {
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl<T, I: DoubleEndedIterator<Item = crate::Result<T>>> DoubleEndedIterator for Iter<T, I> {
+impl<T, I: DoubleEndedIterator<Item = T>> DoubleEndedIterator for Iter<T, I> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back()
     }

@@ -4,7 +4,7 @@
 
 use std::sync::{atomic::AtomicU64, Arc};
 
-/// Keeps track of the size of the keyspace's write buffer
+/// Keeps track of the size of the database's write buffer
 #[derive(Clone, Default, Debug)]
 pub struct WriteBufferManager(Arc<AtomicU64>);
 

@@ -9,9 +9,6 @@ pub struct Stats {
     /// Time spent in compactions (in µs)
     pub(crate) time_compacting: AtomicU64,
 
-    /// Time spent in garbage collection (in µs)
-    pub(crate) time_gc: AtomicU64,
-
     /// Number of created memtable flush tasks
     pub(crate) flushes_enqueued: AtomicUsize,
 
