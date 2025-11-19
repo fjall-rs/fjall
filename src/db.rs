@@ -707,12 +707,11 @@ impl Database {
                 for keyspace in keyspaces.values() {
                     let size = keyspace.tree.active_memtable().size();
 
-                    // TODO: 3.0.0
-                    // log::trace!(
-                    //     "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
-                    //     keyspace.name,
-                    //     keyspace.tree.lock_active_memtable().len(),
-                    // );
+                    log::trace!(
+                        "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
+                        keyspace.name,
+                        keyspace.tree.active_memtable().len(),
+                    );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
                     // db.write_buffer_manager.allocate(size);
