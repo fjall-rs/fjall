@@ -778,26 +778,6 @@ impl Keyspace {
         Ok(true)
     }
 
-    fn check_write_stall(&self) {
-        let l0_run_count = self.tree.l0_run_count();
-
-        if l0_run_count >= 20 {
-            perform_write_stall(l0_run_count);
-            self.check_write_halt();
-        }
-
-        while self.tree.sealed_memtable_count() >= 4 {
-            log::debug!(
-                "Halting writes because we have 4+ sealed memtables in {:?} queued up",
-                self.name,
-            );
-            std::thread::sleep(Duration::from_millis(100));
-        }
-
-        crate::backpressure::handle_write_buffer(self);
-        crate::backpressure::handle_journal(self);
-    }
-
     fn check_write_halt(&self) {
         let start = std::time::Instant::now();
 
@@ -829,7 +809,39 @@ impl Keyspace {
         }
     }
 
-    pub(crate) fn backpressure(&self, size: u64) -> crate::Result<()> {
+    pub(crate) fn local_backpressure(&self) {
+        let l0_run_count = self.tree.l0_run_count();
+
+        if l0_run_count >= 20 {
+            perform_write_stall(l0_run_count);
+            self.check_write_halt();
+        }
+
+        while self.tree.sealed_memtable_count() >= 4 {
+            log::debug!(
+                "Halting writes because we have 4+ sealed memtables in {:?} queued up",
+                self.name,
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    pub(crate) fn global_backpressure(&self) {
+        crate::backpressure::handle_write_buffer(
+            &self.supervisor,
+            &self.keyspaces,
+            &self.db_config,
+            &self.is_poisoned,
+        );
+        crate::backpressure::handle_journal(
+            &self.supervisor,
+            &self.keyspaces,
+            &self.db_config,
+            &self.is_poisoned,
+        );
+    }
+
+    pub(crate) fn check_memtable_rotate(&self, size: u64) -> crate::Result<()> {
         if size > self.config.max_memtable_size {
             self.rotate_memtable().inspect_err(|e| {
                 log::error!("Memtable rotation failed: {e:?}");
@@ -837,9 +849,13 @@ impl Keyspace {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             })?;
         }
+        Ok(())
+    }
 
-        self.check_write_stall();
-
+    fn maintenance(&self, size: u64) -> crate::Result<()> {
+        self.local_backpressure();
+        self.check_memtable_rotate(size)?;
+        self.global_backpressure();
         Ok(())
     }
 
@@ -956,7 +972,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.backpressure(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }
@@ -1027,7 +1043,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.backpressure(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }
@@ -1118,7 +1134,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.backpressure(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }

@@ -189,10 +189,19 @@ impl Batch {
         self.db.supervisor.write_buffer_size.allocate(batch_size);
 
         // Check each affected keyspace for write stall/halt
-        for keyspace in keyspaces_with_possible_stall {
+        for keyspace in &keyspaces_with_possible_stall {
             let memtable_size = keyspace.tree.active_memtable_size();
-            keyspace.backpressure(memtable_size)?;
+            keyspace.local_backpressure();
+            keyspace.check_memtable_rotate(memtable_size)?;
         }
+
+        // Take *some* keyspace and call global backpressure on it
+        keyspaces_with_possible_stall
+            .iter()
+            .next()
+            .inspect(|first_keyspace| {
+                first_keyspace.global_backpressure();
+            });
 
         Ok(())
     }
