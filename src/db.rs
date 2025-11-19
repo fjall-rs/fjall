@@ -207,12 +207,21 @@ impl Database {
     // TODO: 3.0.0 refactor: accessor to stats(), so we don't have that many methods in DB
 
     /// Returns the current write buffer size (active + sealed memtables).
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[must_use]
+    #[doc(hidden)]
     pub fn write_buffer_size(&self) -> u64 {
         self.supervisor.write_buffer_size.get()
     }
 
     /// Returns the number of queued memtable flush tasks.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn outstanding_flushes(&self) -> usize {
@@ -220,6 +229,10 @@ impl Database {
     }
 
     /// Returns the time all compactions took until now.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn time_compacting(&self) -> std::time::Duration {
@@ -232,6 +245,10 @@ impl Database {
     }
 
     /// Returns the number of active compactions currently running.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn active_compactions(&self) -> usize {
@@ -241,6 +258,10 @@ impl Database {
     }
 
     /// Returns the amount of completed compactions.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn compactions_completed(&self) -> usize {
@@ -818,6 +839,7 @@ impl Database {
     /// Only used for internal testing.
     ///
     /// Should NOT be called when there is a flush worker active already!!!
+    #[cfg(test)]
     #[doc(hidden)]
     pub fn force_flush(&self) -> crate::Result<()> {
         self.worker_messager
