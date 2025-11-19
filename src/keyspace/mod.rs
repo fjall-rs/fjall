@@ -63,7 +63,7 @@ pub fn apply_to_base_config(
 #[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     /// Internal ID
-    pub(crate) id: InternalKeyspaceId,
+    pub id: InternalKeyspaceId,
 
     // Internal
     //
@@ -972,7 +972,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
@@ -1043,7 +1043,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
@@ -1134,7 +1134,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
