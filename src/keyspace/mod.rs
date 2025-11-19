@@ -19,7 +19,7 @@ use crate::{
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
-    worker_pool::{WorkerMessage, WorkerPool},
+    worker_pool::WorkerMessage,
     Database, Guard,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
@@ -28,7 +28,7 @@ use std::{
     ops::RangeBounds,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
+        atomic::AtomicBool,
         Arc, RwLock,
     },
     time::Duration,
