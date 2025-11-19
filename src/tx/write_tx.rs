@@ -124,7 +124,10 @@ impl Readable for BaseTransaction {
             .tree
             .iter(
                 self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
+                self.memtables
+                    .get(&keyspace.id)
+                    .cloned()
+                    .map(|mt| (mt, self.seqno)),
             )
             .map(Guard)
     }
@@ -141,7 +144,10 @@ impl Readable for BaseTransaction {
             .range(
                 range,
                 self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
+                self.memtables
+                    .get(&keyspace.id)
+                    .cloned()
+                    .map(|mt| (mt, self.seqno)),
             )
             .map(Guard)
     }
@@ -158,7 +164,10 @@ impl Readable for BaseTransaction {
             .prefix(
                 prefix,
                 self.nonce.instant,
-                self.memtables.get(&keyspace.id).cloned(),
+                self.memtables
+                    .get(&keyspace.id)
+                    .cloned()
+                    .map(|mt| (mt, self.seqno)),
             )
             .map(Guard)
     }

@@ -322,6 +322,11 @@ impl Keyspace {
         })))
     }
 
+    /// Returns the metrics struct of the underlying LSM-tree.
+    ///
+    /// # Note
+    ///
+    /// This function is experimental and metric names may change in future releases.
     #[cfg(feature = "metrics")]
     #[doc(hidden)]
     pub fn metrics(&self) -> &lsm_tree::Metrics {
