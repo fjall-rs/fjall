@@ -230,22 +230,27 @@ impl Keyspace {
     /// Panics if the keyspace is **not** initially empty.
     ///
     /// Panics if the input iterator is not sorted in ascending order.
+    #[doc(hidden)]
     pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
         &self,
         iter: impl Iterator<Item = (K, V)>,
     ) -> crate::Result<()> {
-        self.tree
-            .ingest(
-                iter.map(|(k, v)| (k.into(), v.into())),
-                self.supervisor.snapshot_tracker.seqno_ref(),
-                &self.visible_seqno,
-            )
-            .inspect(|()| {
-                self.worker_messager
-                    .try_send(WorkerMessage::Compact(self.clone()))
-                    .ok();
-            })
-            .map_err(Into::into)
+        let seqno = self.supervisor.snapshot_tracker.next();
+        let mut ingestion = self.tree.ingestion()?.with_seqno(seqno);
+
+        for (k, v) in iter {
+            ingestion.write(k.into(), v.into())?;
+        }
+
+        ingestion.finish().inspect(|()| {
+            self.visible_seqno.fetch_max(seqno + 1);
+
+            self.worker_messager
+                .try_send(WorkerMessage::Compact(self.clone()))
+                .ok();
+        })?;
+
+        Ok(())
     }
 
     pub(crate) fn from_database(
