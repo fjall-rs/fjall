@@ -380,7 +380,7 @@ mod tests {
         assert!(keyspace_exists(1)?);
 
         db.delete_keyspace(keyspace)?;
-        assert!(keyspace_exists(1)?);
+        assert!(!keyspace_exists(1)?);
 
         assert!(db
             .keyspace("default", KeyspaceCreateOptions::default())

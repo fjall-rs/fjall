@@ -683,6 +683,10 @@ impl Keyspace {
             self.supervisor.flush_manager.wait_for_empty();
         }
 
+        // TODO: 3.0.0, need to wait for flush to be finished
+        // TODO: waiting for empty is just waiting for the task to be picked up
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
         Ok(())
     }
 

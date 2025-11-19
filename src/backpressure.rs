@@ -37,7 +37,7 @@ pub fn handle_journal(
 
                 let mut keyspaces_with_seqno = keyspaces
                     .values()
-                    .filter(|x| x.tree.active_memtable_size() > 0)
+                    .filter(|x| x.tree.active_memtable().size() > 0)
                     .map(|x| (x.clone(), x.tree.get_highest_persisted_seqno()))
                     .collect::<Vec<_>>();
 
@@ -112,8 +112,8 @@ pub fn handle_write_buffer(
 
                 let mut keyspaces_with_sizes: Vec<(_, u64)> = keyspaces
                     .values()
-                    .filter(|x| x.tree.active_memtable_size() > 0)
-                    .map(|x| (x.clone(), x.tree.active_memtable_size()))
+                    .filter(|x| x.tree.active_memtable().size() > 0)
+                    .map(|x| (x.clone(), x.tree.active_memtable().size()))
                     .collect::<Vec<_>>();
 
                 drop(keyspaces);

@@ -111,10 +111,7 @@ fn recover_sealed_pair_2() -> crate::Result<()> {
         tree2.insert(0u8.to_be_bytes(), 0u8.to_be_bytes())?;
         assert_eq!(1, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-
-        // TODO: 3.0.0
-        // assert_eq!(1, tree.tree.lock_active_memtable().len());
-
+        assert_eq!(1, tree.tree.active_memtable().len());
         tree.rotate_memtable()?;
         assert_eq!(1, tree.tree.sealed_memtable_count());
 
@@ -125,10 +122,7 @@ fn recover_sealed_pair_2() -> crate::Result<()> {
 
         assert_eq!(2, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-
-        // TODO: 3.0.0
-        // assert_eq!(1, tree.tree.lock_active_memtable().len());
-
+        assert_eq!(1, tree.tree.active_memtable().len());
         assert_eq!(2, db.journal_count());
     }
 
@@ -140,10 +134,7 @@ fn recover_sealed_pair_2() -> crate::Result<()> {
 
         assert_eq!(2, tree.len()?.try_into().unwrap());
         assert_eq!(1, tree2.len()?.try_into().unwrap());
-
-        // TODO: 3.0.0
-        // assert_eq!(1, tree.tree.lock_active_memtable().len());
-
+        assert_eq!(1, tree.tree.active_memtable().len());
         assert_eq!(2, db.journal_count());
     }
 
@@ -180,16 +171,14 @@ fn recover_sealed_pair_3() -> crate::Result<()> {
 
         log::info!("item now {item}");
 
-        // assert_eq!(1, tree2.tree.l0_run_count());
+        assert_eq!(1, tree2.tree.l0_run_count());
 
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());
         assert_eq!(item + 1, tree2.len()?.try_into().unwrap());
 
         tree2.rotate_memtable()?;
         assert_eq!(1, tree2.tree.sealed_memtable_count());
-
-        // TODO: 3.0.0?
-        // assert!(tree2.tree.lock_active_memtable().is_empty());
+        assert_eq!(0, tree2.tree.active_memtable().size());
 
         log::error!("-- MANUAL FLUSH --");
         db.force_flush()?;

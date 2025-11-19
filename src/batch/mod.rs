@@ -190,7 +190,7 @@ impl Batch {
 
         // Check each affected keyspace for write stall/halt
         for keyspace in &keyspaces_with_possible_stall {
-            let memtable_size = keyspace.tree.active_memtable_size();
+            let memtable_size = keyspace.tree.active_memtable().size();
             keyspace.local_backpressure();
             keyspace.check_memtable_rotate(memtable_size)?;
         }

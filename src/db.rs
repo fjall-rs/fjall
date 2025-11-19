@@ -656,15 +656,14 @@ impl Database {
         {
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
-            // TODO: 3.0.0
-            // // NOTE: If this triggers, the last sealed memtable
-            // // was not correctly rotated
-            // for keyspace in keyspaces.values() {
-            //     if !keyspace.tree.lock_active_memtable().is_empty() {
-            //         log::error!("Active memtable is not empty after recovery for keyspace {:?} - recovery failed", keyspace.name);
-            //         return Err(crate::Error::Unrecoverable);
-            //     }
-            // }
+            // NOTE: If this triggers, the last sealed memtable
+            // was not correctly rotated
+            for keyspace in keyspaces.values() {
+                if keyspace.tree.active_memtable().size() > 0 {
+                    log::error!("Active memtable is not empty after recovery for keyspace {:?} - recovery failed", keyspace.name);
+                    return Err(crate::Error::Unrecoverable);
+                }
+            }
 
             // NOTE: We only need to recover the active journal, if it actually existed before
             // nothing to recover, if we just created it
@@ -706,7 +705,7 @@ impl Database {
                 }
 
                 for keyspace in keyspaces.values() {
-                    let size = keyspace.tree.active_memtable_size();
+                    let size = keyspace.tree.active_memtable().size();
 
                     // TODO: 3.0.0
                     // log::trace!(
