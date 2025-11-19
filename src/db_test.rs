@@ -1,9 +1,10 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
+#[allow(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
-fn recover_sealed() -> fjall::Result<()> {
+fn recover_sealed() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for item in 0_u128..25 {
@@ -27,8 +28,9 @@ fn recover_sealed() -> fjall::Result<()> {
 }
 
 #[test]
+#[allow(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
-fn recover_sealed_blob() -> fjall::Result<()> {
+fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for item in 0_u128..25 {
@@ -54,8 +56,9 @@ fn recover_sealed_blob() -> fjall::Result<()> {
 }
 
 #[test]
+#[allow(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
-fn recover_sealed_pair_1() -> fjall::Result<()> {
+fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for item in 0_u128..25 {
@@ -91,8 +94,9 @@ fn recover_sealed_pair_1() -> fjall::Result<()> {
 }
 
 #[test]
+#[allow(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
-fn recover_sealed_pair_2() -> fjall::Result<()> {
+fn recover_sealed_pair_2() -> crate::Result<()> {
     use lsm_tree::AbstractTree;
 
     let folder = tempfile::tempdir()?;
@@ -147,8 +151,9 @@ fn recover_sealed_pair_2() -> fjall::Result<()> {
 }
 
 #[test]
+#[allow(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
-fn recover_sealed_pair_3() -> fjall::Result<()> {
+fn recover_sealed_pair_3() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for item in 0_u128..25 {
@@ -175,7 +180,6 @@ fn recover_sealed_pair_3() -> fjall::Result<()> {
 
         log::info!("item now {item}");
 
-        use lsm_tree::AbstractTree;
         // assert_eq!(1, tree2.tree.l0_run_count());
 
         assert_eq!(item + 1, tree.len()?.try_into().unwrap());

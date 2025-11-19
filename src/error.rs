@@ -45,6 +45,9 @@ pub enum Error {
 
     /// Database is locked.
     Locked,
+
+    /// Database is unrecoverable, see logs for details
+    Unrecoverable,
 }
 
 impl std::fmt::Display for Error {

@@ -204,7 +204,7 @@ impl Database {
         batch
     }
 
-    // TODO: 3.0.0 refactor: accessor to stats(), so we don't have that many methods in DB
+    // TODO: refactor: accessor to stats(), so we don't have that many methods in DB
 
     /// Returns the current write buffer size (active + sealed memtables).
     ///
@@ -657,14 +657,13 @@ impl Database {
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
             // TODO: 3.0.0
-            // #[cfg(debug_assertions)]
+            // // NOTE: If this triggers, the last sealed memtable
+            // // was not correctly rotated
             // for keyspace in keyspaces.values() {
-            //     // NOTE: If this triggers, the last sealed memtable
-            //     // was not correctly rotated
-            //     debug_assert!(
-            //         keyspace.tree.lock_active_memtable().is_empty(),
-            //         "active memtable is not empty - this is a bug"
-            //     );
+            //     if !keyspace.tree.lock_active_memtable().is_empty() {
+            //         log::error!("Active memtable is not empty after recovery for keyspace {:?} - recovery failed", keyspace.name);
+            //         return Err(crate::Error::Unrecoverable);
+            //     }
             // }
 
             // NOTE: We only need to recover the active journal, if it actually existed before

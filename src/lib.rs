@@ -95,6 +95,10 @@ mod db_config;
 pub mod drop;
 
 mod db;
+
+#[cfg(test)]
+mod db_test;
+
 mod error;
 mod file;
 mod flush;
