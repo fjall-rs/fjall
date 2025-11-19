@@ -27,10 +27,7 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{
-        atomic::AtomicBool,
-        Arc, RwLock,
-    },
+    sync::{atomic::AtomicBool, Arc, RwLock},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -106,6 +103,7 @@ pub struct KeyspaceInner {
 
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
+    #[allow(unused)]
     lock_file: LockedFileGuard,
 }
 
