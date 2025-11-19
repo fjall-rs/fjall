@@ -14,7 +14,7 @@ use crate::{
     Database, HashMap, Keyspace,
 };
 use lsm_tree::AbstractTree;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 /// Recovers keyspaces
 pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::Result<()> {
@@ -226,17 +226,11 @@ pub fn recover_sealed_memtables(
                 // TODO: unit test write buffer size after recovery
 
                 // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-
-                // TODO: 3.0.0
-
-                // flush_manager_lock.enqueue_task(
-                //     handle.keyspace.id,
-                //     crate::flush::manager::Task {
-                //         id: memtable_id,
-                //         sealed_memtable,
-                //         keyspace: handle.keyspace.clone(),
-                //     },
-                // );
+                db.supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: handle.keyspace.clone(),
+                    }));
 
                 recovered_count += 1;
             }

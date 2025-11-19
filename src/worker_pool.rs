@@ -132,8 +132,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 &ctx.stats,
             )?;
 
-            // TODO: 3.0.0 should be thread_pool_size
-            for _ in 0..4 {
+            for _ in 0..ctx.pool_size {
                 ctx.sender
                     .try_send(WorkerMessage::Compact(task.keyspace.clone()))
                     .ok();

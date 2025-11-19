@@ -70,7 +70,7 @@ impl Iterator for JournalReader {
                 Some(Ok(item))
             }
             Err(e) => {
-                if let lsm_tree::Error::Io(e) = e {
+                if let crate::Error::Io(e) = e {
                     match e.kind() {
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
                             fail_iter!(self.maybe_truncate_file_to_last_valid_pos());

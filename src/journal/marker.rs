@@ -89,7 +89,7 @@ pub enum Tag {
 }
 
 impl TryFrom<u8> for Tag {
-    type Error = lsm_tree::Error;
+    type Error = crate::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use Tag::{End, Item, Start};
@@ -98,7 +98,7 @@ impl TryFrom<u8> for Tag {
             1 => Ok(Start),
             2 => Ok(Item),
             3 => Ok(End),
-            _ => Err(lsm_tree::Error::InvalidTag(("JournalMarkerTag", value))),
+            _ => Err(crate::Error::InvalidTag(("JournalMarkerTag", value))),
         }
     }
 }
@@ -109,8 +109,15 @@ impl From<Tag> for u8 {
     }
 }
 
-impl Encode for Marker {
-    fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), lsm_tree::Error> {
+impl Marker {
+    #[cfg(test)]
+    pub fn encode_into_vec(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        self.encode_into(&mut buf).expect("should encode");
+        buf
+    }
+
+    pub(crate) fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), crate::Error> {
         use Marker::{End, Item, Start};
 
         match self {
@@ -140,10 +147,8 @@ impl Encode for Marker {
         }
         Ok(())
     }
-}
 
-impl Decode for Marker {
-    fn decode_from<R: Read>(reader: &mut R) -> Result<Self, lsm_tree::Error> {
+    pub(crate) fn decode_from<R: Read>(reader: &mut R) -> Result<Self, crate::Error> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<LittleEndian>()?;
@@ -192,7 +197,7 @@ impl Decode for Marker {
 
                         if size != value.len() {
                             log::error!("Decompressed size does not match expected value size");
-                            return Err(lsm_tree::Error::Decompress(CompressionType::Lz4));
+                            return Err(crate::Error::Decompress(CompressionType::Lz4));
                         }
 
                         Slice::from(value.freeze())
@@ -215,7 +220,7 @@ impl Decode for Marker {
                 reader.read_exact(&mut magic)?;
 
                 if magic != MAGIC_BYTES {
-                    return Err(lsm_tree::Error::InvalidTrailer);
+                    return Err(crate::Error::InvalidTrailer);
                 }
 
                 Ok(Self::End(checksum))
@@ -259,7 +264,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                lsm_tree::Error::Io(e) => match e.kind() {
+                crate::Error::Io(e) => match e.kind() {
                     std::io::ErrorKind::UnexpectedEof => {}
                     _ => panic!("should throw UnexpectedEof"),
                 },
@@ -279,7 +284,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                lsm_tree::Error::InvalidTag(("JournalMarkerTag", 4)) => {}
+                crate::Error::InvalidTag(("JournalMarkerTag", 4)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }
