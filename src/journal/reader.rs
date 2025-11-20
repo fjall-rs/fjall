@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::marker::Marker;
+use super::entry::Entry;
 use lsm_tree::coding::Decode;
 use std::{
     fs::{File, OpenOptions},
@@ -61,10 +61,10 @@ impl JournalReader {
 }
 
 impl Iterator for JournalReader {
-    type Item = crate::Result<Marker>;
+    type Item = crate::Result<Entry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match Marker::decode_from(&mut self.reader) {
+        match Entry::decode_from(&mut self.reader) {
             Ok(item) => {
                 self.last_valid_pos = fail_iter!(self.reader.stream_position());
                 Some(Ok(item))

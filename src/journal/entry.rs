@@ -10,17 +10,17 @@ use lsm_tree::{
 };
 use std::io::{Read, Write};
 
-/// Journal marker. Every batch is wrapped in a Start marker, followed by N items, followed by an end marker.
+/// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
 ///
-/// - The start marker contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
+/// - The start entry contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
 ///
-/// - The end marker contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
+/// - The end entry contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
-/// - The end marker terminates each batch with the magic string: [`TRAILER_MAGIC`].
+/// - The end entry terminates each batch with the magic string: [`TRAILER_MAGIC`].
 ///
-/// - If a start marker is detected, while inside a batch, the batch is broken.
+/// - If a start entry is detected, while inside a batch, the batch is broken.
 #[derive(Debug, Eq, PartialEq)]
-pub enum Marker {
+pub enum Entry {
     Start {
         item_count: u32,
         seqno: SeqNo,
@@ -109,7 +109,7 @@ impl From<Tag> for u8 {
     }
 }
 
-impl Marker {
+impl Entry {
     #[cfg(test)]
     pub fn encode_into_vec(&self) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -118,7 +118,7 @@ impl Marker {
     }
 
     pub(crate) fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), crate::Error> {
-        use Marker::{End, Item, Start};
+        use Entry::{End, Item, Start};
 
         match self {
             Start { item_count, seqno } => {
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {
-        let item = Marker::Item {
+        let item = Entry::Item {
             keyspace_id: 0,
             key: vec![1, 2, 3].into(),
             value: vec![].into(),
@@ -248,7 +248,7 @@ mod tests {
 
         let serialized_data = item.encode_into_vec();
         let mut reader = &serialized_data[..];
-        let deserialized_item = Marker::decode_from(&mut reader)?;
+        let deserialized_item = Entry::decode_from(&mut reader)?;
 
         assert_eq!(item, deserialized_item);
 
@@ -261,7 +261,7 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::decode_from(&mut reader);
+        let result = Entry::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),
@@ -281,7 +281,7 @@ mod tests {
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
-        let result = Marker::decode_from(&mut reader);
+        let result = Entry::decode_from(&mut reader);
 
         match result {
             Ok(_) => panic!("should error"),

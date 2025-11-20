@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{batch::item::Item as BatchItem, journal::marker::Marker, JournalRecoveryError};
+use crate::{batch::item::Item as BatchItem, journal::entry::Entry, JournalRecoveryError};
 use lsm_tree::{coding::Encode, SeqNo};
 use std::{fs::OpenOptions, hash::Hasher};
 
@@ -87,7 +87,7 @@ impl Iterator for JournalBatchReader {
             let journal_file_pos = self.reader.last_valid_pos;
 
             match item {
-                Marker::Start { item_count, seqno } => {
+                Entry::Start { item_count, seqno } => {
                     if self.is_in_batch {
                         log::debug!("Invalid batch: found batch start inside batch");
 
@@ -101,7 +101,7 @@ impl Iterator for JournalBatchReader {
                     self.batch_counter = item_count;
                     self.batch_seqno = seqno;
                 }
-                Marker::End(expected_checksum) => {
+                Entry::End(expected_checksum) => {
                     if self.batch_counter > 0 {
                         log::error!("Invalid batch: insufficient length");
                         return Some(Err(JournalRecovery(
@@ -138,14 +138,14 @@ impl Iterator for JournalBatchReader {
                         items,
                     }));
                 }
-                Marker::Item {
+                Entry::Item {
                     keyspace_id,
                     key,
                     value,
                     value_type,
                     compression,
                 } => {
-                    let item = Marker::Item {
+                    let item = Entry::Item {
                         keyspace_id,
                         key: key.clone(),
                         value: value.clone(),

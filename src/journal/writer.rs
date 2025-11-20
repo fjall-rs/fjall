@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::marker::{serialize_marker_item, Marker};
+use super::entry::{serialize_marker_item, Entry};
 use crate::{
     batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
@@ -233,7 +233,7 @@ impl Writer {
     fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
-        Marker::Start { item_count, seqno }.encode_into(&mut self.buf)?;
+        Entry::Start { item_count, seqno }.encode_into(&mut self.buf)?;
 
         self.file.write_all(&self.buf)?;
 
@@ -244,7 +244,7 @@ impl Writer {
     fn write_end(&mut self, checksum: u64) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
-        Marker::End(checksum).encode_into(&mut self.buf)?;
+        Entry::End(checksum).encode_into(&mut self.buf)?;
 
         self.file.write_all(&self.buf)?;
 

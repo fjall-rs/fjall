@@ -3,9 +3,9 @@
 // (found in the LICENSE-* files in the repository)
 
 pub mod batch_reader;
+pub mod entry;
 pub mod error;
 pub mod manager;
-pub mod marker;
 pub mod reader;
 mod recovery;
 pub mod writer;
@@ -125,8 +125,8 @@ impl Journal {
 mod tests {
     use super::*;
     use crate::batch::item::Item as BatchItem;
+    use entry::Entry;
     use lsm_tree::{coding::Encode, ValueType};
-    use marker::Marker;
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;
@@ -391,7 +391,7 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Start {
+            Entry::Start {
                 item_count: 2,
                 seqno: 64,
             }
@@ -409,7 +409,7 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Start {
+            Entry::Start {
                 item_count: 2,
                 seqno: 64,
             }
@@ -454,7 +454,7 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::End(5432).encode_into(&mut file)?;
+            Entry::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -468,7 +468,7 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::End(5432).encode_into(&mut file)?;
+            Entry::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -509,7 +509,7 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Item {
+            Entry::Item {
                 keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
@@ -531,7 +531,7 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Item {
+            Entry::Item {
                 keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
