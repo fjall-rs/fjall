@@ -178,7 +178,7 @@ impl Database {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// let mut batch = db.batch();
     ///
     /// assert_eq!(tree.len()?, 0);
@@ -313,7 +313,7 @@ impl Database {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(db.disk_space()? > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -344,7 +344,7 @@ impl Database {
     /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = Database::builder(folder).open()?;
-    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -452,7 +452,7 @@ impl Database {
     pub fn keyspace(
         &self,
         name: &str,
-        create_options: KeyspaceCreateOptions,
+        create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
@@ -465,7 +465,7 @@ impl Database {
 
             let keyspace_id = self.keyspace_id_counter.next();
 
-            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options)?;
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options())?;
 
             self.meta_keyspace
                 .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;
@@ -504,7 +504,7 @@ impl Database {
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
     /// assert!(!db.keyspace_exists("default"));
-    /// db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(db.keyspace_exists("default"));
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -613,6 +613,7 @@ impl Database {
 
         let is_poisoned = Arc::<AtomicBool>::default();
 
+        // TODO: 3.0.0 don't start worker pool immediately, send some kind of signal when DB is actually set up
         let (worker_pool, worker_messager) = WorkerPool::new(
             config.worker_threads,
             &supervisor,
@@ -654,6 +655,7 @@ impl Database {
         )?;
 
         {
+            #[allow(clippy::expect_used)]
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
             // NOTE: If this triggers, the last sealed memtable
@@ -734,6 +736,9 @@ impl Database {
         }
 
         db.visible_seqno.set(db.supervisor.snapshot_tracker.get());
+        db.supervisor.snapshot_tracker.gc();
+
+        // TODO: 3.0.0 kick off worker pool
 
         log::trace!("Recovery successful");
 
@@ -839,6 +844,7 @@ impl Database {
     #[cfg(test)]
     #[doc(hidden)]
     pub fn force_flush(&self) -> crate::Result<()> {
+        #[allow(clippy::expect_used, reason = "only used in tests, so whatever")]
         self.worker_messager
             .send(WorkerMessage::Flush)
             .expect("should send");
@@ -874,7 +880,7 @@ mod tests {
         let db = Database::builder(&folder).open()?;
 
         for name in ["hello$world", "hello#world", "hello.world", "hello_world"] {
-            let tree = db.keyspace(name, Default::default())?;
+            let tree = db.keyspace(name, KeyspaceCreateOptions::default)?;
             tree.insert("a", "a")?;
             assert_eq!(1, tree.len()?);
         }

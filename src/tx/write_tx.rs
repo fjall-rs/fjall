@@ -387,7 +387,7 @@ mod tests {
         let tmpdir: TempDir = tempfile::tempdir()?;
         let db = SingleWriterTxDatabase::builder(tmpdir.path()).open()?;
 
-        let tree = db.keyspace("foo", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 
         Ok(TestEnv { db, tree, tmpdir })
     }

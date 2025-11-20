@@ -343,7 +343,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(0, tree.disk_space());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -364,7 +364,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -391,7 +391,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -416,7 +416,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("ab", "abc")?;
     /// tree.insert("abc", "abc")?;
@@ -445,7 +445,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(tree.approximate_len(), 0);
     ///
     /// tree.insert("1", "abc")?;
@@ -480,7 +480,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(tree.len()?, 0);
     ///
     /// tree.insert("1", "abc")?;
@@ -516,7 +516,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(tree.is_empty()?);
     ///
     /// tree.insert("a", "abc")?;
@@ -541,7 +541,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(!tree.contains_key("a")?);
     ///
     /// tree.insert("a", "abc")?;
@@ -566,7 +566,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let item = tree.get("a")?;
@@ -591,7 +591,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let len = tree.size_of("a")?.unwrap_or_default();
@@ -617,7 +617,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -645,7 +645,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -696,6 +696,8 @@ impl Keyspace {
         };
 
         log::trace!("keyspace: acquiring journal manager lock");
+
+        #[allow(clippy::expect_used)]
         let mut journal_manager: std::sync::RwLockWriteGuard<'_, JournalManager> = self
             .supervisor
             .journal_manager
@@ -882,7 +884,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// assert!(!tree.is_empty()?);
@@ -952,7 +954,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.get("a")?.expect("should have item");
@@ -1034,7 +1036,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.get("a")?.expect("should have item");

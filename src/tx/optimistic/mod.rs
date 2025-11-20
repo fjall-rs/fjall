@@ -101,7 +101,7 @@ impl OptimisticTxDatabase {
     /// # use fjall::{PersistMode, OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -134,7 +134,7 @@ impl OptimisticTxDatabase {
     pub fn keyspace(
         &self,
         name: &str,
-        create_options: KeyspaceCreateOptions,
+        create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<OptimisticTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 

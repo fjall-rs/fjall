@@ -98,7 +98,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx();
@@ -135,7 +135,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx();
@@ -156,7 +156,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx();
@@ -194,7 +194,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx();
@@ -215,7 +215,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx();
@@ -256,7 +256,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
@@ -295,7 +295,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
@@ -339,7 +339,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///

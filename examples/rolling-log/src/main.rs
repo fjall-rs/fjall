@@ -11,11 +11,10 @@ fn main() -> fjall::Result<()> {
         .max_write_buffer_size(4_000_000)
         .open()?;
 
-    let log = db.keyspace(
-        "log",
+    let log = db.keyspace("log", || {
         KeyspaceCreateOptions::default()
-            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None))),
-    )?;
+            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)))
+    })?;
 
     for x in 0u64..2_500_000 {
         log.insert(x.to_be_bytes(), x.to_be_bytes())?;

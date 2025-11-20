@@ -166,7 +166,7 @@ async fn main() -> fjall::Result<()> {
     log::info!("Opening database");
 
     let db = Database::builder(".fjall_data").open()?;
-    let tree = db.keyspace("data", Default::default())?;
+    let tree = db.keyspace("data", fjall::KeyspaceCreateOptions::default)?;
 
     log::info!("Starting on port {port}");
 
@@ -206,7 +206,7 @@ mod tests {
         let data_folder = tempfile::tempdir()?;
 
         let db = Database::builder(&data_folder).open()?;
-        let tree = db.keyspace("data", Default::default())?;
+        let tree = db.keyspace("data", fjall::KeyspaceCreateOptions::default)?;
 
         let app = App::new()
             .app_data(web::Data::new(AppState {

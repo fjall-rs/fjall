@@ -4,7 +4,7 @@
 
 use super::reader::JournalReader;
 use crate::{batch::item::Item as BatchItem, journal::entry::Entry, JournalRecoveryError};
-use lsm_tree::{coding::Encode, SeqNo};
+use lsm_tree::SeqNo;
 use std::{fs::OpenOptions, hash::Hasher};
 
 macro_rules! fail_iter {
@@ -47,7 +47,7 @@ impl JournalBatchReader {
     }
 
     // TODO: reallocate space
-    fn truncate_to(&mut self, last_valid_pos: u64) -> crate::Result<()> {
+    fn truncate_to(&self, last_valid_pos: u64) -> crate::Result<()> {
         log::trace!("Truncating journal to {last_valid_pos}");
 
         // TODO: on windows, reading file probably needs to be closed first...?
@@ -59,7 +59,7 @@ impl JournalBatchReader {
         Ok(())
     }
 
-    fn on_close(&mut self) -> crate::Result<()> {
+    fn on_close(&self) -> crate::Result<()> {
         if self.is_in_batch {
             log::debug!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 

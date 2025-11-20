@@ -8,8 +8,8 @@ fn main() -> fjall::Result<()> {
 
     let db = OptimisticTxDatabase::builder(path).temporary(true).open()?;
 
-    let src = db.keyspace("src", Default::default())?;
-    let dst = db.keyspace("dst", Default::default())?;
+    let src = db.keyspace("src", fjall::KeyspaceCreateOptions::default)?;
+    let dst = db.keyspace("dst", fjall::KeyspaceCreateOptions::default)?;
 
     for _ in 0..ITEM_COUNT {
         src.insert(scru128::new_string(), "")?;

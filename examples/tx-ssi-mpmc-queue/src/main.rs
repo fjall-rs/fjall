@@ -15,7 +15,7 @@ fn main() -> fjall::Result<()> {
 
     let db = OptimisticTxDatabase::builder(path).temporary(true).open()?;
 
-    let tasks = db.keyspace("tasks", Default::default())?;
+    let tasks = db.keyspace("tasks", fjall::KeyspaceCreateOptions::default)?;
 
     let counter = Arc::new(AtomicUsize::default());
 

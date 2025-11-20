@@ -97,7 +97,7 @@ mod tests {
         let tmpdir = tempfile::tempdir()?;
         let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
 
-        let part = db.keyspace("foo", KeyspaceCreateOptions::default())?;
+        let part = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 
         for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();

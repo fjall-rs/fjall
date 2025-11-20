@@ -218,7 +218,7 @@ mod tests {
 
             assert_eq!(0, db.meta_keyspace.len()?);
 
-            let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+            let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
             path = tree.path().to_path_buf();
 
             assert!(path.try_exists()?);
@@ -247,7 +247,7 @@ mod tests {
         for _ in 0..10 {
             let db = Database::builder(&folder).open()?;
 
-            let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+            let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
             assert!(path.try_exists()?);
             assert!(db.meta_keyspace.len()? > 0);
@@ -263,7 +263,7 @@ mod tests {
         {
             let db = Database::builder(&folder).open()?;
 
-            let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+            let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
             assert!(path.try_exists()?);
             assert!(db.meta_keyspace.len()? > 0);
 
@@ -292,7 +292,7 @@ mod tests {
         {
             let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
-            let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+            let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
             path = tree.path();
 
             assert!(path.try_exists()?);
@@ -323,7 +323,7 @@ mod tests {
         for _ in 0..5 {
             let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
-            let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+            let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
             assert_eq!(db.read_tx().len(&tree)?, ITEM_COUNT * 2);
             assert_eq!(
@@ -342,7 +342,7 @@ mod tests {
             let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
             {
-                let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+                let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
                 assert!(path.try_exists()?);
 
@@ -376,14 +376,14 @@ mod tests {
         let db = Database::builder(&folder).open()?;
         assert!(!keyspace_exists(1)?);
 
-        let keyspace = db.keyspace(keyspace_name, KeyspaceCreateOptions::default())?;
+        let keyspace = db.keyspace(keyspace_name, KeyspaceCreateOptions::default)?;
         assert!(keyspace_exists(1)?);
 
         db.delete_keyspace(keyspace)?;
         assert!(!keyspace_exists(1)?);
 
         assert!(db
-            .keyspace("default", KeyspaceCreateOptions::default())
+            .keyspace("default", KeyspaceCreateOptions::default)
             .is_ok());
         assert!(keyspace_exists(2)?);
 

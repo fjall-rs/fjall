@@ -79,6 +79,7 @@ impl SnapshotTracker {
     }
 
     pub fn open(&self) -> SnapshotNonce {
+        #[allow(clippy::expect_used)]
         let _lock = self.gc_lock.read().expect("lock is poisoned");
 
         let seqno = self.seqno.get();
@@ -94,6 +95,7 @@ impl SnapshotTracker {
     }
 
     pub fn clone_snapshot(&self, nonce: &SnapshotNonce) -> SnapshotNonce {
+        #[allow(clippy::expect_used)]
         let _lock = self.gc_lock.read().expect("lock is poisoned");
 
         self.data
@@ -111,6 +113,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn close_raw(&self, instant: SeqNo) {
+        #[allow(clippy::expect_used)]
         let lock = self.gc_lock.read().expect("lock is poisoned");
 
         self.data.alter(&instant, |_, v| v.saturating_sub(1));
@@ -127,7 +130,7 @@ impl SnapshotTracker {
         }
     }
 
-    // TODO: after recovery, we may need to set the GC watermark once to current_seqno - safety_gap
+    // TODO: after recovery, we may need to set the GC watermark once to current_seqno - 1
     // so there cannot be compactions scheduled immediately with gc_watermark=0
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         self.lowest_freed_instant
@@ -135,6 +138,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn pullup(&self) {
+        #[allow(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         self.lowest_freed_instant.store(
@@ -144,6 +148,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn gc(&self) {
+        #[allow(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         let seqno_threshold = self.seqno.get();

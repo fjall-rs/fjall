@@ -15,9 +15,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -73,9 +73,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         {
@@ -117,9 +117,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -175,9 +175,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         {

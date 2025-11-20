@@ -8,7 +8,7 @@ fn main() -> fjall::Result<()> {
 
     let db = OptimisticTxDatabase::builder(path).temporary(true).open()?;
 
-    let counters = db.keyspace("counters", Default::default())?;
+    let counters = db.keyspace("counters", fjall::KeyspaceCreateOptions::default)?;
 
     counters.insert("c1", 0_u64.to_be_bytes())?;
 

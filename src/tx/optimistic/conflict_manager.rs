@@ -25,6 +25,7 @@ pub struct ConflictManager {
 
 impl ConflictManager {
     fn push_read(&self, keyspace_id: InternalKeyspaceId, read: Read) {
+        #[allow(clippy::expect_used)]
         let mut lock = self.reads.lock().expect("lock is poisoned");
 
         if let Some(tbl) = lock.get_mut(&keyspace_id) {
@@ -39,6 +40,7 @@ impl ConflictManager {
     }
 
     pub fn mark_conflict(&self, keyspace_id: InternalKeyspaceId, key: Slice) {
+        #[allow(clippy::expect_used)]
         let mut lock = self.conflict_keys.lock().expect("lock is poisoned");
 
         if let Some(tbl) = lock.get_mut(&keyspace_id) {
@@ -72,7 +74,10 @@ impl ConflictManager {
 
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     pub fn has_conflict(&self, other: &Self) -> bool {
+        #[allow(clippy::expect_used)]
         let reads_lock = self.reads.lock().expect("lock is poisoned");
+
+        #[allow(clippy::expect_used)]
         let conflict_keys_lock = other.conflict_keys.lock().expect("lock is poisoned");
 
         if reads_lock.is_empty() {

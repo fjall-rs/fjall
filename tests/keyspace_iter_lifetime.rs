@@ -17,7 +17,7 @@ fn keyspace_iter_lifetime() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
 
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     assert_eq!(0, db.write_buffer_size());
 
     tree.insert("asd", "def")?;

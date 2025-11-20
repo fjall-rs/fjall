@@ -36,7 +36,7 @@
 //! // TxDatabase::builder for transactional semantics
 //!
 //! // Each keyspace is its own physical LSM-tree
-//! let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+//! let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -77,7 +77,7 @@
 #![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
-#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::missing_const_for_fn, clippy::significant_drop_tightening)]
 #![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
