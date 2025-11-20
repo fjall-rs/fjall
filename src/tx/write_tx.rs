@@ -4,7 +4,7 @@
 
 use crate::{
     batch::item::Item, keyspace::InternalKeyspaceId, snapshot_nonce::SnapshotNonce, Database,
-    Guard, HashMap, Keyspace, PersistMode, Readable, WriteBatch,
+    Guard, HashMap, Iter, Keyspace, PersistMode, Readable, WriteBatch,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -114,62 +114,52 @@ impl Readable for BaseTransaction {
         Ok(res)
     }
 
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
         let keyspace = keyspace.as_ref();
 
-        keyspace
-            .tree
-            .iter(
-                self.nonce.instant,
-                self.memtables
-                    .get(&keyspace.id)
-                    .cloned()
-                    .map(|mt| (mt, self.seqno)),
-            )
-            .map(Guard)
+        let iter = keyspace.tree.iter(
+            self.nonce.instant,
+            self.memtables
+                .get(&keyspace.id)
+                .cloned()
+                .map(|mt| (mt, self.seqno)),
+        );
+
+        Iter::new(self.nonce.clone(), iter)
     }
 
     fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    ) -> Iter {
         let keyspace = keyspace.as_ref();
 
-        keyspace
-            .tree
-            .range(
-                range,
-                self.nonce.instant,
-                self.memtables
-                    .get(&keyspace.id)
-                    .cloned()
-                    .map(|mt| (mt, self.seqno)),
-            )
-            .map(Guard)
+        let iter = keyspace.tree.range(
+            range,
+            self.nonce.instant,
+            self.memtables
+                .get(&keyspace.id)
+                .cloned()
+                .map(|mt| (mt, self.seqno)),
+        );
+
+        Iter::new(self.nonce.clone(), iter)
     }
 
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
         let keyspace = keyspace.as_ref();
 
-        keyspace
-            .tree
-            .prefix(
-                prefix,
-                self.nonce.instant,
-                self.memtables
-                    .get(&keyspace.id)
-                    .cloned()
-                    .map(|mt| (mt, self.seqno)),
-            )
-            .map(Guard)
+        let iter = keyspace.tree.prefix(
+            prefix,
+            self.nonce.instant,
+            self.memtables
+                .get(&keyspace.id)
+                .cloned()
+                .map(|mt| (mt, self.seqno)),
+        );
+
+        Iter::new(self.nonce.clone(), iter)
     }
 }
 

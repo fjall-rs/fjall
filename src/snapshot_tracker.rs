@@ -93,6 +93,19 @@ impl SnapshotTracker {
         SnapshotNonce::new(seqno, self.clone())
     }
 
+    pub fn clone_snapshot(&self, nonce: &SnapshotNonce) -> SnapshotNonce {
+        let _lock = self.gc_lock.read().expect("lock is poisoned");
+
+        self.data
+            .entry(nonce.instant)
+            .and_modify(|x| {
+                *x += 1;
+            })
+            .or_insert(1);
+
+        SnapshotNonce::new(nonce.instant, self.clone())
+    }
+
     pub fn close(&self, nonce: &SnapshotNonce) {
         self.close_raw(nonce.instant);
     }

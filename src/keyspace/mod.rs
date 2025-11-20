@@ -20,7 +20,7 @@ use crate::{
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::WorkerMessage,
-    Database, Guard,
+    Database, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
 use options::CreateOptions;
@@ -373,9 +373,10 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    #[allow(clippy::iter_without_into_iter)]
+    pub fn iter(&self) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.iter(nonce.instant, None).map(Guard);
+        let iter = self.tree.iter(nonce.instant, None);
         crate::iter::Iter::new(nonce, iter)
     }
 
@@ -398,12 +399,9 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &self,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.range(range, SeqNo::MAX, None).map(Guard);
+        let iter = self.tree.range(range, SeqNo::MAX, None);
         crate::iter::Iter::new(nonce, iter)
     }
 
@@ -426,12 +424,9 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &self,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard);
+        let iter = self.tree.prefix(prefix, SeqNo::MAX, None);
         crate::iter::Iter::new(nonce, iter)
     }
 

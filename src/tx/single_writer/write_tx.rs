@@ -1,7 +1,7 @@
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
-    Guard, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
+    Iter, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
 };
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
@@ -54,10 +54,7 @@ impl Readable for WriteTransaction<'_> {
         self.inner.size_of(keyspace, key)
     }
 
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
         self.inner.iter(keyspace)
     }
 
@@ -65,15 +62,11 @@ impl Readable for WriteTransaction<'_> {
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    ) -> Iter {
         self.inner.range(keyspace, range)
     }
 
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
         self.inner.prefix(keyspace, prefix)
     }
 }

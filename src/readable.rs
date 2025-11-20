@@ -1,7 +1,6 @@
-use std::ops::RangeBounds;
-
-use crate::{Guard, Keyspace};
+use crate::{Iter, Keyspace};
 use lsm_tree::{KvPair, UserValue};
+use std::ops::RangeBounds;
 
 /// Readable snapshot
 ///
@@ -205,10 +204,7 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter;
 
     /// Scans the entire keyspace, returning the amount of items.
     ///
@@ -283,7 +279,7 @@ pub trait Readable {
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    ) -> Iter;
 
     /// Iterates over a prefixed set of the transaction's state.
     ///
@@ -305,9 +301,5 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter;
 }

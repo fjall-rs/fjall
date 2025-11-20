@@ -2,38 +2,37 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::snapshot_nonce::SnapshotNonce;
+use crate::{snapshot_nonce::SnapshotNonce, Guard, InnerIter};
 
-/// A wrapper around iterators to hold a snapshot moment
+/// A wrapper around iterators to hold a snapshot nonce
 ///
 /// We need to hold the snapshot nonce so the GC watermark does not
-/// move past this snapshot moment, removing data that may still be read.
+/// move past this snapshot nonce, removing data that may still be read.
 ///
-/// This may not be strictly needed because an iterator holds a read lock to a memtable anyway
-/// but for correctness it's probably better.
-pub struct Iter<T, I: DoubleEndedIterator<Item = T>> {
-    iter: I,
+/// Additionally, this struct also maps lsm-tree's Guards to "our" Guards.
+pub struct Iter {
+    iter: InnerIter,
 
     #[allow(unused)]
     nonce: SnapshotNonce,
 }
 
-impl<T, I: DoubleEndedIterator<Item = T>> Iter<T, I> {
-    pub fn new(nonce: SnapshotNonce, iter: I) -> Self {
+impl Iter {
+    pub(crate) fn new(nonce: SnapshotNonce, iter: InnerIter) -> Self {
         Self { iter, nonce }
     }
 }
 
-impl<T, I: DoubleEndedIterator<Item = T>> Iterator for Iter<T, I> {
-    type Item = T;
+impl Iterator for Iter {
+    type Item = crate::Guard;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        self.iter.next().map(Guard)
     }
 }
 
-impl<T, I: DoubleEndedIterator<Item = T>> DoubleEndedIterator for Iter<T, I> {
+impl DoubleEndedIterator for Iter {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back()
+        self.iter.next_back().map(Guard)
     }
 }

@@ -7,7 +7,7 @@ use crate::{
         },
         write_tx::BaseTransaction,
     },
-    Database, Guard, Keyspace, PersistMode, Readable,
+    Database, Guard, Iter, Keyspace, PersistMode, Readable,
 };
 use lsm_tree::{KvPair, Slice, UserKey, UserValue};
 use std::{
@@ -102,10 +102,7 @@ impl Readable for WriteTransaction {
         self.inner.size_of(keyspace, key)
     }
 
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
         self.cm.mark_range(keyspace.as_ref().id, RangeFull);
         self.inner.iter(keyspace)
     }
@@ -114,7 +111,7 @@ impl Readable for WriteTransaction {
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    ) -> Iter {
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
@@ -123,11 +120,7 @@ impl Readable for WriteTransaction {
         self.inner.range(keyspace, range)
     }
 
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 }
