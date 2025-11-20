@@ -36,7 +36,7 @@
 //! // TxDatabase::builder for transactional semantics
 //!
 //! // Each keyspace is its own physical LSM-tree
-//! let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+//! let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 //!
 //! // Write some data
 //! items.insert("a", "hello")?;
@@ -77,7 +77,7 @@
 #![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::expect_used)]
-#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::missing_const_for_fn, clippy::significant_drop_tightening)]
 #![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -95,6 +95,10 @@ mod db_config;
 pub mod drop;
 
 mod db;
+
+#[cfg(test)]
+mod db_test;
+
 mod error;
 mod file;
 mod flush;
@@ -135,6 +139,7 @@ pub use {
     db_config::Config,
     error::{Error, Result},
     guard::Guard,
+    iter::Iter,
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
     readable::Readable,
@@ -157,6 +162,8 @@ pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
 pub use lsm_tree::{
     CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,
 };
+
+pub(crate) type InnerIter = Box<dyn DoubleEndedIterator<Item = lsm_tree::IterGuardImpl> + 'static>;
 
 /// Utility functions
 pub mod util {

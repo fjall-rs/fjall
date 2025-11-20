@@ -10,11 +10,11 @@ fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
     let db = Database::builder(path).temporary(true).open()?;
-    let items = db.keyspace("items", Default::default())?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
 
     // To search suffixes of keys, we store a secondary index that stores the reversed key
     // which will allow a .prefix() search over that key, resulting in a suffix search.
-    let items_rev = db.keyspace("items_rev", Default::default())?;
+    let items_rev = db.keyspace("items_rev", fjall::KeyspaceCreateOptions::default)?;
 
     if items.is_empty()? {
         println!("Ingesting test data");

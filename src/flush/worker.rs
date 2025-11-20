@@ -9,7 +9,6 @@ use crate::{
 use lsm_tree::AbstractTree;
 
 /// Runs flush logic.
-#[allow(clippy::too_many_lines)]
 pub fn run(
     task: &Task,
     write_buffer_manager: &WriteBufferManager,
@@ -29,14 +28,6 @@ pub fn run(
         })? {
         Some(flushed_bytes) => {
             write_buffer_manager.free(flushed_bytes);
-
-            stats
-                .flushes_completed
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-            task.keyspace
-                .flushes_completed
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             log::debug!("Flush completed");
         }

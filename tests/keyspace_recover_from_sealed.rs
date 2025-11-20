@@ -7,17 +7,15 @@ const ITEM_COUNT: usize = 10;
 fn recover_sealed_journal() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
             .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -73,9 +71,9 @@ fn recover_sealed_journal() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         {
@@ -109,17 +107,15 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 fn recover_sealed_journal_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
             .worker_threads_unchecked(0)
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -175,9 +171,9 @@ fn recover_sealed_journal_blob() -> fjall::Result<()> {
             .open()?;
 
         let keyspaces = &[
-            db.keyspace("tree1", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree2", KeyspaceCreateOptions::default())?,
-            db.keyspace("tree3", KeyspaceCreateOptions::default())?,
+            db.keyspace("tree1", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree2", KeyspaceCreateOptions::default)?,
+            db.keyspace("tree3", KeyspaceCreateOptions::default)?,
         ];
 
         {

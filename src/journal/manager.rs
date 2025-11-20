@@ -39,7 +39,7 @@ impl std::fmt::Debug for Item {
 /// The [`JournalManager`] keeps track of sealed journals that are being flushed.
 ///
 /// Each journal may contain items of different keyspaces.
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
     // active_path: PathBuf, // TODO: remove?

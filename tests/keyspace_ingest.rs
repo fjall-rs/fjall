@@ -1,4 +1,4 @@
-use fjall::{Database, UserKey, UserValue};
+use fjall::{Database, KeyspaceCreateOptions, UserKey, UserValue};
 
 #[test_log::test]
 #[ignore = "flimsy because of the compaction check, probably race condition... run the compression synchronously"]
@@ -6,8 +6,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let db = Database::builder(&folder).worker_threads(0).open()?;
-
-    let items = db.keyspace("items", Default::default())?;
+    let items = db.keyspace("items", KeyspaceCreateOptions::default)?;
 
     items.ingest(
         [0u8, 1, 2, 3, 4, 5]

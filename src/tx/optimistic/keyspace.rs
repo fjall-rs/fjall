@@ -42,7 +42,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(tree.approximate_len(), 0);
     ///
     /// tree.insert("1", "abc")?;
@@ -69,7 +69,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let taken = tree.take("a")?.unwrap();
@@ -108,7 +108,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let prev = tree.fetch_update("a", |_| Some(Slice::from(*b"def")))?.unwrap();
@@ -126,7 +126,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let prev = tree.fetch_update("a", |_| None)?.unwrap();
@@ -141,7 +141,6 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
@@ -178,7 +177,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let updated = tree.update_fetch("a", |_| Some(Slice::from(*b"def")))?.unwrap();
@@ -196,7 +195,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let updated = tree.update_fetch("a", |_| None)?;
@@ -211,7 +210,6 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
@@ -244,7 +242,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// assert!(!db.read_tx().is_empty(&tree)?);
@@ -263,7 +261,11 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.insert(self.inner(), key, value);
 
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            clippy::missing_panics_doc,
+            reason = "blind insert should not conflict ever"
+        )]
         tx.commit()?.expect("blind insert should not conflict ever");
 
         Ok(())
@@ -283,7 +285,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// assert!(!db.read_tx().is_empty(&tree)?);
     ///
@@ -300,7 +302,11 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.remove(self.inner(), key);
 
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            clippy::missing_panics_doc,
+            reason = "blind remove should not conflict ever"
+        )]
         tx.commit()?.expect("blind remove should not conflict ever");
 
         Ok(())
@@ -329,7 +335,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// assert!(!db.read_tx().is_empty(&tree)?);
     ///
@@ -347,7 +353,7 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.remove_weak(self.inner(), key);
 
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         tx.commit()?.expect("blind remove should not conflict ever");
 
         Ok(())
@@ -364,7 +370,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let item = tree.get("a")?;
@@ -391,7 +397,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let len = tree.size_of("a")?.unwrap_or_default();
@@ -419,7 +425,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
     ///
@@ -448,7 +454,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
     ///
@@ -476,7 +482,7 @@ impl OptimisticTxKeyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// assert!(tree.contains_key("a")?);

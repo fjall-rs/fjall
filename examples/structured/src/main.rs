@@ -110,7 +110,7 @@ fn main() -> fjall::Result<()> {
 
     {
         let db = Database::builder(path).open()?;
-        let tree = db.keyspace("songs", Default::default())?;
+        let tree = db.keyspace("songs", fjall::KeyspaceCreateOptions::default)?;
 
         let song_db = SongDatabase {
             db: db.clone(),
@@ -136,7 +136,7 @@ fn main() -> fjall::Result<()> {
         println!("\nReloading...");
 
         let db = Database::builder(path).temporary(true).open()?;
-        let tree = db.keyspace("songs", Default::default())?;
+        let tree = db.keyspace("songs", fjall::KeyspaceCreateOptions::default)?;
 
         let song_db = SongDatabase {
             db: db.clone(),

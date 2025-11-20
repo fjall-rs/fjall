@@ -22,7 +22,6 @@ pub use write_tx::{Conflict, WriteTransaction};
 
 /// Transactional database
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 pub struct OptimisticTxDatabase {
     pub(crate) inner: Database,
     pub(super) oracle: Arc<Oracle>,
@@ -101,7 +100,7 @@ impl OptimisticTxDatabase {
     /// # use fjall::{PersistMode, OptimisticTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -134,7 +133,7 @@ impl OptimisticTxDatabase {
     pub fn keyspace(
         &self,
         name: &str,
-        create_options: KeyspaceCreateOptions,
+        create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<OptimisticTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 

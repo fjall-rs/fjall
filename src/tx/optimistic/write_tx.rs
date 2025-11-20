@@ -7,7 +7,7 @@ use crate::{
         },
         write_tx::BaseTransaction,
     },
-    Database, Guard, Keyspace, PersistMode, Readable,
+    Database, Guard, Iter, Keyspace, PersistMode, Readable,
 };
 use lsm_tree::{KvPair, Slice, UserKey, UserValue};
 use std::{
@@ -102,10 +102,7 @@ impl Readable for WriteTransaction {
         self.inner.size_of(keyspace, key)
     }
 
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
         self.cm.mark_range(keyspace.as_ref().id, RangeFull);
         self.inner.iter(keyspace)
     }
@@ -114,7 +111,7 @@ impl Readable for WriteTransaction {
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    ) -> Iter {
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
@@ -123,11 +120,7 @@ impl Readable for WriteTransaction {
         self.inner.range(keyspace, range)
     }
 
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
         self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 }
@@ -156,7 +149,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx()?;
@@ -193,7 +186,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx()?;
@@ -214,7 +207,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx()?;
@@ -260,7 +253,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx()?;
@@ -281,7 +274,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let mut tx = db.write_tx()?;
@@ -330,7 +323,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
@@ -373,7 +366,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
@@ -421,7 +414,7 @@ impl WriteTransaction {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "previous_value")?;
     /// assert_eq!(b"previous_value", &*tree.get("a")?.unwrap());
     ///
@@ -494,7 +487,7 @@ mod tests {
         db: OptimisticTxDatabase,
         tree: OptimisticTxKeyspace,
 
-        #[allow(unused)]
+        #[expect(unused)]
         tmpdir: TempDir,
     }
 
@@ -510,14 +503,14 @@ mod tests {
         let tmpdir = tempfile::tempdir()?;
         let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
 
-        let tree = db.keyspace("foo", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 
         Ok(TestEnv { db, tree, tmpdir })
     }
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_arthur_1() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -579,7 +572,7 @@ mod tests {
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_arthur_2() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -670,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_ww() -> Result<(), Box<dyn std::error::Error>> {
         // https://en.wikipedia.org/wiki/Write%E2%80%93write_conflict
         let env = setup()?;
@@ -693,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -764,7 +757,7 @@ mod tests {
         Ok(())
     }
 
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     #[test]
     fn tx_ssi_anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;

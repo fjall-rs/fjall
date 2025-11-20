@@ -8,7 +8,7 @@ fn tx_ryow() -> fjall::Result<()> {
 
     let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
     let mut tx = db.write_tx();
 

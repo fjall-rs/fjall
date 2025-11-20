@@ -76,7 +76,7 @@ const WORDS: &[&str] = &[
 fn main() -> Result<()> {
     let db = Database::builder(".fjall_data").temporary(true).open()?;
 
-    let tree = db.keyspace("db", Default::default())?;
+    let tree = db.keyspace("db", fjall::KeyspaceCreateOptions::default)?;
 
     for word in WORDS {
         for term in permuterm(word) {

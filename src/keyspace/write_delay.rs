@@ -5,7 +5,6 @@
 const STEP_SIZE: usize = 10_000;
 const THRESHOLD: usize = 20;
 
-#[allow(clippy::module_name_repetitions)]
 pub fn perform_write_stall(l0_runs: usize) {
     if let THRESHOLD..30 = l0_runs {
         let d = l0_runs - THRESHOLD;

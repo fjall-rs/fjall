@@ -6,7 +6,7 @@ fn batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let db = Database::builder(&folder).open()?;
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     let mut batch = db.batch();
 
     assert_eq!(tree.len()?, 0);
@@ -26,10 +26,9 @@ fn blob_batch_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let db = Database::builder(&folder).open()?;
-    let tree = db.keyspace(
-        "default",
-        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default())),
-    )?;
+    let tree = db.keyspace("default", || {
+        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default()))
+    })?;
 
     let blob = "oxygen".repeat(128_000);
 

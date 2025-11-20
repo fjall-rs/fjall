@@ -24,7 +24,6 @@ pub trait Openable {
 
 /// Single-writer transactional database
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 pub struct TxDatabase {
     pub(crate) inner: Database,
     single_writer_lock: Arc<Mutex<()>>,
@@ -56,7 +55,9 @@ impl TxDatabase {
 
     /// Starts a new writeable transaction.
     #[must_use]
+    #[expect(clippy::missing_panics_doc)]
     pub fn write_tx(&self) -> WriteTransaction<'_> {
+        #[expect(clippy::expect_used)]
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
 
         let mut write_tx = WriteTransaction::new(
@@ -90,7 +91,7 @@ impl TxDatabase {
     /// # use fjall::{PersistMode, SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = SingleWriterTxDatabase::builder(folder).open()?;
-    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -123,7 +124,7 @@ impl TxDatabase {
     pub fn keyspace(
         &self,
         name: &str,
-        create_options: KeyspaceCreateOptions,
+        create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<SingleWriterTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 

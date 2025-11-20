@@ -19,18 +19,15 @@ use crate::{
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
-    worker_pool::{WorkerMessage, WorkerPool},
-    Database, Guard,
+    worker_pool::WorkerMessage,
+    Database, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        Arc, RwLock,
-    },
+    sync::{atomic::AtomicBool, Arc, RwLock},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -60,7 +57,6 @@ pub fn apply_to_base_config(
         .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
 }
 
-#[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     /// Internal ID
     pub id: InternalKeyspaceId,
@@ -104,12 +100,9 @@ pub struct KeyspaceInner {
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
 
-    /// Number of completed memtable flushes in this keyspace
-    pub(crate) flushes_completed: AtomicUsize,
-
-    pub(crate) worker_pool: WorkerPool, // TODO: 3.0.0 remove?
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
+    #[expect(unused)]
     lock_file: LockedFileGuard,
 }
 
@@ -130,7 +123,7 @@ impl Drop for KeyspaceInner {
             let manifest_file = path.join(LSM_CURRENT_VERSION_MARKER);
 
             // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
-            #[allow(clippy::collapsible_else_if)]
+            #[expect(clippy::collapsible_else_if)]
             match manifest_file.try_exists() {
                 Ok(exists) => {
                     if exists {
@@ -174,7 +167,6 @@ impl Drop for KeyspaceInner {
 /// As long as a handle to a keyspace is held, its folder is not cleaned up from disk
 /// in case it is deleted from another thread.
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
 #[doc(alias = "table")]
@@ -230,22 +222,27 @@ impl Keyspace {
     /// Panics if the keyspace is **not** initially empty.
     ///
     /// Panics if the input iterator is not sorted in ascending order.
+    #[doc(hidden)]
     pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
         &self,
         iter: impl Iterator<Item = (K, V)>,
     ) -> crate::Result<()> {
-        self.tree
-            .ingest(
-                iter.map(|(k, v)| (k.into(), v.into())),
-                self.supervisor.snapshot_tracker.seqno_ref(),
-                &self.visible_seqno,
-            )
-            .inspect(|()| {
-                self.worker_messager
-                    .try_send(WorkerMessage::Compact(self.clone()))
-                    .ok();
-            })
-            .map_err(Into::into)
+        let seqno = self.supervisor.snapshot_tracker.next();
+        let mut ingestion = self.tree.ingestion()?.with_seqno(seqno);
+
+        for (k, v) in iter {
+            ingestion.write(k.into(), v.into())?;
+        }
+
+        ingestion.finish().inspect(|()| {
+            self.visible_seqno.fetch_max(seqno + 1);
+
+            self.worker_messager
+                .try_send(WorkerMessage::Compact(self.clone()))
+                .ok();
+        })?;
+
+        Ok(())
     }
 
     pub(crate) fn from_database(
@@ -257,14 +254,12 @@ impl Keyspace {
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_pool: db.worker_pool.clone(),
             worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,
             tree,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flushes_completed: AtomicUsize::new(0),
             journal: db.journal.clone(),
             visible_seqno: db.visible_seqno.clone(),
             is_deleted: AtomicBool::default(),
@@ -304,14 +299,12 @@ impl Keyspace {
 
         Ok(Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_pool: db.worker_pool.clone(),
             worker_messager: db.worker_messager.clone(),
             id: keyspace_id,
             name,
             config,
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
-            flushes_completed: AtomicUsize::new(0),
             journal: db.journal.clone(),
             visible_seqno: db.visible_seqno.clone(),
             tree,
@@ -348,7 +341,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(0, tree.disk_space());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -369,7 +362,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -378,9 +371,10 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    #[expect(clippy::iter_without_into_iter)]
+    pub fn iter(&self) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.iter(nonce.instant, None).map(Guard);
+        let iter = self.tree.iter(nonce.instant, None);
         crate::iter::Iter::new(nonce, iter)
     }
 
@@ -395,7 +389,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -403,12 +397,9 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn range<'a, K: AsRef<[u8]> + 'a, R: RangeBounds<K> + 'a>(
-        &self,
-        range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    pub fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.range(range, SeqNo::MAX, None).map(Guard);
+        let iter = self.tree.range(range, SeqNo::MAX, None);
         crate::iter::Iter::new(nonce, iter)
     }
 
@@ -423,7 +414,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("ab", "abc")?;
     /// tree.insert("abc", "abc")?;
@@ -431,12 +422,9 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    pub fn prefix<'a, K: AsRef<[u8]> + 'a>(
-        &self,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
+    pub fn prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
-        let iter = self.tree.prefix(prefix, SeqNo::MAX, None).map(Guard);
+        let iter = self.tree.prefix(prefix, SeqNo::MAX, None);
         crate::iter::Iter::new(nonce, iter)
     }
 
@@ -455,7 +443,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(tree.approximate_len(), 0);
     ///
     /// tree.insert("1", "abc")?;
@@ -490,7 +478,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert_eq!(tree.len()?, 0);
     ///
     /// tree.insert("1", "abc")?;
@@ -526,7 +514,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(tree.is_empty()?);
     ///
     /// tree.insert("a", "abc")?;
@@ -551,7 +539,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(!tree.contains_key("a")?);
     ///
     /// tree.insert("a", "abc")?;
@@ -576,7 +564,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let item = tree.get("a")?;
@@ -601,7 +589,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let len = tree.size_of("a")?.unwrap_or_default();
@@ -627,7 +615,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -655,7 +643,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -682,15 +670,12 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        let watermark = self.flushes_completed();
-
-        // TODO: not reliable...?
         if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
-
-            while self.flushes_completed() <= watermark {}
+            while self.tree.sealed_memtable_count() > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
-
         Ok(())
     }
 
@@ -709,7 +694,9 @@ impl Keyspace {
         };
 
         log::trace!("keyspace: acquiring journal manager lock");
-        let mut journal_manager: std::sync::RwLockWriteGuard<'_, JournalManager> = self
+
+        #[expect(clippy::expect_used)]
+        let mut journal_manager = self
             .supervisor
             .journal_manager
             .write()
@@ -741,30 +728,14 @@ impl Keyspace {
             keyspace: self.clone(),
         }));
 
-        // TODO: 3.0.0 let supervisor handle this
-        self.stats
-            .flushes_enqueued
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
         self.worker_messager.send(WorkerMessage::Flush).ok();
 
-        // TODO: 3.0.0 dirty monkey patch
-        // TODO: we need a mechanism to prevent the version free list from getting too large
-        // TODO: in a write only workload
         {
-            let current_seqno = self.supervisor.snapshot_tracker.get();
-            let gc_seqno_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
-
             // NOTE: If the difference between watermark is too large, and
             // we never opened a snapshot, we need to pull the watermark up
             //
             // https://github.com/fjall-rs/fjall/discussions/85
-            if (current_seqno - gc_seqno_watermark) > 100
-                && self.supervisor.snapshot_tracker.len() == 0
-            {
-                self.supervisor.snapshot_tracker.pullup();
-            }
-
+            self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
         }
 
@@ -879,14 +850,6 @@ impl Keyspace {
         self.tree.blob_file_count()
     }
 
-    /// Number of completed memtable flushes in this keyspace.
-    #[must_use]
-    #[doc(hidden)]
-    pub fn flushes_completed(&self) -> usize {
-        self.flushes_completed
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
     /// Performs major compaction, blocking the caller until it's done.
     ///
     /// # Errors
@@ -919,7 +882,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// assert!(!tree.is_empty()?);
@@ -989,7 +952,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.get("a")?.expect("should have item");
@@ -1071,7 +1034,7 @@ impl Keyspace {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     ///
     /// let item = tree.get("a")?.expect("should have item");

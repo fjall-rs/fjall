@@ -25,17 +25,11 @@ impl SnapshotNonce {
     }
 }
 
-// impl Clone for SnapshotNonce {
-//     fn clone(&self) -> Self {
-//         // IMPORTANT: Increment snapshot count in tracker
-//         self.tracker.open();
-
-//         Self {
-//             instant: self.instant,
-//             tracker: self.tracker.clone(),
-//         }
-//     }
-// }
+impl Clone for SnapshotNonce {
+    fn clone(&self) -> Self {
+        self.tracker.clone_snapshot(self)
+    }
+}
 
 impl Drop for SnapshotNonce {
     fn drop(&mut self) {

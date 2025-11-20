@@ -7,10 +7,9 @@ fn keyspace_iter_dirty_read() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
 
-    let tree = db.keyspace(
-        "default",
-        KeyspaceCreateOptions::default().with_kv_separation(Default::default()),
-    )?;
+    let tree = db.keyspace("default", || {
+        KeyspaceCreateOptions::default().with_kv_separation(Default::default())
+    })?;
 
     tree.insert("a#1", "a")?;
     tree.insert("a#2", "b")?;
@@ -33,14 +32,12 @@ fn keyspace_snapshot_read() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
 
-    let tree = db.keyspace(
-        "default",
-        KeyspaceCreateOptions::default().with_kv_separation(Default::default()),
-    )?;
-    let tree2 = db.keyspace(
-        "default2",
-        KeyspaceCreateOptions::default().with_kv_separation(Default::default()),
-    )?;
+    let tree = db.keyspace("default", || {
+        KeyspaceCreateOptions::default().with_kv_separation(Default::default())
+    })?;
+    let tree2 = db.keyspace("default2", || {
+        KeyspaceCreateOptions::default().with_kv_separation(Default::default())
+    })?;
 
     tree.insert("a#1", "a")?;
     tree.insert("a#2", "b")?;

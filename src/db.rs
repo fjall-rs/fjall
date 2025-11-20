@@ -35,7 +35,6 @@ use std::{
 
 pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 
-#[allow(clippy::module_name_repetitions)]
 pub struct DatabaseInner {
     pub(crate) meta_keyspace: MetaKeyspace,
 
@@ -178,7 +177,7 @@ impl Database {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// let mut batch = db.batch();
     ///
     /// assert_eq!(tree.len()?, 0);
@@ -204,24 +203,35 @@ impl Database {
         batch
     }
 
-    // TODO: 3.0.0 refactor: accessor to stats(), so we don't have that many methods in DB
+    // TODO: refactor: accessor to stats(), so we don't have that many methods in DB
 
     /// Returns the current write buffer size (active + sealed memtables).
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[must_use]
+    #[doc(hidden)]
     pub fn write_buffer_size(&self) -> u64 {
         self.supervisor.write_buffer_size.get()
     }
 
-    /// Returns the amount of completed memtable flushes.
+    /// Returns the number of queued memtable flush tasks.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
-    pub fn flushes_completed(&self) -> usize {
-        self.stats
-            .flushes_completed
-            .load(std::sync::atomic::Ordering::Relaxed)
+    pub fn outstanding_flushes(&self) -> usize {
+        self.supervisor.flush_manager.len()
     }
 
     /// Returns the time all compactions took until now.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn time_compacting(&self) -> std::time::Duration {
@@ -234,6 +244,10 @@ impl Database {
     }
 
     /// Returns the number of active compactions currently running.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn active_compactions(&self) -> usize {
@@ -243,6 +257,10 @@ impl Database {
     }
 
     /// Returns the amount of completed compactions.
+    ///
+    /// # Experimental
+    ///
+    /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
     pub fn compactions_completed(&self) -> usize {
@@ -294,7 +312,7 @@ impl Database {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(db.disk_space()? > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -325,7 +343,7 @@ impl Database {
     /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = Database::builder(folder).open()?;
-    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
@@ -396,7 +414,6 @@ impl Database {
         }
     }
 
-    // TODO: 3.0.0 restore
     /// Destroys the keyspace, removing all data associated with it.
     ///
     /// The keyspace folder will not be deleted until all references to it are dropped,
@@ -406,7 +423,7 @@ impl Database {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
 
@@ -434,7 +451,7 @@ impl Database {
     pub fn keyspace(
         &self,
         name: &str,
-        create_options: KeyspaceCreateOptions,
+        create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
@@ -447,7 +464,7 @@ impl Database {
 
             let keyspace_id = self.keyspace_id_counter.next();
 
-            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options)?;
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options())?;
 
             self.meta_keyspace
                 .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;
@@ -486,7 +503,7 @@ impl Database {
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
     /// assert!(!db.keyspace_exists("default"));
-    /// db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(db.keyspace_exists("default"));
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -508,7 +525,7 @@ impl Database {
 
         if let Some(version) = FormatVersion::parse_file_header(&bytes) {
             if version == FormatVersion::V2 {
-                log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at <TODO: 3.0.0 LINK>.");
+                log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at https://github.com/fjall-rs/migrate-v2-v3.");
             }
             if version as u8 > 3 {
                 log::error!("It looks like you are trying to open a database from the future. Are you a time traveller?");
@@ -524,7 +541,7 @@ impl Database {
     }
 
     /// Recovers existing database from directory.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
         log::info!("Recovering database at {}", config.path.display());
@@ -562,7 +579,17 @@ impl Database {
 
         let meta_tree =
             lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                // TODO: 3.0.0 specialized config and DRY
+                .expect_point_read_hits(true)
+                .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+                .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+                .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+                .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+                .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+                .filter_policy(crate::config::FilterPolicy::all(
+                    lsm_tree::config::FilterPolicyEntry::Bloom(
+                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+                    ),
+                ))
                 .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
@@ -585,6 +612,7 @@ impl Database {
 
         let is_poisoned = Arc::<AtomicBool>::default();
 
+        // TODO: 3.0.0 don't start worker pool immediately, send some kind of signal when DB is actually set up
         let (worker_pool, worker_messager) = WorkerPool::new(
             config.worker_threads,
             &supervisor,
@@ -626,18 +654,17 @@ impl Database {
         )?;
 
         {
+            #[expect(clippy::expect_used)]
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
-            // TODO: 3.0.0
-            // #[cfg(debug_assertions)]
-            // for keyspace in keyspaces.values() {
-            //     // NOTE: If this triggers, the last sealed memtable
-            //     // was not correctly rotated
-            //     debug_assert!(
-            //         keyspace.tree.lock_active_memtable().is_empty(),
-            //         "active memtable is not empty - this is a bug"
-            //     );
-            // }
+            // NOTE: If this triggers, the last sealed memtable
+            // was not correctly rotated
+            for keyspace in keyspaces.values() {
+                if keyspace.tree.active_memtable().size() > 0 {
+                    log::error!("Active memtable is not empty after recovery for keyspace {:?} - recovery failed", keyspace.name);
+                    return Err(crate::Error::Unrecoverable);
+                }
+            }
 
             // NOTE: We only need to recover the active journal, if it actually existed before
             // nothing to recover, if we just created it
@@ -679,14 +706,13 @@ impl Database {
                 }
 
                 for keyspace in keyspaces.values() {
-                    let size = keyspace.tree.active_memtable_size();
+                    let size = keyspace.tree.active_memtable().size();
 
-                    // TODO: 3.0.0
-                    // log::trace!(
-                    //     "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
-                    //     keyspace.name,
-                    //     keyspace.tree.lock_active_memtable().len(),
-                    // );
+                    log::trace!(
+                        "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
+                        keyspace.name,
+                        keyspace.tree.active_memtable().len(),
+                    );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
                     // db.write_buffer_manager.allocate(size);
@@ -709,6 +735,9 @@ impl Database {
         }
 
         db.visible_seqno.set(db.supervisor.snapshot_tracker.get());
+        db.supervisor.snapshot_tracker.gc();
+
+        // TODO: 3.0.0 kick off worker pool
 
         log::trace!("Recovery successful");
 
@@ -811,8 +840,10 @@ impl Database {
     /// Only used for internal testing.
     ///
     /// Should NOT be called when there is a flush worker active already!!!
+    #[cfg(test)]
     #[doc(hidden)]
     pub fn force_flush(&self) -> crate::Result<()> {
+        #[expect(clippy::expect_used, reason = "only used in tests, so whatever")]
         self.worker_messager
             .send(WorkerMessage::Flush)
             .expect("should send");
@@ -837,7 +868,6 @@ impl Database {
 }
 
 #[cfg(test)]
-#[allow(clippy::default_trait_access, clippy::expect_used)]
 mod tests {
     use super::*;
     use test_log::test;
@@ -848,7 +878,7 @@ mod tests {
         let db = Database::builder(&folder).open()?;
 
         for name in ["hello$world", "hello#world", "hello.world", "hello_world"] {
-            let tree = db.keyspace(name, Default::default())?;
+            let tree = db.keyspace(name, KeyspaceCreateOptions::default)?;
             tree.insert("a", "a")?;
             assert_eq!(1, tree.len()?);
         }

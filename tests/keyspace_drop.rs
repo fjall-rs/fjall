@@ -61,8 +61,8 @@ fn whitebox_db_drop_2() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
 
-        let tree = db.keyspace("tree", KeyspaceCreateOptions::default())?;
-        let tree2 = db.keyspace("tree1", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("tree", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("tree1", KeyspaceCreateOptions::default)?;
 
         tree.insert("a", "a")?;
         tree2.insert("b", "b")?;

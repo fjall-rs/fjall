@@ -9,7 +9,7 @@ fn tx_ryow_snapshot() -> fjall::Result<()> {
 
     let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
     let mut tx = db.write_tx();
 
@@ -34,7 +34,7 @@ fn tx_ryow_snapshot_ssi() -> fjall::Result<()> {
 
     let db = OptimisticTxDatabase::builder(&folder).open()?;
 
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
     let mut tx = db.write_tx()?;
 

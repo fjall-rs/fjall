@@ -4,7 +4,7 @@
 
 /// Keyspace names can be up to 255 characters long, can not be empty and
 /// can only contain alphanumerics, underscore (`_`), dash (`-`), dot (`.`), hash tag (`#`) and dollar (`$`).
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub fn is_valid_keyspace_name(s: &str) -> bool {
     if s.is_empty() {
         return false;

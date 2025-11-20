@@ -6,7 +6,7 @@ use format_bytes::format_bytes;
 use sha2::Digest;
 use std::path::Path;
 
-// TODO: 3.0.0 restore
+// TODO: restore
 
 /// Content-addressable store
 struct Cas {

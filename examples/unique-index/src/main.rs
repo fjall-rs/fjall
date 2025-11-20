@@ -41,8 +41,8 @@ fn main() -> Result<(), Error> {
         .temporary(true)
         .open()?;
 
-    let items = db.keyspace("items", Default::default())?;
-    let uniq = db.keyspace("uniq_idx", Default::default())?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
+    let uniq = db.keyspace("uniq_idx", fjall::KeyspaceCreateOptions::default)?;
 
     maybe_create_item(&db, &items, &uniq, "a", "Item A")?;
     maybe_create_item(&db, &items, &uniq, "b", "Item B")?;
