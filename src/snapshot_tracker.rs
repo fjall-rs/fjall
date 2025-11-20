@@ -8,7 +8,6 @@ use lsm_tree::SequenceNumberCounter;
 use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Keeps track of open snapshots
-#[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
     seqno: SequenceNumberCounter,
 
@@ -79,7 +78,7 @@ impl SnapshotTracker {
     }
 
     pub fn open(&self) -> SnapshotNonce {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.read().expect("lock is poisoned");
 
         let seqno = self.seqno.get();
@@ -95,7 +94,7 @@ impl SnapshotTracker {
     }
 
     pub fn clone_snapshot(&self, nonce: &SnapshotNonce) -> SnapshotNonce {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.read().expect("lock is poisoned");
 
         self.data
@@ -113,7 +112,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn close_raw(&self, instant: SeqNo) {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let lock = self.gc_lock.read().expect("lock is poisoned");
 
         self.data.alter(&instant, |_, v| v.saturating_sub(1));
@@ -138,7 +137,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn pullup(&self) {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         self.lowest_freed_instant.store(
@@ -148,7 +147,7 @@ impl SnapshotTracker {
     }
 
     pub(crate) fn gc(&self) {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
         let seqno_threshold = self.seqno.get();
@@ -187,7 +186,6 @@ mod tests {
     use test_log::test;
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
     fn seqno_tracker_basic() {
         let global_seqno = SequenceNumberCounter::default();
 
@@ -207,7 +205,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
     fn seqno_tracker_increase_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
@@ -224,7 +221,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
     fn seqno_tracker_prevent_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
@@ -246,63 +242,4 @@ mod tests {
 
         assert_eq!(map.get_seqno_safe_to_gc(), 0);
     }
-
-    // #[test]
-    // #[allow(clippy::field_reassign_with_default)]
-    // fn seqno_tracker_simple_2() {
-    //     let mut map = SnapshotTracker::new(SequenceNumberCounter::default());
-    //     map.safety_gap = 5;
-
-    //     map.open(1);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.open(2);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.open(3);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.open(4);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.open(5);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.open(6);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(1);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(2);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(3);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(4);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(5);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-    //     map.close(6);
-    //     map.gc(6);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 1);
-
-    //     map.open(7);
-    //     map.close(7);
-    //     map.gc(7);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 2);
-
-    //     map.open(8);
-    //     map.open(9);
-    //     map.close(9);
-    //     map.gc(9);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 4);
-
-    //     map.close(8);
-    //     map.gc(8);
-    //     assert_eq!(map.get_seqno_safe_to_gc(), 4);
-    // }
 }

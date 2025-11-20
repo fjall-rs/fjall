@@ -7,8 +7,6 @@ const ITEM_COUNT: usize = 10;
 fn recover_sealed_journal() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
             .worker_threads_unchecked(0)
@@ -109,8 +107,6 @@ fn recover_sealed_journal() -> fjall::Result<()> {
 fn recover_sealed_journal_blob() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder)
             .worker_threads_unchecked(0)

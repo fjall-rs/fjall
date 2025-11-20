@@ -22,7 +22,6 @@ pub use write_tx::{Conflict, WriteTransaction};
 
 /// Transactional database
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 pub struct OptimisticTxDatabase {
     pub(crate) inner: Database,
     pub(super) oracle: Arc<Oracle>,

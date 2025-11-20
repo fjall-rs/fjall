@@ -141,7 +141,6 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
@@ -211,7 +210,6 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
@@ -263,7 +261,7 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.insert(self.inner(), key, value);
 
-        #[allow(
+        #[expect(
             clippy::expect_used,
             clippy::missing_panics_doc,
             reason = "blind insert should not conflict ever"
@@ -304,7 +302,7 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.remove(self.inner(), key);
 
-        #[allow(
+        #[expect(
             clippy::expect_used,
             clippy::missing_panics_doc,
             reason = "blind remove should not conflict ever"
@@ -355,7 +353,7 @@ impl OptimisticTxKeyspace {
         let mut tx = self.db.write_tx()?;
         tx.remove_weak(self.inner(), key);
 
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         tx.commit()?.expect("blind remove should not conflict ever");
 
         Ok(())

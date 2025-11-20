@@ -487,7 +487,7 @@ mod tests {
         db: OptimisticTxDatabase,
         tree: OptimisticTxKeyspace,
 
-        #[allow(unused)]
+        #[expect(unused)]
         tmpdir: TempDir,
     }
 
@@ -510,7 +510,7 @@ mod tests {
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_arthur_1() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -572,7 +572,7 @@ mod tests {
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_arthur_2() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_ww() -> Result<(), Box<dyn std::error::Error>> {
         // https://en.wikipedia.org/wiki/Write%E2%80%93write_conflict
         let env = setup()?;
@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
@@ -757,7 +757,7 @@ mod tests {
         Ok(())
     }
 
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     #[test]
     fn tx_ssi_anti_dependency_cycles() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;

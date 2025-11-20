@@ -35,7 +35,6 @@ use std::{
 
 pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 
-#[allow(clippy::module_name_repetitions)]
 pub struct DatabaseInner {
     pub(crate) meta_keyspace: MetaKeyspace,
 
@@ -424,7 +423,7 @@ impl Database {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
 
@@ -542,7 +541,7 @@ impl Database {
     }
 
     /// Recovers existing database from directory.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     #[doc(hidden)]
     pub fn recover(config: Config) -> crate::Result<Self> {
         log::info!("Recovering database at {}", config.path.display());
@@ -655,7 +654,7 @@ impl Database {
         )?;
 
         {
-            #[allow(clippy::expect_used)]
+            #[expect(clippy::expect_used)]
             let keyspaces = db.keyspaces.read().expect("lock is poisoned");
 
             // NOTE: If this triggers, the last sealed memtable
@@ -844,7 +843,7 @@ impl Database {
     #[cfg(test)]
     #[doc(hidden)]
     pub fn force_flush(&self) -> crate::Result<()> {
-        #[allow(clippy::expect_used, reason = "only used in tests, so whatever")]
+        #[expect(clippy::expect_used, reason = "only used in tests, so whatever")]
         self.worker_messager
             .send(WorkerMessage::Flush)
             .expect("should send");
@@ -869,7 +868,6 @@ impl Database {
 }
 
 #[cfg(test)]
-#[allow(clippy::default_trait_access, clippy::expect_used)]
 mod tests {
     use super::*;
     use test_log::test;

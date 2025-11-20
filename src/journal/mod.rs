@@ -93,6 +93,7 @@ impl Journal {
 
     /// Hands out write access for the journal.
     pub(crate) fn get_writer(&self) -> MutexGuard<'_, Writer> {
+        #[expect(clippy::expect_used)]
         self.writer.lock().expect("lock is poisoned")
     }
 
@@ -121,12 +122,12 @@ impl Journal {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::batch::item::Item as BatchItem;
     use entry::Entry;
-    use lsm_tree::{coding::Encode, ValueType};
+    use lsm_tree::ValueType;
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;

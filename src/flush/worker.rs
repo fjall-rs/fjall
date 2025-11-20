@@ -9,7 +9,6 @@ use crate::{
 use lsm_tree::AbstractTree;
 
 /// Runs flush logic.
-#[allow(clippy::too_many_lines)]
 pub fn run(
     task: &Task,
     write_buffer_manager: &WriteBufferManager,

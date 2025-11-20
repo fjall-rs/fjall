@@ -174,7 +174,7 @@ impl MetaKeyspace {
     }
 
     pub(crate) fn resolve_id(&self, id: InternalKeyspaceId) -> crate::Result<Option<StrView>> {
-        #[warn(unsafe_code, clippy::indexing_slicing)]
+        #[expect(unsafe_code, clippy::indexing_slicing)]
         let key = {
             let mut builder = unsafe {
                 lsm_tree::Slice::builder_unzeroed(std::mem::size_of::<InternalKeyspaceId>() + 1)
@@ -184,10 +184,12 @@ impl MetaKeyspace {
             builder.freeze()
         };
 
-        Ok(self
-            .inner
-            .get(key, SeqNo::MAX)?
-            .map(|v| std::str::from_utf8(&v).expect("should be utf-8").into()))
+        Ok(self.inner.get(key, SeqNo::MAX)?.map(|v| {
+            #[expect(clippy::expect_used, reason = "keyspace open only accepts &str")]
+            let name = std::str::from_utf8(&v).expect("should be utf-8");
+
+            name.into()
+        }))
     }
 
     pub(crate) fn keyspace_exists(&self, name: &str) -> bool {
@@ -211,8 +213,6 @@ mod tests {
 
         let path;
 
-        // NOTE: clippy bug
-        #[allow(unused_assignments)]
         {
             let db = Database::builder(&folder).open()?;
 
@@ -287,8 +287,6 @@ mod tests {
 
         let path;
 
-        // NOTE: clippy bug
-        #[allow(unused_assignments)]
         {
             let db = SingleWriterTxDatabase::builder(&folder).open()?;
 

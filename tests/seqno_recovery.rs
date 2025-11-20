@@ -10,8 +10,6 @@ fn recover_seqno() -> fjall::Result<()> {
 
     let mut seqno;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 
@@ -84,8 +82,6 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
 
     let mut seqno;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 

@@ -104,7 +104,7 @@ impl Readable for BaseTransaction {
         if let Some(memtable) = self.memtables.get(&keyspace.id) {
             if let Some(item) = memtable.get(key, SeqNo::MAX) {
                 // NOTE: Values are limited to u32 in lsm-tree
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation)]
                 return Ok(ignore_tombstone_value(item).map(|x| x.value.len() as u32));
             }
         }
@@ -363,7 +363,7 @@ impl BaseTransaction {
 
     /// More explicit alternative to dropping the transaction
     /// to roll it back.
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self)]
     pub(super) fn rollback(self) {}
 }
 
@@ -379,7 +379,7 @@ mod tests {
         db: SingleWriterTxDatabase,
         tree: SingleWriterTxKeyspace,
 
-        #[allow(unused)]
+        #[expect(unused)]
         tmpdir: TempDir,
     }
 

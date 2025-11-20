@@ -97,6 +97,7 @@ impl Batch {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[allow(clippy::missing_panics_doc)]
     pub fn commit(mut self) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
@@ -129,8 +130,10 @@ impl Batch {
         }
 
         // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-        #[allow(clippy::mutable_key_type)]
+        #[expect(clippy::mutable_key_type)]
         let mut keyspaces_with_possible_stall = HashSet::new();
+
+        #[expect(clippy::expect_used)]
         let keyspaces = self.db.keyspaces.read().expect("lock is poisoned");
 
         let mut batch_size = 0u64;

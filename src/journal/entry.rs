@@ -60,19 +60,18 @@ pub fn serialize_marker_item<W: Write>(
     };
 
     // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
     writer.write_u64::<LittleEndian>(keyspace_id)?;
 
     // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     writer.write_u16::<LittleEndian>(key.len() as u16)?;
 
     // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     writer.write_u32::<LittleEndian>(value.len() as u32)?;
 
     // NOTE: Truncation is okay and actually needed
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     writer.write_u32::<LittleEndian>(compressed_value.len() as u32)?;
 
     writer.write_all(key)?;

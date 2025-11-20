@@ -13,7 +13,7 @@ use crate::{snapshot_nonce::SnapshotNonce, Guard, InnerIter};
 pub struct Iter {
     iter: InnerIter,
 
-    #[allow(unused)]
+    #[expect(unused)]
     nonce: SnapshotNonce,
 }
 

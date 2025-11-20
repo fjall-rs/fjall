@@ -10,8 +10,8 @@ impl EncodeConfig for crate::config::FilterPolicy {
         let mut v = vec![];
 
         // NOTE: Policies are limited to 255 entries
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::cast_possible_truncation)]
+        #[expect(clippy::expect_used)]
         v.write_u8(self.len() as u8).expect("cannot fail");
 
         for item in self.iter() {

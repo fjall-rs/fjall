@@ -22,7 +22,7 @@ pub struct Batch {
     pub(crate) items: Vec<BatchItem>,
 }
 
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
     items: Vec<BatchItem>,

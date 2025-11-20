@@ -195,8 +195,6 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
 fn reload_with_keyspaces() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 

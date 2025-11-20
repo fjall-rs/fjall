@@ -7,8 +7,6 @@ const ITEM_COUNT: usize = 10_000;
 fn reload_with_memtable() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;

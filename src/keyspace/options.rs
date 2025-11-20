@@ -15,11 +15,10 @@ use lsm_tree::{CompressionType, KvPair, KvSeparationOptions};
 use std::sync::Arc;
 
 /// Options to configure a keyspace
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 #[derive(Clone)]
 pub struct CreateOptions {
     /// Amount of levels of the LSM tree (depth of tree).
-    #[allow(unused)]
     pub(crate) level_count: u8,
 
     /// Maximum size of this keyspace's memtable - can be changed during runtime
@@ -132,7 +131,7 @@ macro_rules! policy {
 }
 
 impl CreateOptions {
-    #[allow(clippy::expect_used, clippy::too_many_lines)]
+    #[expect(clippy::expect_used, clippy::too_many_lines)]
     pub(crate) fn from_kvs(
         keyspace_id: InternalKeyspaceId,
         meta_keyspace: &MetaKeyspace,
@@ -358,7 +357,7 @@ impl CreateOptions {
         })
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub(crate) fn encode_kvs(&self, keyspace_id: InternalKeyspaceId) -> Vec<KvPair> {
         use crate::keyspace::config::EncodeConfig;
 
@@ -699,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     #[cfg(feature = "lz4")]
     fn keyspace_opts_compression_default() {
         use CompressionType::{Lz4, None as Uncompressed};

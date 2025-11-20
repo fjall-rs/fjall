@@ -2,7 +2,7 @@ use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
-#[allow(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
 fn recover_sealed() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
@@ -27,7 +27,7 @@ fn recover_sealed() -> crate::Result<()> {
 }
 
 #[test]
-#[allow(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
 fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
@@ -54,7 +54,7 @@ fn recover_sealed_blob() -> crate::Result<()> {
 }
 
 #[test]
-#[allow(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
 fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
@@ -90,7 +90,7 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
 }
 
 #[test]
-#[allow(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
 fn recover_sealed_pair_2() -> crate::Result<()> {
     use lsm_tree::AbstractTree;
@@ -138,7 +138,7 @@ fn recover_sealed_pair_2() -> crate::Result<()> {
 }
 
 #[test]
-#[allow(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 #[ignore = "restore force_flush"]
 fn recover_sealed_pair_3() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;

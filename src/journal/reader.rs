@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::entry::Entry;
-use lsm_tree::coding::Decode;
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
@@ -24,7 +23,7 @@ macro_rules! fail_iter {
 ///
 /// Will truncate the file to the last valid position to prevent corrupt
 /// bytes at the end of the file, which would jeopardize future writes into the file.
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub struct JournalReader {
     pub(crate) path: PathBuf,
     pub(crate) reader: BufReader<File>,

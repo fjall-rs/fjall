@@ -140,11 +140,10 @@ impl SingleWriterTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key: UserKey = key.into();
 
@@ -209,11 +208,10 @@ impl SingleWriterTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(unused_mut)]
     pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
 

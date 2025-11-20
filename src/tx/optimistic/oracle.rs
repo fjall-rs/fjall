@@ -16,7 +16,6 @@ pub struct Oracle {
 }
 
 impl Oracle {
-    #[allow(clippy::nursery)]
     pub(super) fn with_commit<E, F: FnOnce() -> Result<(), E>>(
         &self,
         instant: SeqNo,
@@ -71,7 +70,7 @@ impl Oracle {
 mod tests {
     use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable};
 
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     fn run_tx(
         db: &OptimisticTxDatabase,
         tree: &OptimisticTxKeyspace,
@@ -91,7 +90,7 @@ mod tests {
         Ok(())
     }
 
-    #[allow(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used)]
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;

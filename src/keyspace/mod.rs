@@ -57,7 +57,6 @@ pub fn apply_to_base_config(
         .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
 }
 
-#[allow(clippy::module_name_repetitions)]
 pub struct KeyspaceInner {
     /// Internal ID
     pub id: InternalKeyspaceId,
@@ -103,7 +102,7 @@ pub struct KeyspaceInner {
 
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
 
-    #[allow(unused)]
+    #[expect(unused)]
     lock_file: LockedFileGuard,
 }
 
@@ -124,7 +123,7 @@ impl Drop for KeyspaceInner {
             let manifest_file = path.join(LSM_CURRENT_VERSION_MARKER);
 
             // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
-            #[allow(clippy::collapsible_else_if)]
+            #[expect(clippy::collapsible_else_if)]
             match manifest_file.try_exists() {
                 Ok(exists) => {
                     if exists {
@@ -168,7 +167,6 @@ impl Drop for KeyspaceInner {
 /// As long as a handle to a keyspace is held, its folder is not cleaned up from disk
 /// in case it is deleted from another thread.
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
 #[doc(alias = "table")]
@@ -373,7 +371,7 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    #[allow(clippy::iter_without_into_iter)]
+    #[expect(clippy::iter_without_into_iter)]
     pub fn iter(&self) -> Iter {
         let nonce = self.supervisor.snapshot_tracker.open();
         let iter = self.tree.iter(nonce.instant, None);
@@ -697,8 +695,8 @@ impl Keyspace {
 
         log::trace!("keyspace: acquiring journal manager lock");
 
-        #[allow(clippy::expect_used)]
-        let mut journal_manager: std::sync::RwLockWriteGuard<'_, JournalManager> = self
+        #[expect(clippy::expect_used)]
+        let mut journal_manager = self
             .supervisor
             .journal_manager
             .write()

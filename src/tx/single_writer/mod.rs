@@ -24,7 +24,6 @@ pub trait Openable {
 
 /// Single-writer transactional database
 #[derive(Clone)]
-#[allow(clippy::module_name_repetitions)]
 pub struct TxDatabase {
     pub(crate) inner: Database,
     single_writer_lock: Arc<Mutex<()>>,
@@ -56,9 +55,9 @@ impl TxDatabase {
 
     /// Starts a new writeable transaction.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     pub fn write_tx(&self) -> WriteTransaction<'_> {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used)]
         let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
 
         let mut write_tx = WriteTransaction::new(
