@@ -25,7 +25,6 @@ fn fifo_dirty_read() -> fjall::Result<()> {
     assert!(snapshot.contains_key(&tree, "a")?);
 
     tree.inner().rotate_memtable_and_wait()?;
-    std::thread::sleep(std::time::Duration::from_millis(500));
 
     assert!(snapshot.contains_key(&tree, "a")?);
 

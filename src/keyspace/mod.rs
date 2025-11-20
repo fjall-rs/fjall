@@ -674,12 +674,10 @@ impl Keyspace {
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
+            while self.tree.sealed_memtable_count() > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
-
-        // TODO: 3.0.0, need to wait for flush to be finished
-        // TODO: waiting for empty is just waiting for the task to be picked up
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
         Ok(())
     }
 
