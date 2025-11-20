@@ -40,10 +40,5 @@ nanoid = "0.4.0"
 test-log = "0.2.18"
 rand = "0.9.2"
 
-[[bench]]
-name = "lsmt"
-harness = false
-path = "benches/fjall.rs"
-
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
