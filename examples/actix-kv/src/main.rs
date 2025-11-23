@@ -105,7 +105,7 @@ async fn insert_item(
 
     web::block(move || {
         state
-            .db
+            .tree
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
         state.db.persist(PersistMode::SyncAll)
     })
