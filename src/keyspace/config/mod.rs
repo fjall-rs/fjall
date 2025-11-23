@@ -13,7 +13,6 @@ pub trait EncodeConfig {
     fn encode(&self) -> crate::Slice;
 }
 
-// TODO: result
 pub trait DecodeConfig {
     fn decode(bytes: &[u8]) -> crate::Result<Self>
     where

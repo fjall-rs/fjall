@@ -19,7 +19,7 @@ use crate::{
     worker_pool::WorkerMessage,
     Database, Iter,
 };
-use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, SequenceNumberCounter, UserKey, UserValue};
+use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
     ops::RangeBounds,
@@ -226,6 +226,21 @@ impl Keyspace {
             ingestion.write(k.into(), v.into())?;
         }
 
+        // NOTE: We hold to avoid a race condition with concurrent writes:
+        //
+        // write         ingest
+        // lock journal
+        // |
+        // next seqno=1
+        // |
+        // --------------finish
+        //                 flush
+        //                 seqno=2
+        //                 register
+        //                 |
+        // -----------------
+        // |
+        // insert seqno=1
         let _journal_lock = self.journal.get_writer();
 
         ingestion.finish().inspect(|&seqno| {

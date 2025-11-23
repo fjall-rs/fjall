@@ -546,14 +546,14 @@ impl CreateOptions {
         self
     }
 
-    /// TODO:
+    /// Sets the partitioning policy for filter blocks.
     #[must_use]
     pub fn filter_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
         self.filter_block_partitioning_policy = policy;
         self
     }
 
-    /// TODO:
+    /// Sets the partitioning policy for index blocks.
     #[must_use]
     pub fn index_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
         self.index_block_partitioning_policy = policy;

@@ -6,12 +6,6 @@ import { resolve } from "node:path";
 const examplesFolder = "examples";
 
 for (const exampleName of await readdir(examplesFolder)) {
-
-  if (exampleName === "actix-kv") {
-    // TODO: restore
-    continue;
-  }
-
   const folder = resolve(examplesFolder, exampleName);
 
   {

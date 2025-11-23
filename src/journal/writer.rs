@@ -7,7 +7,7 @@ use crate::{
     batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
-use lsm_tree::{coding::Encode, CompressionType, SeqNo, ValueType};
+use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,

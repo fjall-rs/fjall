@@ -611,7 +611,6 @@ impl Database {
 
         let is_poisoned = Arc::<AtomicBool>::default();
 
-        // TODO: 3.0.0 don't start worker pool immediately, send some kind of signal when DB is actually set up
         let (worker_pool, worker_messager) = WorkerPool::new(
             config.worker_threads,
             &supervisor,
@@ -737,8 +736,6 @@ impl Database {
             .publish(db.supervisor.snapshot_tracker.get());
 
         db.supervisor.snapshot_tracker.gc();
-
-        // TODO: 3.0.0 kick off worker pool
 
         log::trace!("Recovery successful");
 
