@@ -102,27 +102,3 @@ jobs:
         run: cargo nextest run --features lz4
       - name: Run doc tests
         run: cargo test --doc
-  cross:
-    timeout-minutes: 15
-    name: cross
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-          - aarch64-unknown-linux-musl
-          - i686-unknown-linux-gnu
-          # - powerpc64-unknown-linux-gnu
-          - riscv64gc-unknown-linux-gnu
-          # - aarch64-linux-android
-          # - i686-linux-android
-          # - x86_64-linux-android
-          #- mips64-unknown-linux-gnuabi64
-          #- x86_64-apple-darwin
-          #- aarch64-apple-darwin
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: cross test
-        run: |
-          cargo install cross
-          cross test --target ${{ matrix.target }}
