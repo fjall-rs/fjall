@@ -1,4 +1,4 @@
-use fjall::{BlockCache, Config, PersistMode};
+use fjall::{Database, Guard, PersistMode};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -9,12 +9,12 @@ use std::{
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open()?;
-    let items = keyspace.open_partition("items", Default::default())?;
+    let db = Database::builder(path).temporary(true).open()?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
 
     // To search suffixes of keys, we store a secondary index that stores the reversed key
     // which will allow a .prefix() search over that key, resulting in a suffix search.
-    let items_rev = keyspace.open_partition("items_rev", Default::default())?;
+    let items_rev = db.keyspace("items_rev", fjall::KeyspaceCreateOptions::default)?;
 
     if items.is_empty()? {
         println!("Ingesting test data");
@@ -24,8 +24,8 @@ fn main() -> fjall::Result<()> {
         for (idx, line) in line_reader.lines().enumerate() {
             let line = line?;
 
-            // We use a write batch to keep both partitions synchronized
-            let mut batch = keyspace.batch();
+            // We use a write batch to keep both keyspaces synchronized
+            let mut batch = db.batch();
             batch.insert(&items, &line, &line);
             batch.insert(&items_rev, line.chars().rev().collect::<String>(), line);
             batch.commit()?;
@@ -36,7 +36,7 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    keyspace.persist(PersistMode::SyncAll)?;
+    db.persist(PersistMode::SyncAll)?;
 
     let suffix = "west";
     let test_runs = 5;
@@ -52,7 +52,7 @@ fn main() -> fjall::Result<()> {
         }
 
         for kv in items_rev.iter() {
-            let (_, value) = kv?;
+            let value = kv.value()?;
 
             if value.ends_with(suffix.as_bytes()) {
                 if i == 0 {
@@ -83,7 +83,7 @@ fn main() -> fjall::Result<()> {
         // Uses prefix, so generally faster than table scan
         // `------------------v
         for kv in items_rev.prefix(suffix.chars().rev().collect::<String>()) {
-            let (_, value) = kv?;
+            let value = kv.value()?;
 
             if i == 0 {
                 println!("  -> {}", std::str::from_utf8(&value).unwrap());

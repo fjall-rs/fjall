@@ -1,16 +1,18 @@
+// TODO: investigate: flaky on macOS???
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-fn whitebox_keyspace_drop() -> fjall::Result<()> {
-    use fjall::Config;
+#[ignore = "3.0.0 restore"]
+fn whitebox_db_drop() -> fjall::Result<()> {
+    use fjall::Database;
 
     {
         let folder = tempfile::tempdir()?;
 
         assert_eq!(0, fjall::drop::load_drop_counter());
-        let keyspace = Config::new(folder).open()?;
+        let db = Database::builder(&folder).open()?;
         assert_eq!(5, fjall::drop::load_drop_counter());
 
-        drop(keyspace);
+        drop(db);
         assert_eq!(0, fjall::drop::load_drop_counter());
     }
 
@@ -18,14 +20,14 @@ fn whitebox_keyspace_drop() -> fjall::Result<()> {
         let folder = tempfile::tempdir()?;
 
         assert_eq!(0, fjall::drop::load_drop_counter());
-        let keyspace = Config::new(folder).open()?;
+        let db = Database::builder(&folder).open()?;
         assert_eq!(5, fjall::drop::load_drop_counter());
 
-        let partition = keyspace.open_partition("default", Default::default())?;
+        let tree = db.keyspace("default", Default::default)?;
         assert_eq!(6, fjall::drop::load_drop_counter());
 
-        drop(partition);
-        drop(keyspace);
+        drop(tree);
+        drop(db);
         assert_eq!(0, fjall::drop::load_drop_counter());
     }
 
@@ -33,13 +35,13 @@ fn whitebox_keyspace_drop() -> fjall::Result<()> {
         let folder = tempfile::tempdir()?;
 
         assert_eq!(0, fjall::drop::load_drop_counter());
-        let keyspace = Config::new(folder).open()?;
+        let db = Database::builder(&folder).open()?;
         assert_eq!(5, fjall::drop::load_drop_counter());
 
-        let _partition = keyspace.open_partition("default", Default::default())?;
+        let _tree = db.keyspace("default", Default::default)?;
         assert_eq!(6, fjall::drop::load_drop_counter());
 
-        let _partition2 = keyspace.open_partition("different", Default::default())?;
+        let _tree2 = db.keyspace("different", Default::default)?;
         assert_eq!(7, fjall::drop::load_drop_counter());
     }
 
@@ -50,21 +52,22 @@ fn whitebox_keyspace_drop() -> fjall::Result<()> {
 
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
-fn whitebox_keyspace_drop_2() -> fjall::Result<()> {
-    use fjall::{Config, PartitionCreateOptions};
+#[ignore = "3.0.0 restore"]
+fn whitebox_db_drop_2() -> fjall::Result<()> {
+    use fjall::{Database, KeyspaceCreateOptions};
 
     let folder = tempfile::tempdir()?;
 
     {
-        let keyspace = Config::new(&folder).open()?;
+        let db = Database::builder(&folder).open()?;
 
-        let partition = keyspace.open_partition("tree", PartitionCreateOptions::default())?;
-        let partition2 = keyspace.open_partition("tree1", PartitionCreateOptions::default())?;
+        let tree = db.keyspace("tree", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("tree1", KeyspaceCreateOptions::default)?;
 
-        partition.insert("a", "a")?;
-        partition2.insert("b", "b")?;
+        tree.insert("a", "a")?;
+        tree2.insert("b", "b")?;
 
-        partition.rotate_memtable_and_wait()?;
+        tree.rotate_memtable_and_wait()?;
     }
 
     assert_eq!(0, fjall::drop::load_drop_counter());

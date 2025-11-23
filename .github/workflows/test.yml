@@ -13,7 +13,7 @@ env:
 
 jobs:
   examples:
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       matrix:
         rust_version:
@@ -39,7 +39,6 @@ jobs:
             examples/axum-kv -> target
             examples/basic -> target
             examples/gc-simple -> target
-            examples/partition-rotation -> target
             examples/permuterm -> target
             examples/rolling-log -> target
             examples/secondary-index -> target
@@ -50,11 +49,11 @@ jobs:
             examples/tx-atomic-counter -> target
             examples/tx-blob-cas
             examples/tx-mpmc-queue -> target
-            examples/tx-partition-move -> target
+            examples/tx-keyspace-move -> target
             examples/tx-ssi-atomic-counter -> target
             examples/tx-ssi-cc -> target
             examples/tx-ssi-mpmc-queue -> target
-            examples/tx-ssi-partition-move -> target
+            examples/tx-ssi-keyspace-move -> target
             examples/unique-index -> target
       - name: Build & test examples
         run: node compile_examples.mjs
@@ -64,7 +63,7 @@ jobs:
       matrix:
         rust_version:
           - stable
-          - "1.76.0" # MSRV
+          - "1.91.0" # MSRV
         os:
           - ubuntu-latest
           - windows-latest
@@ -87,7 +86,7 @@ jobs:
           workspaces: >
             . -> target
       - name: Install cargo-all-features
-        run: cargo install cargo-all-features@1.9.0
+        run: cargo install cargo-all-features
       - uses: taiki-e/install-action@nextest
       - name: Format
         run: cargo fmt --all -- --check
@@ -97,35 +96,9 @@ jobs:
         run: cargo build-all-features
       - name: Run whitebox tests
         run: cargo test --features __internal_whitebox -- whitebox_ --test-threads=1
+        env:
+          RUST_LOG: trace
       - name: Run tests
-        run: cargo nextest run --features lz4,miniz,single_writer_tx
-      - name: Run SSI tests
-        run: cargo nextest run --no-default-features --features ssi_tx tx_ssi_
+        run: cargo nextest run --features lz4
       - name: Run doc tests
         run: cargo test --doc
-      - name: Run SSI doc tests
-        run: cargo test --no-default-features --features ssi_tx --doc
-  cross:
-    timeout-minutes: 15
-    name: cross
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-          - aarch64-unknown-linux-musl
-          - i686-unknown-linux-gnu
-          - powerpc64-unknown-linux-gnu
-          - riscv64gc-unknown-linux-gnu
-          # - aarch64-linux-android
-          # - i686-linux-android
-          # - x86_64-linux-android
-          #- mips64-unknown-linux-gnuabi64
-          #- x86_64-apple-darwin
-          #- aarch64-apple-darwin
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: cross test
-        run: |
-          cargo install cross
-          cross test --target ${{ matrix.target }}

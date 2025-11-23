@@ -3,8 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{batch::item::Item as BatchItem, journal::marker::Marker, RecoveryError};
-use lsm_tree::{coding::Encode, CompressionType, SeqNo};
+use crate::{batch::item::Item as BatchItem, journal::entry::Entry, JournalRecoveryError};
+use lsm_tree::SeqNo;
 use std::{fs::OpenOptions, hash::Hasher};
 
 macro_rules! fail_iter {
@@ -22,7 +22,7 @@ pub struct Batch {
     pub(crate) items: Vec<BatchItem>,
 }
 
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
     items: Vec<BatchItem>,
@@ -47,7 +47,7 @@ impl JournalBatchReader {
     }
 
     // TODO: reallocate space
-    fn truncate_to(&mut self, last_valid_pos: u64) -> crate::Result<()> {
+    fn truncate_to(&self, last_valid_pos: u64) -> crate::Result<()> {
         log::trace!("Truncating journal to {last_valid_pos}");
 
         // TODO: on windows, reading file probably needs to be closed first...?
@@ -59,7 +59,7 @@ impl JournalBatchReader {
         Ok(())
     }
 
-    fn on_close(&mut self) -> crate::Result<()> {
+    fn on_close(&self) -> crate::Result<()> {
         if self.is_in_batch {
             log::debug!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 
@@ -87,17 +87,7 @@ impl Iterator for JournalBatchReader {
             let journal_file_pos = self.reader.last_valid_pos;
 
             match item {
-                Marker::Start {
-                    item_count,
-                    seqno,
-                    compression,
-                } => {
-                    // TODO: journal compression maybe in the future
-                    assert!(
-                        compression == CompressionType::None,
-                        "journal compression not supported"
-                    );
-
+                Entry::Start { item_count, seqno } => {
                     if self.is_in_batch {
                         log::debug!("Invalid batch: found batch start inside batch");
 
@@ -111,10 +101,12 @@ impl Iterator for JournalBatchReader {
                     self.batch_counter = item_count;
                     self.batch_seqno = seqno;
                 }
-                Marker::End(expected_checksum) => {
+                Entry::End(expected_checksum) => {
                     if self.batch_counter > 0 {
                         log::error!("Invalid batch: insufficient length");
-                        return Some(Err(JournalRecovery(RecoveryError::InsufficientLength)));
+                        return Some(Err(JournalRecovery(
+                            JournalRecoveryError::InsufficientLength,
+                        )));
                     }
 
                     if !self.is_in_batch {
@@ -131,7 +123,7 @@ impl Iterator for JournalBatchReader {
 
                     if got_checksum != expected_checksum {
                         log::error!("Invalid batch: checksum check failed, expected: {expected_checksum}, got: {got_checksum}");
-                        return Some(Err(JournalRecovery(RecoveryError::ChecksumMismatch)));
+                        return Some(Err(JournalRecovery(JournalRecoveryError::ChecksumMismatch)));
                     }
 
                     // Reset all variables
@@ -146,17 +138,19 @@ impl Iterator for JournalBatchReader {
                         items,
                     }));
                 }
-                Marker::Item {
-                    partition,
+                Entry::Item {
+                    keyspace_id,
                     key,
                     value,
                     value_type,
+                    compression,
                 } => {
-                    let item = Marker::Item {
-                        partition: partition.clone(),
+                    let item = Entry::Item {
+                        keyspace_id,
                         key: key.clone(),
                         value: value.clone(),
                         value_type,
+                        compression,
                     };
                     let mut bytes = Vec::with_capacity(100);
                     fail_iter!(item.encode_into(&mut bytes));
@@ -174,13 +168,13 @@ impl Iterator for JournalBatchReader {
 
                     if self.batch_counter == 0 {
                         log::error!("Invalid batch: Expected end marker (too many items in batch)");
-                        return Some(Err(JournalRecovery(RecoveryError::TooManyItems)));
+                        return Some(Err(JournalRecovery(JournalRecoveryError::TooManyItems)));
                     }
 
                     self.batch_counter -= 1;
 
                     self.items.push(BatchItem {
-                        partition,
+                        keyspace_id,
                         key,
                         value,
                         value_type,

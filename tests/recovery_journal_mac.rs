@@ -1,35 +1,35 @@
-use fjall::Config;
+use fjall::Database;
 use test_log::test;
 
 #[test]
-fn keyspace_journal_recovery_mac_ds_store() -> fjall::Result<()> {
+fn db_journal_recovery_mac_ds_store() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
-    std::fs::File::create(folder.path().join("journals").join(".DS_Store"))?;
+    std::fs::File::create(folder.path().join(".DS_Store"))?;
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
     Ok(())
 }
 
 #[test]
-fn keyspace_journal_recovery_mac_underscore_file() -> fjall::Result<()> {
+fn db_journal_recovery_mac_underscore_file() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
-    std::fs::File::create(folder.path().join("journals").join("._0"))?;
+    std::fs::File::create(folder.path().join("._0"))?;
 
     {
-        let _keyspace = Config::new(&folder).open()?;
+        let _db = Database::builder(&folder).open()?;
     }
 
     Ok(())

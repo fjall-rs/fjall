@@ -2,8 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{journal::error::RecoveryError as JournalRecoveryError, version::Version};
-use lsm_tree::{DecodeError, EncodeError};
+use crate::{
+    journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion, CompressionType,
+};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
@@ -15,17 +16,20 @@ pub enum Error {
     /// I/O error
     Io(std::io::Error),
 
-    /// Serialization failed
-    Encode(EncodeError),
-
-    /// Deserialization failed
-    Decode(DecodeError),
-
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
 
     /// Invalid or unparsable data format version
-    InvalidVersion(Option<Version>),
+    InvalidVersion(Option<FormatVersion>),
+
+    /// Decompression failed
+    Decompress(CompressionType),
+
+    /// Invalid journal trailer detected
+    InvalidTrailer,
+
+    /// Invalid tag detected during decoding
+    InvalidTag((&'static str, u8)),
 
     /// A previous flush / commit operation failed, indicating a hardware-related failure
     ///
@@ -36,8 +40,14 @@ pub enum Error {
     /// More info: <https://www.usenix.org/system/files/atc20-rebello.pdf>
     Poisoned,
 
-    /// Partition is deleted
-    PartitionDeleted,
+    /// Keyspace is deleted
+    KeyspaceDeleted,
+
+    /// Database is locked.
+    Locked,
+
+    /// Database is unrecoverable, see logs for details
+    Unrecoverable,
 }
 
 impl std::fmt::Display for Error {
@@ -52,18 +62,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<EncodeError> for Error {
-    fn from(value: EncodeError) -> Self {
-        Self::Encode(value)
-    }
-}
-
-impl From<DecodeError> for Error {
-    fn from(value: DecodeError) -> Self {
-        Self::Decode(value)
-    }
-}
-
 impl From<lsm_tree::Error> for Error {
     fn from(inner: lsm_tree::Error) -> Self {
         Self::Storage(inner)
@@ -75,12 +73,8 @@ impl std::error::Error for Error {
         match self {
             Self::Storage(inner) => Some(inner),
             Self::Io(inner) => Some(inner),
-            Self::Encode(inner) => Some(inner),
-            Self::Decode(inner) => Some(inner),
             Self::JournalRecovery(inner) => Some(inner),
-            Self::InvalidVersion(_) => None,
-            Self::Poisoned => None,
-            Self::PartitionDeleted => None,
+            _ => None,
         }
     }
 }

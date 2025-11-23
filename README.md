@@ -1,3 +1,7 @@
+<!-- TODO: remove at some point after 3.0.0 -->
+> [!WARNING]
+> This is the 3.x source code - the 2.x source is available at https://github.com/fjall-rs/fjall/tree/2.x.x
+
 <p align="center">
   <img src="/kawaii.png" height="200">
 </p>
@@ -12,7 +16,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.76.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.91.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -27,29 +31,23 @@
   </a>
 </p>
 
-*Fjall* is a log-structured, embeddable key-value storage engine written in Rust.
+*Fjall* _(Nordic: "Mountain")_ is a log-structured, embeddable key-value storage engine written in Rust.
 It features:
 
-- Thread-safe BTreeMap-like API
+- A thread-safe BTreeMap-like API
 - 100% safe & stable Rust
-- LSM-tree-based storage similar to RocksDB
+- LSM-tree-based storage similar to `RocksDB`
 - Range & prefix searching with forward and reverse iteration
-- Partitions (a.k.a. column families) with cross-partition atomic semantics
-- Built-in compression (default = LZ4)
+- Multiple keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
+- Built-in compression (default = `LZ4`)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 - Automatic background maintenance
 
 It is not:
 
-- a standalone server
-- a relational or wide-column database: it has no built-in notion of columns
-
-Keys are limited to 65536 bytes, values are limited to 2^32 bytes.
-As is normal with any kind of storage engine, larger keys and values have a bigger performance impact.
-
-Like any typical key-value store, keys are stored in lexicographic order.
-If you are storing integer keys (e.g. timeseries data), you should use the big endian form to adhere to locality.
+- A standalone database server
+- A relational or wide-column database: it has no built-in notion of columns or query language
 
 ## Sponsors
 
@@ -68,15 +66,15 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Config, PersistMode, Keyspace, PartitionCreateOptions};
+use fjall::{PersistMode, Database, KeyspaceCreateOptions};
 
-// A keyspace is a database, which may contain multiple collections ("partitions")
-// You should probably only use a single keyspace for your application
-//
-let keyspace = Config::new(folder).open()?; // or open_transactional for transactional semantics
+// A database may contain multiple keyspaces
+// You should probably only use a single database for your application
+let db = Database::builder(folder).open()?;
+// TxDatabase::builder for transactional semantics
 
-// Each partition is its own physical LSM-tree
-let items = keyspace.open_partition("my_items", PartitionCreateOptions::default())?;
+// Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
+let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
 // Write some data
 items.insert("a", "hello")?;
@@ -103,27 +101,69 @@ for kv in items.prefix("prefix").rev() {
 }
 
 // Sync the journal to disk to make sure data is definitely durable
-// When the keyspace is dropped, it will try to persist with `PersistMode::SyncAll` as well
+// When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
 keyspace.persist(PersistMode::SyncAll)?;
 ```
+
+> [!TIP]
+> Like any typical key-value store, keys are stored in lexicographic order.
+> If you are storing integer keys (e.g. timeseries data), you should use the big endian form to have predictable ordering.
 
 ## Durability
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
 your application needs.
-After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Keyspace::persist`](https://docs.rs/fjall/latest/fjall/struct.Keyspace.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
+After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Database::persist`](https://docs.rs/fjall/latest/fjall/struct.Database.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
 By default, any operation will flush to OS buffers, but **not** to disk.
 This is in line with RocksDB's default durability.
-Also, when dropped, the keyspace will try to persist the journal *to disk* synchronously.
+Also, when dropped, the database will try to persist the journal *to disk* synchronously.
 
 ## Multithreading, Async and Multiprocess
 
 > [!WARNING]
-> A single keyspace may **not** be loaded in parallel from separate *processes*.
+> A single database may **not** be loaded in parallel from separate *processes*.
 
-Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Keyspace` and `Partition`s as needed, without needing to lock yourself.
+Fjall is internally synchronized for multi-*threaded* access, so you can clone around the `Database` and `Keyspace`s as needed, without needing to lock yourself.
 
 For an async example, see the [`tokio`](https://github.com/fjall-rs/fjall/tree/main/examples/tokio) example.
+
+## Memory usage
+
+Generally, memory for loaded data, indexes etc. is managed on a per-block basis, and capped by the block cache capacity.
+Note that this also applies to returned values: When you hold a `Slice`, it keeps the backing buffer alive (which may be a block).
+If you know that you are going to keep a value around for a long time, you may want to copy it out into a new `Vec<u8>`, `Box<[u8]>`, `Arc<[u8]>` or new `Slice` (using `Slice::new`).
+
+It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
+
+Additionally, orthogonally to the block cache, each `Keyspace` has its own write buffer (["Memtable"](https://docs.rs/fjall/latest/fjall/struct.KeyspaceCreateOptions.html#method.max_memtable_size)) which is the unit of data flushed back into the "proper" index structure.
+The sum of all write buffers are capped by the database-wide [`max_write_buffer_size`](https://docs.rs/fjall/latest/fjall/struct.DatabaseBuilder.html#method.max_write_buffer_size).
+
+## Error handling
+
+Fjall returns an [error enum](https://docs.rs/fjall/latest/fjall/enum.Error.html), however these variants are mostly used for debugging and tracing purposes, so your application is not expected to handle specific errors.
+
+It's best to let the application crash and restart, which is the [safest way to recover from transient I/O errors](https://ramalagappan.github.io/pdfs/papers/cuttlefs.pdf).
+
+## Transactional modes
+
+The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
+However this isolation level can not do read-modify-write operations without the chance of lost updates.
+Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
+For that reason, if you need transactional semantics, you need to use one of the transactional database implementation (`OptimisticTransactionDatabase` or `SingleWriterTransactionDatabase`).
+
+TL;DR: Fjall supports both transactional and non-transactional workloads.
+Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
+
+### Single writer
+
+Opens a transactional database for single-writer (serialized) transactions.
+Single writer means only a single **write** transaction can run at a time.
+This is trivially serializable because it _literally_ serializes write transactions.
+
+### Optimistic
+
+Opens a transactional database for multi-writer, serializable transactions.
+Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ## Feature flags
 
@@ -133,37 +173,16 @@ Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeit
 
 *Enabled by default.*
 
-### miniz
-
-Allows using `DEFLATE/zlib` compression, powered by [`miniz_oxide`](https://github.com/Frommi/miniz_oxide).
-
-*Disabled by default.*
-
-### single_writer_tx
-
-Allows opening a transactional Keyspace for single-writer (serialized) transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
-
-*Enabled by default.*
-
-### ssi_tx
-
-Allows opening a transactional Keyspace for multi-writer, serializable transactions, allowing RYOW (read-your-own-write), fetch-and-update and other atomic operations.
-Conflict checking is done using optimistic concurrency control.
-
-*Disabled by default.
-Mutually exclusive with `single_writer_tx`.*
-
 ### bytes
 
 Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
+Otherwise, [`byteview`](https://github.com/fjall-rs/byteview) is used instead.
 
 *Disabled by default.*
 
 ## Stable disk format
 
-The disk format is stable as of 1.0.0.
-
-2.0.0 uses a new disk format and needs a manual format migration.
+<!-- TODO: WIP -->
 
 Future breaking changes will result in a major version bump and a migration path.
 

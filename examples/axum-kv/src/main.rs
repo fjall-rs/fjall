@@ -8,7 +8,7 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use fjall::{Config, Keyspace, PartitionHandle, PersistMode};
+use fjall::{Database, Keyspace, PersistMode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,8 +25,8 @@ struct BulkBody {
 
 #[derive(Clone)]
 struct State {
-    keyspace: Keyspace,
-    db: PartitionHandle,
+    db: Database,
+    tree: Keyspace,
 }
 
 async fn insert_batch(
@@ -38,18 +38,18 @@ async fn insert_batch(
     let before = std::time::Instant::now();
 
     tokio::task::spawn_blocking(move || {
-        let mut batch = state.keyspace.batch();
+        let mut batch = state.db.batch();
 
         if let Some(remove) = &body.remove {
             for key in remove {
-                batch.remove(&state.db, key.clone());
+                batch.remove(&state.tree, key.clone());
             }
         }
 
         if let Some(upsert) = &body.upsert {
             for item in upsert {
                 batch.insert(
-                    &state.db,
+                    &state.tree,
                     item.0.clone(),
                     serde_json::to_string(&item.1).unwrap(),
                 );
@@ -57,7 +57,7 @@ async fn insert_batch(
         }
 
         batch.commit()?;
-        state.keyspace.persist(PersistMode::SyncAll)
+        state.db.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;
@@ -81,8 +81,8 @@ async fn delete_item(
     let before = std::time::Instant::now();
 
     tokio::task::spawn_blocking(move || {
-        state.db.remove(key)?;
-        state.keyspace.persist(PersistMode::SyncAll)
+        state.tree.remove(key)?;
+        state.db.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;
@@ -111,9 +111,10 @@ async fn insert_item(
 
     tokio::task::spawn_blocking(move || {
         state
-            .db
+            .tree
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
-        state.keyspace.persist(PersistMode::SyncAll)
+
+        state.db.persist(PersistMode::SyncAll)
     })
     .await
     .unwrap()?;
@@ -136,7 +137,7 @@ async fn get_item(
 
     let before = std::time::Instant::now();
 
-    let item = tokio::task::spawn_blocking(move || state.db.get(key))
+    let item = tokio::task::spawn_blocking(move || state.tree.get(key))
         .await
         .unwrap()?;
 
@@ -177,10 +178,10 @@ async fn main() -> Result<(), Error> {
 
     log::info!("Opening database");
 
-    let keyspace = Config::default().open()?;
-    let db = keyspace.open_partition("data", Default::default())?;
+    let db = Database::builder(".fjall_data").open()?;
+    let tree = db.keyspace("data", fjall::KeyspaceCreateOptions::default)?;
 
-    let state = State { keyspace, db };
+    let state = State { db, tree };
 
     log::info!("Starting on port {port}");
 
@@ -214,10 +215,10 @@ mod tests {
 
         let data_folder = tempfile::tempdir()?;
 
-        let keyspace = Config::new(data_folder).open()?;
-        let db = keyspace.open_partition("data", Default::default())?;
+        let db = Database::builder(data_folder).open()?;
+        let tree = db.keyspace("data", fjall::KeyspaceCreateOptions::default)?;
 
-        let state = State { keyspace, db };
+        let state = State { db, tree };
 
         let app = Router::new()
             .route("/:key", get(get_item))

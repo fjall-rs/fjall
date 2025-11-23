@@ -1,23 +1,23 @@
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Database, Guard, Keyspace};
 use serde_json::Value;
 use std::path::Path;
 
 struct Triplestore {
     #[allow(dead_code)]
-    keyspace: Keyspace,
+    db: Database,
 
-    subjects: PartitionHandle,
-    verbs: PartitionHandle,
+    subjects: Keyspace,
+    verbs: Keyspace,
 }
 
 impl Triplestore {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
-        let keyspace = Config::new(path).open()?;
-        let subjects = keyspace.open_partition("subjects", Default::default())?;
-        let verbs = keyspace.open_partition("verbs", Default::default())?;
+        let db = Database::builder(path).open()?;
+        let subjects = db.keyspace("subjects", fjall::KeyspaceCreateOptions::default)?;
+        let verbs = db.keyspace("verbs", fjall::KeyspaceCreateOptions::default)?;
 
         Ok(Self {
-            keyspace,
+            db,
             subjects,
             verbs,
         })
@@ -61,7 +61,7 @@ impl Triplestore {
         let mut result = vec![];
 
         for kv in self.verbs.prefix(format!("{subject}\0{verb}\0")) {
-            let (key, value) = kv?;
+            let (key, value) = kv.into_inner()?;
 
             let key = std::str::from_utf8(&key).expect("should be utf-8");
             let mut splits = key.split('\0');
@@ -127,7 +127,7 @@ fn main() -> fjall::Result<()> {
             )?;
         }
     }
-    store.keyspace.persist(fjall::PersistMode::SyncAll)?;
+    store.db.persist(fjall::PersistMode::SyncAll)?;
 
     let mut count = 0;
 

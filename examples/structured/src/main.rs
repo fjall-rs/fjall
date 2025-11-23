@@ -1,4 +1,4 @@
-use fjall::{Config, Keyspace, PartitionHandle, UserKey, UserValue};
+use fjall::{Database, Guard, Keyspace, UserKey, UserValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -44,14 +44,14 @@ impl std::fmt::Display for Song {
 
 pub struct SongDatabase {
     #[allow(unused)]
-    keyspace: Keyspace,
+    db: Database,
 
-    db: PartitionHandle,
+    tree: Keyspace,
 }
 
 impl SongDatabase {
     pub fn get(&self, key: &str) -> fjall::Result<Option<Song>> {
-        let Some(item) = self.db.get(key)? else {
+        let Some(item) = self.tree.get(key)? else {
             return Ok(None);
         };
 
@@ -63,15 +63,18 @@ impl SongDatabase {
 
     pub fn insert(&self, song: &Song) -> fjall::Result<()> {
         let serialized: Vec<u8> = song.into();
-        self.db.insert(&song.id, serialized)
+        self.tree.insert(&song.id, serialized)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = fjall::Result<Song>> + '_ {
-        self.db.iter().map(|item| item.map(Song::from))
+        self.tree
+            .iter()
+            .map(|kv| kv.into_inner())
+            .map(|item| item.map(Song::from))
     }
 
     pub fn len(&self) -> fjall::Result<usize> {
-        self.db.len()
+        self.tree.len()
     }
 }
 
@@ -106,12 +109,12 @@ fn main() -> fjall::Result<()> {
     ];
 
     {
-        let keyspace = Config::new(path).open()?;
-        let db = keyspace.open_partition("songs", Default::default())?;
+        let db = Database::builder(path).open()?;
+        let tree = db.keyspace("songs", fjall::KeyspaceCreateOptions::default)?;
 
         let song_db = SongDatabase {
-            keyspace: keyspace.clone(),
-            db,
+            db: db.clone(),
+            tree,
         };
 
         for item_to_insert in &items {
@@ -123,7 +126,7 @@ fn main() -> fjall::Result<()> {
                 song_db.insert(item_to_insert)?;
             }
         }
-        keyspace.persist(fjall::PersistMode::SyncAll)?;
+        db.persist(fjall::PersistMode::SyncAll)?;
 
         assert_eq!(items.len(), song_db.len()?);
     }
@@ -132,12 +135,12 @@ fn main() -> fjall::Result<()> {
     {
         println!("\nReloading...");
 
-        let keyspace = Config::new(path).temporary(true).open()?;
-        let db = keyspace.open_partition("songs", Default::default())?;
+        let db = Database::builder(path).temporary(true).open()?;
+        let tree = db.keyspace("songs", fjall::KeyspaceCreateOptions::default)?;
 
         let song_db = SongDatabase {
-            keyspace: keyspace.clone(),
-            db,
+            db: db.clone(),
+            tree,
         };
 
         println!("\nListing all items:");

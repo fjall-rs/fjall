@@ -1,4 +1,4 @@
-use fjall::{Config, Result};
+use fjall::{Database, Guard, Result};
 
 struct Permutermifier {
     term: String,
@@ -74,13 +74,13 @@ const WORDS: &[&str] = &[
 ];
 
 fn main() -> Result<()> {
-    let keyspace = Config::default().temporary(true).open()?;
+    let db = Database::builder(".fjall_data").temporary(true).open()?;
 
-    let db = keyspace.open_partition("db", Default::default())?;
+    let tree = db.keyspace("db", fjall::KeyspaceCreateOptions::default)?;
 
     for word in WORDS {
         for term in permuterm(word) {
-            db.insert(format!("{term}#{word}"), *word).unwrap();
+            tree.insert(format!("{term}#{word}"), *word).unwrap();
         }
     }
 
@@ -89,8 +89,8 @@ fn main() -> Result<()> {
         let query = "ter";
 
         // Permuterm suffix queries are performed using: TERM$*
-        for kv in db.prefix(format!("{query}$")) {
-            let (_, v) = kv?;
+        for kv in tree.prefix(format!("{query}$")) {
+            let v = kv.value()?;
             let v = std::str::from_utf8(&v).unwrap();
             println!("*{query} => {v:?}");
         }
@@ -101,8 +101,8 @@ fn main() -> Result<()> {
     {
         for query in ["water", "blackwater"] {
             // Permuterm exact queries are performed using: TERM$
-            for kv in db.prefix(format!("{query}$#")) {
-                let (_, v) = kv?;
+            for kv in tree.prefix(format!("{query}$#")) {
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("{query:?} => {v:?}");
             }
@@ -115,8 +115,8 @@ fn main() -> Result<()> {
         let query = "water";
 
         // Permuterm prefix queries are performed using: $TERM*
-        for kv in db.prefix(format!("${query}")) {
-            let (_, v) = kv?;
+        for kv in tree.prefix(format!("${query}")) {
+            let v = kv.value()?;
             let v = std::str::from_utf8(&v).unwrap();
             println!("{query}* => {v:?}");
         }
@@ -127,8 +127,8 @@ fn main() -> Result<()> {
     {
         for query in ["ter", "fos"] {
             // Permuterm partial queries are performed using: TERM*
-            for kv in db.prefix(format!("{query}")) {
-                let (_, v) = kv?;
+            for kv in tree.prefix(format!("{query}")) {
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("*{query}* => {v:?}");
             }
@@ -140,8 +140,8 @@ fn main() -> Result<()> {
     {
         for (q1, q2) in [("s", "foss"), ("h", "foss")] {
             // Permuterm between queries are performed using: B$A*
-            for kv in db.prefix(format!("{q2}${q1}")) {
-                let (_, v) = kv?;
+            for kv in tree.prefix(format!("{q2}${q1}")) {
+                let v = kv.value()?;
                 let v = std::str::from_utf8(&v).unwrap();
                 println!("{q1}*{q2} => {v:?}");
             }

@@ -1,4 +1,4 @@
-use fjall::{Config, PersistMode};
+use fjall::{OptimisticTxDatabase, PersistMode, Readable};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -13,14 +13,15 @@ const EXPECTED_COUNT: usize = PRODUCER_COUNT * PRODUCING_COUNT;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open_transactional()?;
-    let tasks = keyspace.open_partition("tasks", Default::default())?;
+    let db = OptimisticTxDatabase::builder(path).temporary(true).open()?;
+
+    let tasks = db.keyspace("tasks", fjall::KeyspaceCreateOptions::default)?;
 
     let counter = Arc::new(AtomicUsize::default());
 
     let producers = (0..PRODUCER_COUNT)
         .map(|idx| {
-            let keyspace = keyspace.clone();
+            let db = db.clone();
             let tasks = tasks.clone();
 
             std::thread::spawn(move || {
@@ -48,7 +49,7 @@ fn main() -> fjall::Result<()> {
 
     let consumers = (0..4)
         .map(|idx| {
-            let keyspace = keyspace.clone();
+            let db = db.clone();
             let tasks = tasks.clone();
             let counter = counter.clone();
 
@@ -58,7 +59,7 @@ fn main() -> fjall::Result<()> {
                 let mut rng = rand::thread_rng();
 
                 loop {
-                    let mut tx = keyspace.write_tx().unwrap();
+                    let mut tx = db.write_tx().unwrap();
 
                     // NOTE:
                     // Tombstones will add up over time with `remove`, making first KV slower

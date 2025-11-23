@@ -3,9 +3,9 @@
 // (found in the LICENSE-* files in the repository)
 
 pub mod batch_reader;
+pub mod entry;
 pub mod error;
 pub mod manager;
-pub mod marker;
 pub mod reader;
 mod recovery;
 pub mod writer;
@@ -13,6 +13,7 @@ pub mod writer;
 use self::writer::PersistMode;
 use crate::file::fsync_directory;
 use batch_reader::JournalBatchReader;
+use lsm_tree::CompressionType;
 use reader::JournalReader;
 use recovery::{recover_journals, RecoveryResult};
 use std::{
@@ -27,7 +28,7 @@ pub struct Journal {
 
 impl std::fmt::Debug for Journal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.path())
+        write!(f, "{}", self.path().display())
     }
 }
 
@@ -50,6 +51,14 @@ impl Drop for Journal {
 }
 
 impl Journal {
+    pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
+        {
+            let mut writer = self.writer.lock().expect("lock is poisoned");
+            writer.set_compression(comp, threshold);
+        }
+        self
+    }
+
     fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
             writer: Mutex::new(Writer::from_file(path)?),
@@ -58,11 +67,15 @@ impl Journal {
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
-        log::trace!("Creating new journal at {path:?}");
+        log::trace!("Creating new journal at {}", path.display());
 
         let folder = path.parent().expect("parent should exist");
+
         std::fs::create_dir_all(folder).inspect_err(|e| {
-            log::error!("Failed to create journal folder at {path:?}: {e:?}");
+            log::error!(
+                "Failed to create journal folder at {}: {e:?}",
+                path.display(),
+            );
         })?;
 
         let writer = Writer::create_new(path)?;
@@ -80,6 +93,7 @@ impl Journal {
 
     /// Hands out write access for the journal.
     pub(crate) fn get_writer(&self) -> MutexGuard<'_, Writer> {
+        #[expect(clippy::expect_used)]
         self.writer.lock().expect("lock is poisoned")
     }
 
@@ -98,18 +112,22 @@ impl Journal {
         lock.persist(mode).map_err(Into::into)
     }
 
-    pub fn recover<P: AsRef<Path>>(path: P) -> crate::Result<RecoveryResult> {
-        recover_journals(path)
+    pub fn recover<P: AsRef<Path>>(
+        path: P,
+        compression: CompressionType,
+        compression_threshold: usize,
+    ) -> crate::Result<RecoveryResult> {
+        recover_journals(path, compression, compression_threshold)
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::batch::item::Item as BatchItem;
-    use lsm_tree::{coding::Encode, ValueType};
-    use marker::Marker;
+    use entry::Entry;
+    use lsm_tree::ValueType;
     use std::io::Write;
     use tempfile::tempdir;
     use test_log::test;
@@ -117,8 +135,8 @@ mod tests {
     #[test]
     fn journal_rotation() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
@@ -126,8 +144,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -145,9 +163,9 @@ mod tests {
     #[test]
     fn journal_recovery_active() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
-        let next_next_path = dir.path().join("2");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
+        let next_next_path = dir.path().join("2.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
@@ -155,8 +173,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                    BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -166,8 +184,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default2", *b"c", *b"c", ValueType::Value),
-                    BatchItem::new("default2", *b"d", *b"d", ValueType::Value),
+                    BatchItem::new(1, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(1, *b"d", *b"d", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -177,8 +195,8 @@ mod tests {
 
             writer.write_batch(
                 [
-                    BatchItem::new("default3", *b"c", *b"c", ValueType::Value),
-                    BatchItem::new("default3", *b"d", *b"d", ValueType::Value),
+                    BatchItem::new(2, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(2, *b"d", *b"d", ValueType::Value),
                 ]
                 .iter(),
                 2,
@@ -190,7 +208,63 @@ mod tests {
         assert!(next_path.try_exists()?);
         assert!(next_next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
+        assert_eq!(journal_recovered.active.path(), next_next_path);
+        assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "lz4")]
+    fn journal_recovery_active_lz4() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
+        let next_next_path = dir.path().join("2.jnl");
+
+        {
+            let journal = Journal::create_new(&path)?.with_compression(CompressionType::Lz4, 1);
+            let mut writer = journal.get_writer();
+
+            writer.write_batch(
+                [
+                    BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                    BatchItem::new(0, *b"b", *b"b", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                0,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                [
+                    BatchItem::new(1, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(1, *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                1,
+            )?;
+            writer.rotate()?;
+
+            writer.write_batch(
+                [
+                    BatchItem::new(2, *b"c", *b"c", ValueType::Value),
+                    BatchItem::new(2, *b"d", *b"d", ValueType::Value),
+                ]
+                .iter(),
+                2,
+                1,
+            )?;
+        }
+
+        assert!(path.try_exists()?);
+        assert!(next_path.try_exists()?);
+        assert!(next_next_path.try_exists()?);
+
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), next_next_path);
         assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
@@ -200,8 +274,8 @@ mod tests {
     #[test]
     fn journal_recovery_no_active() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
-        let next_path = dir.path().join("1");
+        let path = dir.path().join("0.jnl");
+        let next_path = dir.path().join("1.jnl");
 
         {
             let journal = Journal::create_new(&path)?;
@@ -211,8 +285,8 @@ mod tests {
 
                 writer.write_batch(
                     [
-                        BatchItem::new("default", *b"a", *b"a", ValueType::Value),
-                        BatchItem::new("default", *b"b", *b"b", ValueType::Value),
+                        BatchItem::new(0, *b"a", *b"a", ValueType::Value),
+                        BatchItem::new(0, *b"b", *b"b", ValueType::Value),
                     ]
                     .iter(),
                     2,
@@ -229,7 +303,7 @@ mod tests {
         assert!(path.try_exists()?);
         assert!(!next_path.try_exists()?);
 
-        let journal_recovered = Journal::recover(dir)?;
+        let journal_recovered = Journal::recover(dir, CompressionType::None, 0)?;
         assert_eq!(journal_recovered.active.path(), path);
         assert_eq!(journal_recovered.sealed, &[]);
 
@@ -239,11 +313,11 @@ mod tests {
     #[test]
     fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -294,11 +368,11 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -318,10 +392,9 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Start {
+            Entry::Start {
                 item_count: 2,
                 seqno: 64,
-                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
             file.sync_all()?;
@@ -337,10 +410,9 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Start {
+            Entry::Start {
                 item_count: 2,
                 seqno: 64,
-                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
             file.sync_all()?;
@@ -359,11 +431,11 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -383,7 +455,7 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::End(5432).encode_into(&mut file)?;
+            Entry::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -397,7 +469,7 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::End(5432).encode_into(&mut file)?;
+            Entry::End(5432).encode_into(&mut file)?;
             file.sync_all()?;
         }
 
@@ -414,11 +486,11 @@ mod tests {
     #[test]
     fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let dir = tempdir()?;
-        let path = dir.path().join("0");
+        let path = dir.path().join("0.jnl");
 
         let values = [
-            BatchItem::new("default", *b"abc", *b"def", ValueType::Value),
-            BatchItem::new("default", *b"yxc", *b"ghj", ValueType::Value),
+            BatchItem::new(0, *b"abc", *b"def", ValueType::Value),
+            BatchItem::new(0, *b"yxc", *b"ghj", ValueType::Value),
         ];
 
         {
@@ -438,11 +510,12 @@ mod tests {
         // Mangle journal
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Item {
-                partition: "default".into(),
+            Entry::Item {
+                keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
+                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
 
@@ -459,11 +532,12 @@ mod tests {
         // Mangle journal
         for _ in 0..5 {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-            Marker::Item {
-                partition: "default".into(),
+            Entry::Item {
+                keyspace_id: 0,
                 key: (*b"zzz").into(),
                 value: (*b"").into(),
                 value_type: ValueType::Tombstone,
+                compression: lsm_tree::CompressionType::None,
             }
             .encode_into(&mut file)?;
 

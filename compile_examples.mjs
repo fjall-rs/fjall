@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 const examplesFolder = "examples";
 
 for (const exampleName of await readdir(examplesFolder)) {
-
   const folder = resolve(examplesFolder, exampleName);
 
   {

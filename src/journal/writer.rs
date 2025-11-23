@@ -2,9 +2,12 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::marker::{serialize_marker_item, Marker};
-use crate::{batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId};
-use lsm_tree::{coding::Encode, EncodeError, SeqNo, ValueType};
+use super::entry::{serialize_marker_item, Entry};
+use crate::{
+    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    keyspace::InternalKeyspaceId,
+};
+use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,
@@ -12,8 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// TODO: this should be a keyspace configuration
-pub const PRE_ALLOCATED_BYTES: u64 = 32 * 1_024 * 1_024;
+// TODO: this should be a database configuration
+pub const PRE_ALLOCATED_BYTES: u64 = 64 * 1_024 * 1_024;
 
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
@@ -21,8 +24,10 @@ pub struct Writer {
     pub(crate) path: PathBuf,
     file: BufWriter<File>,
     buf: Vec<u8>,
-
     is_buffer_dirty: bool,
+
+    compression: CompressionType,
+    compression_threshold: usize,
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
@@ -45,6 +50,11 @@ pub enum PersistMode {
 }
 
 impl Writer {
+    pub fn set_compression(&mut self, comp: CompressionType, threshold: usize) {
+        self.compression = comp;
+        self.compression_threshold = threshold;
+    }
+
     pub fn len(&self) -> crate::Result<u64> {
         Ok(self.file.get_ref().metadata()?.len())
     }
@@ -53,14 +63,14 @@ impl Writer {
         self.persist(PersistMode::SyncAll)?;
 
         log::debug!(
-            "Sealing active journal at {:?}, len={}B",
-            self.path,
+            "Sealing active journal at {}, len={}B",
+            self.path.display(),
             self.path
                 .metadata()
                 .inspect_err(|e| {
                     log::error!(
-                        "Failed to get file metadata of journal file at {:?}: {e:?}",
-                        self.path
+                        "Failed to get file metadata of journal file at {}: {e:?}",
+                        self.path.display()
                     );
                 })?
                 .len(),
@@ -74,19 +84,32 @@ impl Writer {
             .expect("should have parent")
             .to_path_buf();
 
-        let journal_id = self
+        let Some(basename) = self
             .path
             .file_name()
             .expect("should be valid file name")
             .to_str()
-            .expect("should be valid journal file name")
-            .parse::<JournalId>()
-            .expect("should be valid journal ID");
+            .expect("should be valid utf-8")
+            .strip_suffix(".jnl")
+        else {
+            log::error!("Invalid journal file name: {}", self.path.display());
+            return Err(crate::Error::JournalRecovery(
+                crate::JournalRecoveryError::InvalidFileName,
+            ));
+        };
 
-        let new_path = folder.join((journal_id + 1).to_string());
-        log::debug!("Rotating active journal to {new_path:?}");
+        let journal_id = basename.parse::<JournalId>().map_err(|_| {
+            log::error!("Invalid journal file name: {}", self.path.display());
+            crate::Error::JournalRecovery(crate::JournalRecoveryError::InvalidFileName)
+        })?;
 
+        let new_path = folder.join(format!("{}.jnl", journal_id + 1));
+        log::debug!("Rotating active journal to {}", new_path.display());
+
+        let comp = self.compression;
+        let compt = self.compression_threshold;
         *self = Self::create_new(new_path.clone())?;
+        self.set_compression(comp, compt);
 
         // IMPORTANT: fsync folder on Unix
         fsync_directory(&folder)?;
@@ -97,18 +120,19 @@ impl Writer {
     pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {
         let path = path.into();
 
-        let file = File::create(&path).inspect_err(|e| {
-            log::error!("Failed to create journal file at {path:?}: {e:?}");
+        let file = File::create_new(&path).inspect_err(|e| {
+            log::error!("Failed to create journal file at {}: {e:?}", path.display());
         })?;
 
         file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
             log::error!(
-                "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+                "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {}: {e:?}",
+                path.display(),
             );
         })?;
 
         file.sync_all().inspect_err(|e| {
-            log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+            log::error!("Failed to fsync journal file at {}: {e:?}", path.display());
         })?;
 
         Ok(Self {
@@ -116,6 +140,8 @@ impl Writer {
             file: BufWriter::new(file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            compression: CompressionType::None,
+            compression_threshold: 0,
         })
     }
 
@@ -128,17 +154,18 @@ impl Writer {
                 .write(true)
                 .open(path)
                 .inspect_err(|e| {
-                    log::error!("Failed to create journal file at {path:?}: {e:?}");
+                    log::error!("Failed to create journal file at {}: {e:?}", path.display());
                 })?;
 
             file.set_len(PRE_ALLOCATED_BYTES).inspect_err(|e| {
                 log::error!(
-                    "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {path:?}: {e:?}"
+                    "Failed to set journal file size to {PRE_ALLOCATED_BYTES}B at {}: {e:?}",
+                    path.display(),
                 );
             })?;
 
             file.sync_all().inspect_err(|e| {
-                log::error!("Failed to fsync journal file at {path:?}: {e:?}");
+                log::error!("Failed to fsync journal file at {}: {e:?}", path.display());
             })?;
 
             return Ok(Self {
@@ -146,6 +173,8 @@ impl Writer {
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
                 buf: Vec::new(),
                 is_buffer_dirty: false,
+                compression: CompressionType::None,
+                compression_threshold: 0,
             });
         }
 
@@ -153,7 +182,7 @@ impl Writer {
             .append(true)
             .open(path)
             .inspect_err(|e| {
-                log::error!("Failed to open journal file at {path:?}: {e:?}");
+                log::error!("Failed to open journal file at {}: {e:?}", path.display());
             })?;
 
         Ok(Self {
@@ -161,18 +190,23 @@ impl Writer {
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            compression: CompressionType::None,
+            compression_threshold: 0,
         })
     }
 
     /// Persists the journal file.
     pub(crate) fn persist(&mut self, mode: PersistMode) -> std::io::Result<()> {
-        log::trace!("Persisting journal at {:?} with mode={mode:?}", self.path);
+        log::trace!(
+            "Persisting journal at {} with mode={mode:?}",
+            self.path.display(),
+        );
 
         if self.is_buffer_dirty {
             self.file.flush().inspect_err(|e| {
                 log::error!(
-                    "Failed to flush journal IO buffers at {:?}: {e:?}",
-                    self.path
+                    "Failed to flush journal IO buffers at {}: {e:?}",
+                    self.path.display(),
                 );
             })?;
             self.is_buffer_dirty = false;
@@ -180,25 +214,26 @@ impl Writer {
 
         match mode {
             PersistMode::SyncAll => self.file.get_mut().sync_all().inspect_err(|e| {
-                log::error!("Failed to fsync journal file at {:?}: {e:?}", self.path);
+                log::error!(
+                    "Failed to fsync journal file at {}: {e:?}",
+                    self.path.display(),
+                );
             }),
             PersistMode::SyncData => self.file.get_mut().sync_data().inspect_err(|e| {
-                log::error!("Failed to fsyncdata journal file at {:?}: {e:?}", self.path);
+                log::error!(
+                    "Failed to fsyncdata journal file at {}: {e:?}",
+                    self.path.display(),
+                );
             }),
             PersistMode::Buffer => Ok(()),
         }
     }
 
     /// Writes a batch start marker to the journal
-    fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, EncodeError> {
+    fn write_start(&mut self, item_count: u32, seqno: SeqNo) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
-        Marker::Start {
-            item_count,
-            seqno,
-            compression: lsm_tree::CompressionType::None,
-        }
-        .encode_into(&mut self.buf)?;
+        Entry::Start { item_count, seqno }.encode_into(&mut self.buf)?;
 
         self.file.write_all(&self.buf)?;
 
@@ -206,10 +241,10 @@ impl Writer {
     }
 
     /// Writes a batch end marker to the journal
-    fn write_end(&mut self, checksum: u64) -> Result<usize, EncodeError> {
+    fn write_end(&mut self, checksum: u64) -> Result<usize, crate::Error> {
         debug_assert!(self.buf.is_empty());
 
-        Marker::End(checksum).encode_into(&mut self.buf)?;
+        Entry::End(checksum).encode_into(&mut self.buf)?;
 
         self.file.write_all(&self.buf)?;
 
@@ -218,7 +253,7 @@ impl Writer {
 
     pub(crate) fn write_raw(
         &mut self,
-        partition: &str,
+        keyspace_id: InternalKeyspaceId,
         key: &[u8],
         value: &[u8],
         value_type: ValueType,
@@ -226,14 +261,25 @@ impl Writer {
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         self.buf.clear();
         byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(&mut self.buf, partition, key, value, value_type)?;
+        serialize_marker_item(
+            &mut self.buf,
+            keyspace_id,
+            key,
+            value,
+            value_type,
+            if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
+                self.compression
+            } else {
+                CompressionType::None
+            },
+        )?;
 
         self.file.write_all(&self.buf)?;
 
@@ -262,10 +308,10 @@ impl Writer {
         self.buf.clear();
 
         // NOTE: entries.len() is surely never > u32::MAX
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let item_count = batch_size as u32;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
 
         byte_count += self.write_start(item_count, seqno)?;
@@ -276,10 +322,16 @@ impl Writer {
 
             serialize_marker_item(
                 &mut self.buf,
-                &item.partition,
+                item.keyspace_id,
                 &item.key,
                 &item.value,
                 item.value_type,
+                if self.compression_threshold > 0 && item.value.len() >= self.compression_threshold
+                {
+                    self.compression
+                } else {
+                    CompressionType::None
+                },
             )?;
 
             self.file.write_all(&self.buf)?;

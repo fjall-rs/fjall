@@ -1,12 +1,12 @@
-use fjall::{Batch, BlockCache, Config, PartitionHandle};
+use fjall::{Database, Guard, Keyspace, WriteBatch};
 use format_bytes::format_bytes;
 use nanoid::nanoid;
 use std::path::Path;
 
 fn create_item(
-    batch: &mut Batch,
-    table: &PartitionHandle,
-    index: &PartitionHandle,
+    batch: &mut WriteBatch,
+    table: &Keyspace,
+    index: &Keyspace,
     name: &str,
     year: u64,
 ) -> fjall::Result<()> {
@@ -24,11 +24,11 @@ fn create_item(
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open()?;
-    let items = keyspace.open_partition("items", Default::default())?;
-    let sec = keyspace.open_partition("sec_idx", Default::default())?;
+    let db = Database::builder(path).temporary(true).open()?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
+    let sec = db.keyspace("sec_idx", fjall::KeyspaceCreateOptions::default)?;
 
-    let mut batch = keyspace.batch();
+    let mut batch = db.batch();
     create_item(&mut batch, &items, &sec, "Remain in Light", 1_980)?;
     create_item(&mut batch, &items, &sec, "Seventeen Seconds", 1_980)?;
     create_item(&mut batch, &items, &sec, "Power, Corruption & Lies", 1_983)?;
@@ -44,7 +44,7 @@ fn main() -> fjall::Result<()> {
     create_item(&mut batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
 
     batch.commit()?;
-    keyspace.persist(fjall::PersistMode::SyncAll)?;
+    db.persist(fjall::PersistMode::SyncAll)?;
 
     // Get items from 1990 to 2000 (exclusive)
     let lo = 1_990_u64;
@@ -55,7 +55,7 @@ fn main() -> fjall::Result<()> {
     let mut found_count = 0;
 
     for kv in sec.range(lo.to_be_bytes()..(hi + 1).to_be_bytes()) {
-        let (k, _) = kv?;
+        let k = kv.key()?;
 
         // Get ID
         let primary_key = &k[std::mem::size_of::<u64>() + 1..];

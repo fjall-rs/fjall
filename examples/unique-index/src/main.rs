@@ -1,4 +1,4 @@
-use fjall::{Config, TxKeyspace, TxPartition};
+use fjall::{Readable, SingleWriterTxDatabase, SingleWriterTxKeyspace};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -14,13 +14,13 @@ impl From<fjall::Error> for Error {
 }
 
 fn maybe_create_item(
-    keyspace: &TxKeyspace,
-    items: &TxPartition,
-    uniq: &TxPartition,
+    db: &SingleWriterTxDatabase,
+    items: &SingleWriterTxKeyspace,
+    uniq: &SingleWriterTxKeyspace,
     id: &str,
     name: &str,
 ) -> Result<(), Error> {
-    let mut tx = keyspace.write_tx();
+    let mut tx = db.write_tx();
 
     if uniq.contains_key(name)? {
         return Err(Error::UniqueConstraintFailed);
@@ -37,16 +37,19 @@ fn maybe_create_item(
 fn main() -> Result<(), Error> {
     let path = Path::new(".fjall_data");
 
-    let keyspace = Config::new(path).temporary(true).open_transactional()?;
-    let items = keyspace.open_partition("items", Default::default())?;
-    let uniq = keyspace.open_partition("uniq_idx", Default::default())?;
+    let db = SingleWriterTxDatabase::builder(path)
+        .temporary(true)
+        .open()?;
 
-    maybe_create_item(&keyspace, &items, &uniq, "a", "Item A")?;
-    maybe_create_item(&keyspace, &items, &uniq, "b", "Item B")?;
-    maybe_create_item(&keyspace, &items, &uniq, "c", "Item C")?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
+    let uniq = db.keyspace("uniq_idx", fjall::KeyspaceCreateOptions::default)?;
+
+    maybe_create_item(&db, &items, &uniq, "a", "Item A")?;
+    maybe_create_item(&db, &items, &uniq, "b", "Item B")?;
+    maybe_create_item(&db, &items, &uniq, "c", "Item C")?;
 
     assert!(matches!(
-        maybe_create_item(&keyspace, &items, &uniq, "d", "Item A"),
+        maybe_create_item(&db, &items, &uniq, "d", "Item A"),
         Err(Error::UniqueConstraintFailed),
     ));
 
@@ -54,8 +57,8 @@ fn main() -> Result<(), Error> {
 
     let mut found_count = 0;
 
-    for kv in keyspace.read_tx().iter(&uniq) {
-        let (k, v) = kv?;
+    for kv in db.read_tx().iter(uniq.inner()) {
+        let (k, v) = kv.into_inner()?;
 
         println!(
             "unique value: {:?} -> {:?}",

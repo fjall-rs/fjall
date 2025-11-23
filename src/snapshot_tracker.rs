@@ -2,25 +2,26 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::Instant;
+use crate::{snapshot_nonce::SnapshotNonce, SeqNo};
 use dashmap::DashMap;
+use lsm_tree::SequenceNumberCounter;
 use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Keeps track of open snapshots
-#[allow(clippy::module_name_repetitions)]
 pub struct SnapshotTrackerInner {
+    seqno: SequenceNumberCounter,
+
+    gc_lock: RwLock<()>,
+
     // TODO: maybe use rustc_hash or ahash
-    pub(crate) data: DashMap<Instant, usize, xxhash_rust::xxh3::Xxh3Builder>,
+    data: DashMap<SeqNo, usize, xxhash_rust::xxh3::Xxh3Builder>,
 
-    #[doc(hidden)]
-    pub(crate) freed_count: AtomicU64,
-    safety_gap: u64,
+    freed_count: AtomicU64,
 
-    #[doc(hidden)]
-    pub(crate) lowest_freed_instant: RwLock<Instant>,
+    pub(crate) lowest_freed_instant: AtomicU64,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct SnapshotTracker(Arc<SnapshotTrackerInner>);
 
 impl std::ops::Deref for SnapshotTracker {
@@ -31,20 +32,44 @@ impl std::ops::Deref for SnapshotTracker {
     }
 }
 
-impl Default for SnapshotTrackerInner {
-    fn default() -> Self {
-        Self {
+impl SnapshotTracker {
+    pub fn new(seqno: SequenceNumberCounter) -> Self {
+        Self(Arc::new(SnapshotTrackerInner {
             data: DashMap::default(),
-            safety_gap: 50,
             freed_count: AtomicU64::default(),
-            lowest_freed_instant: RwLock::default(),
-        }
+            lowest_freed_instant: AtomicU64::default(),
+            seqno,
+            gc_lock: RwLock::default(),
+        }))
     }
-}
 
-impl SnapshotTrackerInner {
-    pub fn open(&self, seqno: Instant) {
-        log::trace!("open snapshot {seqno}");
+    /// Used in database recovery.
+    ///
+    /// # Caution
+    ///
+    /// Don't use this to get a snapshot read.
+    pub fn get(&self) -> SeqNo {
+        self.seqno.get()
+    }
+
+    /// Used in database recovery.
+    pub fn set(&self, value: SeqNo) {
+        self.seqno.fetch_max(value);
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn open_snapshots(&self) -> usize {
+        self.data.iter().map(|r| *r.value()).sum()
+    }
+
+    pub fn open(&self) -> SnapshotNonce {
+        #[expect(clippy::expect_used)]
+        let _lock = self.gc_lock.read().expect("lock is poisoned");
+
+        let seqno = self.seqno.get();
 
         self.data
             .entry(seqno)
@@ -52,57 +77,98 @@ impl SnapshotTrackerInner {
                 *x += 1;
             })
             .or_insert(1);
+
+        SnapshotNonce::new(seqno, self.clone())
     }
 
-    pub fn close(&self, seqno: Instant) {
-        log::trace!("close snapshot {seqno}");
+    pub fn clone_snapshot(&self, nonce: &SnapshotNonce) -> SnapshotNonce {
+        #[expect(clippy::expect_used)]
+        let _lock = self.gc_lock.read().expect("lock is poisoned");
 
-        self.data.alter(&seqno, |_, v| v.saturating_sub(1));
+        self.data
+            .entry(nonce.instant)
+            .and_modify(|x| {
+                *x += 1;
+            })
+            .or_insert(1);
+
+        SnapshotNonce::new(nonce.instant, self.clone())
+    }
+
+    pub fn close(&self, nonce: &SnapshotNonce) {
+        self.close_raw(nonce.instant);
+    }
+
+    pub(crate) fn close_raw(&self, instant: SeqNo) {
+        #[expect(clippy::expect_used)]
+        let lock = self.gc_lock.read().expect("lock is poisoned");
+
+        self.data.alter(&instant, |_, v| v.saturating_sub(1));
 
         let freed = self
             .freed_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1;
 
-        if (freed % self.safety_gap) == 0 {
-            self.gc(seqno);
+        drop(lock);
+
+        if freed.is_multiple_of(1_000) {
+            self.gc();
         }
     }
 
-    pub fn get_seqno_safe_to_gc(&self) -> Instant {
-        *self.lowest_freed_instant.read().expect("lock is poisoned")
+    /// Publish write completion
+    pub fn publish(&self, batch_seqno: SeqNo) {
+        self.seqno.fetch_max(batch_seqno + 1);
     }
 
-    fn gc(&self, watermark: Instant) {
-        log::trace!("snapshot gc, watermark={watermark}");
+    // TODO: after recovery, we may need to set the GC watermark once to current_seqno - 1
+    // so there cannot be compactions scheduled immediately with gc_watermark=0
+    pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
+        self.lowest_freed_instant
+            .load(std::sync::atomic::Ordering::Acquire)
+            .saturating_sub(2)
+    }
 
-        let mut lock = self.lowest_freed_instant.write().expect("lock is poisoned");
+    pub(crate) fn pullup(&self) {
+        #[expect(clippy::expect_used)]
+        let _lock = self.gc_lock.write().expect("lock is poisoned");
 
-        let seqno_threshold = watermark.saturating_sub(self.safety_gap);
+        self.lowest_freed_instant.store(
+            self.seqno.get().saturating_sub(1),
+            std::sync::atomic::Ordering::Release,
+        );
+    }
+
+    pub(crate) fn gc(&self) {
+        #[expect(clippy::expect_used)]
+        let _lock = self.gc_lock.write().expect("lock is poisoned");
+
+        let seqno_threshold = self.seqno.get();
 
         let mut lowest_retained = 0;
+        let mut none_retained = true;
 
         self.data.retain(|&k, v| {
-            let should_be_retained = *v > 0 || k > seqno_threshold;
+            let should_be_retained = *v > 0 || k >= seqno_threshold;
 
             if should_be_retained {
                 lowest_retained = match lowest_retained {
                     0 => k,
                     lo => lo.min(k),
                 };
+                none_retained = false;
             }
 
             should_be_retained
         });
 
-        log::trace!("lowest retained snapshot={lowest_retained}");
+        if none_retained {
+            lowest_retained = seqno_threshold;
+        }
 
-        *lock = match *lock {
-            0 => lowest_retained.saturating_sub(1),
-            lo => lo.max(lowest_retained.saturating_sub(1)),
-        };
-
-        log::trace!("gc threshold now {}", *lock);
+        self.lowest_freed_instant
+            .fetch_max(lowest_retained, std::sync::atomic::Ordering::AcqRel);
     }
 }
 
@@ -112,108 +178,60 @@ mod tests {
     use test_log::test;
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
-    fn seqno_tracker_one_shot() {
-        let mut map = SnapshotTrackerInner::default();
-        map.safety_gap = 5;
+    fn seqno_tracker_basic() {
+        let global_seqno = SequenceNumberCounter::default();
 
-        map.open(1);
-        map.close(1);
+        let map = SnapshotTracker::new(global_seqno.clone());
+
+        let nonce = map.open();
+        assert_eq!(0, nonce.instant);
+        drop(nonce);
 
         assert_eq!(map.get_seqno_safe_to_gc(), 0);
+
+        let _ = global_seqno.next();
+
+        let nonce = map.open();
+        assert_eq!(1, nonce.instant);
+        drop(nonce);
     }
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
-    fn seqno_tracker_reverse_order() {
-        let mut map = SnapshotTrackerInner::default();
-        map.safety_gap = 5;
+    fn seqno_tracker_increase_watermark() {
+        let global_seqno = SequenceNumberCounter::default();
 
-        map.open(1);
-        map.open(2);
-        map.open(3);
-        map.open(4);
-        map.open(5);
-        map.open(6);
-        map.open(7);
-        map.open(8);
-        map.open(9);
-        map.open(10);
+        let map = SnapshotTracker::new(global_seqno.clone());
 
-        map.close(10);
-        map.close(9);
-        map.close(8);
-        map.close(7);
-        map.close(6);
-        map.close(5);
-        map.close(4);
-        map.close(3);
-        map.close(2);
-        map.close(1);
+        // Simulates some tx committing
+        for _ in 0..100_000 {
+            let _ = global_seqno.next();
+            let nonce = map.open();
+            drop(nonce);
+        }
 
-        map.open(11);
-        map.close(11);
-        map.gc(11);
-
-        assert_eq!(map.get_seqno_safe_to_gc(), 6);
+        assert!(map.get_seqno_safe_to_gc() > 0);
     }
 
     #[test]
-    #[allow(clippy::field_reassign_with_default)]
-    fn seqno_tracker_simple_2() {
-        let mut map = SnapshotTrackerInner::default();
-        map.safety_gap = 5;
+    fn seqno_tracker_prevent_watermark() {
+        let global_seqno = SequenceNumberCounter::default();
 
-        map.open(1);
+        let map = SnapshotTracker::new(global_seqno.clone());
+
+        // This nonce prevents the watermark from increasing
+        let _old_nonce = map.open();
+
+        // Simlates some inserts happening
+        for _ in 0..1_000 {
+            let _ = global_seqno.next();
+        }
+
+        // Simulates more read tx opening and closing
+        for _ in 0..10_000 {
+            let nonce = map.open();
+            drop(nonce);
+        }
+
         assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.open(2);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.open(3);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.open(4);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.open(5);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.open(6);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(1);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(2);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(3);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(4);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(5);
-        assert_eq!(map.get_seqno_safe_to_gc(), 0);
-
-        map.close(6);
-        map.gc(6);
-        assert_eq!(map.get_seqno_safe_to_gc(), 1);
-
-        map.open(7);
-        map.close(7);
-        map.gc(7);
-        assert_eq!(map.get_seqno_safe_to_gc(), 2);
-
-        map.open(8);
-        map.open(9);
-        map.close(9);
-        map.gc(9);
-        assert_eq!(map.get_seqno_safe_to_gc(), 4);
-
-        map.close(8);
-        map.gc(8);
-        assert_eq!(map.get_seqno_safe_to_gc(), 4);
     }
 }
