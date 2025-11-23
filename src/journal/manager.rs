@@ -42,11 +42,7 @@ impl std::fmt::Debug for Item {
 #[expect(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
-    // active_path: PathBuf, // TODO: remove?
     items: Vec<Item>,
-
-    // TODO: should be taking into account active journal, which is preallocated...?
-    // but zeroed files don't really take space, so maybe not
     disk_space_in_bytes: u64,
 }
 
@@ -60,12 +56,11 @@ impl Drop for JournalManager {
 }
 
 impl JournalManager {
-    pub(crate) fn from_active<P: Into<PathBuf>>(path: P) -> Self {
+    pub(crate) fn new() -> Self {
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::increment_drop_counter();
 
         Self {
-            // active_path: path.into(),
             items: Vec::with_capacity(10),
             disk_space_in_bytes: 0,
         }
@@ -153,8 +148,7 @@ impl JournalManager {
     ) -> crate::Result<()> {
         let journal_size = journal_writer.len()?;
 
-        let (sealed_path, next_journal_path) = journal_writer.rotate()?;
-        // self.active_path = next_journal_path;
+        let (sealed_path, _) = journal_writer.rotate()?;
 
         self.enqueue(Item {
             path: sealed_path,

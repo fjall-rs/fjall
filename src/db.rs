@@ -565,7 +565,7 @@ impl Database {
 
         let sealed_journals = journal_recovery.sealed;
 
-        let journal_manager = JournalManager::from_active(active_journal.path());
+        let journal_manager = JournalManager::new();
 
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
@@ -798,9 +798,7 @@ impl Database {
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
-            journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
-                active_journal_path,
-            ))),
+            journal_manager: Arc::new(RwLock::new(JournalManager::new())),
             backpressure_lock: Mutex::default(),
             seqno,
         });
