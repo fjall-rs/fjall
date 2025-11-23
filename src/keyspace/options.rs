@@ -142,57 +142,57 @@ impl CreateOptions {
             .get_kv_for_config(keyspace_id, "data_block_compression_policy")?
             .expect("should exist");
         let data_block_compression_policy =
-            CompressionPolicy::decode(&data_block_compression_policy);
+            CompressionPolicy::decode(&data_block_compression_policy)?;
 
         let index_block_compression_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "index_block_compression_policy")?
             .expect("should exist");
         let index_block_compression_policy =
-            CompressionPolicy::decode(&index_block_compression_policy);
+            CompressionPolicy::decode(&index_block_compression_policy)?;
 
         let data_block_size_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "data_block_size_policy")?
             .expect("should exist");
-        let data_block_size_policy = BlockSizePolicy::decode(&data_block_size_policy);
+        let data_block_size_policy = BlockSizePolicy::decode(&data_block_size_policy)?;
 
         let filter_block_partitioning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "filter_block_partitioning_policy")?
             .expect("should exist");
         let filter_block_partitioning_policy =
-            PinningPolicy::decode(&filter_block_partitioning_policy);
+            PinningPolicy::decode(&filter_block_partitioning_policy)?;
 
         let index_block_partitioning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "index_block_partitioning_policy")?
             .expect("should exist");
         let index_block_partitioning_policy =
-            PinningPolicy::decode(&index_block_partitioning_policy);
+            PinningPolicy::decode(&index_block_partitioning_policy)?;
 
         let filter_block_pinning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "filter_block_pinning_policy")?
             .expect("should exist");
-        let filter_block_pinning_policy = PinningPolicy::decode(&filter_block_pinning_policy);
+        let filter_block_pinning_policy = PinningPolicy::decode(&filter_block_pinning_policy)?;
 
         let index_block_pinning_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "index_block_pinning_policy")?
             .expect("should exist");
-        let index_block_pinning_policy = PinningPolicy::decode(&index_block_pinning_policy);
+        let index_block_pinning_policy = PinningPolicy::decode(&index_block_pinning_policy)?;
 
         let data_block_restart_interval_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "data_block_restart_interval_policy")?
             .expect("should exist");
         let data_block_restart_interval_policy =
-            RestartIntervalPolicy::decode(&data_block_restart_interval_policy);
+            RestartIntervalPolicy::decode(&data_block_restart_interval_policy)?;
 
         let index_block_restart_interval_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "index_block_restart_interval_policy")?
             .expect("should exist");
         let index_block_restart_interval_policy =
-            RestartIntervalPolicy::decode(&index_block_restart_interval_policy);
+            RestartIntervalPolicy::decode(&index_block_restart_interval_policy)?;
 
         let data_block_hash_ratio_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "data_block_hash_ratio_policy")?
             .expect("should exist");
-        let data_block_hash_ratio_policy = HashRatioPolicy::decode(&data_block_hash_ratio_policy);
+        let data_block_hash_ratio_policy = HashRatioPolicy::decode(&data_block_hash_ratio_policy)?;
 
         let expect_point_read_hits = meta_keyspace
             .get_kv_for_config(keyspace_id, "expect_point_read_hits")?
@@ -202,7 +202,7 @@ impl CreateOptions {
         let filter_policy = meta_keyspace
             .get_kv_for_config(keyspace_id, "filter_policy")?
             .expect("should exist");
-        let filter_policy = FilterPolicy::decode(&filter_policy);
+        let filter_policy = FilterPolicy::decode(&filter_policy)?;
 
         let blob_opts = blob.map(|_| {
             use byteorder::LE;

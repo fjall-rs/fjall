@@ -15,5 +15,7 @@ pub trait EncodeConfig {
 
 // TODO: result
 pub trait DecodeConfig {
-    fn decode(bytes: &[u8]) -> Self;
+    fn decode(bytes: &[u8]) -> crate::Result<Self>
+    where
+        Self: Sized;
 }

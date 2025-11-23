@@ -24,7 +24,7 @@ impl EncodeConfig for crate::config::PinningPolicy {
 }
 
 impl DecodeConfig for crate::config::PinningPolicy {
-    fn decode(mut bytes: &[u8]) -> Self {
+    fn decode(mut bytes: &[u8]) -> crate::Result<Self> {
         let len = bytes.read_u8().expect("cannot fail");
 
         let mut v = vec![];
@@ -34,7 +34,7 @@ impl DecodeConfig for crate::config::PinningPolicy {
             v.push(b == 1);
         }
 
-        Self::new(v)
+        Ok(Self::new(v))
     }
 }
 
@@ -44,10 +44,11 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn roundtrip_pinning_policy() {
+    fn roundtrip_pinning_policy() -> crate::Result<()> {
         let policy = crate::config::PinningPolicy::new([true, true, false]);
         let encoded = policy.encode();
-        let decoded = crate::config::PinningPolicy::decode(&encoded);
+        let decoded = crate::config::PinningPolicy::decode(&encoded)?;
         assert_eq!(policy, decoded);
+        Ok(())
     }
 }
