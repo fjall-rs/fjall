@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{snapshot_nonce::SnapshotNonce, Guard, Iter, Keyspace, Readable};
-use lsm_tree::{AbstractTree, KvPair, UserValue};
+use lsm_tree::{AbstractTree, KvPair, SeqNo, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace snapshot
@@ -21,6 +21,12 @@ pub struct Snapshot {
 impl Snapshot {
     pub(crate) fn new(nonce: SnapshotNonce) -> Self {
         Self { nonce }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn seqno(&self) -> SeqNo {
+        self.nonce.instant
     }
 }
 

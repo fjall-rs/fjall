@@ -49,9 +49,6 @@ pub struct DatabaseInner {
     #[doc(hidden)]
     pub config: Config,
 
-    /// Current visible sequence number
-    pub(crate) visible_seqno: SequenceNumberCounter,
-
     #[doc(hidden)]
     pub supervisor: Supervisor,
 
@@ -517,7 +514,8 @@ impl Database {
     #[must_use]
     #[doc(hidden)]
     pub fn seqno(&self) -> crate::SeqNo {
-        self.visible_seqno.get()
+        // self.visible_seqno.get()
+        todo!()
     }
 
     fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
@@ -602,9 +600,10 @@ impl Database {
         let supervisor = Supervisor::new(SupervisorInner {
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
-            snapshot_tracker: SnapshotTracker::new(seqno),
+            snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
+            seqno,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -631,7 +630,6 @@ impl Database {
             config,
             journal: active_journal,
             keyspaces,
-            visible_seqno,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
             is_poisoned,
@@ -734,7 +732,10 @@ impl Database {
             }
         }
 
-        db.visible_seqno.set(db.supervisor.snapshot_tracker.get());
+        db.supervisor
+            .snapshot_tracker
+            .publish(db.supervisor.snapshot_tracker.get());
+
         db.supervisor.snapshot_tracker.gc();
 
         // TODO: 3.0.0 kick off worker pool
@@ -796,11 +797,12 @@ impl Database {
         let supervisor = Supervisor::new(SupervisorInner {
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
-            snapshot_tracker: SnapshotTracker::new(seqno),
+            snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal_manager: Arc::new(RwLock::new(JournalManager::from_active(
                 active_journal_path,
             ))),
             backpressure_lock: Mutex::default(),
+            seqno,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -825,7 +827,6 @@ impl Database {
             config,
             journal,
             keyspaces,
-            visible_seqno,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
             is_poisoned,

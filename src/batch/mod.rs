@@ -113,7 +113,7 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        let batch_seqno = self.db.supervisor.snapshot_tracker.next();
+        let batch_seqno = self.db.supervisor.seqno.next();
 
         let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
 
@@ -179,7 +179,7 @@ impl Batch {
             keyspaces_with_possible_stall.insert(keyspace.clone());
         }
 
-        self.db.visible_seqno.fetch_max(batch_seqno + 1);
+        self.db.supervisor.snapshot_tracker.publish(batch_seqno);
 
         drop(journal_writer);
 

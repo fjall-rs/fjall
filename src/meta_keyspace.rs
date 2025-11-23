@@ -102,16 +102,13 @@ impl MetaKeyspace {
             );
         }
 
-        let seqno = self.seqno_generator.next();
-
-        let mut ingestion = self.inner.ingestion()?.with_seqno(seqno);
+        let mut ingestion = self.inner.ingestion()?;
 
         for kv in kvs {
             ingestion.write(kv.0, kv.1)?;
         }
 
-        ingestion.finish()?;
-
+        let seqno = ingestion.finish()?;
         self.visible_seqno.fetch_max(seqno + 1);
 
         keyspaces.insert(name.into(), keyspace);
@@ -134,7 +131,7 @@ impl MetaKeyspace {
 
         let seqno = self.seqno_generator.next();
 
-        let mut ingestion = self.inner.ingestion()?.with_seqno(seqno);
+        let mut ingestion = self.inner.ingestion()?;
         {
             // Remove all config KVs
             let pfx: Vec<u8> = {

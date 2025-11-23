@@ -43,18 +43,6 @@ impl SnapshotTracker {
         }))
     }
 
-    /// Increments the sequence number.
-    pub fn next(&self) -> SeqNo {
-        self.seqno.next()
-    }
-
-    /// Returns a reference to the snapshot generator.
-    ///
-    /// Used for ingestion API.
-    pub fn seqno_ref(&self) -> &SequenceNumberCounter {
-        &self.seqno
-    }
-
     /// Used in database recovery.
     ///
     /// # Caution
@@ -129,11 +117,17 @@ impl SnapshotTracker {
         }
     }
 
+    /// Publish write completion
+    pub fn publish(&self, batch_seqno: SeqNo) {
+        self.seqno.fetch_max(batch_seqno + 1);
+    }
+
     // TODO: after recovery, we may need to set the GC watermark once to current_seqno - 1
     // so there cannot be compactions scheduled immediately with gc_watermark=0
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         self.lowest_freed_instant
             .load(std::sync::atomic::Ordering::Acquire)
+            .saturating_sub(2)
     }
 
     pub(crate) fn pullup(&self) {
@@ -173,10 +167,8 @@ impl SnapshotTracker {
             lowest_retained = seqno_threshold;
         }
 
-        self.lowest_freed_instant.fetch_max(
-            lowest_retained.saturating_sub(1),
-            std::sync::atomic::Ordering::AcqRel,
-        );
+        self.lowest_freed_instant
+            .fetch_max(lowest_retained, std::sync::atomic::Ordering::AcqRel);
     }
 }
 

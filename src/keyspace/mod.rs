@@ -12,10 +12,7 @@ use crate::{
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
-    journal::{
-        manager::{EvictionWatermark, JournalManager},
-        Journal,
-    },
+    journal::{manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
@@ -92,10 +89,6 @@ pub struct KeyspaceInner {
 
     /// Keyspace map of database
     pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
-
-    /// Visible sequence number of database
-    #[doc(hidden)]
-    pub visible_seqno: SequenceNumberCounter,
 
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
@@ -227,15 +220,16 @@ impl Keyspace {
         &self,
         iter: impl Iterator<Item = (K, V)>,
     ) -> crate::Result<()> {
-        let seqno = self.supervisor.snapshot_tracker.next();
-        let mut ingestion = self.tree.ingestion()?.with_seqno(seqno);
+        let mut ingestion = self.tree.ingestion()?;
 
         for (k, v) in iter {
             ingestion.write(k.into(), v.into())?;
         }
 
-        ingestion.finish().inspect(|()| {
-            self.visible_seqno.fetch_max(seqno + 1);
+        let _journal_lock = self.journal.get_writer();
+
+        ingestion.finish().inspect(|&seqno| {
+            self.supervisor.snapshot_tracker.publish(seqno);
 
             self.worker_messager
                 .try_send(WorkerMessage::Compact(self.clone()))
@@ -261,7 +255,6 @@ impl Keyspace {
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
             journal: db.journal.clone(),
-            visible_seqno: db.visible_seqno.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
             config,
@@ -287,12 +280,9 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(
-            base_folder,
-            db.supervisor.snapshot_tracker.seqno_ref().clone(),
-        )
-        .use_descriptor_table(db.config.descriptor_table.clone())
-        .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(base_folder, db.supervisor.seqno.clone())
+            .use_descriptor_table(db.config.descriptor_table.clone())
+            .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
@@ -306,7 +296,6 @@ impl Keyspace {
             keyspaces: db.keyspaces.clone(),
             db_config: db.config.clone(),
             journal: db.journal.clone(),
-            visible_seqno: db.visible_seqno.clone(),
             tree,
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
@@ -914,7 +903,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.supervisor.snapshot_tracker.next();
+        let seqno = self.supervisor.seqno.next();
 
         journal_writer.write_raw(self.id, &key, &value, lsm_tree::ValueType::Value, seqno)?;
 
@@ -930,7 +919,7 @@ impl Keyspace {
 
         let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1);
+        self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
 
@@ -985,7 +974,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.supervisor.snapshot_tracker.next();
+        let seqno = self.supervisor.seqno.next();
 
         journal_writer.write_raw(self.id, &key, &[], lsm_tree::ValueType::Tombstone, seqno)?;
 
@@ -1001,7 +990,7 @@ impl Keyspace {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1);
+        self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
 
@@ -1068,7 +1057,7 @@ impl Keyspace {
             return Err(crate::Error::Poisoned);
         }
 
-        let seqno = self.supervisor.snapshot_tracker.next();
+        let seqno = self.supervisor.seqno.next();
 
         journal_writer.write_raw(
             self.id,
@@ -1092,7 +1081,7 @@ impl Keyspace {
 
         let (item_size, memtable_size) = self.tree.remove(key, seqno);
 
-        self.visible_seqno.fetch_max(seqno + 1);
+        self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
 
