@@ -25,8 +25,8 @@ fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
     let db = Database::builder(path).temporary(true).open()?;
-    let items = db.keyspace("items", Default::default())?;
-    let sec = db.keyspace("sec_idx", Default::default())?;
+    let items = db.keyspace("items", fjall::KeyspaceCreateOptions::default)?;
+    let sec = db.keyspace("sec_idx", fjall::KeyspaceCreateOptions::default)?;
 
     let mut batch = db.batch();
     create_item(&mut batch, &items, &sec, "Remain in Light", 1_980)?;

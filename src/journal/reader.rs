@@ -2,8 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::marker::Marker;
-use lsm_tree::coding::Decode;
+use super::entry::Entry;
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Seek},
@@ -24,7 +23,7 @@ macro_rules! fail_iter {
 ///
 /// Will truncate the file to the last valid position to prevent corrupt
 /// bytes at the end of the file, which would jeopardize future writes into the file.
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub struct JournalReader {
     pub(crate) path: PathBuf,
     pub(crate) reader: BufReader<File>,
@@ -61,16 +60,16 @@ impl JournalReader {
 }
 
 impl Iterator for JournalReader {
-    type Item = crate::Result<Marker>;
+    type Item = crate::Result<Entry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match Marker::decode_from(&mut self.reader) {
+        match Entry::decode_from(&mut self.reader) {
             Ok(item) => {
                 self.last_valid_pos = fail_iter!(self.reader.stream_position());
                 Some(Ok(item))
             }
             Err(e) => {
-                if let lsm_tree::Error::Io(e) = e {
+                if let crate::Error::Io(e) = e {
                     match e.kind() {
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {
                             fail_iter!(self.maybe_truncate_file_to_last_valid_pos());

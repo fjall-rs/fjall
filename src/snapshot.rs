@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{snapshot_nonce::SnapshotNonce, Guard, Keyspace, Readable};
-use lsm_tree::{AbstractTree, KvPair, UserValue};
+use crate::{snapshot_nonce::SnapshotNonce, Guard, Iter, Keyspace, Readable};
+use lsm_tree::{AbstractTree, KvPair, SeqNo, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace snapshot
@@ -21,6 +21,12 @@ pub struct Snapshot {
 impl Snapshot {
     pub(crate) fn new(nonce: SnapshotNonce) -> Self {
         Self { nonce }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn seqno(&self) -> SeqNo {
+        self.nonce.instant
     }
 }
 
@@ -75,38 +81,31 @@ impl Readable for Snapshot {
             .map_err(Into::into)
     }
 
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
-        keyspace
-            .as_ref()
-            .tree
-            .iter(self.nonce.instant, None)
-            .map(Guard)
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
+        let iter = keyspace.as_ref().tree.iter(self.nonce.instant, None);
+
+        Iter::new(self.nonce.clone(), iter)
     }
 
     fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
-        keyspace
+    ) -> Iter {
+        let iter = keyspace
             .as_ref()
             .tree
-            .range(range, self.nonce.instant, None)
-            .map(Guard)
+            .range(range, self.nonce.instant, None);
+
+        Iter::new(self.nonce.clone(), iter)
     }
 
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static {
-        keyspace
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
+        let iter = keyspace
             .as_ref()
             .tree
-            .prefix(prefix, self.nonce.instant, None)
-            .map(Guard)
+            .prefix(prefix, self.nonce.instant, None);
+
+        Iter::new(self.nonce.clone(), iter)
     }
 }

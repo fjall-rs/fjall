@@ -23,7 +23,7 @@ fn whitebox_db_drop() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
         assert_eq!(5, fjall::drop::load_drop_counter());
 
-        let tree = db.keyspace("default", Default::default())?;
+        let tree = db.keyspace("default", Default::default)?;
         assert_eq!(6, fjall::drop::load_drop_counter());
 
         drop(tree);
@@ -38,10 +38,10 @@ fn whitebox_db_drop() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
         assert_eq!(5, fjall::drop::load_drop_counter());
 
-        let _tree = db.keyspace("default", Default::default())?;
+        let _tree = db.keyspace("default", Default::default)?;
         assert_eq!(6, fjall::drop::load_drop_counter());
 
-        let _tree2 = db.keyspace("different", Default::default())?;
+        let _tree2 = db.keyspace("different", Default::default)?;
         assert_eq!(7, fjall::drop::load_drop_counter());
     }
 
@@ -61,8 +61,8 @@ fn whitebox_db_drop_2() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
 
-        let tree = db.keyspace("tree", KeyspaceCreateOptions::default())?;
-        let tree2 = db.keyspace("tree1", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("tree", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("tree1", KeyspaceCreateOptions::default)?;
 
         tree.insert("a", "a")?;
         tree2.insert("b", "b")?;

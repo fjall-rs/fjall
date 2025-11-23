@@ -2,7 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion};
+use crate::{
+    journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion, CompressionType,
+};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
@@ -20,6 +22,15 @@ pub enum Error {
     /// Invalid or unparsable data format version
     InvalidVersion(Option<FormatVersion>),
 
+    /// Decompression failed
+    Decompress(CompressionType),
+
+    /// Invalid journal trailer detected
+    InvalidTrailer,
+
+    /// Invalid tag detected during decoding
+    InvalidTag((&'static str, u8)),
+
     /// A previous flush / commit operation failed, indicating a hardware-related failure
     ///
     /// Future writes will not be accepted as consistency cannot be guaranteed.
@@ -34,6 +45,9 @@ pub enum Error {
 
     /// Database is locked.
     Locked,
+
+    /// Database is unrecoverable, see logs for details
+    Unrecoverable,
 }
 
 impl std::fmt::Display for Error {

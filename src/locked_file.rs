@@ -16,7 +16,7 @@ impl Drop for LockedFileGuardInner {
 }
 
 #[derive(Clone)]
-#[allow(unused)]
+#[expect(unused)]
 pub struct LockedFileGuard(Arc<LockedFileGuardInner>);
 
 impl LockedFileGuard {

@@ -77,7 +77,6 @@ mod tests {
     use test_log::test;
 
     #[test]
-    #[allow(clippy::expect_used)]
     pub fn version_serialize() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V1.write_file_header(&mut bytes)?;
@@ -86,7 +85,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
     pub fn version_serialize_2() -> crate::Result<()> {
         let mut bytes = vec![];
         FormatVersion::V2.write_file_header(&mut bytes)?;
@@ -95,28 +93,25 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
     pub fn version_deserialize_success() {
         let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 1]);
         assert_eq!(version, Some(FormatVersion::V1));
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
     pub fn version_deserialize_success_2() {
         let version = FormatVersion::parse_file_header(&[b'F', b'J', b'L', 2]);
         assert_eq!(version, Some(FormatVersion::V2));
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
     pub fn version_deserialize_fail() {
         let version = FormatVersion::parse_file_header(&[b'F', b'J', b'X', 1]);
         assert!(version.is_none());
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[expect(clippy::expect_used)]
     pub fn version_serde_round_trip() {
         let mut buf = vec![];
         FormatVersion::V1
@@ -128,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[expect(clippy::expect_used)]
     pub fn version_len() {
         let mut buf = vec![];
         FormatVersion::V1

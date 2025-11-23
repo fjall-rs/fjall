@@ -1,7 +1,6 @@
-use std::ops::RangeBounds;
-
-use crate::{Guard, Keyspace};
+use crate::{Iter, Keyspace};
 use lsm_tree::{KvPair, UserValue};
+use std::ops::RangeBounds;
 
 /// Readable snapshot
 ///
@@ -20,7 +19,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let snapshot = db.snapshot();
@@ -54,7 +53,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let snapshot = db.snapshot();
@@ -82,7 +81,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -108,7 +107,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("1", "abc")?;
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
@@ -133,7 +132,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     ///
     /// let snapshot = db.snapshot();
@@ -169,7 +168,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// assert!(db.snapshot().is_empty(&tree)?);
     ///
     /// tree.insert("a", "abc")?;
@@ -196,7 +195,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -205,10 +204,7 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    fn iter(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter;
 
     /// Scans the entire keyspace, returning the amount of items.
     ///
@@ -226,7 +222,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value2")?;
     ///
@@ -270,7 +266,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("f", "abc")?;
     /// tree.insert("g", "abc")?;
@@ -283,7 +279,7 @@ pub trait Readable {
         &self,
         keyspace: impl AsRef<Keyspace>,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    ) -> Iter;
 
     /// Iterates over a prefixed set of the transaction's state.
     ///
@@ -296,7 +292,7 @@ pub trait Readable {
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     /// tree.insert("a", "abc")?;
     /// tree.insert("ab", "abc")?;
     /// tree.insert("abc", "abc")?;
@@ -305,9 +301,5 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    fn prefix<K: AsRef<[u8]>>(
-        &self,
-        keyspace: impl AsRef<Keyspace>,
-        prefix: K,
-    ) -> impl DoubleEndedIterator<Item = Guard> + 'static;
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter;
 }

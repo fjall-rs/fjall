@@ -14,13 +14,15 @@ impl EncodeConfig for crate::config::CompressionPolicy {
         let mut v = vec![];
 
         // NOTE: Policies are limited to 255 entries
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::expect_used)]
-        v.write_u8(self.len() as u8).expect("cannot fail");
+        #[expect(clippy::cast_possible_truncation)]
+        #[expect(clippy::expect_used)]
+        v.write_u8(self.len() as u8)
+            .expect("cannot fail writing into a vec");
 
         for item in self.iter() {
-            #[allow(clippy::expect_used)]
-            item.encode_into(&mut v).expect("cannot fail");
+            #[expect(clippy::expect_used)]
+            item.encode_into(&mut v)
+                .expect("cannot fail writing into a vec");
         }
 
         v.into()
@@ -28,16 +30,16 @@ impl EncodeConfig for crate::config::CompressionPolicy {
 }
 
 impl DecodeConfig for crate::config::CompressionPolicy {
-    fn decode(mut bytes: &[u8]) -> Self {
-        let len = bytes.read_u8().expect("cannot fail");
+    fn decode(mut bytes: &[u8]) -> crate::Result<Self> {
+        let len = bytes.read_u8()?;
 
         let mut v = vec![];
 
         for _ in 0..len {
-            v.push(CompressionType::decode_from(&mut bytes).expect("cannot fail"));
+            v.push(CompressionType::decode_from(&mut bytes)?);
         }
 
-        Self::new(v)
+        Ok(Self::new(v))
     }
 }
 
@@ -48,11 +50,12 @@ mod tests {
 
     #[test]
     #[cfg(feature = "lz4")]
-    fn roundtrip_compression_policy() {
+    fn roundtrip_compression_policy() -> crate::Result<()> {
         let policy =
             crate::config::CompressionPolicy::new([CompressionType::None, CompressionType::Lz4]);
         let encoded = policy.encode();
-        let decoded = crate::config::CompressionPolicy::decode(&encoded);
+        let decoded = crate::config::CompressionPolicy::decode(&encoded)?;
         assert_eq!(policy, decoded);
+        Ok(())
     }
 }

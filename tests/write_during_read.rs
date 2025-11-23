@@ -7,10 +7,9 @@ fn write_during_read() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
 
-    let tree = db.keyspace(
-        "default",
-        KeyspaceCreateOptions::default().max_memtable_size(128_000),
-    )?;
+    let tree = db.keyspace("default", || {
+        KeyspaceCreateOptions::default().max_memtable_size(128_000)
+    })?;
 
     for x in 0u64..50_000 {
         tree.insert(x.to_be_bytes(), x.to_be_bytes())?;

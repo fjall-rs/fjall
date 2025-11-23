@@ -10,15 +10,13 @@ fn recover_seqno() -> fjall::Result<()> {
 
     let mut seqno;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 
         let keyspaces = &[
-            db.keyspace("default1", KeyspaceCreateOptions::default())?,
-            db.keyspace("default2", KeyspaceCreateOptions::default())?,
-            db.keyspace("default3", KeyspaceCreateOptions::default())?,
+            db.keyspace("default1", KeyspaceCreateOptions::default)?,
+            db.keyspace("default2", KeyspaceCreateOptions::default)?,
+            db.keyspace("default3", KeyspaceCreateOptions::default)?,
         ];
 
         // NOTE: Opening a keyspace increments the global seqno
@@ -59,9 +57,9 @@ fn recover_seqno() -> fjall::Result<()> {
         assert_eq!(seqno, db.seqno());
 
         let keyspaces = &[
-            db.keyspace("default1", KeyspaceCreateOptions::default())?,
-            db.keyspace("default2", KeyspaceCreateOptions::default())?,
-            db.keyspace("default3", KeyspaceCreateOptions::default())?,
+            db.keyspace("default1", KeyspaceCreateOptions::default)?,
+            db.keyspace("default2", KeyspaceCreateOptions::default)?,
+            db.keyspace("default3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -84,15 +82,13 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
 
     let mut seqno;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 
         let keyspaces = &[
-            db.keyspace("default1", KeyspaceCreateOptions::default())?,
-            db.keyspace("default2", KeyspaceCreateOptions::default())?,
-            db.keyspace("default3", KeyspaceCreateOptions::default())?,
+            db.keyspace("default1", KeyspaceCreateOptions::default)?,
+            db.keyspace("default2", KeyspaceCreateOptions::default)?,
+            db.keyspace("default3", KeyspaceCreateOptions::default)?,
         ];
 
         // NOTE: Opening a keyspace increments the global seqno

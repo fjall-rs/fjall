@@ -2,6 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use lsm_tree::SequenceNumberCounter;
+
 use crate::{
     flush::manager::FlushManager, journal::manager::JournalManager,
     snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
@@ -11,6 +13,9 @@ use std::sync::{Arc, Mutex, RwLock};
 pub struct SupervisorInner {
     pub(crate) write_buffer_size: WriteBufferManager,
     pub(crate) flush_manager: FlushManager,
+
+    pub seqno: SequenceNumberCounter,
+
     pub snapshot_tracker: SnapshotTracker,
 
     /// Tracks journal size and garbage collects sealed journals when possible

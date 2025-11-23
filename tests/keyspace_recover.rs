@@ -21,16 +21,15 @@ fn reload_keyspace_config_fifo() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
 
-        let _tree = db.keyspace(
-            "default",
-            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy)),
-        )?;
+        let _tree = db.keyspace("default", || {
+            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy))
+        })?;
     };
 
     {
         let db = Database::builder(&folder).open()?;
 
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         assert_eq!(
             expected_kvs,
@@ -46,28 +45,25 @@ fn reload_keyspace_config_fifo() -> fjall::Result<()> {
 fn reload_keyspace_config_leveled() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // TODO: 3.0.0 builder pattern
-    let strategy = fjall::compaction::Leveled {
-        l0_threshold: 6,
-        level_ratio_policy: vec![4.0, 6.0, 8.0],
-        target_size: 100_000_000,
-    };
+    let strategy = fjall::compaction::Leveled::default()
+        .with_l0_threshold(6)
+        .with_level_ratio_policy(vec![4.0, 6.0, 8.0])
+        .with_table_target_size(100_000_000);
 
     let expected_kvs = strategy.get_config();
 
     {
         let db = Database::builder(&folder).open()?;
 
-        let _tree = db.keyspace(
-            "default",
-            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy)),
-        )?;
+        let _tree = db.keyspace("default", || {
+            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy))
+        })?;
     };
 
     {
         let db = Database::builder(&folder).open()?;
 
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         assert_eq!(
             expected_kvs,
@@ -105,8 +101,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
 
-        let _tree = db.keyspace(
-            "default",
+        let _tree = db.keyspace("default", || {
             KeyspaceCreateOptions::default()
                 .data_block_size_policy(data_block_size.clone())
                 .data_block_restart_interval_policy(data_block_interval_policy.clone())
@@ -117,13 +112,13 @@ fn reload_keyspace_config() -> fjall::Result<()> {
                 .index_block_partitioning_policy(index_block_partitioning_policy.clone())
                 .expect_point_read_hits(true)
                 .filter_policy(filter_policy.clone())
-                .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone()),
-        )?;
+                .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone())
+        })?;
     };
 
     {
         let db = Database::builder(&folder).open()?;
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert_eq!(data_block_size, tree.config.data_block_size_policy);
         assert_eq!(
             data_block_interval_policy,
@@ -168,8 +163,7 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
 
-        let _tree = db.keyspace(
-            "default",
+        let _tree = db.keyspace("default", || {
             KeyspaceCreateOptions::default().with_kv_separation(Some(
                 KvSeparationOptions::default()
                     .age_cutoff(0.55)
@@ -177,13 +171,13 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
                     .file_target_size(124)
                     .separation_threshold(515)
                     .staleness_threshold(0.77),
-            )),
-        )?;
+            ))
+        })?;
     };
 
     {
         let db = Database::builder(&folder).open()?;
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         let blob_opts = tree.config.kv_separation_opts.as_ref().unwrap();
 
@@ -201,15 +195,13 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
 fn reload_with_keyspaces() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
 
         let keyspaces = &[
-            db.keyspace("default1", KeyspaceCreateOptions::default())?,
-            db.keyspace("default2", KeyspaceCreateOptions::default())?,
-            db.keyspace("default3", KeyspaceCreateOptions::default())?,
+            db.keyspace("default1", KeyspaceCreateOptions::default)?,
+            db.keyspace("default2", KeyspaceCreateOptions::default)?,
+            db.keyspace("default3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {
@@ -240,9 +232,9 @@ fn reload_with_keyspaces() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
 
         let keyspaces = &[
-            db.keyspace("default1", KeyspaceCreateOptions::default())?,
-            db.keyspace("default2", KeyspaceCreateOptions::default())?,
-            db.keyspace("default3", KeyspaceCreateOptions::default())?,
+            db.keyspace("default1", KeyspaceCreateOptions::default)?,
+            db.keyspace("default2", KeyspaceCreateOptions::default)?,
+            db.keyspace("default3", KeyspaceCreateOptions::default)?,
         ];
 
         for tree in keyspaces {

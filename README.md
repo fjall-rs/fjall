@@ -74,7 +74,7 @@ let db = Database::builder(folder).open()?;
 // TxDatabase::builder for transactional semantics
 
 // Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
-let items = db.keyspace("my_items", KeyspaceCreateOptions::default())?;
+let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
 // Write some data
 items.insert("a", "hello")?;

@@ -7,11 +7,9 @@ const ITEM_COUNT: usize = 10_000;
 fn reload_with_memtable() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    // NOTE: clippy bug
-    #[allow(unused_assignments)]
     {
         let db = Database::builder(&folder).open()?;
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         for x in 0..ITEM_COUNT as u64 {
             let key = x.to_be_bytes();
@@ -35,7 +33,7 @@ fn reload_with_memtable() -> fjall::Result<()> {
 
     for _ in 0..5 {
         let db = Database::builder(&folder).open()?;
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);
         assert_eq!(tree.iter().flat_map(|x| x.key()).count(), ITEM_COUNT * 2);

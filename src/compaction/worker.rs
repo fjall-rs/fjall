@@ -46,7 +46,7 @@ pub fn run(
     // (in case of write throttling)
     std::thread::sleep(std::time::Duration::from_millis(1));
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     stats
         .time_compacting
         .fetch_add(start.elapsed().as_micros() as u64, Relaxed);

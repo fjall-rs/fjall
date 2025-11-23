@@ -13,8 +13,8 @@ struct Triplestore {
 impl Triplestore {
     pub fn new<P: AsRef<Path>>(path: P) -> fjall::Result<Self> {
         let db = Database::builder(path).open()?;
-        let subjects = db.keyspace("subjects", Default::default())?;
-        let verbs = db.keyspace("verbs", Default::default())?;
+        let subjects = db.keyspace("subjects", fjall::KeyspaceCreateOptions::default)?;
+        let verbs = db.keyspace("verbs", fjall::KeyspaceCreateOptions::default)?;
 
         Ok(Self {
             db,

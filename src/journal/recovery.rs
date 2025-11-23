@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 pub type JournalId = u64;
 
 #[derive(Debug)]
-#[allow(clippy::module_name_repetitions)]
 pub struct RecoveryResult {
     pub(crate) active: Journal,
     pub(crate) sealed: Vec<(JournalId, PathBuf)>,

@@ -97,6 +97,7 @@ impl Batch {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    #[allow(clippy::missing_panics_doc)]
     pub fn commit(mut self) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
@@ -112,7 +113,7 @@ impl Batch {
             return Err(crate::Error::Poisoned);
         }
 
-        let batch_seqno = self.db.supervisor.snapshot_tracker.next();
+        let batch_seqno = self.db.supervisor.seqno.next();
 
         let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
 
@@ -129,8 +130,10 @@ impl Batch {
         }
 
         // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-        #[allow(clippy::mutable_key_type)]
+        #[expect(clippy::mutable_key_type)]
         let mut keyspaces_with_possible_stall = HashSet::new();
+
+        #[expect(clippy::expect_used)]
         let keyspaces = self.db.keyspaces.read().expect("lock is poisoned");
 
         let mut batch_size = 0u64;
@@ -176,7 +179,7 @@ impl Batch {
             keyspaces_with_possible_stall.insert(keyspace.clone());
         }
 
-        self.db.visible_seqno.fetch_max(batch_seqno + 1);
+        self.db.supervisor.snapshot_tracker.publish(batch_seqno);
 
         drop(journal_writer);
 
@@ -190,7 +193,7 @@ impl Batch {
 
         // Check each affected keyspace for write stall/halt
         for keyspace in &keyspaces_with_possible_stall {
-            let memtable_size = keyspace.tree.active_memtable_size();
+            let memtable_size = keyspace.tree.active_memtable().size();
             keyspace.local_backpressure();
             keyspace.check_memtable_rotate(memtable_size)?;
         }

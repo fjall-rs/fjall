@@ -1,4 +1,4 @@
-use fjall::Database;
+use fjall::{Database, KeyspaceCreateOptions};
 use test_log::test;
 
 #[test]
@@ -11,7 +11,7 @@ fn recover_from_different_folder() -> fjall::Result<()> {
 
     {
         let db = Database::builder(folder).open()?;
-        let tree = db.keyspace("default", Default::default())?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         tree.insert("abc", "def")?;
         tree.insert("wqewe", "def")?;
