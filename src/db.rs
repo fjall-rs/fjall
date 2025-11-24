@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    batch::Batch,
+    batch::WriteBatch,
     db_config::Config,
     file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
     flush::manager::FlushManager,
@@ -190,8 +190,8 @@ impl Database {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn batch(&self) -> Batch {
-        let mut batch = Batch::new(self.clone());
+    pub fn batch(&self) -> WriteBatch {
+        let mut batch = WriteBatch::new(self.clone());
 
         if !self.config.manual_journal_persist {
             batch = batch.durability(Some(PersistMode::Buffer));

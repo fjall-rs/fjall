@@ -12,14 +12,13 @@ use std::collections::HashSet;
 /// An atomic write batch
 ///
 /// Allows atomically writing across keyspaces inside the [`Database`].
-#[doc(alias = "WriteBatch")]
-pub struct Batch {
+pub struct WriteBatch {
     pub(crate) data: Vec<Item>,
     db: Database,
     durability: Option<PersistMode>,
 }
 
-impl Batch {
+impl WriteBatch {
     /// Initializes a new write batch.
     ///
     /// This function is called by [`Database::batch`].

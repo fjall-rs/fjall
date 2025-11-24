@@ -133,7 +133,7 @@ pub mod config {
 }
 
 pub use {
-    batch::Batch as WriteBatch, // TODO: rename Batch -> WriteBatch instead of alias export?
+    batch::WriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,
     db_config::Config,
