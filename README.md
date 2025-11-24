@@ -133,7 +133,8 @@ Generally, memory for loaded data, indexes etc. is managed on a per-block basis,
 Note that this also applies to returned values: When you hold a `Slice`, it keeps the backing buffer alive (which may be a block).
 If you know that you are going to keep a value around for a long time, you may want to copy it out into a new `Vec<u8>`, `Box<[u8]>`, `Arc<[u8]>` or new `Slice` (using `Slice::new`).
 
-It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
+> [!NOTE]
+> It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
 
 Additionally, orthogonally to the block cache, each `Keyspace` has its own write buffer (["Memtable"](https://docs.rs/fjall/latest/fjall/struct.KeyspaceCreateOptions.html#method.max_memtable_size)) which is the unit of data flushed back into the "proper" index structure.
 The sum of all write buffers are capped by the database-wide [`max_write_buffer_size`](https://docs.rs/fjall/latest/fjall/struct.DatabaseBuilder.html#method.max_write_buffer_size).
