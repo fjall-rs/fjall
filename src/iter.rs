@@ -2,7 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{snapshot_nonce::SnapshotNonce, Guard, InnerIter};
+use crate::{snapshot_nonce::SnapshotNonce, Guard};
+
+type InnerIter = Box<dyn DoubleEndedIterator<Item = lsm_tree::IterGuardImpl> + Send + 'static>;
 
 /// A wrapper around iterators to hold a snapshot nonce
 ///

@@ -172,8 +172,6 @@ pub use lsm_tree::{
     CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,
 };
 
-pub(crate) type InnerIter = Box<dyn DoubleEndedIterator<Item = lsm_tree::IterGuardImpl> + 'static>;
-
 /// Utility functions
 pub mod util {
     pub use lsm_tree::util::{prefix_to_range, prefixed_range};
