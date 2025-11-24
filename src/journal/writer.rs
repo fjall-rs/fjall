@@ -322,7 +322,7 @@ impl Writer {
 
             serialize_marker_item(
                 &mut self.buf,
-                item.keyspace_id,
+                item.keyspace.id,
                 &item.key,
                 &item.value,
                 item.value_type,

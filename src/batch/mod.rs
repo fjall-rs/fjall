@@ -66,13 +66,13 @@ impl WriteBatch {
     /// Inserts a key-value pair into the batch.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(&mut self, p: &Keyspace, key: K, value: V) {
         self.data
-            .push(Item::new(p.id, key, value, ValueType::Value));
+            .push(Item::new(p.clone(), key, value, ValueType::Value));
     }
 
     /// Removes a key-value pair.
     pub fn remove<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
         self.data
-            .push(Item::new(p.id, key, vec![], ValueType::Tombstone));
+            .push(Item::new(p.clone(), key, vec![], ValueType::Tombstone));
     }
 
     /// Adds a weak tombstone marker for a key.
@@ -88,7 +88,7 @@ impl WriteBatch {
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
         self.data
-            .push(Item::new(p.id, key, vec![], ValueType::WeakTombstone));
+            .push(Item::new(p.clone(), key, vec![], ValueType::WeakTombstone));
     }
 
     /// Commits the batch to the [`Database`] atomically.
@@ -139,43 +139,19 @@ impl WriteBatch {
 
         log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
 
-        let mut keyspace_cache: Option<Keyspace> = None;
-
         for item in std::mem::take(&mut self.data) {
-            let keyspace = if let Some(keyspace) = keyspace_cache
-                .as_ref()
-                .filter(|cached_keyspace| cached_keyspace.id == item.keyspace_id)
-            {
-                // Fast path
-                keyspace
-            } else {
-                // Slow path
-
-                let Some(keyspace_name) = self.db.meta_keyspace.resolve_id(item.keyspace_id)?
-                else {
-                    continue;
-                };
-
-                let Some(keyspace) = keyspaces.get(&keyspace_name) else {
-                    continue;
-                };
-
-                keyspace_cache = Some(keyspace.clone());
-                keyspace
-            };
-
             // TODO: need a better, generic write op
             let (item_size, _) = match item.value_type {
-                ValueType::Value => keyspace.tree.insert(item.key, item.value, batch_seqno),
-                ValueType::Tombstone => keyspace.tree.remove(item.key, batch_seqno),
-                ValueType::WeakTombstone => keyspace.tree.remove_weak(item.key, batch_seqno),
+                ValueType::Value => item.keyspace.tree.insert(item.key, item.value, batch_seqno),
+                ValueType::Tombstone => item.keyspace.tree.remove(item.key, batch_seqno),
+                ValueType::WeakTombstone => item.keyspace.tree.remove_weak(item.key, batch_seqno),
                 ValueType::Indirection => unreachable!(),
             };
 
             batch_size += item_size;
 
             // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
-            keyspaces_with_possible_stall.insert(keyspace.clone());
+            keyspaces_with_possible_stall.insert(item.keyspace.clone());
         }
 
         self.db.supervisor.snapshot_tracker.publish(batch_seqno);

@@ -3,29 +3,28 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{batch::item::Item as BatchItem, journal::entry::Entry, JournalRecoveryError};
-use lsm_tree::SeqNo;
+use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
+use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
 use std::{fs::OpenOptions, hash::Hasher};
 
-macro_rules! fail_iter {
-    ($e:expr) => {
-        match $e {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e.into())),
-        }
-    };
+#[derive(Debug)]
+pub struct ReadBatchItem {
+    pub keyspace_id: InternalKeyspaceId,
+    pub key: UserKey,
+    pub value: UserValue,
+    pub value_type: ValueType,
 }
 
 #[derive(Debug)]
 pub struct Batch {
     pub(crate) seqno: SeqNo,
-    pub(crate) items: Vec<BatchItem>,
+    pub(crate) items: Vec<ReadBatchItem>,
 }
 
 #[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
-    items: Vec<BatchItem>,
+    items: Vec<ReadBatchItem>,
     is_in_batch: bool,
     batch_counter: u32,
     batch_seqno: SeqNo,
@@ -173,7 +172,7 @@ impl Iterator for JournalBatchReader {
 
                     self.batch_counter -= 1;
 
-                    self.items.push(BatchItem {
+                    self.items.push(ReadBatchItem {
                         keyspace_id,
                         key,
                         value,

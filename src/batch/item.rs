@@ -2,13 +2,13 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::keyspace::InternalKeyspaceId;
+use crate::Keyspace;
 use lsm_tree::{UserKey, UserValue, ValueType};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Item {
-    /// Internal keyspace ID
-    pub keyspace_id: InternalKeyspaceId,
+    /// Keyspace
+    pub keyspace: Keyspace,
 
     /// User-defined key - an arbitrary byte array
     ///
@@ -29,7 +29,7 @@ impl std::fmt::Debug for Item {
         write!(
             f,
             "{}:{:?}:{} => {:?}",
-            self.keyspace_id,
+            self.keyspace.id,
             self.key,
             match self.value_type {
                 ValueType::Value => "V",
@@ -44,7 +44,7 @@ impl std::fmt::Debug for Item {
 
 impl Item {
     pub fn new<K: Into<UserKey>, V: Into<UserValue>>(
-        keyspace_id: InternalKeyspaceId,
+        keyspace: Keyspace,
         key: K,
         value: V,
         value_type: ValueType,
@@ -64,7 +64,7 @@ impl Item {
         );
 
         Self {
-            keyspace_id,
+            keyspace,
             key: k,
             value: v,
             value_type,

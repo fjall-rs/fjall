@@ -9,15 +9,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-macro_rules! fail_iter {
-    ($e:expr) => {
-        match $e {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e.into())),
-        }
-    };
-}
-
 /// Reads and emits through the entries in a journal file, but doesn't
 /// check the validity of batches
 ///

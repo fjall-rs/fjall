@@ -81,6 +81,15 @@
 #![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+macro_rules! fail_iter {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e.into())),
+        }
+    };
+}
+
 mod backpressure;
 mod batch;
 mod builder;
