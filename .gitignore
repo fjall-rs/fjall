@@ -22,3 +22,6 @@ Cargo.lock
 
 /old_*
 .test
+
+mutants
+mutants.out
