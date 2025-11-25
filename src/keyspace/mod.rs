@@ -101,7 +101,7 @@ pub struct KeyspaceInner {
 
 impl Drop for KeyspaceInner {
     fn drop(&mut self) {
-        log::trace!("Dropping keyspace inner: {:?}", self.name);
+        log::trace!("Dropping KeyspaceInner: {:?}", self.name);
 
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             let path = &self.tree.tree_config().path;

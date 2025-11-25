@@ -4,7 +4,33 @@ use test_log::test;
 const ITEM_COUNT: usize = 100;
 
 #[test]
-#[ignore = "3.0.0"]
+fn recover_seqno_smoke_test() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let seqno;
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let keyspace = db.keyspace("default1", KeyspaceCreateOptions::default)?;
+
+        for k in ["a", "b", "c"] {
+            keyspace.insert(k, k)?;
+        }
+
+        seqno = db.seqno();
+    }
+
+    for _ in 0..10 {
+        let db = Database::builder(&folder).open()?;
+        assert_eq!(seqno, db.seqno());
+        assert_eq!(seqno, db.visible_seqno());
+    }
+
+    Ok(())
+}
+
+#[test]
 fn recover_seqno() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -55,6 +81,7 @@ fn recover_seqno() -> fjall::Result<()> {
     for _ in 0..10 {
         let db = Database::builder(&folder).open()?;
         assert_eq!(seqno, db.seqno());
+        assert_eq!(seqno, db.visible_seqno());
 
         let keyspaces = &[
             db.keyspace("default1", KeyspaceCreateOptions::default)?,
@@ -76,7 +103,6 @@ fn recover_seqno() -> fjall::Result<()> {
 }
 
 #[test]
-#[ignore = "3.0.0"]
 fn recover_seqno_tombstone() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -116,6 +142,7 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
     for _ in 0..10 {
         let db = Database::builder(&folder).open()?;
         assert_eq!(seqno, db.seqno());
+        assert_eq!(seqno, db.visible_seqno());
     }
 
     Ok(())

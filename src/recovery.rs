@@ -172,47 +172,38 @@ pub fn recover_sealed_memtables(
         log::debug!("Sealing recovered memtables");
         let mut recovered_count = 0;
 
-        for handle in watermarks.values() {
-            let tree = &handle.keyspace.tree;
+        for wm in watermarks.values() {
+            let tree = &wm.keyspace.tree;
 
             let keyspace_lsn = tree.get_highest_persisted_seqno();
 
             // IMPORTANT: Only apply sealed memtables to keyspaces
             // that have a lower seqno to avoid double flushing
             let should_skip_sealed_memtable =
-                keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn >= handle.lsn);
+                keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn >= wm.lsn);
 
             if should_skip_sealed_memtable {
-                handle.keyspace.tree.clear_active_memtable();
-
                 log::trace!(
-                    "Keyspace {} has higher seqno ({keyspace_lsn:?}), skipping",
-                    handle.keyspace.name,
+                    "Keyspace {:?} has higher seqno ({keyspace_lsn:?}), skipping",
+                    wm.keyspace.name,
                 );
-                continue;
-            }
 
-            if let Some(sealed_memtable) = tree.rotate_memtable() {
+                tree.clear_active_memtable();
+                eprintln!("memtable now: {}", tree.active_memtable().size());
+            } else if let Some(sealed_memtable) = tree.rotate_memtable() {
+                log::trace!("Sealed active memtable of keyspace {:?}", wm.keyspace.name);
+
                 assert_eq!(
-                    Some(handle.lsn),
+                    Some(wm.lsn),
                     sealed_memtable.get_highest_seqno(),
                     "memtable lsn does not match what was recovered - this is a bug",
                 );
 
-                // log::trace!(
-                //     "sealed memtable of {} has {} items",
-                //     handle.keyspace.name,
-                //     sealed_memtable.len(),
-                // );
-
                 // Maybe the memtable has a higher seqno, so try to set to maximum
                 let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
-                db.supervisor.snapshot_tracker.set(maybe_next_seqno);
+                db.supervisor.seqno.fetch_max(maybe_next_seqno);
 
-                log::debug!(
-                    "Database seqno is now {}",
-                    db.supervisor.snapshot_tracker.get()
-                );
+                log::debug!("Database seqno is now {}", db.supervisor.seqno.get());
 
                 // IMPORTANT: Add sealed memtable size to current write buffer size
                 db.supervisor
@@ -225,7 +216,7 @@ pub fn recover_sealed_memtables(
                 db.supervisor
                     .flush_manager
                     .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: handle.keyspace.clone(),
+                        keyspace: wm.keyspace.clone(),
                     }));
 
                 recovered_count += 1;

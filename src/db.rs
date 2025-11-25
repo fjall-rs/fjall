@@ -510,12 +510,18 @@ impl Database {
         self.meta_keyspace.keyspace_exists(name)
     }
 
-    /// Gets the current sequence number.
+    /// Gets the would-be-next sequence number.
     #[must_use]
     #[doc(hidden)]
     pub fn seqno(&self) -> crate::SeqNo {
-        // self.visible_seqno.get()
-        todo!()
+        self.supervisor.seqno.get()
+    }
+
+    /// Gets the currently visible sequence number.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn visible_seqno(&self) -> crate::SeqNo {
+        self.supervisor.snapshot_tracker.get()
     }
 
     fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
@@ -722,18 +728,15 @@ impl Database {
                         .map(|x| x + 1)
                         .unwrap_or_default();
 
-                    db.supervisor.snapshot_tracker.set(maybe_next_seqno);
-                    log::debug!(
-                        "Database seqno is now {}",
-                        db.supervisor.snapshot_tracker.get()
-                    );
+                    db.supervisor.seqno.fetch_max(maybe_next_seqno);
+                    log::debug!("Database seqno is now {}", db.supervisor.seqno.get());
                 }
             }
         }
 
         db.supervisor
             .snapshot_tracker
-            .publish(db.supervisor.snapshot_tracker.get());
+            .set(db.supervisor.seqno.get());
 
         db.supervisor.snapshot_tracker.gc();
 
