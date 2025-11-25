@@ -26,7 +26,6 @@ fn recover_sealed() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
-#[ignore = "idk"]
 fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
