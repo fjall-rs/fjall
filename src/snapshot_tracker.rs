@@ -112,7 +112,7 @@ impl SnapshotTracker {
 
         drop(lock);
 
-        if freed.is_multiple_of(1_000) {
+        if freed.is_multiple_of(10_000) {
             self.gc();
         }
     }
