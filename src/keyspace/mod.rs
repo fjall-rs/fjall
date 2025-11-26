@@ -676,6 +676,7 @@ impl Keyspace {
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
         if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
+
             while self.tree.sealed_memtable_count() > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -741,6 +742,18 @@ impl Keyspace {
             // https://github.com/fjall-rs/fjall/discussions/85
             self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
+
+            for keyspace in self.keyspaces.read().expect("lock is poisoned").values() {
+                if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
+                    keyspace.path(),
+                    self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
+                ) {
+                    log::warn!(
+                        "Version history GC failed for keyspace {:?}: {e:?}",
+                        keyspace.name,
+                    );
+                }
+            }
         }
 
         if self.tree.version_free_list_len() >= 100 {
