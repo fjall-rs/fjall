@@ -25,6 +25,12 @@ fn recover_seqno_smoke_test() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
         assert_eq!(seqno, db.seqno());
         assert_eq!(seqno, db.visible_seqno());
+
+        let keyspace = db.keyspace("default1", KeyspaceCreateOptions::default)?;
+
+        for k in ["a", "b", "c"] {
+            keyspace.get(k)?.unwrap();
+        }
     }
 
     Ok(())
