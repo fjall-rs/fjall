@@ -193,8 +193,6 @@ For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-t
 
 [See here](https://github.com/fjall-rs/fjall/tree/main/examples) for practical examples.
 
-And checkout [`Smoltable`](https://github.com/marvin-j97/smoltable), a standalone Bigtable-inspired toy wide-column database using `fjall` as its storage engine.
-
 ## Contributing
 
 How can you help?
