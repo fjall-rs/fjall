@@ -41,6 +41,8 @@ impl Oracle {
                 });
 
         self.snapshot_tracker.close_raw(instant);
+
+        // TODO: This can be expensive and should probably be done in a background worker, or a after a memtable rotation
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 
