@@ -115,7 +115,7 @@ To support different kinds of workloads, Fjall is agnostic about the type of dur
 your application needs.
 After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Database::persist`](https://docs.rs/fjall/latest/fjall/struct.Database.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
 By default, any operation will flush to OS buffers, but **not** to disk.
-This is in line with RocksDB's default durability.
+This matches RocksDB's default durability.
 Also, when dropped, the database will try to persist the journal *to disk* synchronously.
 
 ## Multithreading, Async and Multiprocess
