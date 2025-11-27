@@ -178,7 +178,7 @@ mod tests {
     use test_log::test;
 
     #[test]
-    fn seqno_tracker_basic() {
+    fn snapshot_tracker_basic() {
         let global_seqno = SequenceNumberCounter::default();
 
         let map = SnapshotTracker::new(global_seqno.clone());
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn seqno_tracker_increase_watermark() {
+    fn snapshot_tracker_increase_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
         let map = SnapshotTracker::new(global_seqno.clone());
@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn seqno_tracker_prevent_watermark() {
+    fn snapshot_tracker_prevent_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
         let map = SnapshotTracker::new(global_seqno.clone());
@@ -233,5 +233,69 @@ mod tests {
         }
 
         assert_eq!(map.get_seqno_safe_to_gc(), 0);
+    }
+
+    #[test]
+    fn snapshot_tracker_close_never_opened_does_not_underflow_or_panic() {
+        let global_seqno = SequenceNumberCounter::default();
+        let map = SnapshotTracker::new(global_seqno);
+
+        assert_eq!(map.len(), 0);
+        map.close_raw(42);
+        assert_eq!(map.get_seqno_safe_to_gc(), 0);
+    }
+
+    #[test]
+    fn snapshot_tracker_concurrent_open_same_seqno_counts_correctly() {
+        let global_seqno = SequenceNumberCounter::default();
+        let map = SnapshotTracker::new(global_seqno);
+
+        // make sure seqno doesn't change between two opens
+        let n1 = map.open();
+        let n2 = map.open();
+        assert_eq!(n1.instant, n2.instant);
+        assert_eq!(map.open_snapshots(), 2);
+
+        // closing one decreases count
+        map.close(&n1);
+        assert_eq!(map.open_snapshots(), 1);
+
+        // closing the other removes the last
+        map.close(&n2);
+        assert_eq!(map.open_snapshots(), 0);
+    }
+
+    #[test]
+    fn snapshot_tracker_publish_moves_seqno_forward_and_ignores_older() {
+        let global_seqno = SequenceNumberCounter::default();
+        let map = SnapshotTracker::new(global_seqno);
+
+        let big = 100u64;
+        map.publish(big);
+        assert!(map.get() == (big + 1));
+
+        let before = map.get();
+        map.publish(1);
+        assert_eq!(map.get(), before);
+    }
+
+    #[test]
+    fn snapshot_tracker_clone_snapshot_behaves_like_second_open() {
+        let global_seqno = SequenceNumberCounter::default();
+        let map = SnapshotTracker::new(global_seqno);
+
+        let orig = map.open();
+        let clone = map.clone_snapshot(&orig);
+
+        assert_eq!(orig.instant, clone.instant);
+        assert_eq!(map.open_snapshots(), 2);
+
+        // closing one leaves one
+        map.close(&orig);
+        assert_eq!(map.open_snapshots(), 1);
+
+        // closing the clone removes all
+        map.close(&clone);
+        assert_eq!(map.open_snapshots(), 0);
     }
 }
