@@ -88,7 +88,7 @@ impl Default for CreateOptions {
 
             data_block_size_policy: BlockSizePolicy::all(/* 4 KiB */ 4 * 1_024),
 
-            data_block_restart_interval_policy:  RestartIntervalPolicy::all(16),
+            data_block_restart_interval_policy:  RestartIntervalPolicy::new([10, 16]),
             index_block_restart_interval_policy:  RestartIntervalPolicy::all(1),
 
             index_block_pinning_policy: PinningPolicy::new([true, true, false]),
