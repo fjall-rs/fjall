@@ -87,7 +87,7 @@ impl DecodeConfig for crate::config::FilterPolicy {
             }
         }
 
-        Ok(Self::new(&v))
+        Ok(Self::new(v))
     }
 }
 
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn roundtrip_filter_policy() -> crate::Result<()> {
-        let policy = crate::config::FilterPolicy::new(&[
+        let policy = crate::config::FilterPolicy::new([
             crate::config::FilterPolicyEntry::Bloom(
                 crate::config::BloomConstructionPolicy::BitsPerKey(10.0),
             ),
