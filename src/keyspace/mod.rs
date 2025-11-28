@@ -194,6 +194,21 @@ impl std::hash::Hash for Keyspace {
 }
 
 impl Keyspace {
+    /// Clears the entire keyspace in O(1) time.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn clear(&self) -> crate::Result<()> {
+        let _journal_lock = self.journal.get_writer();
+
+        let seqno = self.supervisor.seqno.get();
+        self.tree.clear()?;
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        Ok(())
+    }
+
     /// Returns the number of blob bytes on disk that are not referenced.
     ///
     /// These will be reclaimed over time by blob garbage collection automatically.
