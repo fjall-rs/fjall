@@ -201,11 +201,7 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
         let _journal_lock = self.journal.get_writer();
-
-        let seqno = self.supervisor.seqno.get();
         self.tree.clear()?;
-        self.supervisor.snapshot_tracker.publish(seqno);
-
         Ok(())
     }
 
@@ -258,9 +254,7 @@ impl Keyspace {
         // insert seqno=1
         let _journal_lock = self.journal.get_writer();
 
-        ingestion.finish().inspect(|&seqno| {
-            self.supervisor.snapshot_tracker.publish(seqno);
-
+        ingestion.finish().inspect(|()| {
             self.worker_messager
                 .try_send(WorkerMessage::Compact(self.clone()))
                 .ok();
@@ -310,9 +304,13 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(base_folder, db.supervisor.seqno.clone())
-            .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(
+            base_folder,
+            db.supervisor.seqno.clone(),
+            db.supervisor.snapshot_tracker.get_ref(),
+        )
+        .use_descriptor_table(db.config.descriptor_table.clone())
+        .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;

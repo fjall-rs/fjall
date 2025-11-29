@@ -108,8 +108,7 @@ impl MetaKeyspace {
             ingestion.write(kv.0, kv.1)?;
         }
 
-        let seqno = ingestion.finish()?;
-        self.visible_seqno.fetch_max(seqno + 1);
+        ingestion.finish()?;
 
         keyspaces.insert(name.into(), keyspace);
 

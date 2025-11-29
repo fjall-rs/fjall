@@ -43,6 +43,10 @@ impl SnapshotTracker {
         }))
     }
 
+    pub fn get_ref(&self) -> SequenceNumberCounter {
+        self.seqno.clone()
+    }
+
     /// Used in database recovery.
     ///
     /// # Caution

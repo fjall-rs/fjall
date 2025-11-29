@@ -75,9 +75,13 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
 
-        let base_config = lsm_tree::Config::new(path, db.supervisor.seqno.clone())
-            .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(
+            path,
+            db.supervisor.seqno.clone(),
+            db.supervisor.snapshot_tracker.get_ref(),
+        )
+        .use_descriptor_table(db.config.descriptor_table.clone())
+        .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &recovered_config);
 

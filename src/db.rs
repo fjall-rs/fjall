@@ -581,23 +581,26 @@ impl Database {
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree =
-            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                .expect_point_read_hits(true)
-                .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
-                .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
-                .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
-                .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .filter_policy(crate::config::FilterPolicy::new([
-                    lsm_tree::config::FilterPolicyEntry::Bloom(
-                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
-                    ),
-                    lsm_tree::config::FilterPolicyEntry::Bloom(
-                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
-                    ),
-                ]))
-                .open()?;
+        let meta_tree = lsm_tree::Config::new(
+            config.path.join(KEYSPACES_FOLDER).join("0"),
+            seqno.clone(),
+            visible_seqno.clone(),
+        )
+        .expect_point_read_hits(true)
+        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .filter_policy(crate::config::FilterPolicy::new([
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
+            ),
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+            ),
+        ]))
+        .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
@@ -785,23 +788,26 @@ impl Database {
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree =
-            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                .expect_point_read_hits(true)
-                .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
-                .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
-                .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
-                .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .filter_policy(crate::config::FilterPolicy::new([
-                    lsm_tree::config::FilterPolicyEntry::Bloom(
-                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
-                    ),
-                    lsm_tree::config::FilterPolicyEntry::Bloom(
-                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
-                    ),
-                ]))
-                .open()?;
+        let meta_tree = lsm_tree::Config::new(
+            config.path.join(KEYSPACES_FOLDER).join("0"),
+            seqno.clone(),
+            visible_seqno.clone(),
+        )
+        .expect_point_read_hits(true)
+        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .filter_policy(crate::config::FilterPolicy::new([
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
+            ),
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+            ),
+        ]))
+        .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
