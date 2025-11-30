@@ -14,6 +14,7 @@ use std::ops::RangeBounds;
 /// For that reason, you should try to keep transactions short-lived, and make sure they
 /// are not held somewhere *forever*.
 #[clippy::has_significant_drop]
+#[derive(Clone)]
 pub struct Snapshot {
     pub(crate) nonce: SnapshotNonce,
 }
