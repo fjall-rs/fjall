@@ -36,7 +36,7 @@ impl fmt::Display for Conflict {
 
 /// A cross-keyspace transaction using optimistic concurrency control
 ///
-/// Use [`WriteTransaction::commit`] to commit changes to the keyspace(s);
+/// Use [`WriteTransaction::commit`] to commit changes to the keyspace(s).
 ///
 /// Transactions keep a consistent view of the database at the time,
 /// meaning old data will not be dropped until it is not referenced by any active transaction.
