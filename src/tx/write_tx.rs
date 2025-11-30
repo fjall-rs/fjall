@@ -4,7 +4,7 @@
 
 use crate::{
     batch::item::Item, snapshot_nonce::SnapshotNonce, Database, Guard, HashMap, Iter, Keyspace,
-    PersistMode, Readable, WriteBatch,
+    OwnedWriteBatch, PersistMode, Readable,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -340,7 +340,10 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        let mut batch = WriteBatch::new(self.db).durability(self.durability);
+        // TODO: instead of using batch, write batch::commit as a generic function that takes
+        // a impl Iterator<BatchItem>
+        // that way, we don't have to move the memtable(s) into the batch first to commit
+        let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
 
         for (keyspace, memtable) in self.memtables {
             for item in memtable.iter() {
@@ -353,9 +356,6 @@ impl BaseTransaction {
             }
         }
 
-        // TODO: instead of using batch, write batch::commit as a generic function that takes
-        // a impl Iterator<BatchItem>
-        // that way, we don't have to move the memtable(s) into the batch first to commit
         batch.commit()?;
 
         Ok(())

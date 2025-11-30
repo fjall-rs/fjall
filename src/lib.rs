@@ -142,7 +142,7 @@ pub mod config {
 }
 
 pub use {
-    batch::WriteBatch,
+    batch::WriteBatch as OwnedWriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,
     db_config::Config,
