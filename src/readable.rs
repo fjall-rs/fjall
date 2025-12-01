@@ -2,8 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{Iter, Keyspace};
-use lsm_tree::{KvPair, UserValue};
+use crate::{Guard, Iter, Keyspace};
+use lsm_tree::UserValue;
 use std::ops::RangeBounds;
 
 /// Readable snapshot
@@ -90,7 +90,7 @@ pub trait Readable {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = db.snapshot().first_key_value(&tree)?.expect("item should exist");
+    /// let key = db.snapshot().first_key_value(&tree).expect("item should exist").key()?;
     /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -99,7 +99,7 @@ pub trait Readable {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>>;
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
     /// Returns the last key-value pair in the transaction's state.
     /// The key in this pair is the maximum key in the transaction's state.
@@ -116,7 +116,7 @@ pub trait Readable {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = db.snapshot().last_key_value(&tree)?.expect("item should exist");
+    /// let key = db.snapshot().last_key_value(&tree).expect("item should exist").key()?;
     /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -125,7 +125,7 @@ pub trait Readable {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>>;
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
     /// Retrieves the size of an item from the transaction's state.
     ///
@@ -185,7 +185,11 @@ pub trait Readable {
     ///
     /// Will return `Err` if an IO error occurs.
     fn is_empty(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<bool> {
-        self.first_key_value(keyspace).map(|x| x.is_none())
+        Ok(self
+            .first_key_value(keyspace)
+            .map(|x| x.key())
+            .transpose()?
+            .is_none())
     }
 
     /// Iterates over the transaction's state.

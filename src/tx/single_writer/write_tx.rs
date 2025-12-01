@@ -5,7 +5,7 @@
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
-    Iter, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
+    Guard, Iter, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
 };
 use lsm_tree::{KvPair, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
@@ -42,11 +42,11 @@ impl Readable for WriteTransaction<'_> {
         self.inner.contains_key(keyspace, key)
     }
 
-    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
         self.inner.first_key_value(keyspace)
     }
 
-    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
         self.inner.last_key_value(keyspace)
     }
 

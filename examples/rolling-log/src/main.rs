@@ -20,8 +20,8 @@ fn main() -> fjall::Result<()> {
         log.insert(x.to_be_bytes(), x.to_be_bytes())?;
 
         if x % 100_000 == 0 {
-            let (min_key, _) = log.first_key_value()?.unwrap();
-            let (max_key, _) = log.last_key_value()?.unwrap();
+            let min_key = log.first_key_value().unwrap().key()?;
+            let max_key = log.last_key_value().unwrap().key()?;
 
             let mut buf = [0; 8];
             buf.copy_from_slice(&min_key[0..8]);

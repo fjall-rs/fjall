@@ -79,18 +79,12 @@ impl Readable for BaseTransaction {
         Ok(contains)
     }
 
-    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace.as_ref())
-            .next()
-            .map(Guard::into_inner)
-            .transpose()
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace.as_ref()).next()
     }
 
-    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace.as_ref())
-            .next_back()
-            .map(Guard::into_inner)
-            .transpose()
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace.as_ref()).next_back()
     }
 
     fn size_of<K: AsRef<[u8]>>(
