@@ -18,7 +18,7 @@ use crate::{
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::WorkerMessage,
-    Database, Iter,
+    Database, Guard, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
@@ -511,7 +511,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn is_empty(&self) -> crate::Result<bool> {
-        self.first_key_value().map(|x| x.is_none())
+        self.tree.is_empty(SeqNo::MAX, None).map_err(Into::into)
     }
 
     /// Returns `true` if the keyspace contains the specified key.
@@ -613,8 +613,8 @@ impl Keyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.first_key_value(SeqNo::MAX, None)?)
+    pub fn first_key_value(&self) -> Option<Guard> {
+        self.tree.first_key_value(SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns the last key-value pair in the keyspace.
@@ -641,8 +641,8 @@ impl Keyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.last_key_value(SeqNo::MAX, None)?)
+    pub fn last_key_value(&self) -> Option<Guard> {
+        self.tree.last_key_value(SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns `true` if the underlying LSM-tree is key-value-separated.
