@@ -12,6 +12,7 @@ use crate::{
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
+    ingestion::Ingestion,
     journal::{manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
@@ -213,9 +214,10 @@ impl Keyspace {
         self.tree.stale_blob_bytes()
     }
 
-    /// Ingests a sorted stream of key-value pairs into the keyspace.
+    /// Prepare ingestiom of a pre-sorted stream of key-value pairs into the keyspace.
     ///
-    /// Can only be called on a new fresh, empty keyspace.
+    /// Prefer this method over singular inserts or write batches/transactions
+    /// for maximum bulk load speed.
     ///
     /// # Errors
     ///
@@ -223,44 +225,9 @@ impl Keyspace {
     ///
     /// # Panics
     ///
-    /// Panics if the keyspace is **not** initially empty.
-    ///
     /// Panics if the input iterator is not sorted in ascending order.
-    #[doc(hidden)]
-    pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
-        &self,
-        iter: impl Iterator<Item = (K, V)>,
-    ) -> crate::Result<()> {
-        let mut ingestion = self.tree.ingestion()?;
-
-        for (k, v) in iter {
-            ingestion.write(k.into(), v.into())?;
-        }
-
-        // NOTE: We hold to avoid a race condition with concurrent writes:
-        //
-        // write         ingest
-        // lock journal
-        // |
-        // next seqno=1
-        // |
-        // --------------finish
-        //                 flush
-        //                 seqno=2
-        //                 register
-        //                 |
-        // -----------------
-        // |
-        // insert seqno=1
-        let _journal_lock = self.journal.get_writer();
-
-        ingestion.finish().inspect(|()| {
-            self.worker_messager
-                .try_send(WorkerMessage::Compact(self.clone()))
-                .ok();
-        })?;
-
-        Ok(())
+    pub fn start_ingestion(&self) -> crate::Result<Ingestion<'_>> {
+        Ingestion::new(self)
     }
 
     pub(crate) fn from_database(

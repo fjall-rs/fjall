@@ -112,6 +112,7 @@ mod error;
 mod file;
 mod flush;
 mod guard;
+mod ingestion;
 mod iter;
 mod journal;
 mod keyspace;
