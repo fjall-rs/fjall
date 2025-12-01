@@ -604,7 +604,7 @@ impl Keyspace {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = tree.first_key_value()?.expect("item should exist");
+    /// let key = tree.first_key_value().expect("item should exist").key()?;
     /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -632,7 +632,7 @@ impl Keyspace {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = tree.last_key_value()?.expect("item should exist");
+    /// let key = tree.last_key_value().expect("item should exist").key()?;
     /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
