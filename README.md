@@ -183,8 +183,6 @@ Otherwise, [`byteview`](https://github.com/fjall-rs/byteview) is used instead.
 
 ## Stable disk format
 
-<!-- TODO: WIP -->
-
 Future breaking changes will result in a major version bump and a migration path.
 
 For the underlying LSM-tree implementation, see: <https://crates.io/crates/lsm-tree>.
