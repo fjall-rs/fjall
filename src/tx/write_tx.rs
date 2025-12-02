@@ -268,7 +268,6 @@ impl BaseTransaction {
         key: K,
         value: V,
     ) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -291,7 +290,6 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn remove<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -314,7 +312,6 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -340,13 +337,23 @@ impl BaseTransaction {
         let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
 
         for (keyspace, memtable) in self.memtables {
+            let mut prev_key: Option<UserKey> = None;
+
             for item in memtable.iter() {
+                if let Some(prev_key) = &prev_key {
+                    if item.key.user_key == prev_key {
+                        continue;
+                    }
+                }
+
                 batch.data.push(Item::new(
                     keyspace.clone(),
                     item.key.user_key.clone(),
                     item.value.clone(),
                     item.key.value_type,
                 ));
+
+                prev_key = Some(item.key.user_key.clone());
             }
         }
 

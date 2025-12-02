@@ -856,36 +856,6 @@ impl Database {
 
         Ok(Self(Arc::new(inner)))
     }
-
-    // TODO: rename flush_and_wait
-    /// Only used for internal testing.
-    ///
-    /// Should NOT be called when there is a flush worker active already!!!
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn force_flush(&self) -> crate::Result<()> {
-        #[expect(clippy::expect_used, reason = "only used in tests, so whatever")]
-        self.worker_messager
-            .send(WorkerMessage::Flush)
-            .expect("should send");
-
-        self.supervisor.flush_manager.wait_for_empty();
-
-        // TODO: 3.0.0 should wait for flush COMPLETION
-        std::thread::sleep(std::time::Duration::from_millis(1));
-
-        Ok(())
-
-        // crate::flush::worker::run(
-        //     &self.flush_manager,
-        //     &self.journal_manager,
-        //     &self.compaction_manager,
-        //     &self.write_buffer_manager,
-        //     &self.snapshot_tracker,
-        //     parallelism,
-        //     &self.stats,
-        // )
-    }
 }
 
 #[cfg(test)]
