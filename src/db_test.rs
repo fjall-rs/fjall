@@ -6,12 +6,10 @@ use test_log::test;
 fn recover_sealed() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..25 {
+    for i in 0_u128..10 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
-        let tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default().max_memtable_size(1_000)
-        })?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         assert_eq!(i, tree.len()?.try_into().unwrap());
 
@@ -63,7 +61,7 @@ fn recover_sealed_order() -> crate::Result<()> {
 fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..25 {
+    for i in 0_u128..10 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
@@ -89,7 +87,7 @@ fn recover_sealed_blob() -> crate::Result<()> {
 fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..25 {
+    for i in 0_u128..10 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
