@@ -1,7 +1,7 @@
 use fjall::{Database, KeyspaceCreateOptions, UserKey, UserValue};
 
 #[test_log::test]
-#[ignore = "flimsy because of the compaction check, probably race condition... run the compression synchronously"]
+#[ignore = "flimsy because of the compaction check, probably race condition... run the compaction synchronously"]
 fn keyspace_ingest() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
