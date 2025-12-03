@@ -3,6 +3,7 @@ use test_log::test;
 
 #[test]
 #[expect(clippy::unwrap_used)]
+#[cfg(not(target_os = "windows"))]
 fn recover_sealed() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -24,6 +25,7 @@ fn recover_sealed() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
+#[cfg(not(target_os = "windows"))]
 fn recover_sealed_order() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -83,6 +85,7 @@ fn recover_sealed_blob() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
+#[cfg(not(target_os = "windows"))]
 fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
