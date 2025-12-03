@@ -131,7 +131,6 @@ impl SnapshotTracker {
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         self.lowest_freed_instant
             .load(std::sync::atomic::Ordering::Acquire)
-            .saturating_sub(2)
     }
 
     pub(crate) fn pullup(&self) {
@@ -171,15 +170,114 @@ impl SnapshotTracker {
             lowest_retained = seqno_threshold;
         }
 
-        self.lowest_freed_instant
-            .fetch_max(lowest_retained, std::sync::atomic::Ordering::AcqRel);
+        self.lowest_freed_instant.fetch_max(
+            lowest_retained.saturating_sub(1),
+            std::sync::atomic::Ordering::AcqRel,
+        );
     }
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    fn snapshot_tracker_mvcc_watermark_1() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+
+        let db = crate::Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", Default::default)?;
+
+        tree.insert("a", "a")?;
+        tree.insert("a", "b")?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        tree.rotate_memtable_and_wait()?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        db.supervisor.snapshot_tracker.gc();
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_tracker_mvcc_watermark_2() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+
+        let db = crate::Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", Default::default)?;
+
+        tree.insert("a", "a")?;
+        tree.insert("a", "b")?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        db.supervisor.snapshot_tracker.gc();
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        tree.rotate_memtable_and_wait()?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_tracker_mvcc_watermark_3() -> crate::Result<()> {
+        use crate::Readable;
+
+        let dir = tempfile::tempdir()?;
+
+        let db = crate::Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", Default::default)?;
+
+        tree.insert("a", "a")?;
+
+        let snapshot = db.snapshot();
+
+        tree.insert("a", "b")?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        db.supervisor.snapshot_tracker.gc();
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        tree.rotate_memtable_and_wait()?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_tracker_mvcc_watermark_4() -> crate::Result<()> {
+        use crate::Readable;
+
+        let dir = tempfile::tempdir()?;
+
+        let db = crate::Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", Default::default)?;
+
+        tree.insert("a", "a")?;
+
+        let snapshot = db.snapshot();
+
+        tree.insert("a", "b")?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        tree.rotate_memtable_and_wait()?;
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        db.supervisor.snapshot_tracker.gc();
+        assert_eq!(b"b", &*tree.get("a")?.unwrap());
+        assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
+
+        Ok(())
+    }
 
     #[test]
     fn snapshot_tracker_basic() {
