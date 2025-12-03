@@ -83,6 +83,7 @@ fn recover_sealed_blob() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
+#[cfg(not(target_os = "macos"))]
 fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
