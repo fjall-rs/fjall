@@ -142,8 +142,8 @@ impl TxDatabase {
 
     /// Gets a list of all keyspace names in the database.
     #[must_use]
-    pub fn list_keyspaces(&self) -> Vec<KeyspaceKey> {
-        self.inner.list_keyspaces()
+    pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
+        self.inner.list_keyspace_names()
     }
 
     /// Returns `true` if the keyspace with the given name exists.

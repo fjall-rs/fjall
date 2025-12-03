@@ -481,7 +481,7 @@ impl Database {
 
     /// Gets a list of all keyspace names in the database.
     #[must_use]
-    pub fn list_keyspaces(&self) -> Vec<KeyspaceKey> {
+    pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
         self.keyspaces
             .read()
             .expect("lock is poisoned")

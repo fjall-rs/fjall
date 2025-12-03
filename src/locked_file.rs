@@ -41,17 +41,28 @@ impl LockedFileGuard {
     }
 
     pub fn try_acquire(path: &Path) -> crate::Result<Self> {
+        const RETRIES: usize = 3;
+
         log::debug!("Acquiring database lock at {}", path.display());
 
         let file = File::open(path)?;
 
-        file.try_lock().map_err(|e| match e {
-            std::fs::TryLockError::Error(e) => {
-                log::error!("Failed to acquire database lock - if this is expected, you can try opening again (maybe wait a little)");
-                crate::Error::Io(e)
+        for i in 1..=RETRIES {
+            if let Err(e) = file.try_lock() {
+                match e {
+                    std::fs::TryLockError::Error(e) => {
+                        log::error!("Failed to acquire database lock - if this is expected, you can try opening again (maybe wait a little)");
+                        return Err(crate::Error::Io(e));
+                    }
+                    std::fs::TryLockError::WouldBlock => {
+                        if i == RETRIES {
+                            return Err(crate::Error::Locked);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                }
             }
-            std::fs::TryLockError::WouldBlock => crate::Error::Locked,
-        })?;
+        }
 
         Ok(Self(Arc::new(LockedFileGuardInner(file))))
     }
