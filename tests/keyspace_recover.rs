@@ -90,7 +90,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
     let filter_block_partitioning_policy = PinningPolicy::new([false, false, true]);
     let index_block_partitioning_policy = PinningPolicy::new([false, false, false, false, true]);
 
-    let filter_policy = FilterPolicy::new(&[
+    let filter_policy = FilterPolicy::new([
         FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
         FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(9.0)),
         FilterPolicyEntry::None,

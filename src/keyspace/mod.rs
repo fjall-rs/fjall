@@ -57,12 +57,12 @@ pub fn apply_to_base_config(
 
 pub struct KeyspaceInner {
     /// Internal ID
-    pub id: InternalKeyspaceId,
+    pub(crate) id: InternalKeyspaceId,
 
     // Internal
     //
     /// Keyspace name
-    pub name: KeyspaceKey,
+    pub(crate) name: KeyspaceKey,
 
     // Keyspace configuration
     #[doc(hidden)]
@@ -195,6 +195,18 @@ impl std::hash::Hash for Keyspace {
 }
 
 impl Keyspace {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn id(&self) -> InternalKeyspaceId {
+        self.id
+    }
+
+    /// Returns the keyspace's name.
+    #[must_use]
+    pub fn name(&self) -> &KeyspaceKey {
+        &self.name
+    }
+
     /// Clears the entire keyspace in O(1) time.
     ///
     /// # Errors
