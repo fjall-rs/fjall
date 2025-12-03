@@ -34,6 +34,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn blob_kv_simple_recovery() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
