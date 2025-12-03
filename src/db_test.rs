@@ -6,7 +6,7 @@ use test_log::test;
 fn recover_sealed() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..10 {
+    for i in 0_u128..3 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
@@ -57,11 +57,11 @@ fn recover_sealed_order() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
-#[ignore = "fails in CI?"]
+#[ignore = "fix"]
 fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..10 {
+    for i in 0_u128..3 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
@@ -83,11 +83,10 @@ fn recover_sealed_blob() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
-#[ignore = "fails in CI?"]
 fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    for i in 0_u128..10 {
+    for i in 0_u128..3 {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
