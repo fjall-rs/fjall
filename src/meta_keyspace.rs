@@ -208,7 +208,6 @@ mod tests {
     const ITEM_COUNT: usize = 10;
 
     #[test]
-    #[cfg(not(target_os = "windows"))]
     fn keyspace_delete() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
@@ -283,7 +282,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "windows"))]
     fn tx_keyspace_delete() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
