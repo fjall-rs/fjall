@@ -14,6 +14,7 @@ use std::ops::RangeBounds;
 /// For that reason, you should try to keep transactions short-lived, and make sure they
 /// are not held somewhere *forever*.
 #[clippy::has_significant_drop]
+#[derive(Clone)]
 pub struct Snapshot {
     pub(crate) nonce: SnapshotNonce,
 }
@@ -55,18 +56,12 @@ impl Readable for Snapshot {
             .map_err(Into::into)
     }
 
-    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
-            .next()
-            .map(Guard::into_inner)
-            .transpose()
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace).next()
     }
 
-    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace)
-            .next_back()
-            .map(Guard::into_inner)
-            .transpose()
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace).next_back()
     }
 
     fn size_of<K: AsRef<[u8]>>(

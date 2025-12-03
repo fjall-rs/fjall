@@ -4,7 +4,7 @@
 
 use crate::{
     batch::item::Item, snapshot_nonce::SnapshotNonce, Database, Guard, HashMap, Iter, Keyspace,
-    PersistMode, Readable, WriteBatch,
+    OwnedWriteBatch, PersistMode, Readable,
 };
 use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -79,18 +79,12 @@ impl Readable for BaseTransaction {
         Ok(contains)
     }
 
-    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace.as_ref())
-            .next()
-            .map(Guard::into_inner)
-            .transpose()
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace.as_ref()).next()
     }
 
-    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<Option<KvPair>> {
-        self.iter(keyspace.as_ref())
-            .next_back()
-            .map(Guard::into_inner)
-            .transpose()
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace.as_ref()).next_back()
     }
 
     fn size_of<K: AsRef<[u8]>>(
@@ -274,7 +268,6 @@ impl BaseTransaction {
         key: K,
         value: V,
     ) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -297,7 +290,6 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn remove<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -320,7 +312,6 @@ impl BaseTransaction {
     ///
     /// Will return `Err` if an IO error occurs.
     pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
-        // TODO: PERF: slow??
         self.memtables
             .entry(keyspace.clone())
             .or_insert_with(|| Arc::new(Memtable::new(0)))
@@ -340,22 +331,32 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        let mut batch = WriteBatch::new(self.db).durability(self.durability);
+        // TODO: instead of using batch, write batch::commit as a generic function that takes
+        // a impl Iterator<BatchItem>
+        // that way, we don't have to move the memtable(s) into the batch first to commit
+        let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
 
         for (keyspace, memtable) in self.memtables {
+            let mut prev_key: Option<UserKey> = None;
+
             for item in memtable.iter() {
+                if let Some(prev_key) = &prev_key {
+                    if item.key.user_key == prev_key {
+                        continue;
+                    }
+                }
+
                 batch.data.push(Item::new(
                     keyspace.clone(),
                     item.key.user_key.clone(),
                     item.value.clone(),
                     item.key.value_type,
                 ));
+
+                prev_key = Some(item.key.user_key.clone());
             }
         }
 
-        // TODO: instead of using batch, write batch::commit as a generic function that takes
-        // a impl Iterator<BatchItem>
-        // that way, we don't have to move the memtable(s) into the batch first to commit
         batch.commit()?;
 
         Ok(())

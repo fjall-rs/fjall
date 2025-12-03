@@ -1,10 +1,10 @@
-use fjall::{Database, Guard, Keyspace, WriteBatch};
+use fjall::{Database, Guard, Keyspace, OwnedWriteBatch};
 use format_bytes::format_bytes;
 use nanoid::nanoid;
 use std::path::Path;
 
 fn create_item(
-    batch: &mut WriteBatch,
+    batch: &mut OwnedWriteBatch,
     table: &Keyspace,
     index: &Keyspace,
     name: &str,

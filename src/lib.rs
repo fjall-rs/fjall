@@ -112,6 +112,7 @@ mod error;
 mod file;
 mod flush;
 mod guard;
+mod ingestion;
 mod iter;
 mod journal;
 mod keyspace;
@@ -142,7 +143,7 @@ pub mod config {
 }
 
 pub use {
-    batch::WriteBatch,
+    batch::WriteBatch as OwnedWriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,
     db_config::Config,

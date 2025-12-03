@@ -2,9 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::Readable;
 use crate::{tx::optimistic::OptimisticTxDatabase, Keyspace};
-use lsm_tree::{KvPair, UserKey, UserValue};
+use crate::{Guard, Readable};
+use lsm_tree::{UserKey, UserValue};
 use std::path::PathBuf;
 
 /// Handle to a keyspace of a transactional database
@@ -429,7 +429,7 @@ impl OptimisticTxKeyspace {
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
     ///
-    /// assert_eq!(b"a", &*tree.first_key_value()?.unwrap().0);
+    /// assert_eq!(b"a", &*tree.first_key_value().unwrap().key()?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -437,7 +437,8 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
+    #[must_use]
+    pub fn first_key_value(&self) -> Option<Guard> {
         let read_tx = self.db.read_tx();
         read_tx.first_key_value(self)
     }
@@ -458,7 +459,7 @@ impl OptimisticTxKeyspace {
     /// tree.insert("a", "my_value")?;
     /// tree.insert("b", "my_value")?;
     ///
-    /// assert_eq!(b"b", &*tree.last_key_value()?.unwrap().0);
+    /// assert_eq!(b"b", &*tree.last_key_value().unwrap().key()?);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
@@ -466,7 +467,8 @@ impl OptimisticTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
+    #[must_use]
+    pub fn last_key_value(&self) -> Option<Guard> {
         let read_tx = self.db.read_tx();
         read_tx.last_key_value(self)
     }

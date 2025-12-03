@@ -12,12 +12,13 @@ use crate::{
     db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
+    ingestion::Ingestion,
     journal::{manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::WorkerMessage,
-    Database, Iter,
+    Database, Guard, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
@@ -194,6 +195,17 @@ impl std::hash::Hash for Keyspace {
 }
 
 impl Keyspace {
+    /// Clears the entire keyspace in O(1) time.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn clear(&self) -> crate::Result<()> {
+        let _journal_lock = self.journal.get_writer();
+        self.tree.clear()?;
+        Ok(())
+    }
+
     /// Returns the number of blob bytes on disk that are not referenced.
     ///
     /// These will be reclaimed over time by blob garbage collection automatically.
@@ -202,9 +214,10 @@ impl Keyspace {
         self.tree.stale_blob_bytes()
     }
 
-    /// Ingests a sorted stream of key-value pairs into the keyspace.
+    /// Prepare ingestiom of a pre-sorted stream of key-value pairs into the keyspace.
     ///
-    /// Can only be called on a new fresh, empty keyspace.
+    /// Prefer this method over singular inserts or write batches/transactions
+    /// for maximum bulk load speed.
     ///
     /// # Errors
     ///
@@ -212,46 +225,9 @@ impl Keyspace {
     ///
     /// # Panics
     ///
-    /// Panics if the keyspace is **not** initially empty.
-    ///
     /// Panics if the input iterator is not sorted in ascending order.
-    #[doc(hidden)]
-    pub fn ingest<K: Into<UserKey>, V: Into<UserValue>>(
-        &self,
-        iter: impl Iterator<Item = (K, V)>,
-    ) -> crate::Result<()> {
-        let mut ingestion = self.tree.ingestion()?;
-
-        for (k, v) in iter {
-            ingestion.write(k.into(), v.into())?;
-        }
-
-        // NOTE: We hold to avoid a race condition with concurrent writes:
-        //
-        // write         ingest
-        // lock journal
-        // |
-        // next seqno=1
-        // |
-        // --------------finish
-        //                 flush
-        //                 seqno=2
-        //                 register
-        //                 |
-        // -----------------
-        // |
-        // insert seqno=1
-        let _journal_lock = self.journal.get_writer();
-
-        ingestion.finish().inspect(|&seqno| {
-            self.supervisor.snapshot_tracker.publish(seqno);
-
-            self.worker_messager
-                .try_send(WorkerMessage::Compact(self.clone()))
-                .ok();
-        })?;
-
-        Ok(())
+    pub fn start_ingestion(&self) -> crate::Result<Ingestion<'_>> {
+        Ingestion::new(self)
     }
 
     pub(crate) fn from_database(
@@ -295,9 +271,13 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(base_folder, db.supervisor.seqno.clone())
-            .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(
+            base_folder,
+            db.supervisor.seqno.clone(),
+            db.supervisor.snapshot_tracker.get_ref(),
+        )
+        .use_descriptor_table(db.config.descriptor_table.clone())
+        .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
@@ -531,7 +511,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn is_empty(&self) -> crate::Result<bool> {
-        self.first_key_value().map(|x| x.is_none())
+        self.tree.is_empty(SeqNo::MAX, None).map_err(Into::into)
     }
 
     /// Returns `true` if the keyspace contains the specified key.
@@ -624,7 +604,7 @@ impl Keyspace {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = tree.first_key_value()?.expect("item should exist");
+    /// let key = tree.first_key_value().expect("item should exist").key()?;
     /// assert_eq!(&*key, "1".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -633,8 +613,8 @@ impl Keyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn first_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.first_key_value(SeqNo::MAX, None)?)
+    pub fn first_key_value(&self) -> Option<Guard> {
+        self.tree.first_key_value(SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns the last key-value pair in the keyspace.
@@ -652,7 +632,7 @@ impl Keyspace {
     /// tree.insert("3", "abc")?;
     /// tree.insert("5", "abc")?;
     ///
-    /// let (key, _) = tree.last_key_value()?.expect("item should exist");
+    /// let key = tree.last_key_value().expect("item should exist").key()?;
     /// assert_eq!(&*key, "5".as_bytes());
     /// #
     /// # Ok::<(), fjall::Error>(())
@@ -661,8 +641,8 @@ impl Keyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn last_key_value(&self) -> crate::Result<Option<KvPair>> {
-        Ok(self.tree.last_key_value(SeqNo::MAX, None)?)
+    pub fn last_key_value(&self) -> Option<Guard> {
+        self.tree.last_key_value(SeqNo::MAX, None).map(Guard)
     }
 
     /// Returns `true` if the underlying LSM-tree is key-value-separated.

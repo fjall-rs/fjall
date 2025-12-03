@@ -35,7 +35,9 @@ fn main() -> fjall::Result<()> {
                     // Tombstones will add up over time, making first KV slower
                     // Something like SingleDelete https://github.com/facebook/rocksdb/wiki/Single-Delete
                     // would be good for this type of workload
-                    if let Some((key, value)) = tx.first_key_value(&src)? {
+                    if let Some(kv) = tx.first_key_value(&src).map(|x| x.into_inner()) {
+                        let (key, value) = kv?;
+
                         let task_id = std::str::from_utf8(&key).unwrap().to_owned();
 
                         tx.remove(&src, key.clone());

@@ -581,20 +581,26 @@ impl Database {
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree =
-            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                .expect_point_read_hits(true)
-                .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
-                .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
-                .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
-                .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
-                .filter_policy(crate::config::FilterPolicy::all(
-                    lsm_tree::config::FilterPolicyEntry::Bloom(
-                        lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
-                    ),
-                ))
-                .open()?;
+        let meta_tree = lsm_tree::Config::new(
+            config.path.join(KEYSPACES_FOLDER).join("0"),
+            seqno.clone(),
+            visible_seqno.clone(),
+        )
+        .expect_point_read_hits(true)
+        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .filter_policy(crate::config::FilterPolicy::new([
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
+            ),
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+            ),
+        ]))
+        .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
@@ -782,10 +788,26 @@ impl Database {
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree =
-            lsm_tree::Config::new(config.path.join(KEYSPACES_FOLDER).join("0"), seqno.clone())
-                // TODO: specialized config
-                .open()?;
+        let meta_tree = lsm_tree::Config::new(
+            config.path.join(KEYSPACES_FOLDER).join("0"),
+            seqno.clone(),
+            visible_seqno.clone(),
+        )
+        .expect_point_read_hits(true)
+        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
+        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
+        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
+        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
+        .filter_policy(crate::config::FilterPolicy::new([
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
+            ),
+            lsm_tree::config::FilterPolicyEntry::Bloom(
+                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
+            ),
+        ]))
+        .open()?;
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
@@ -833,36 +855,6 @@ impl Database {
         };
 
         Ok(Self(Arc::new(inner)))
-    }
-
-    // TODO: rename flush_and_wait
-    /// Only used for internal testing.
-    ///
-    /// Should NOT be called when there is a flush worker active already!!!
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn force_flush(&self) -> crate::Result<()> {
-        #[expect(clippy::expect_used, reason = "only used in tests, so whatever")]
-        self.worker_messager
-            .send(WorkerMessage::Flush)
-            .expect("should send");
-
-        self.supervisor.flush_manager.wait_for_empty();
-
-        // TODO: 3.0.0 should wait for flush COMPLETION
-        std::thread::sleep(std::time::Duration::from_millis(1));
-
-        Ok(())
-
-        // crate::flush::worker::run(
-        //     &self.flush_manager,
-        //     &self.journal_manager,
-        //     &self.compaction_manager,
-        //     &self.write_buffer_manager,
-        //     &self.snapshot_tracker,
-        //     parallelism,
-        //     &self.stats,
-        // )
     }
 }
 

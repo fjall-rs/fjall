@@ -1,4 +1,4 @@
-use fjall::{OptimisticTxDatabase, PersistMode, Readable};
+use fjall::{Guard, OptimisticTxDatabase, PersistMode, Readable};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -65,7 +65,9 @@ fn main() -> fjall::Result<()> {
                     // Tombstones will add up over time with `remove`, making first KV slower
                     // and growing disk usage. `remove_weak` is used to prevent those
                     // tombstones from building up.
-                    if let Some((key, _)) = tx.first_key_value(&tasks)? {
+                    if let Some(key) = tx.first_key_value(&tasks).map(|x| x.key()) {
+                        let key = key?;
+
                         let task_id = std::str::from_utf8(&key).unwrap().to_owned();
 
                         tx.remove_weak(&tasks, key);

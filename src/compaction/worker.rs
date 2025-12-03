@@ -27,6 +27,8 @@ pub fn run(
 
     stats.active_compaction_count.fetch_add(1, Relaxed);
 
+    log::debug!("Compacting keyspace {:?}", keyspace.name);
+
     let start = Instant::now();
 
     if let Err(e) = keyspace
