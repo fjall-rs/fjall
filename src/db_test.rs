@@ -26,6 +26,39 @@ fn recover_sealed() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
+fn recover_sealed_order() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+        tree.insert("a", "a")?;
+        tree.rotate_memtable()?;
+
+        tree.insert("a", "b")?;
+        tree.rotate_memtable()?;
+
+        tree.insert("a", "c")?;
+        tree.rotate_memtable()?;
+    }
+
+    {
+        let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(b"c", &*tree.get("a")?.unwrap());
+    }
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used)]
 #[ignore = "fails in CI?"]
 fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
