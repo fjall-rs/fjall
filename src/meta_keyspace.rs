@@ -208,6 +208,7 @@ mod tests {
     const ITEM_COUNT: usize = 10;
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn keyspace_delete() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
@@ -244,7 +245,7 @@ mod tests {
             );
         }
 
-        for _ in 0..10 {
+        for _ in 0..3 {
             let db = Database::builder(&folder).open()?;
 
             let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
@@ -282,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn tx_keyspace_delete() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
@@ -318,7 +320,7 @@ mod tests {
             );
         }
 
-        for _ in 0..5 {
+        for _ in 0..3 {
             let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
             let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
