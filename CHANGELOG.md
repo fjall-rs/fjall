@@ -25,11 +25,13 @@
 - [fix] Consider blob files in FIFO compaction size limit, fixes #133
 - [perf] Use a single hash per key for filters, instead of two
 - [perf] Improve leveled compaction scoring
-- [perf] Improve leveled compaction picking to use less hashing & heap allocations
+- [perf] Improve leveled compaction picking to use less hashing and heap allocations
 - [perf] Use `quick-cache` for file descriptor caching
 - [perf] Promote levels immediately to L6 to get rid of tombstones easily
 - [perf] Rewritten maintenance task bookkeeping, and write stalling mechanisms to be less aggressive
 - [perf] Allow `lsm-tree` flushes to merge multiple sealed memtables into L0, if necessary
+- [perf] Skip heap allocation in blob memtable inserts
+- [perf] Skip compression when rewriting compressed blob files
 - [msrv] Increased MSRV to **1.91**
 - [misc] Blob file descriptor caching
 - [misc] Use Rust native `path::absolute`, removing `path-absolutize` dependency
