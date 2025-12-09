@@ -62,6 +62,10 @@ impl LockedFileGuard {
                     }
                 }
             }
+            else {
+                // Success
+                break;
+            }
         }
 
         Ok(Self(Arc::new(LockedFileGuardInner(file))))
