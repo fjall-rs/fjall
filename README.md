@@ -174,9 +174,9 @@ Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeit
 
 *Enabled by default.*
 
-### bytes
+### bytes_1
 
-Uses [`bytes`](https://github.com/tokio-rs/bytes) as the underlying `Slice` type.
+Uses [`bytes`](https://github.com/tokio-rs/bytes) 1.x as the underlying `Slice` type.
 Otherwise, [`byteview`](https://github.com/fjall-rs/byteview) is used instead.
 
 *Disabled by default.*
