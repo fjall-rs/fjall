@@ -12,6 +12,8 @@
 - [feat] Rewritten key-value separation to run during compactions, instead of dedicated GC runs
 - [feat] Full file checksums to allow fast database corruption checks (in the future)
 - [feat] Checksum check on block & blob reads
+- [api] Make Ingestion API more flexible
+- [feat] Shortening eligible sequence numbers when compacting into the last level to save disk space
 - [api] Change constructor to `Database::builder` instead of `Config::new`
 - [api] Changed naming of keyspace->database, and partition->keyspace
 - [api] Change transaction feature flags to be separate structs, `OptimisticTxDatabase` and `SingleWriterTxDatabase`
@@ -25,11 +27,13 @@
 - [fix] Consider blob files in FIFO compaction size limit, fixes #133
 - [perf] Use a single hash per key for filters, instead of two
 - [perf] Improve leveled compaction scoring
-- [perf] Improve leveled compaction picking to use less hashing & heap allocations
+- [perf] Improve leveled compaction picking to use less hashing and heap allocations
 - [perf] Use `quick-cache` for file descriptor caching
 - [perf] Promote levels immediately to L6 to get rid of tombstones easily
 - [perf] Rewritten maintenance task bookkeeping, and write stalling mechanisms to be less aggressive
 - [perf] Allow `lsm-tree` flushes to merge multiple sealed memtables into L0, if necessary
+- [perf] Skip heap allocation in blob memtable inserts
+- [perf] Skip compression when rewriting compressed blob files
 - [msrv] Increased MSRV to **1.91**
 - [misc] Blob file descriptor caching
 - [misc] Use Rust native `path::absolute`, removing `path-absolutize` dependency

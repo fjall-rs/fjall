@@ -586,6 +586,8 @@ impl Database {
             seqno.clone(),
             visible_seqno.clone(),
         )
+        .use_cache(config.cache.clone())
+        .use_descriptor_table(config.descriptor_table.clone())
         .expect_point_read_hits(true)
         .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
         .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
@@ -793,6 +795,8 @@ impl Database {
             seqno.clone(),
             visible_seqno.clone(),
         )
+        .use_cache(config.cache.clone())
+        .use_descriptor_table(config.descriptor_table.clone())
         .expect_point_read_hits(true)
         .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
         .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))

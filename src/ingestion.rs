@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{worker_pool::WorkerMessage, Keyspace};
-use lsm_tree::{AnyIngestion, UserKey, UserValue};
+use lsm_tree::{AbstractTree, AnyIngestion, UserKey, UserValue};
 
 pub struct Ingestion<'a> {
     keyspace: &'a Keyspace,
@@ -55,6 +55,8 @@ impl<'a> Ingestion<'a> {
                     .worker_messager
                     .try_send(WorkerMessage::Compact(self.keyspace.clone()))
                     .ok();
+
+                self.keyspace.supervisor.snapshot_tracker.gc();
             })
             .map_err(Into::into)
     }

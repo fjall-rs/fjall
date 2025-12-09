@@ -138,7 +138,7 @@ pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, xxhash_rust::xxh
 pub mod config {
     pub use lsm_tree::config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, HashRatioPolicy, PartioningPolicy, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PartitioningPolicy, PinningPolicy, RestartIntervalPolicy,
     };
 }
 

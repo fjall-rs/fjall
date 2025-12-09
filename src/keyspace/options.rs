@@ -5,7 +5,8 @@
 use crate::{
     config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, HashRatioPolicy, PartioningPolicy, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PartitioningPolicy, PinningPolicy,
+        RestartIntervalPolicy,
     },
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
     meta_keyspace::{encode_config_key, MetaKeyspace},
@@ -44,10 +45,10 @@ pub struct CreateOptions {
     pub filter_block_pinning_policy: PinningPolicy,
 
     #[doc(hidden)]
-    pub filter_block_partitioning_policy: PartioningPolicy,
+    pub filter_block_partitioning_policy: PartitioningPolicy,
 
     #[doc(hidden)]
-    pub index_block_partitioning_policy: PartioningPolicy,
+    pub index_block_partitioning_policy: PartitioningPolicy,
 
     /// If `true`, the last level will not build filters, reducing the filter size of a database
     /// by ~90% typically.
@@ -94,8 +95,8 @@ impl Default for CreateOptions {
             index_block_pinning_policy: PinningPolicy::new([true, true, false]),
             filter_block_pinning_policy: PinningPolicy::new([true, false]),
 
-            index_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
-            filter_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
+            index_block_partitioning_policy: PartitioningPolicy::new([false, false, false, true]),
+            filter_block_partitioning_policy: PartitioningPolicy::new([false, false, false, true]),
 
             expect_point_read_hits: false,
 
@@ -548,14 +549,14 @@ impl CreateOptions {
 
     /// Sets the partitioning policy for filter blocks.
     #[must_use]
-    pub fn filter_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
+    pub fn filter_block_partitioning_policy(mut self, policy: PartitioningPolicy) -> Self {
         self.filter_block_partitioning_policy = policy;
         self
     }
 
     /// Sets the partitioning policy for index blocks.
     #[must_use]
-    pub fn index_block_partitioning_policy(mut self, policy: PartioningPolicy) -> Self {
+    pub fn index_block_partitioning_policy(mut self, policy: PartitioningPolicy) -> Self {
         self.index_block_partitioning_policy = policy;
         self
     }
