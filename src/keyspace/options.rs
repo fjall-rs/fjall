@@ -5,7 +5,8 @@
 use crate::{
     config::{
         BlockSizePolicy, BloomConstructionPolicy, CompressionPolicy, FilterPolicy,
-        FilterPolicyEntry, HashRatioPolicy, PartitioningPolicy, PinningPolicy, RestartIntervalPolicy,
+        FilterPolicyEntry, HashRatioPolicy, PartitioningPolicy, PinningPolicy,
+        RestartIntervalPolicy,
     },
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
     meta_keyspace::{encode_config_key, MetaKeyspace},
@@ -94,8 +95,8 @@ impl Default for CreateOptions {
             index_block_pinning_policy: PinningPolicy::new([true, true, false]),
             filter_block_pinning_policy: PinningPolicy::new([true, false]),
 
-            index_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
-            filter_block_partitioning_policy: PinningPolicy::new([false, false, false, true]),
+            index_block_partitioning_policy: PartitioningPolicy::new([false, false, false, true]),
+            filter_block_partitioning_policy: PartitioningPolicy::new([false, false, false, true]),
 
             expect_point_read_hits: false,
 

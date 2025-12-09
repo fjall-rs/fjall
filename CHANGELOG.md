@@ -12,6 +12,7 @@
 - [feat] Rewritten key-value separation to run during compactions, instead of dedicated GC runs
 - [feat] Full file checksums to allow fast database corruption checks (in the future)
 - [feat] Checksum check on block & blob reads
+- [feat] Shortening eligible sequence numbers when compacting into the last level to save disk space
 - [api] Change constructor to `Database::builder` instead of `Config::new`
 - [api] Changed naming of keyspace->database, and partition->keyspace
 - [api] Change transaction feature flags to be separate structs, `OptimisticTxDatabase` and `SingleWriterTxDatabase`
