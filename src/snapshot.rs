@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{snapshot_nonce::SnapshotNonce, Guard, Iter, Keyspace, Readable};
-use lsm_tree::{AbstractTree, KvPair, SeqNo, UserValue};
+use lsm_tree::{AbstractTree, SeqNo, UserValue};
 use std::ops::RangeBounds;
 
 /// A cross-keyspace snapshot
