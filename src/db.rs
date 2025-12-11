@@ -90,6 +90,9 @@ impl Drop for DatabaseInner {
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
 
+        // Drain again after threads are closed
+        let _ = self.worker_pool.rx.drain().count();
+
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
         self.keyspaces.write().expect("lock is poisoned").clear();

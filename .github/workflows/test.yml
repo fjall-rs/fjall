@@ -20,7 +20,7 @@ jobs:
           - stable # We cannot run with MSRV because some deps may require a higher MSRV
         os:
           - ubuntu-latest
-          # - windows-latest
+          - windows-latest
           - macos-latest
     runs-on: ${{ matrix.os }}
     steps:
@@ -66,7 +66,7 @@ jobs:
           - "1.91.0" # MSRV
         os:
           - ubuntu-latest
-          # - windows-latest
+          - windows-latest
           - macos-latest
     runs-on: ${{ matrix.os }}
     steps:

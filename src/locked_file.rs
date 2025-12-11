@@ -61,6 +61,9 @@ impl LockedFileGuard {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                 }
+            } else {
+                // Success
+                break;
             }
         }
 
