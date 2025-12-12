@@ -137,10 +137,12 @@ impl SnapshotTracker {
         #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
-        self.lowest_freed_instant.store(
-            self.seqno.get().saturating_sub(1),
-            std::sync::atomic::Ordering::Release,
-        );
+        if self.data.is_empty() {
+            self.lowest_freed_instant.store(
+                self.seqno.get().saturating_sub(1),
+                std::sync::atomic::Ordering::Release,
+            );
+        }
     }
 
     pub(crate) fn gc(&self) {
