@@ -751,6 +751,12 @@ impl Database {
 
         db.supervisor.snapshot_tracker.gc();
 
+        for keyspace in db.keyspaces.read().expect("lock is poisoned").values() {
+            if keyspace.tree.sealed_memtable_count() > 0 {
+                keyspace.worker_messager.send(WorkerMessage::Flush).ok();
+            }
+        }
+
         log::trace!("Recovery successful");
 
         Ok(db)
