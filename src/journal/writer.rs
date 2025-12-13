@@ -4,9 +4,15 @@
 
 use super::entry::{serialize_marker_item, Entry};
 use crate::{
-    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    batch::item::Item as BatchItem,
+    file::fsync_directory,
+    journal::{
+        entry::{serialize_item, Tag},
+        recovery::JournalId,
+    },
     keyspace::InternalKeyspaceId,
 };
+use byteorder::{LittleEndian, WriteBytesExt};
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -14,6 +20,36 @@ use std::{
     io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
+
+/// A writer that computes a checksum as data is written through it
+struct HashingWriter<'a, W: Write> {
+    writer: &'a mut W,
+    hasher: xxhash_rust::xxh3::Xxh3,
+}
+
+impl<'a, W: Write> HashingWriter<'a, W> {
+    fn new(writer: &'a mut W) -> Self {
+        Self {
+            writer,
+            hasher: xxhash_rust::xxh3::Xxh3::default(),
+        }
+    }
+
+    fn finish(self) -> u64 {
+        self.hasher.finish()
+    }
+}
+
+impl<'a, W: Write> Write for HashingWriter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.hasher.update(buf);
+        self.writer.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
+}
 
 // TODO: this should be a database configuration
 pub const PRE_ALLOCATED_BYTES: u64 = 64 * 1_024 * 1_024;
@@ -260,37 +296,36 @@ impl Writer {
         seqno: u64,
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
-
-        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        let mut byte_count = 0;
-
-        self.buf.clear();
-        byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(
-            &mut self.buf,
-            keyspace_id,
-            key,
-            value,
-            value_type,
+        let compression =
             if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
                 self.compression
             } else {
                 CompressionType::None
-            },
+            };
+
+        self.buf.write_u8(Tag::SingleItem.into())?;
+        self.buf.write_u64::<LittleEndian>(seqno)?;
+
+        let mut hashing_writer = HashingWriter::new(&mut self.buf);
+
+        serialize_item(
+            &mut hashing_writer,
+            keyspace_id,
+            key,
+            value,
+            value_type,
+            compression,
         )?;
+
+        let checksum = hashing_writer.finish();
+
+        self.buf.write_u64::<LittleEndian>(checksum)?;
 
         self.file.write_all(&self.buf)?;
 
-        hasher.update(&self.buf);
-        byte_count += self.buf.len();
-
-        self.buf.clear();
-        let checksum = hasher.finish();
-        byte_count += self.write_end(checksum)?;
-
-        Ok(byte_count)
+        Ok(self.buf.len())
     }
 
     pub fn write_batch<'a>(
