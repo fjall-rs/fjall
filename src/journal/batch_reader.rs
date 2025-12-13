@@ -3,7 +3,11 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
+use crate::{
+    journal::entry::{serialize_item, Entry},
+    keyspace::InternalKeyspaceId,
+    JournalRecoveryError,
+};
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
 use std::{fs::OpenOptions, hash::Hasher};
 
@@ -178,6 +182,56 @@ impl Iterator for JournalBatchReader {
                         value,
                         value_type,
                     });
+                }
+                Entry::SingleItem {
+                    keyspace_id,
+                    key,
+                    value,
+                    value_type,
+                    compression,
+                    seqno,
+                    checksum: expected_checksum,
+                } => {
+                    if self.is_in_batch {
+                        log::error!("Invalid batch: Found SingleItem inside batch");
+
+                        // Discard batch
+                        fail_iter!(self.truncate_to(self.last_valid_pos));
+
+                        return None;
+                    }
+
+                    // Verify checksum by re-serializing just the item data portion
+                    let mut bytes = Vec::with_capacity(100);
+                    fail_iter!(serialize_item(
+                        &mut bytes,
+                        keyspace_id,
+                        &key,
+                        &value,
+                        value_type,
+                        compression,
+                    ));
+
+                    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+                    hasher.update(&bytes);
+                    let got_checksum = hasher.finish();
+
+                    if got_checksum != expected_checksum {
+                        log::error!("Invalid SingleItem: checksum mismatch, expected: {expected_checksum}, got: {got_checksum}");
+                        return Some(Err(JournalRecovery(JournalRecoveryError::ChecksumMismatch)));
+                    }
+
+                    // Return as a batch of 1
+                    self.last_valid_pos = journal_file_pos;
+                    return Some(Ok(Batch {
+                        seqno,
+                        items: vec![ReadBatchItem {
+                            keyspace_id,
+                            key,
+                            value,
+                            value_type,
+                        }],
+                    }));
                 }
             }
         }
