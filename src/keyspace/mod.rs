@@ -681,7 +681,7 @@ impl Keyspace {
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::debug!("Rotating memtable {:?}", self.name);
 
-        log::trace!("keyspace: acquiring journal lock");
+        log::trace!("acquiring journal lock");
         let mut journal = self.journal.get_writer();
 
         // Rotate memtable
@@ -690,7 +690,7 @@ impl Keyspace {
             return Ok(false);
         };
 
-        log::trace!("keyspace: acquiring journal manager lock");
+        log::trace!("acquiring journal manager lock");
 
         #[expect(clippy::expect_used)]
         let mut journal_manager = self
