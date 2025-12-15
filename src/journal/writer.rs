@@ -21,40 +21,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// A writer that computes a checksum as data is written through it
-struct HashingWriter<'a, W: Write> {
-    writer: &'a mut W,
-    hasher: xxhash_rust::xxh3::Xxh3,
-    bytes_written: usize,
-}
-
-impl<'a, W: Write> HashingWriter<'a, W> {
-    fn new(writer: &'a mut W) -> Self {
-        Self {
-            writer,
-            hasher: xxhash_rust::xxh3::Xxh3::default(),
-            bytes_written: 0,
-        }
-    }
-
-    fn finish(self) -> (u64, usize) {
-        (self.hasher.finish(), self.bytes_written)
-    }
-}
-
-impl<'a, W: Write> Write for HashingWriter<'a, W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.hasher.update(buf);
-        let count = self.writer.write(buf)?;
-        self.bytes_written += count;
-        Ok(count)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.writer.flush()
-    }
-}
-
 // TODO: this should be a database configuration
 pub const PRE_ALLOCATED_BYTES: u64 = 64 * 1_024 * 1_024;
 
