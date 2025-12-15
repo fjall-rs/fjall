@@ -25,6 +25,7 @@ use std::{
 struct HashingWriter<'a, W: Write> {
     writer: &'a mut W,
     hasher: xxhash_rust::xxh3::Xxh3,
+    bytes_written: usize,
 }
 
 impl<'a, W: Write> HashingWriter<'a, W> {
@@ -32,18 +33,21 @@ impl<'a, W: Write> HashingWriter<'a, W> {
         Self {
             writer,
             hasher: xxhash_rust::xxh3::Xxh3::default(),
+            bytes_written: 0,
         }
     }
 
-    fn finish(self) -> u64 {
-        self.hasher.finish()
+    fn finish(self) -> (u64, usize) {
+        (self.hasher.finish(), self.bytes_written)
     }
 }
 
 impl<'a, W: Write> Write for HashingWriter<'a, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.hasher.update(buf);
-        self.writer.write(buf)
+        let count = self.writer.write(buf)?;
+        self.bytes_written += count;
+        Ok(count)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -300,7 +304,6 @@ impl Writer {
         seqno: u64,
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
-        self.buf.clear();
 
         let compression =
             if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
@@ -309,10 +312,10 @@ impl Writer {
                 CompressionType::None
             };
 
-        self.buf.write_u8(Tag::SingleItem.into())?;
-        self.buf.write_u64::<LittleEndian>(seqno)?;
+        self.file.write_u8(Tag::SingleItem.into())?;
+        self.file.write_u64::<LittleEndian>(seqno)?;
 
-        let mut hashing_writer = HashingWriter::new(&mut self.buf);
+        let mut hashing_writer = HashingWriter::new(&mut self.file);
 
         serialize_item(
             &mut hashing_writer,
@@ -323,13 +326,11 @@ impl Writer {
             compression,
         )?;
 
-        let checksum = hashing_writer.finish();
+        let (checksum, item_bytes) = hashing_writer.finish();
 
-        self.buf.write_u64::<LittleEndian>(checksum)?;
+        self.file.write_u64::<LittleEndian>(checksum)?;
 
-        self.file.write_all(&self.buf)?;
-
-        Ok(self.buf.len())
+        Ok(1 + 8 + item_bytes + 8) // tag + seqno + item + checksum
     }
 
     pub fn write_batch<'a>(
