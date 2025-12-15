@@ -304,6 +304,7 @@ impl Writer {
         seqno: u64,
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
+        self.buf.clear();
 
         let compression =
             if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
@@ -312,13 +313,13 @@ impl Writer {
                 CompressionType::None
             };
 
-        self.file.write_u8(Tag::SingleItem.into())?;
-        self.file.write_u64::<LittleEndian>(seqno)?;
+        self.buf.write_u8(Tag::SingleItem.into())?;
+        self.buf.write_u64::<LittleEndian>(seqno)?;
 
-        let mut hashing_writer = HashingWriter::new(&mut self.file);
+        let item_start = self.buf.len();
 
         serialize_item(
-            &mut hashing_writer,
+            &mut self.buf,
             keyspace_id,
             key,
             value,
@@ -326,11 +327,15 @@ impl Writer {
             compression,
         )?;
 
-        let (checksum, item_bytes) = hashing_writer.finish();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+        hasher.update(&self.buf[item_start..]);
+        let checksum = hasher.finish();
 
-        self.file.write_u64::<LittleEndian>(checksum)?;
+        self.buf.write_u64::<LittleEndian>(checksum)?;
 
-        Ok(1 + 8 + item_bytes + 8) // tag + seqno + item + checksum
+        self.file.write_all(&self.buf)?;
+
+        Ok(self.buf.len()) // tag + seqno + item + checksum
     }
 
     pub fn write_batch<'a>(
