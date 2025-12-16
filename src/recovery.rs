@@ -193,7 +193,6 @@ pub fn recover_sealed_memtables(
                 );
 
                 tree.clear_active_memtable();
-                eprintln!("memtable now: {}", tree.active_memtable().size());
             } else if let Some(sealed_memtable) = tree.rotate_memtable() {
                 log::trace!("Sealed active memtable of keyspace {:?}", wm.keyspace.name);
 
