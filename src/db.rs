@@ -729,7 +729,6 @@ impl Database {
                     );
 
                     // IMPORTANT: Add active memtable size to current write buffer size
-                    // db.write_buffer_manager.allocate(size);
                     db.supervisor.write_buffer_size.allocate(size);
 
                     // Recover seqno
