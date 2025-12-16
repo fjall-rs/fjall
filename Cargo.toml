@@ -32,7 +32,7 @@ tempfile = "3.20.0"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 lz4_flex = { version = "0.11.5", optional = true }
-flume = { version = "0.11.1", default-features = false }
+flume = { version = "0.12.0", default-features = false }
 
 [dev-dependencies]
 nanoid = "0.4.0"
