@@ -6,6 +6,7 @@ use crate::{
     compaction::worker::run as run_compaction, flush::worker::run as run_flush,
     poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor, Keyspace,
 };
+use lsm_tree::MemtableId;
 use std::{
     borrow::Cow,
     sync::{atomic::AtomicUsize, Arc},
@@ -16,6 +17,7 @@ pub enum WorkerMessage {
     Flush,
     Compact(Keyspace),
     Close,
+    Rotate(Keyspace, MemtableId),
 }
 
 impl std::fmt::Debug for WorkerMessage {
@@ -27,6 +29,8 @@ impl std::fmt::Debug for WorkerMessage {
                 Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
                 Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
                 Self::Close => Cow::Borrowed("WorkerMessage:Close"),
+                Self::Rotate(k, memtable_id) =>
+                    Cow::Owned(format!("WorkerMessage:Rotate({:?}, {memtable_id})", k.name)),
             }
         )
     }
@@ -118,6 +122,13 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     match item {
         WorkerMessage::Close => {
             return Ok(true);
+        }
+        WorkerMessage::Rotate(keyspace, memtable_id) => {
+            use lsm_tree::AbstractTree;
+
+            if keyspace.tree.active_memtable().id() == memtable_id {
+                keyspace.rotate_memtable(/* TODO: add memtable ID here to do "CAS" */)?;
+            }
         }
         WorkerMessage::Flush => {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {

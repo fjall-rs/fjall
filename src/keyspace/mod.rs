@@ -821,22 +821,28 @@ impl Keyspace {
         );
     }
 
-    pub(crate) fn check_memtable_rotate(&self, size: u64) -> crate::Result<()> {
-        if size > self.config.max_memtable_size {
-            self.rotate_memtable().inspect_err(|e| {
-                log::error!("Memtable rotation failed: {e:?}");
-                self.is_poisoned
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-            })?;
+    pub(crate) fn check_memtable_rotate(&self, size: u64) {
+        if size > self.config.max_memtable_size
+            && !self.tree.active_memtable().is_flagged_for_rotation()
+        {
+            log::trace!("acquiring journal lock");
+            let _journal = self.journal.get_writer();
+
+            self.worker_messager
+                .try_send(WorkerMessage::Rotate(
+                    self.clone(),
+                    self.tree.active_memtable().id(),
+                ))
+                .ok();
+
+            self.tree.active_memtable().flag_rotated();
         }
-        Ok(())
     }
 
-    fn maintenance(&self, size: u64) -> crate::Result<()> {
+    fn maintenance(&self, size: u64) {
         self.local_backpressure();
-        self.check_memtable_rotate(size)?;
+        self.check_memtable_rotate(size);
         self.global_backpressure();
-        Ok(())
     }
 
     #[doc(hidden)]
@@ -944,7 +950,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }
@@ -1015,7 +1021,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }
@@ -1106,7 +1112,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size)?;
+        self.maintenance(memtable_size);
 
         Ok(())
     }
