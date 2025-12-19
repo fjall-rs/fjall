@@ -8,7 +8,7 @@ use crate::{
 };
 use std::{
     borrow::Cow,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{atomic::AtomicUsize, Arc, Mutex},
     thread::JoinHandle,
 };
 
@@ -35,22 +35,31 @@ impl std::fmt::Debug for WorkerMessage {
 type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 
 pub struct WorkerPool {
-    thread_handles: Vec<WorkerHandle>,
+    thread_handles: Mutex<Vec<WorkerHandle>>,
     pub(crate) rx: flume::Receiver<WorkerMessage>,
+    pub(crate) sender: flume::Sender<WorkerMessage>,
 }
 
 impl WorkerPool {
-    pub fn new(
+    pub fn prepare() -> Self {
+        let (sender, rx) = flume::bounded(1_000);
+
+        Self {
+            thread_handles: Mutex::default(),
+            rx,
+            sender,
+        }
+    }
+
+    pub fn start(
+        &self,
         pool_size: usize,
         supervisor: &Supervisor,
         stats: &Arc<Stats>,
-        thread_counter: &Arc<AtomicUsize>,
         poison_dart: &PoisonDart,
-    ) -> crate::Result<(Self, flume::Sender<WorkerMessage>)> {
+        thread_counter: &Arc<AtomicUsize>,
+    ) -> crate::Result<()> {
         use std::sync::atomic::Ordering::Relaxed;
-
-        let (message_queue_sender, rx) = flume::bounded(1_000);
-
         thread_counter.fetch_add(pool_size, Relaxed);
 
         let thread_handles = (0..pool_size)
@@ -63,10 +72,10 @@ impl WorkerPool {
                         let worker_state = WorkerState {
                             pool_size,
                             worker_id: i,
-                            rx: rx.clone(),
+                            rx: self.rx.clone(),
                             supervisor: supervisor.clone(),
                             stats: stats.clone(),
-                            sender: message_queue_sender.clone(),
+                            sender: self.sender.clone(),
                         };
 
                         let thread_counter = thread_counter.clone();
@@ -95,7 +104,9 @@ impl WorkerPool {
             })
             .collect::<Result<_, _>>()?;
 
-        Ok((Self { thread_handles, rx }, message_queue_sender))
+        *self.thread_handles.lock().expect("lock is poisoned") = thread_handles;
+
+        Ok(())
     }
 }
 
