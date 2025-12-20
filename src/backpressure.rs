@@ -45,11 +45,8 @@ pub fn handle_journal(
         keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
 
         if let Some(lowest) = keyspaces_with_seqno.first() {
-            log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name,);
-
-            if let Err(e) = lowest.0.rotate_memtable() {
-                log::warn!("Rotating keyspace {:?} failed: {e:?}", lowest.0.name,);
-            }
+            log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name);
+            lowest.0.request_rotation();
         }
 
         supervisor
@@ -92,10 +89,10 @@ pub fn handle_journal(
                 keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
 
                 if let Some(lowest) = keyspaces_with_seqno.first() {
-                    log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name,);
+                    log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name);
 
                     if let Err(e) = lowest.0.rotate_memtable() {
-                        log::warn!("Rotating keyspace {:?} failed: {e:?}", lowest.0.name,);
+                        log::warn!("Rotating keyspace {:?} failed: {e:?}", lowest.0.name);
                     }
                 }
             }
@@ -215,10 +212,7 @@ pub fn handle_write_buffer(
                         "Rotating {:?} to try to reduce database write buffer size",
                         keyspace.name,
                     );
-
-                    if let Err(e) = keyspace.rotate_memtable() {
-                        log::warn!("Rotating keyspace {:?} failed: {e:?}", keyspace.name,);
-                    }
+                    keyspace.request_rotation();
 
                     queued_bytes += bytes;
                 }
