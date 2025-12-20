@@ -838,21 +838,27 @@ impl Keyspace {
         );
     }
 
+    pub(crate) fn request_rotation(&self) {
+        if self.tree.active_memtable().is_flagged_for_rotation() {
+            return;
+        }
+
+        log::trace!("acquiring journal lock");
+        let _journal = self.journal.get_writer();
+
+        self.worker_messager
+            .try_send(WorkerMessage::Rotate(
+                self.clone(),
+                self.tree.active_memtable().id(),
+            ))
+            .ok();
+
+        self.tree.active_memtable().flag_rotated();
+    }
+
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
-        if size > self.config.max_memtable_size
-            && !self.tree.active_memtable().is_flagged_for_rotation()
-        {
-            log::trace!("acquiring journal lock");
-            let _journal = self.journal.get_writer();
-
-            self.worker_messager
-                .try_send(WorkerMessage::Rotate(
-                    self.clone(),
-                    self.tree.active_memtable().id(),
-                ))
-                .ok();
-
-            self.tree.active_memtable().flag_rotated();
+        if size > self.config.max_memtable_size {
+            self.request_rotation();
         }
     }
 
