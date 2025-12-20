@@ -64,6 +64,9 @@ impl WorkerPool {
         thread_counter: &Arc<AtomicUsize>,
     ) -> crate::Result<()> {
         use std::sync::atomic::Ordering::Relaxed;
+
+        log::debug!("Starting worker pool with {pool_size} threads");
+
         thread_counter.fetch_add(pool_size, Relaxed);
 
         let thread_handles = (0..pool_size)
@@ -71,7 +74,7 @@ impl WorkerPool {
                 std::thread::Builder::new()
                     .name("fjall:worker".to_string())
                     .spawn({
-                        log::debug!("Starting fjall worker thread #{i}");
+                        log::trace!("Starting fjall worker thread #{i}");
 
                         let worker_state = WorkerState {
                             pool_size,
