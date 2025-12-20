@@ -124,11 +124,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             return Ok(true);
         }
         WorkerMessage::Rotate(keyspace, memtable_id) => {
-            use lsm_tree::AbstractTree;
-
-            if keyspace.tree.active_memtable().id() == memtable_id {
-                keyspace.rotate_memtable(/* TODO: add memtable ID here to do "CAS" */)?;
-            }
+            keyspace.inner_rotate_memtable(memtable_id)?;
         }
         WorkerMessage::Flush => {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
