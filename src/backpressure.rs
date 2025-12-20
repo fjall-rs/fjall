@@ -17,6 +17,48 @@ pub fn handle_journal(
 ) {
     let start = std::time::Instant::now();
 
+    // TODO: maybe if 50% are reached we can look at some memtables that are close to being full
+
+    if {
+        supervisor
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used()
+    } > (db_config.max_journaling_size_in_bytes / 4 * 3)
+    {
+        let _lock = supervisor
+            .backpressure_lock
+            .lock()
+            .expect("lock is poisoned");
+
+        let keyspaces = keyspaces.read().expect("lock is poisoned");
+
+        let mut keyspaces_with_seqno = keyspaces
+            .values()
+            .filter(|x| x.tree.active_memtable().size() > 0)
+            .map(|x| (x.clone(), x.tree.get_highest_persisted_seqno()))
+            .collect::<Vec<_>>();
+
+        drop(keyspaces);
+
+        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
+
+        if let Some(lowest) = keyspaces_with_seqno.first() {
+            log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name,);
+
+            if let Err(e) = lowest.0.rotate_memtable() {
+                log::warn!("Rotating keyspace {:?} failed: {e:?}", lowest.0.name,);
+            }
+        }
+
+        supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .maintenance();
+    }
+
     while {
         supervisor
             .journal_manager
@@ -28,7 +70,7 @@ pub fn handle_journal(
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         if start.elapsed() > std::time::Duration::from_secs(5) {
-            log::debug!("Halting writes for 5+ secs now because journal is still too large");
+            log::info!("Halting writes for 5+ secs now because journal is still too large");
 
             // TODO: this may not scale well for many keyspaces
             {
@@ -90,6 +132,44 @@ pub fn handle_write_buffer(
     loop {
         let wb_size = supervisor.write_buffer_size.get();
 
+        // TODO: maybe if 50% are reached we can look at some memtables that are close to being full
+
+        if wb_size > (db_config.max_write_buffer_size_in_bytes / 4 * 3) {
+            let _lock = supervisor
+                .backpressure_lock
+                .lock()
+                .expect("lock is poisoned");
+
+            let keyspaces = keyspaces.read().expect("lock is poisoned");
+
+            let mut keyspaces_with_sizes: Vec<(_, u64)> = keyspaces
+                .values()
+                .filter(|x| x.tree.active_memtable().size() > 0)
+                .map(|x| (x.clone(), x.tree.active_memtable().size()))
+                .collect::<Vec<_>>();
+
+            drop(keyspaces);
+
+            keyspaces_with_sizes.sort_by(|a, b| a.1.cmp(&b.1));
+
+            let mut queued_bytes = 0;
+
+            for (keyspace, bytes) in keyspaces_with_sizes.iter().rev() {
+                log::debug!(
+                    "Rotating {:?} to try to reduce database write buffer size",
+                    keyspace.name,
+                );
+
+                if let Err(e) = keyspace.rotate_memtable() {
+                    log::warn!("Rotating keyspace {:?} failed: {e:?}", keyspace.name,);
+                }
+
+                queued_bytes += bytes;
+            }
+
+            break;
+        }
+
         if wb_size <= db_config.max_write_buffer_size_in_bytes {
             break;
         }
@@ -99,7 +179,7 @@ pub fn handle_write_buffer(
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         if start.elapsed() > std::time::Duration::from_secs(3) {
-            log::debug!(
+            log::info!(
                 "Halting writes for {:?} now because database write buffer is still too large",
                 start.elapsed(),
             );
