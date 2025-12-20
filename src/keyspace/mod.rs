@@ -7,6 +7,9 @@ pub mod name;
 pub mod options;
 mod write_delay;
 
+#[cfg(test)]
+mod test;
+
 use crate::{
     db::Keyspaces,
     db_config::Config as DatabaseConfig,
@@ -20,7 +23,7 @@ use crate::{
     worker_pool::WorkerMessage,
     Database, Guard, Iter,
 };
-use lsm_tree::{AbstractTree, AnyTree, KvPair, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
     ops::RangeBounds,
