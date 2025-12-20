@@ -251,7 +251,7 @@ impl Keyspace {
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_messager.clone(),
+            worker_messager: db.worker_pool.sender.clone(),
             id: keyspace_id,
             name,
             tree,
@@ -296,7 +296,7 @@ impl Keyspace {
 
         Ok(Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_messager.clone(),
+            worker_messager: db.worker_pool.sender.clone(),
             id: keyspace_id,
             name,
             config,

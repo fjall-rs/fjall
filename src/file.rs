@@ -9,7 +9,7 @@ pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 3];
 pub const KEYSPACES_FOLDER: &str = "keyspaces";
 
 pub const LOCK_FILE: &str = "lock";
-pub const FJALL_MARKER: &str = "version";
+pub const VERSION_MARKER: &str = "version";
 
 pub const LSM_CURRENT_VERSION_MARKER: &str = "current";
 

@@ -27,7 +27,11 @@ impl LockedFileGuard {
     pub fn create_new(path: &Path) -> crate::Result<Self> {
         log::debug!("Acquiring database lock at {}", path.display());
 
-        let file = File::create_new(path)?;
+        let file = match File::create_new(path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => File::open(path)?,
+            e => e?,
+        };
 
         file.try_lock().map_err(|e| match e {
             std::fs::TryLockError::Error(e) => {

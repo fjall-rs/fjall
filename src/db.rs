@@ -5,7 +5,7 @@
 use crate::{
     batch::WriteBatch,
     db_config::Config,
-    file::{fsync_directory, FJALL_MARKER, KEYSPACES_FOLDER, LOCK_FILE},
+    file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
     flush::manager::FlushManager,
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
@@ -67,9 +67,6 @@ pub struct DatabaseInner {
 
     pub(crate) worker_pool: WorkerPool,
 
-    #[doc(hidden)]
-    pub worker_messager: flume::Sender<WorkerMessage>,
-
     pub(crate) lock_file: LockedFileGuard,
 }
 
@@ -86,7 +83,7 @@ impl Drop for DatabaseInner {
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            let _ = self.worker_messager.try_send(WorkerMessage::Close);
+            let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
 
@@ -407,7 +404,7 @@ impl Database {
     /// Should not be user-facing.
     #[doc(hidden)]
     pub fn create_or_recover(config: Config) -> crate::Result<Self> {
-        if config.path.join(FJALL_MARKER).try_exists()? {
+        if config.path.join(VERSION_MARKER).try_exists()? {
             Self::recover(config)
         } else {
             Self::create_new(config)
@@ -528,7 +525,7 @@ impl Database {
     }
 
     fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
-        let bytes = std::fs::read(path.as_ref().join(FJALL_MARKER))?;
+        let bytes = std::fs::read(path.as_ref().join(VERSION_MARKER))?;
 
         if let Some(version) = FormatVersion::parse_file_header(&bytes) {
             if version == FormatVersion::V2 {
@@ -628,19 +625,10 @@ impl Database {
 
         let is_poisoned = Arc::<AtomicBool>::default();
 
-        let (worker_pool, worker_messager) = WorkerPool::new(
-            config.worker_threads,
-            &supervisor,
-            &stats,
-            &active_thread_counter,
-            &PoisonDart::new(is_poisoned.clone()),
-        )?;
-
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             supervisor,
-            worker_pool,
-            worker_messager,
+            worker_pool: WorkerPool::prepare(),
             keyspace_id_counter: SequenceNumberCounter::new(1),
             meta_keyspace: meta_keyspace.clone(),
             config,
@@ -756,6 +744,14 @@ impl Database {
             }
         }
 
+        db.worker_pool.start(
+            db.config.worker_threads,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+
         log::trace!("Recovery successful");
 
         Ok(db)
@@ -781,8 +777,8 @@ impl Database {
         );
         let journal = Arc::new(journal);
 
-        // NOTE: Lastly, fsync .fjall marker, which contains the version
-        let mut marker = std::fs::File::create_new(config.path.join(FJALL_MARKER))?;
+        // NOTE: Lastly, fsync version marker, which contains the version
+        let mut marker = std::fs::File::create_new(config.path.join(VERSION_MARKER))?;
         FormatVersion::V3.write_file_header(&mut marker)?;
         marker.sync_all()?;
 
@@ -842,18 +838,9 @@ impl Database {
 
         let is_poisoned = Arc::<AtomicBool>::default();
 
-        let (worker_pool, worker_messager) = WorkerPool::new(
-            config.worker_threads,
-            &supervisor,
-            &stats,
-            &active_thread_counter,
-            &PoisonDart::new(is_poisoned.clone()),
-        )?;
-
         let inner = DatabaseInner {
             supervisor,
-            worker_pool,
-            worker_messager,
+            worker_pool: WorkerPool::prepare(),
             keyspace_id_counter: SequenceNumberCounter::new(1),
             meta_keyspace,
             config,
@@ -866,7 +853,17 @@ impl Database {
             lock_file,
         };
 
-        Ok(Self(Arc::new(inner)))
+        let db = Self(Arc::new(inner));
+
+        db.worker_pool.start(
+            db.config.worker_threads,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+
+        Ok(db)
     }
 }
 
