@@ -13,7 +13,7 @@ use crate::{
     },
     Database, Guard, Iter, Keyspace, PersistMode, Readable,
 };
-use lsm_tree::{KvPair, Slice, UserKey, UserValue};
+use lsm_tree::{Slice, UserKey, UserValue};
 use std::{
     fmt,
     ops::{Bound, RangeBounds, RangeFull},

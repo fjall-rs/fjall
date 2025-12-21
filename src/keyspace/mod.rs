@@ -16,7 +16,7 @@ use crate::{
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
     ingestion::Ingestion,
-    journal::{self, manager::EvictionWatermark, Journal},
+    journal::{manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
