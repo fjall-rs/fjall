@@ -65,7 +65,7 @@ pub struct DatabaseInner {
 
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
-    pub(crate) worker_pool: WorkerPool,
+    pub worker_pool: WorkerPool,
 
     pub(crate) lock_file: LockedFileGuard,
 }
@@ -83,7 +83,7 @@ impl Drop for DatabaseInner {
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
+            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
 

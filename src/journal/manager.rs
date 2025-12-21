@@ -91,6 +91,26 @@ impl JournalManager {
         self.disk_space_in_bytes
     }
 
+    /// Gets keyspaces to be flushed so that the oldest journal can be safely evicted
+    pub(crate) fn get_keyspaces_to_flush_for_oldest_journal_eviction(&self) -> Vec<Keyspace> {
+        let mut items = vec![];
+
+        if let Some(item) = self.items.first() {
+            for item in &item.watermarks {
+                let Some(partition_seqno) = item.keyspace.tree.get_highest_persisted_seqno() else {
+                    items.push(item.keyspace.clone());
+                    continue;
+                };
+
+                if partition_seqno < item.lsn {
+                    items.push(item.keyspace.clone());
+                }
+            }
+        }
+
+        items
+    }
+
     /// Performs maintenance, maybe deleting some old journals
     pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
         log::debug!("Running journal maintenance");
@@ -114,6 +134,10 @@ impl JournalManager {
                     };
 
                     if keyspace_seqno < item.lsn {
+                        log::trace!(
+                            "Keyspace {:?} not flushed enough to evict journal",
+                            item.keyspace.name,
+                        );
                         return Ok(());
                     }
                 }
@@ -129,6 +153,7 @@ impl JournalManager {
             //
             // IMPORTANT: On recovery, the journals need to be flushed from oldest to newest.
             log::trace!("Removing fully flushed journal at {}", item.path.display());
+
             std::fs::remove_file(&item.path).inspect_err(|e| {
                 log::error!(
                     "Failed to clean up stale journal file at {}: {e:?}",

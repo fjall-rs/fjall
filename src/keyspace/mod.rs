@@ -16,7 +16,7 @@ use crate::{
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
     ingestion::Ingestion,
-    journal::{manager::EvictionWatermark, Journal},
+    journal::{self, manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
@@ -28,7 +28,7 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
+    sync::{atomic::AtomicBool, Arc, MutexGuard, RwLock},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -669,9 +669,7 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        let active_memtable_id = self.tree.active_memtable().id();
-
-        if self.inner_rotate_memtable(active_memtable_id)? {
+        if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
 
             while self.tree.sealed_memtable_count() > 0 {
@@ -683,19 +681,19 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
+        log::trace!("acquiring journal lock");
+        let mut journal_lock = self.journal.get_writer();
+
         let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(active_memtable_id)
+        self.inner_rotate_memtable(&mut journal_lock, active_memtable_id)
     }
 
-    /// Returns `true` if the memtable was indeed rotated.
     pub(crate) fn inner_rotate_memtable(
         &self,
+        journal: &mut MutexGuard<'_, crate::journal::writer::Writer>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
-        log::debug!("Rotating memtable {:?}", self.name);
-
-        log::trace!("acquiring journal lock");
-        let mut journal = self.journal.get_writer();
+        log::debug!("Rotating keyspace {:?}", self.name);
 
         if self.tree.active_memtable().id() != memtable_id {
             return Ok(false);
@@ -707,42 +705,54 @@ impl Keyspace {
             return Ok(false);
         };
 
-        log::trace!("acquiring journal manager lock");
-
-        #[expect(clippy::expect_used)]
-        let mut journal_manager = self
-            .supervisor
-            .journal_manager
-            .write()
-            .expect("lock is poisoned");
-
-        let seqno_map = {
-            let keyspaces = self.keyspaces.write().expect("lock is poisoned");
-
-            let mut seqnos = Vec::with_capacity(keyspaces.len());
-
-            for keyspace in keyspaces.values() {
-                if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
-                    seqnos.push(EvictionWatermark {
-                        lsn,
-                        keyspace: keyspace.clone(),
-                    });
-                }
-            }
-
-            seqnos
-        };
-
-        journal_manager.rotate_journal(&mut journal, seqno_map)?;
-
-        drop(journal_manager);
-        drop(journal);
-
         self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
             keyspace: self.clone(),
         }));
 
         self.worker_messager.send(WorkerMessage::Flush).ok();
+
+        {
+            #[expect(clippy::expect_used)]
+            let mut journal_manager = self
+                .supervisor
+                .journal_manager
+                .write()
+                .expect("lock is poisoned");
+
+            if journal.len()? >= 64_000_000 {
+                let seqno_map = {
+                    #[expect(clippy::expect_used)]
+                    let keyspaces = self.keyspaces.write().expect("lock is poisoned");
+
+                    let mut seqnos = Vec::with_capacity(keyspaces.len());
+
+                    for keyspace in keyspaces.values() {
+                        if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
+                            seqnos.push(EvictionWatermark {
+                                lsn,
+                                keyspace: keyspace.clone(),
+                            });
+                        }
+                    }
+
+                    seqnos
+                };
+
+                journal_manager.rotate_journal(journal, seqno_map)?;
+            }
+
+            if journal_manager.disk_space_used() >= self.db_config.max_journaling_size_in_bytes {
+                let stragglers =
+                    journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
+
+                for keyspace in stragglers {
+                    if keyspace.id() != self.id() {
+                        log::info!("Rotating {:?} to try to reduce journal size", keyspace.name);
+                        keyspace.request_rotation();
+                    }
+                }
+            }
+        }
 
         {
             // NOTE: If the difference between watermark is too large, and
@@ -765,30 +775,30 @@ impl Keyspace {
             }
         }
 
-        if self.tree.version_free_list_len() >= 100 {
-            log::warn!(
-                "The version free list has grown very large ({}) - maybe you are keeping a snapshot/read transaction open for too long?", 
-                self.tree.version_free_list_len(),
-            );
-        }
+        #[expect(clippy::expect_used)]
+        self.supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .maintenance()?;
 
         Ok(true)
     }
 
     fn check_write_halt(&self) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         while self.tree.l0_run_count() >= 30 {
             std::thread::sleep(Duration::from_millis(10));
 
-            if start.elapsed() > std::time::Duration::from_secs(5) {
+            /* if start.elapsed() > std::time::Duration::from_secs(5) {
                 log::debug!(
                     "Halting writes for 5+ secs now because L0 of {:?} is still too full, starting to send compaction requests",
                     self.name,
                 );
 
                 self.worker_messager
-                    .try_send(WorkerMessage::Compact(self.clone()))
+                    .send(WorkerMessage::Compact(self.clone()))
                     .ok();
 
                 if start.elapsed() > std::time::Duration::from_secs(30) {
@@ -802,7 +812,7 @@ impl Keyspace {
                     log::error!("DB was poisoned while being write halted");
                     return;
                 }
-            }
+            } */
         }
     }
 
@@ -839,21 +849,19 @@ impl Keyspace {
     }
 
     pub(crate) fn request_rotation(&self) {
-        if self.tree.active_memtable().is_flagged_for_rotation() {
-            return;
-        }
+        let lock = self.tree.get_version_history_lock();
+        let latest_version = lock.latest_version();
+        let active_memtable = &latest_version.active_memtable;
 
-        log::trace!("acquiring journal lock");
-        let _journal = self.journal.get_writer();
+        // if active_memtable.is_flagged_for_rotation() {
+        //     return;
+        // }
 
         self.worker_messager
-            .try_send(WorkerMessage::Rotate(
-                self.clone(),
-                self.tree.active_memtable().id(),
-            ))
+            .send(WorkerMessage::Rotate(self.clone(), active_memtable.id()))
             .ok();
 
-        self.tree.active_memtable().flag_rotated();
+        // active_memtable.flag_rotated();
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
@@ -863,9 +871,9 @@ impl Keyspace {
     }
 
     fn maintenance(&self, size: u64) {
-        self.local_backpressure();
         self.check_memtable_rotate(size);
-        self.global_backpressure();
+        self.local_backpressure();
+        // self.global_backpressure();
     }
 
     #[doc(hidden)]

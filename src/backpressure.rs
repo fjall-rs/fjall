@@ -32,28 +32,16 @@ pub fn handle_journal(
             .lock()
             .expect("lock is poisoned");
 
-        let keyspaces = keyspaces.read().expect("lock is poisoned");
-
-        let mut keyspaces_with_seqno = keyspaces
-            .values()
-            .filter(|x| x.tree.active_memtable().size() > 0)
-            .map(|x| (x.clone(), x.tree.get_highest_persisted_seqno()))
-            .collect::<Vec<_>>();
-
-        drop(keyspaces);
-
-        keyspaces_with_seqno.sort_by(|a, b| a.1.cmp(&b.1));
-
-        if let Some(lowest) = keyspaces_with_seqno.first() {
-            log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name);
-            lowest.0.request_rotation();
-        }
-
-        supervisor
+        let stragglers = supervisor
             .journal_manager
-            .write()
+            .read()
             .expect("lock is poisoned")
-            .maintenance();
+            .get_keyspaces_to_flush_for_oldest_journal_eviction();
+
+        for keyspace in stragglers {
+            log::info!("Rotating {:?} to try to reduce journal size", keyspace.name);
+            keyspace.request_rotation();
+        }
     }
 
     while {
@@ -76,7 +64,18 @@ pub fn handle_journal(
                     .lock()
                     .expect("lock is poisoned");
 
-                let keyspaces = keyspaces.read().expect("lock is poisoned");
+                let stragglers = supervisor
+                    .journal_manager
+                    .read()
+                    .expect("lock is poisoned")
+                    .get_keyspaces_to_flush_for_oldest_journal_eviction();
+
+                for keyspace in stragglers {
+                    log::info!("Rotating {:?} to try to reduce journal size", keyspace.name);
+                    keyspace.request_rotation();
+                }
+
+                /* let keyspaces = keyspaces.read().expect("lock is poisoned");
 
                 let mut keyspaces_with_seqno = keyspaces
                     .values()
@@ -91,7 +90,7 @@ pub fn handle_journal(
                 if let Some(lowest) = keyspaces_with_seqno.first() {
                     log::debug!("Rotating {:?} to try to reduce journal size", lowest.0.name);
                     lowest.0.request_rotation();
-                }
+                } */
             }
 
             if start.elapsed() > std::time::Duration::from_secs(10) {
@@ -104,6 +103,12 @@ pub fn handle_journal(
                 log::debug!("Giving up after {:?}", start.elapsed());
                 break;
             }
+
+            supervisor
+                .journal_manager
+                .write()
+                .expect("lock is poisoned")
+                .maintenance();
 
             std::thread::sleep(Duration::from_millis(490));
         }
