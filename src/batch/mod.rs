@@ -170,7 +170,7 @@ impl WriteBatch {
         for keyspace in &keyspaces_with_possible_stall {
             let memtable_size = keyspace.tree.active_memtable().size();
             keyspace.local_backpressure();
-            keyspace.check_memtable_rotate(memtable_size)?;
+            keyspace.check_memtable_rotate(memtable_size);
         }
 
         // Take *some* keyspace and call global backpressure on it

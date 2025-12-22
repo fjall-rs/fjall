@@ -1,8 +1,8 @@
-use fjall::{Database, KeyspaceCreateOptions, UserKey, UserValue};
+use crate::{Database, KeyspaceCreateOptions, UserKey, UserValue};
 
 #[test_log::test]
 #[ignore = "flimsy because of the compaction check, probably race condition... run the compaction synchronously"]
-fn keyspace_ingest() -> fjall::Result<()> {
+fn keyspace_ingest() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let db = Database::builder(&folder).worker_threads(0).open()?;
@@ -18,7 +18,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
             ingest.write(k, v)?;
         }
 
-        ingest.finish()?
+        ingest.finish()?;
     };
     assert_eq!(6, items.len()?);
     assert_eq!(1, items.table_count());
@@ -33,7 +33,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
             ingest.write(k, v)?;
         }
 
-        ingest.finish()?
+        ingest.finish()?;
     }
     assert_eq!(10, items.len()?);
     assert_eq!(2, items.table_count());
@@ -48,7 +48,7 @@ fn keyspace_ingest() -> fjall::Result<()> {
             ingest.write(k, v)?;
         }
 
-        ingest.finish()?
+        ingest.finish()?;
     }
     assert_eq!(13, items.len()?);
     assert_eq!(3, items.table_count());
@@ -63,12 +63,12 @@ fn keyspace_ingest() -> fjall::Result<()> {
             ingest.write(k, v)?;
         }
 
-        ingest.finish()?
+        ingest.finish()?;
     }
     assert_eq!(15, items.len()?);
     assert_eq!(4, items.table_count());
 
-    while !db.worker_messager.is_empty() {}
+    while !db.worker_pool.sender.is_empty() {}
     assert_eq!(1, items.table_count());
 
     Ok(())

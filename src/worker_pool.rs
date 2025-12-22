@@ -6,6 +6,7 @@ use crate::{
     compaction::worker::run as run_compaction, flush::worker::run as run_flush,
     poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor, Keyspace,
 };
+use lsm_tree::MemtableId;
 use std::{
     borrow::Cow,
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -16,6 +17,7 @@ pub enum WorkerMessage {
     Flush,
     Compact(Keyspace),
     Close,
+    Rotate(Keyspace, MemtableId),
 }
 
 impl std::fmt::Debug for WorkerMessage {
@@ -27,6 +29,8 @@ impl std::fmt::Debug for WorkerMessage {
                 Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
                 Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
                 Self::Close => Cow::Borrowed("WorkerMessage:Close"),
+                Self::Rotate(k, memtable_id) =>
+                    Cow::Owned(format!("WorkerMessage:Rotate({:?}, {memtable_id})", k.name)),
             }
         )
     }
@@ -60,6 +64,9 @@ impl WorkerPool {
         thread_counter: &Arc<AtomicUsize>,
     ) -> crate::Result<()> {
         use std::sync::atomic::Ordering::Relaxed;
+
+        log::debug!("Starting worker pool with {pool_size} threads");
+
         thread_counter.fetch_add(pool_size, Relaxed);
 
         let thread_handles = (0..pool_size)
@@ -67,7 +74,7 @@ impl WorkerPool {
                 std::thread::Builder::new()
                     .name("fjall:worker".to_string())
                     .spawn({
-                        log::debug!("Starting fjall worker thread #{i}");
+                        log::trace!("Starting fjall worker thread #{i}");
 
                         let worker_state = WorkerState {
                             pool_size,
@@ -129,6 +136,9 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     match item {
         WorkerMessage::Close => {
             return Ok(true);
+        }
+        WorkerMessage::Rotate(keyspace, memtable_id) => {
+            keyspace.inner_rotate_memtable(memtable_id)?;
         }
         WorkerMessage::Flush => {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
