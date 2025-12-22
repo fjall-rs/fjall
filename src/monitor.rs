@@ -185,19 +185,25 @@ impl Monitor {
             "monitor: flush inactive partition because write buffer has passed 50% of threshold"
         );
 
-        let mut partitions = self
+        let mut partitions_with_active_memtable_size = self
             .partitions
             .read()
             .expect("lock is poisoned")
             .values()
             .cloned()
+            .map(|partition| {
+                let active_memtable_size = partition.tree.active_memtable_size();
+                (partition, active_memtable_size)
+            })
             .collect::<Vec<_>>();
 
-        partitions.sort_by(|a, b| {
-            b.tree
-                .active_memtable_size()
-                .cmp(&a.tree.active_memtable_size())
-        });
+        partitions_with_active_memtable_size
+            .sort_by_key(|(_, active_memtable_size)| *active_memtable_size);
+
+        let partitions = partitions_with_active_memtable_size
+            .into_iter()
+            .map(|(partition, _)| partition)
+            .collect::<Vec<_>>();
 
         let partitions_names_with_queued_tasks = self
             .flush_manager
