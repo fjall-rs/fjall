@@ -816,12 +816,15 @@ impl Keyspace {
         }
     }
 
-    pub(crate) fn local_backpressure(&self) {
+    pub(crate) fn local_backpressure(&self) -> bool {
+        let mut throttled = false;
+
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
             perform_write_stall(l0_run_count);
             self.check_write_halt();
+            throttled = true;
         }
 
         while self.tree.sealed_memtable_count() >= 4 {
@@ -830,22 +833,10 @@ impl Keyspace {
                 self.name,
             );
             std::thread::sleep(Duration::from_millis(100));
+            throttled = true;
         }
-    }
 
-    pub(crate) fn global_backpressure(&self) {
-        crate::backpressure::handle_write_buffer(
-            &self.supervisor,
-            &self.keyspaces,
-            &self.db_config,
-            &self.is_poisoned,
-        );
-        crate::backpressure::handle_journal(
-            &self.supervisor,
-            &self.keyspaces,
-            &self.db_config,
-            &self.is_poisoned,
-        );
+        throttled
     }
 
     pub(crate) fn request_rotation(&self) {
