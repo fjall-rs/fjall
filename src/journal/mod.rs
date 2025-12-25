@@ -111,8 +111,8 @@ impl Journal {
 
     /// Persists the journal.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
-        let mut lock = self.get_writer();
-        lock.persist(mode).map_err(Into::into)
+        let mut journal_writer = self.get_writer();
+        journal_writer.persist(mode).map_err(Into::into)
     }
 
     pub fn recover<P: AsRef<Path>>(

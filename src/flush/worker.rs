@@ -15,6 +15,8 @@ pub fn run(
     snapshot_tracker: &SnapshotTracker,
     stats: &Stats,
 ) -> crate::Result<()> {
+    log::debug!("Flushing keyspace {:?}", task.keyspace.name);
+
     let gc_watermark = snapshot_tracker.get_seqno_safe_to_gc();
 
     let flush_lock = task.keyspace.tree.get_flush_lock();

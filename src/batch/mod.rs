@@ -173,14 +173,6 @@ impl WriteBatch {
             keyspace.check_memtable_rotate(memtable_size);
         }
 
-        // Take *some* keyspace and call global backpressure on it
-        keyspaces_with_possible_stall
-            .iter()
-            .next()
-            .inspect(|first_keyspace| {
-                first_keyspace.global_backpressure();
-            });
-
         Ok(())
     }
 }
