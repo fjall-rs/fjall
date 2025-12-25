@@ -682,15 +682,15 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::trace!("acquiring journal lock");
-        let mut journal_lock = self.journal.get_writer();
+        let mut journal_writer = self.journal.get_writer();
 
         let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(&mut journal_lock, active_memtable_id)
+        self.inner_rotate_memtable(&mut journal_writer, active_memtable_id)
     }
 
     pub(crate) fn inner_rotate_memtable(
         &self,
-        journal: &mut MutexGuard<'_, crate::journal::writer::Writer>,
+        journal_writer: &mut MutexGuard<'_, crate::journal::writer::Writer>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
         log::debug!("Rotating keyspace {:?}", self.name);
@@ -719,7 +719,7 @@ impl Keyspace {
                 .write()
                 .expect("lock is poisoned");
 
-            if journal.len()? >= 64_000_000 {
+            if journal_writer.len()? >= 64_000_000 {
                 let seqno_map = {
                     #[expect(clippy::expect_used)]
                     let keyspaces = self.keyspaces.write().expect("lock is poisoned");
@@ -738,7 +738,7 @@ impl Keyspace {
                     seqnos
                 };
 
-                journal_manager.rotate_journal(journal, seqno_map)?;
+                journal_manager.rotate_journal(journal_writer, seqno_map)?;
             }
 
             if journal_manager.disk_space_used() >= self.db_config.max_journaling_size_in_bytes {

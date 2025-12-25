@@ -139,9 +139,9 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         }
         WorkerMessage::Rotate(keyspace, memtable_id) => {
             log::trace!("acquiring journal lock");
-            let mut journal_lock = keyspace.journal.get_writer();
+            let mut journal_writer = keyspace.journal.get_writer();
 
-            keyspace.inner_rotate_memtable(&mut journal_lock, memtable_id)?;
+            keyspace.inner_rotate_memtable(&mut journal_writer, memtable_id)?;
         }
         WorkerMessage::Flush => {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
