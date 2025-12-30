@@ -763,18 +763,12 @@ impl Keyspace {
         let latest_version = lock.latest_version();
         let active_memtable = &latest_version.active_memtable;
 
-        // if active_memtable.is_flagged_for_rotation() {
-        //     return;
-        // }
-
         self.worker_messager
             .send(WorkerMessage::RotateMemtable(
                 self.clone(),
                 active_memtable.id(),
             ))
             .ok();
-
-        // active_memtable.flag_rotated();
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
