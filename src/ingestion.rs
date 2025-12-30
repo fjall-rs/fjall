@@ -21,19 +21,15 @@ impl<'a> Ingestion<'a> {
         key: K,
         value: V,
     ) -> crate::Result<()> {
-        self.inner
-            .write(key.into(), value.into())
-            .map_err(Into::into)
+        self.inner.write(key, value).map_err(Into::into)
     }
 
     pub fn write_tombstone<K: Into<UserKey>>(&mut self, key: K) -> crate::Result<()> {
-        self.inner.write_tombstone(key.into()).map_err(Into::into)
+        self.inner.write_tombstone(key).map_err(Into::into)
     }
 
     pub fn write_weak_tombstone<K: Into<UserKey>>(&mut self, key: K) -> crate::Result<()> {
-        self.inner
-            .write_weak_tombstone(key.into())
-            .map_err(Into::into)
+        self.inner.write_weak_tombstone(key).map_err(Into::into)
     }
 
     pub fn finish(self) -> crate::Result<()> {
