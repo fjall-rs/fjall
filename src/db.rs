@@ -38,13 +38,6 @@ pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 pub struct DatabaseInner {
     pub(crate) meta_keyspace: MetaKeyspace,
 
-    /// Dictionary of all keyspaces
-    #[doc(hidden)]
-    pub keyspaces: Arc<RwLock<Keyspaces>>,
-
-    /// Journal (write-ahead-log/WAL)
-    pub(crate) journal: Arc<Journal>,
-
     /// Database configuration
     #[doc(hidden)]
     pub config: Config,
@@ -92,7 +85,11 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
-        self.keyspaces.write().expect("lock is poisoned").clear();
+        self.supervisor
+            .keyspaces
+            .write()
+            .expect("lock is poisoned")
+            .clear();
         self.supervisor
             .journal_manager
             .write()
@@ -291,7 +288,7 @@ impl Database {
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
-        Ok(self.journal.get_writer().len()?
+        Ok(self.supervisor.journal.get_writer().len()?
             + self
                 .supervisor
                 .journal_manager
@@ -318,6 +315,7 @@ impl Database {
         let journal_size = self.journal_disk_space()?;
 
         let keyspaces_size = self
+            .supervisor
             .keyspaces
             .read()
             .expect("lock is poisoned")
@@ -357,7 +355,7 @@ impl Database {
             return Err(crate::Error::Poisoned);
         }
 
-        if let Err(e) = self.journal.persist(mode) {
+        if let Err(e) = self.supervisor.journal.persist(mode) {
             self.is_poisoned
                 .store(true, std::sync::atomic::Ordering::Release);
 
@@ -452,7 +450,7 @@ impl Database {
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
-        let keyspaces = self.keyspaces.write().expect("lock is poisoned");
+        let keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
             keyspace.clone()
@@ -476,13 +474,18 @@ impl Database {
     /// Returns the number of keyspaces.
     #[must_use]
     pub fn keyspace_count(&self) -> usize {
-        self.keyspaces.read().expect("lock is poisoned").len()
+        self.supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .len()
     }
 
     /// Gets a list of all keyspace names in the database.
     #[must_use]
     pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
-        self.keyspaces
+        self.supervisor
+            .keyspaces
             .read()
             .expect("lock is poisoned")
             .keys()
@@ -612,9 +615,12 @@ impl Database {
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
+            db_config: config.clone(),
+            keyspaces: keyspaces.clone(),
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
+            journal: active_journal.clone(),
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
@@ -632,8 +638,6 @@ impl Database {
             keyspace_id_counter: SequenceNumberCounter::new(1),
             meta_keyspace: meta_keyspace.clone(),
             config,
-            journal: active_journal,
-            keyspaces,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
             is_poisoned,
@@ -657,7 +661,7 @@ impl Database {
 
         {
             #[expect(clippy::expect_used)]
-            let keyspaces = db.keyspaces.read().expect("lock is poisoned");
+            let keyspaces = db.supervisor.keyspaces.read().expect("lock is poisoned");
 
             // NOTE: If this triggers, the last sealed memtable
             // was not correctly rotated
@@ -673,7 +677,7 @@ impl Database {
             if !journal_recovery.was_active_created {
                 log::trace!("Recovering active memtables from active journal");
 
-                let reader = db.journal.get_reader()?;
+                let reader = db.supervisor.journal.get_reader()?;
 
                 for batch in reader {
                     let batch = batch?;
@@ -738,7 +742,13 @@ impl Database {
 
         db.supervisor.snapshot_tracker.gc();
 
-        for keyspace in db.keyspaces.read().expect("lock is poisoned").values() {
+        for keyspace in db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .values()
+        {
             if keyspace.tree.sealed_memtable_count() > 0 {
                 keyspace.worker_messager.send(WorkerMessage::Flush).ok();
             }
@@ -825,9 +835,12 @@ impl Database {
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
+            db_config: config.clone(),
+            keyspaces,
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
+            journal,
             journal_manager: Arc::new(RwLock::new(JournalManager::new())),
             backpressure_lock: Mutex::default(),
             seqno,
@@ -844,8 +857,6 @@ impl Database {
             keyspace_id_counter: SequenceNumberCounter::new(1),
             meta_keyspace,
             config,
-            journal,
-            keyspaces,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
             is_poisoned,

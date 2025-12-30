@@ -86,9 +86,7 @@ impl<O: Openable> Builder<O> {
     /// Panics if n < 10 or `None`.
     #[must_use]
     pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
-        assert!(n.is_some(), "Setting max_cached_files to None is currently not supported - see https://github.com/fjall-rs/lsm-tree/issues/195");
-
-        let n = n.expect("should be Some");
+        let n = n.expect("Setting max_cached_files to None is currently not supported - see https://github.com/fjall-rs/lsm-tree/issues/195");
         assert!(n >= 10);
 
         self.inner.descriptor_table = Arc::new(DescriptorTable::new(n));
@@ -104,33 +102,30 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Max size of all journals in bytes.
+    /// Maximum size of all journals in bytes.
     ///
     /// Default = 512 MiB
     ///
     /// # Panics
     ///
-    /// Panics if bytes < 24 MiB.
-    ///
-    /// This option should be at least 24 MiB, as one journal takes up at least 16 MiB, so
-    /// anything less will immediately stall the system.
+    /// Panics if < 64 MiB.
     ///
     /// Same as `max_total_wal_size` in `RocksDB`.
     #[must_use]
     pub fn max_journaling_size(mut self, bytes: u64) -> Self {
-        assert!(bytes >= 24 * 1_024 * 1_024);
+        assert!(bytes >= 64 * 1_024 * 1_024);
 
         self.inner.max_journaling_size_in_bytes = bytes;
         self
     }
 
-    /// Max size of all memtables in bytes.
+    /// Maximum size of all memtables in bytes.
     ///
     /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
     ///
-    /// Set to `u64::MAX` to disable it.
+    /// Set to `u64::MAX` or `0` to disable it.
     ///
-    /// Default = 64 MiB
+    /// Default = 128 MiB
     ///
     /// # Panics
     ///

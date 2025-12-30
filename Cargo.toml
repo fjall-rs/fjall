@@ -2,7 +2,7 @@
 name = "fjall"
 description = "Log-structured, embeddable key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "3.0.0-rc.7"
+version = "3.0.0-rc.8"
 edition = "2021"
 rust-version = "1.91.0"
 readme = "README.md"
