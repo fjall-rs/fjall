@@ -125,14 +125,18 @@ impl<O: Openable> Builder<O> {
     ///
     /// Set to `u64::MAX` or `0` to disable it.
     ///
-    /// Default = 128 MiB
+    /// Default = off
     ///
     /// # Panics
     ///
     /// Panics if bytes < 1 MiB.
+    #[doc(hidden)]
     #[must_use]
-    pub fn max_write_buffer_size(mut self, bytes: u64) -> Self {
-        assert!(bytes >= 1_024 * 1_024);
+    #[deprecated = "todo"]
+    pub fn max_write_buffer_size(mut self, bytes: Option<u64>) -> Self {
+        if let Some(bytes) = bytes {
+            assert!(bytes >= 1_024 * 1_024);
+        }
 
         self.inner.max_write_buffer_size_in_bytes = bytes;
         self
