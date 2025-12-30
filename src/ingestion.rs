@@ -28,6 +28,7 @@ impl<'a> Ingestion<'a> {
         self.inner.write_tombstone(key).map_err(Into::into)
     }
 
+    #[doc(hidden)]
     pub fn write_weak_tombstone<K: Into<UserKey>>(&mut self, key: K) -> crate::Result<()> {
         self.inner.write_weak_tombstone(key).map_err(Into::into)
     }
