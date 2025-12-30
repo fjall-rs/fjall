@@ -764,7 +764,7 @@ impl Keyspace {
         let active_memtable = &latest_version.active_memtable;
 
         self.worker_messager
-            .send(WorkerMessage::RotateMemtable(
+            .try_send(WorkerMessage::RotateMemtable(
                 self.clone(),
                 active_memtable.id(),
             ))
