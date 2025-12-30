@@ -5,50 +5,50 @@ use test_log::test;
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
 #[ignore = "restore"]
-fn whitebox_db_drop() -> fjall::Result<()> {
-    use fjall::Database;
+fn whitebox_db_drop() -> crate::Result<()> {
+    use crate::Database;
 
     {
         let folder = tempfile::tempdir()?;
 
-        assert_eq!(0, fjall::drop::load_drop_counter());
+        assert_eq!(0, crate::drop::load_drop_counter());
         let db = Database::builder(&folder).open()?;
-        assert_eq!(5, fjall::drop::load_drop_counter());
+        assert_eq!(5, crate::drop::load_drop_counter());
 
         drop(db);
-        assert_eq!(0, fjall::drop::load_drop_counter());
+        assert_eq!(0, crate::drop::load_drop_counter());
     }
 
     {
         let folder = tempfile::tempdir()?;
 
-        assert_eq!(0, fjall::drop::load_drop_counter());
+        assert_eq!(0, crate::drop::load_drop_counter());
         let db = Database::builder(&folder).open()?;
-        assert_eq!(5, fjall::drop::load_drop_counter());
+        assert_eq!(5, crate::drop::load_drop_counter());
 
         let tree = db.keyspace("default", Default::default)?;
-        assert_eq!(6, fjall::drop::load_drop_counter());
+        assert_eq!(6, crate::drop::load_drop_counter());
 
         drop(tree);
         drop(db);
-        assert_eq!(0, fjall::drop::load_drop_counter());
+        assert_eq!(0, crate::drop::load_drop_counter());
     }
 
     {
         let folder = tempfile::tempdir()?;
 
-        assert_eq!(0, fjall::drop::load_drop_counter());
+        assert_eq!(0, crate::drop::load_drop_counter());
         let db = Database::builder(&folder).open()?;
-        assert_eq!(5, fjall::drop::load_drop_counter());
+        assert_eq!(5, crate::drop::load_drop_counter());
 
         let _tree = db.keyspace("default", Default::default)?;
-        assert_eq!(6, fjall::drop::load_drop_counter());
+        assert_eq!(6, crate::drop::load_drop_counter());
 
         let _tree2 = db.keyspace("different", Default::default)?;
-        assert_eq!(7, fjall::drop::load_drop_counter());
+        assert_eq!(7, crate::drop::load_drop_counter());
     }
 
-    assert_eq!(0, fjall::drop::load_drop_counter());
+    assert_eq!(0, crate::drop::load_drop_counter());
 
     Ok(())
 }
@@ -56,8 +56,8 @@ fn whitebox_db_drop() -> fjall::Result<()> {
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]
 #[ignore = "restore"]
-fn whitebox_db_drop_2() -> fjall::Result<()> {
-    use fjall::{Database, KeyspaceCreateOptions};
+fn whitebox_db_drop_2() -> crate::Result<()> {
+    use crate::{Database, KeyspaceCreateOptions};
 
     let folder = tempfile::tempdir()?;
 
@@ -73,7 +73,7 @@ fn whitebox_db_drop_2() -> fjall::Result<()> {
         tree.rotate_memtable_and_wait()?;
     }
 
-    assert_eq!(0, fjall::drop::load_drop_counter());
+    assert_eq!(0, crate::drop::load_drop_counter());
 
     Ok(())
 }
