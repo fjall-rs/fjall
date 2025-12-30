@@ -11,12 +11,9 @@ mod write_delay;
 mod test;
 
 use crate::{
-    db::Keyspaces,
-    db_config::Config as DatabaseConfig,
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
     ingestion::Ingestion,
-    journal::{manager::EvictionWatermark, Journal},
     locked_file::LockedFileGuard,
     stats::Stats,
     supervisor::Supervisor,
@@ -28,7 +25,7 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, RwLock},
+    sync::{atomic::AtomicBool, Arc, MutexGuard},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -81,18 +78,7 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    // Database stuff
-    //
-    /// Config of database
-    pub(crate) db_config: DatabaseConfig,
-
     pub(crate) supervisor: Supervisor,
-
-    /// Journal of database
-    pub(crate) journal: Arc<Journal>,
-
-    /// Keyspace map of database
-    pub(crate) keyspaces: Arc<RwLock<Keyspaces>>,
 
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
@@ -216,7 +202,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        let _journal_lock = self.journal.get_writer();
+        let _journal_lock = self.supervisor.journal.get_writer();
         self.tree.clear()?;
         Ok(())
     }
@@ -258,9 +244,6 @@ impl Keyspace {
             id: keyspace_id,
             name,
             tree,
-            keyspaces: db.keyspaces.clone(),
-            db_config: db.config.clone(),
-            journal: db.journal.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
             config,
@@ -303,9 +286,6 @@ impl Keyspace {
             id: keyspace_id,
             name,
             config,
-            keyspaces: db.keyspaces.clone(),
-            db_config: db.config.clone(),
-            journal: db.journal.clone(),
             tree,
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
@@ -669,9 +649,7 @@ impl Keyspace {
     // NOTE: Used in tests
     #[doc(hidden)]
     pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        let active_memtable_id = self.tree.active_memtable().id();
-
-        if self.inner_rotate_memtable(active_memtable_id)? {
+        if self.rotate_memtable()? {
             self.supervisor.flush_manager.wait_for_empty();
 
             while self.tree.sealed_memtable_count() > 0 {
@@ -683,19 +661,18 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
+        log::trace!("acquiring journal lock");
+        let journal_writer = self.supervisor.journal.get_writer();
         let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(active_memtable_id)
+        self.inner_rotate_memtable(journal_writer, active_memtable_id)
     }
 
-    /// Returns `true` if the memtable was indeed rotated.
     pub(crate) fn inner_rotate_memtable(
         &self,
+        journal_writer: MutexGuard<'_, crate::journal::writer::Writer>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
-        log::debug!("Rotating memtable {:?}", self.name);
-
-        log::trace!("acquiring journal lock");
-        let mut journal = self.journal.get_writer();
+        log::debug!("Rotating keyspace {:?}", self.name);
 
         if self.tree.active_memtable().id() != memtable_id {
             return Ok(false);
@@ -707,36 +684,7 @@ impl Keyspace {
             return Ok(false);
         };
 
-        log::trace!("acquiring journal manager lock");
-
-        #[expect(clippy::expect_used)]
-        let mut journal_manager = self
-            .supervisor
-            .journal_manager
-            .write()
-            .expect("lock is poisoned");
-
-        let seqno_map = {
-            let keyspaces = self.keyspaces.write().expect("lock is poisoned");
-
-            let mut seqnos = Vec::with_capacity(keyspaces.len());
-
-            for keyspace in keyspaces.values() {
-                if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
-                    seqnos.push(EvictionWatermark {
-                        lsn,
-                        keyspace: keyspace.clone(),
-                    });
-                }
-            }
-
-            seqnos
-        };
-
-        journal_manager.rotate_journal(&mut journal, seqno_map)?;
-
-        drop(journal_manager);
-        drop(journal);
+        drop(journal_writer);
 
         self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
             keyspace: self.clone(),
@@ -752,7 +700,13 @@ impl Keyspace {
             self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
 
-            for keyspace in self.keyspaces.read().expect("lock is poisoned").values() {
+            for keyspace in self
+                .supervisor
+                .keyspaces
+                .read()
+                .expect("lock is poisoned")
+                .values()
+            {
                 if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
                     keyspace.path(),
                     self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
@@ -765,53 +719,31 @@ impl Keyspace {
             }
         }
 
-        if self.tree.version_free_list_len() >= 100 {
-            log::warn!(
-                "The version free list has grown very large ({}) - maybe you are keeping a snapshot/read transaction open for too long?", 
-                self.tree.version_free_list_len(),
-            );
-        }
+        #[expect(clippy::expect_used)]
+        self.supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .maintenance()?;
 
         Ok(true)
     }
 
     fn check_write_halt(&self) {
-        let start = std::time::Instant::now();
-
         while self.tree.l0_run_count() >= 30 {
             std::thread::sleep(Duration::from_millis(10));
-
-            if start.elapsed() > std::time::Duration::from_secs(5) {
-                log::debug!(
-                    "Halting writes for 5+ secs now because L0 of {:?} is still too full, starting to send compaction requests",
-                    self.name,
-                );
-
-                self.worker_messager
-                    .try_send(WorkerMessage::Compact(self.clone()))
-                    .ok();
-
-                if start.elapsed() > std::time::Duration::from_secs(30) {
-                    log::debug!("Giving up after {:?}", start.elapsed());
-                    break;
-                }
-
-                std::thread::sleep(Duration::from_millis(490));
-
-                if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
-                    log::error!("DB was poisoned while being write halted");
-                    return;
-                }
-            }
         }
     }
 
-    pub(crate) fn local_backpressure(&self) {
+    pub(crate) fn local_backpressure(&self) -> bool {
+        let mut throttled = false;
+
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
             perform_write_stall(l0_run_count);
             self.check_write_halt();
+            throttled = true;
         }
 
         while self.tree.sealed_memtable_count() >= 4 {
@@ -820,40 +752,23 @@ impl Keyspace {
                 self.name,
             );
             std::thread::sleep(Duration::from_millis(100));
+            throttled = true;
         }
-    }
 
-    pub(crate) fn global_backpressure(&self) {
-        crate::backpressure::handle_write_buffer(
-            &self.supervisor,
-            &self.keyspaces,
-            &self.db_config,
-            &self.is_poisoned,
-        );
-        crate::backpressure::handle_journal(
-            &self.supervisor,
-            &self.keyspaces,
-            &self.db_config,
-            &self.is_poisoned,
-        );
+        throttled
     }
 
     pub(crate) fn request_rotation(&self) {
-        if self.tree.active_memtable().is_flagged_for_rotation() {
-            return;
-        }
-
-        log::trace!("acquiring journal lock");
-        let _journal = self.journal.get_writer();
+        let lock = self.tree.get_version_history_lock();
+        let latest_version = lock.latest_version();
+        let active_memtable = &latest_version.active_memtable;
 
         self.worker_messager
-            .try_send(WorkerMessage::Rotate(
+            .try_send(WorkerMessage::RotateMemtable(
                 self.clone(),
-                self.tree.active_memtable().id(),
+                active_memtable.id(),
             ))
             .ok();
-
-        self.tree.active_memtable().flag_rotated();
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
@@ -862,10 +777,9 @@ impl Keyspace {
         }
     }
 
-    fn maintenance(&self, size: u64) {
+    fn maintenance(&self, memtable_size: u64) {
+        self.check_memtable_rotate(memtable_size);
         self.local_backpressure();
-        self.check_memtable_rotate(size);
-        self.global_backpressure();
     }
 
     #[doc(hidden)]
@@ -945,7 +859,7 @@ impl Keyspace {
         let key = key.into();
         let value = value.into();
 
-        let mut journal_writer = self.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -1016,7 +930,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -1099,7 +1013,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {

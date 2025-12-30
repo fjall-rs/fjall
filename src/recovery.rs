@@ -23,7 +23,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
     log::trace!("Recovering keyspaces in {}", keyspaces_folder.display());
 
     #[expect(clippy::expect_used)]
-    let mut keyspaces_lock = db.keyspaces.write().expect("lock is poisoned");
+    let mut keyspaces_lock = db.supervisor.keyspaces.write().expect("lock is poisoned");
 
     let mut highest_id = 1;
 
@@ -118,7 +118,7 @@ pub fn recover_sealed_memtables(
         .expect("lock is poisoned");
 
     #[expect(clippy::expect_used)]
-    let keyspaces_lock = db.keyspaces.read().expect("lock is poisoned");
+    let keyspaces_lock = db.supervisor.keyspaces.read().expect("lock is poisoned");
 
     for journal_path in sealed_journal_paths {
         log::debug!("Recovering sealed journal: {}", journal_path.display());

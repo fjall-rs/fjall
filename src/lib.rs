@@ -90,7 +90,6 @@ macro_rules! fail_iter {
     };
 }
 
-mod backpressure;
 mod batch;
 mod builder;
 

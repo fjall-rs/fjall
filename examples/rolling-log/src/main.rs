@@ -6,13 +6,11 @@ const LIMIT: u64 = 10_000_000;
 fn main() -> fjall::Result<()> {
     let path = Path::new(".fjall_data");
 
-    let db = Database::builder(path)
-        .temporary(true)
-        .max_write_buffer_size(4_000_000)
-        .open()?;
+    let db = Database::builder(path).temporary(true).open()?;
 
     let log = db.keyspace("log", || {
         KeyspaceCreateOptions::default()
+            .max_memtable_size(4_000_000)
             .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)))
     })?;
 
