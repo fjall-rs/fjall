@@ -31,7 +31,9 @@ impl<'a> Ingestion<'a> {
     }
 
     pub fn write_weak_tombstone<K: Into<UserKey>>(&mut self, key: K) -> crate::Result<()> {
-        self.inner.write_weak_tombstone(key.into()).map_err(Into::into)
+        self.inner
+            .write_weak_tombstone(key.into())
+            .map_err(Into::into)
     }
 
     pub fn finish(self) -> crate::Result<()> {
