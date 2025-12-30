@@ -6,7 +6,7 @@ use crate::{
     batch::item::Item, snapshot_nonce::SnapshotNonce, Database, Guard, HashMap, Iter, Keyspace,
     OwnedWriteBatch, PersistMode, Readable,
 };
-use lsm_tree::{AbstractTree, InternalValue, KvPair, Memtable, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, InternalValue, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
 
 fn ignore_tombstone_value(item: InternalValue) -> Option<InternalValue> {
