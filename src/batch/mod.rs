@@ -105,7 +105,7 @@ impl WriteBatch {
         }
 
         log::trace!("batch: Acquiring journal writer");
-        let mut journal_writer = self.db.journal.get_writer();
+        let mut journal_writer = self.db.supervisor.journal.get_writer();
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.db.is_poisoned.load(Ordering::Relaxed) {
@@ -133,7 +133,12 @@ impl WriteBatch {
         let mut keyspaces_with_possible_stall = HashSet::new();
 
         #[expect(clippy::expect_used)]
-        let keyspaces = self.db.keyspaces.read().expect("lock is poisoned");
+        let keyspaces = self
+            .db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned");
 
         let mut batch_size = 0u64;
 
@@ -169,17 +174,9 @@ impl WriteBatch {
         // Check each affected keyspace for write stall/halt
         for keyspace in &keyspaces_with_possible_stall {
             let memtable_size = keyspace.tree.active_memtable().size();
+            keyspace.check_memtable_rotate(memtable_size);
             keyspace.local_backpressure();
-            keyspace.check_memtable_rotate(memtable_size)?;
         }
-
-        // Take *some* keyspace and call global backpressure on it
-        keyspaces_with_possible_stall
-            .iter()
-            .next()
-            .inspect(|first_keyspace| {
-                first_keyspace.global_backpressure();
-            });
 
         Ok(())
     }

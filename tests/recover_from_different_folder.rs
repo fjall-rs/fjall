@@ -28,9 +28,7 @@ fn recover_from_different_folder() -> fjall::Result<()> {
     std::env::set_current_dir(".test/def")?;
 
     for _ in 0..100 {
-        let _db = Database::builder(&absolute_folder)
-            .max_write_buffer_size(1_024 * 1_024)
-            .open()?;
+        let _db = Database::builder(&absolute_folder).open()?;
     }
 
     Ok(())

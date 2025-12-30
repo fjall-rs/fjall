@@ -11,7 +11,7 @@ use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
     hash::Hasher,
-    io::{BufWriter, Write},
+    io::{BufWriter, Seek, Write},
     path::{Path, PathBuf},
 };
 
@@ -53,6 +53,10 @@ impl Writer {
     pub fn set_compression(&mut self, comp: CompressionType, threshold: usize) {
         self.compression = comp;
         self.compression_threshold = threshold;
+    }
+
+    pub fn pos(&mut self) -> crate::Result<u64> {
+        self.file.stream_position().map_err(Into::into)
     }
 
     pub fn len(&self) -> crate::Result<u64> {

@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{worker_pool::WorkerMessage, Keyspace};
-use lsm_tree::{AbstractTree, AnyIngestion, UserKey, UserValue};
+use lsm_tree::{AnyIngestion, UserKey, UserValue};
 
 pub struct Ingestion<'a> {
     keyspace: &'a Keyspace,
@@ -50,7 +50,7 @@ impl<'a> Ingestion<'a> {
         // -----------------
         // |
         // insert seqno=1
-        let _journal_lock = self.keyspace.journal.get_writer();
+        let _journal_lock = self.keyspace.supervisor.journal.get_writer();
 
         self.inner
             .finish()

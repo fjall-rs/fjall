@@ -31,7 +31,7 @@ pub struct Config {
     ///
     /// This can be used to cap the memory usage if there are
     /// many (possibly inactive) keyspaces.
-    pub(crate) max_write_buffer_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
+    pub(crate) max_write_buffer_size_in_bytes: Option<u64>, // TODO: should be configurable during runtime: AtomicU64
 
     pub(crate) manual_journal_persist: bool,
 
@@ -67,7 +67,7 @@ impl Config {
             path: absolute_path(path),
             clean_path_on_drop: false,
             descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
-            max_write_buffer_size_in_bytes: /* 128 MiB */ 128 * 1_024 * 1_024,
+            max_write_buffer_size_in_bytes: None,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_threads,
             // journal_recovery_mode: RecoveryMode::default(),

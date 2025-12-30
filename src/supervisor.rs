@@ -5,18 +5,29 @@
 use lsm_tree::SequenceNumberCounter;
 
 use crate::{
-    flush::manager::FlushManager, journal::manager::JournalManager,
-    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
+    db::Keyspaces,
+    flush::manager::FlushManager,
+    journal::{manager::JournalManager, Journal},
+    snapshot_tracker::SnapshotTracker,
+    write_buffer_manager::WriteBufferManager,
 };
 use std::sync::{Arc, Mutex, RwLock};
 
 pub struct SupervisorInner {
+    pub db_config: crate::Config,
+
+    /// Dictionary of all keyspaces
+    #[doc(hidden)]
+    pub keyspaces: Arc<RwLock<Keyspaces>>,
+
     pub(crate) write_buffer_size: WriteBufferManager,
     pub(crate) flush_manager: FlushManager,
 
     pub seqno: SequenceNumberCounter,
 
     pub snapshot_tracker: SnapshotTracker,
+
+    pub(crate) journal: Arc<Journal>,
 
     /// Tracks journal size and garbage collects sealed journals when possible
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
