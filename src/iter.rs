@@ -6,12 +6,12 @@ use crate::{snapshot_nonce::SnapshotNonce, Guard};
 
 type InnerIter = Box<dyn DoubleEndedIterator<Item = lsm_tree::IterGuardImpl> + Send + 'static>;
 
-/// A wrapper around iterators to hold a snapshot nonce
-///
-/// We need to hold the snapshot nonce so the GC watermark does not
-/// move past this snapshot nonce, removing data that may still be read.
-///
-/// Additionally, this struct also maps lsm-tree's Guards to "our" Guards.
+/// A wrapper around iterators that keep a snapshot alive
+//
+// We need to hold the snapshot nonce so the GC watermark does not
+// move past this snapshot nonce, removing data that may still be read.
+//
+// Additionally, this struct also maps lsm-tree's Guards to "our" Guards.
 pub struct Iter {
     iter: InnerIter,
 

@@ -52,13 +52,13 @@
 //!   // ...
 //! }
 //!
-//! // Search by range
-//! for kv in items.range("a"..="z") {
+//! // Iterators implement DoubleEndedIterator, so you can search backwards, too!
+//! for kv in items.prefix("prefix").rev() {
 //!   // ...
 //! }
 //!
-//! // Iterators implement DoubleEndedIterator, so you can search backwards, too!
-//! for kv in items.prefix("prefix").rev() {
+//! // Search by range
+//! for kv in items.range("a"..="z") {
 //!   // ...
 //! }
 //!
