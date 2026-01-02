@@ -187,7 +187,7 @@ pub trait Readable {
     fn is_empty(&self, keyspace: impl AsRef<Keyspace>) -> crate::Result<bool> {
         Ok(self
             .first_key_value(keyspace)
-            .map(|x| x.key())
+            .map(Guard::key)
             .transpose()?
             .is_none())
     }
@@ -221,7 +221,7 @@ pub trait Readable {
     /// This operation scans the entire keyspace: O(n) complexity!
     ///
     /// Never, under any circumstances, use .`len()` == 0 to check
-    /// if the keyspace is empty, use [`ReadTransaction::is_empty`] instead.
+    /// if the keyspace is empty, use [`Readable::is_empty`] instead.
     ///
     /// # Examples
     ///
