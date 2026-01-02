@@ -9,12 +9,8 @@ use std::ops::RangeBounds;
 /// Readable snapshot
 ///
 /// Can be used to pass a write transaction into a function that expects a snapshot.
-///
-/// # Example
-///
-/// TODO: example
 pub trait Readable {
-    /// Retrieves an item from the transaction's state.
+    /// Retrieves an item from the snapshot.
     ///
     /// # Examples
     ///
@@ -48,7 +44,7 @@ pub trait Readable {
         key: K,
     ) -> crate::Result<Option<UserValue>>;
 
-    /// Returns `true` if the transaction's state contains the specified key.
+    /// Returns `true` if the snapshot contains the specified key.
     ///
     /// # Examples
     ///
@@ -75,8 +71,8 @@ pub trait Readable {
         key: K,
     ) -> crate::Result<bool>;
 
-    /// Returns the first key-value pair in the transaction's state.
-    /// The key in this pair is the minimum key in the transaction's state.
+    /// Returns the first key-value pair in the snapshot.
+    /// The key in this pair is the minimum key in the snapshot.
     ///
     /// # Examples
     ///
@@ -101,8 +97,8 @@ pub trait Readable {
     /// Will return `Err` if an IO error occurs.
     fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
-    /// Returns the last key-value pair in the transaction's state.
-    /// The key in this pair is the maximum key in the transaction's state.
+    /// Returns the last key-value pair in the snapshot.
+    /// The key in this pair is the maximum key in the snapshot.
     ///
     /// # Examples
     ///
@@ -127,7 +123,7 @@ pub trait Readable {
     /// Will return `Err` if an IO error occurs.
     fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
-    /// Retrieves the size of an item from the transaction's state.
+    /// Retrieves the size of an item from the snapshot.
     ///
     /// # Examples
     ///
@@ -192,7 +188,7 @@ pub trait Readable {
             .is_none())
     }
 
-    /// Iterates over the transaction's state.
+    /// Iterates over the snapshot.
     ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
@@ -214,9 +210,9 @@ pub trait Readable {
     /// ```
     fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter;
 
-    /// Scans the entire keyspace, returning the amount of items.
+    /// Scans the entire keyspace, returning the number of items.
     ///
-    /// ###### Caution
+    /// # Caution
     ///
     /// This operation scans the entire keyspace: O(n) complexity!
     ///
@@ -263,7 +259,7 @@ pub trait Readable {
         Ok(count)
     }
 
-    /// Iterates over a range of the transaction's state.
+    /// Iterates over a range of the snapshot.
     ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     ///
@@ -289,7 +285,7 @@ pub trait Readable {
         range: R,
     ) -> Iter;
 
-    /// Iterates over a prefixed set of the transaction's state.
+    /// Iterates over a prefixed set of the snapshot.
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     ///

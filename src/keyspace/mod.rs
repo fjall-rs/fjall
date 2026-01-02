@@ -441,7 +441,7 @@ impl Keyspace {
 
     /// Scans the entire keyspace, returning the amount of items.
     ///
-    /// ###### Caution
+    /// # Caution
     ///
     /// This operation scans the entire keyspace: O(n) complexity!
     ///
@@ -475,7 +475,7 @@ impl Keyspace {
         let mut count = 0;
 
         for guard in self.iter() {
-            let _ = guard.key();
+            let _ = guard.key()?;
             count += 1;
         }
 
