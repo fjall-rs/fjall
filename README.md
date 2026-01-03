@@ -133,7 +133,6 @@ If you know that you are going to keep a value around for a long time, you may w
 > It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set fits _fully_ into memory.
 
 Additionally, orthogonally to the block cache, each `Keyspace` has its own write buffer (["Memtable"](https://docs.rs/fjall/latest/fjall/struct.KeyspaceCreateOptions.html#method.max_memtable_size)) which is the unit of data flushed back into the "proper" index structure.
-The sum of all write buffers are capped by the database-wide [`max_write_buffer_size`](https://docs.rs/fjall/latest/fjall/struct.DatabaseBuilder.html#method.max_write_buffer_size).
 
 ## Error handling
 
