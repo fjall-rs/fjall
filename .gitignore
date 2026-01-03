@@ -13,15 +13,12 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Added by cargo
-
-/target
-.lsm.data
-.fjall_data
-.data
-
-/old_*
-.test
-
 mutants
 mutants.out
+
+.fjall_data
+.data
+.test
+/old_*
+
+.directory
