@@ -556,7 +556,13 @@ impl Database {
         // Check version
         Self::check_version(&config.path)?;
 
-        let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+        let lock_file = match LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE)) {
+            Ok(f) => f,
+            Err(crate::Error::Io(e)) if e.kind() == std::io::ErrorKind::Unsupported => {
+                todo!("handle unsupported platform")
+            }
+            Err(e) => return Err(e),
+        };
 
         // TODO:
         // let recovery_mode = config.journal_recovery_mode;
@@ -773,7 +779,13 @@ impl Database {
 
         std::fs::create_dir_all(&config.path)?;
 
-        let lock_file = LockedFileGuard::create_new(&config.path.join(LOCK_FILE))?;
+        let lock_file = match LockedFileGuard::create_new(&config.path.join(LOCK_FILE)) {
+            Ok(f) => f,
+            Err(crate::Error::Io(e)) if e.kind() == std::io::ErrorKind::Unsupported => {
+                todo!("handle unsupported platform")
+            }
+            Err(e) => return Err(e),
+        };
 
         let journal_folder_path = &config.path;
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
