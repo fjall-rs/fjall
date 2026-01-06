@@ -294,7 +294,14 @@ impl Writer {
         )?;
 
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        hasher.update(&self.buf[item_start..]);
+
+        debug_assert!(
+            item_start <= self.buf.len(),
+            "item_start must be valid after serialize_item"
+        );
+        let (_, item_data) = self.buf.split_at(item_start);
+        hasher.update(item_data);
+
         let checksum = hasher.finish();
 
         self.buf.write_u64::<LittleEndian>(checksum)?;
