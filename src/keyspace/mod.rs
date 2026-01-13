@@ -53,6 +53,7 @@ pub fn apply_to_base_config(
         .with_kv_separation(our_config.kv_separation_opts.clone())
         .index_block_partitioning_policy(our_config.index_block_partitioning_policy.clone())
         .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
+        .filter_policy(our_config.filter_policy.clone())
 }
 
 pub struct KeyspaceInner {
