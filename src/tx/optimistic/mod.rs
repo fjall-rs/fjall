@@ -73,7 +73,11 @@ impl OptimisticTxDatabase {
     /// let db = OptimisticTxDatabase::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
-    /// db.transact(|tx, attempt| {
+    /// let mut attempt = 0;
+    ///
+    /// db.transact(move |tx| {
+    ///     attempt += 1;
+    ///
     ///     if attempt > 100 {
     ///         return Err(fjall::Error::TransactionAborted);
     ///     }
@@ -91,11 +95,11 @@ impl OptimisticTxDatabase {
     /// ```
     pub fn transact(
         &self,
-        f: impl Fn(&mut WriteTransaction, usize) -> crate::Result<()>,
+        mut f: impl FnMut(&mut WriteTransaction) -> crate::Result<()>,
     ) -> crate::Result<()> {
-        for i in 0.. {
+        loop {
             let mut wtx = self.write_tx()?;
-            f(&mut wtx, i)?;
+            f(&mut wtx)?;
             let result = wtx.commit()?;
 
             if result.is_ok() {
@@ -104,8 +108,6 @@ impl OptimisticTxDatabase {
 
             // Retry
         }
-
-        Ok(())
     }
 
     /// Starts a new writeable transaction.
