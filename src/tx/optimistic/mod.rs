@@ -63,7 +63,7 @@ impl OptimisticTxDatabase {
     ///
     /// Note that the transaction function may be called multiple times in case of conflicts, so make sure it is idempotent.
     ///
-    /// The transaction accepts the current attempt count as 2nd parameter, which allows to abort a transaction manually, using [`crate::Error::TransactionAborted`]
+    /// The transaction can be aborted by returning [`crate::Error::TransactionAborted`].
     ///
     /// # Example
     ///
