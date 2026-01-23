@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use fjall::config::{
-    BlockSizePolicy, BloomConstructionPolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy,
-    PinningPolicy, RestartIntervalPolicy,
+    BlockSizePolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy, PinningPolicy,
+    RestartIntervalPolicy,
 };
-use fjall::{CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use lsm_tree::compaction::CompactionStrategy;
+use std::sync::Arc;
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -90,18 +89,16 @@ fn reload_keyspace_config() -> fjall::Result<()> {
     let filter_block_partitioning_policy = PinningPolicy::new([false, false, true]);
     let index_block_partitioning_policy = PinningPolicy::new([false, false, false, false, true]);
 
-    let filter_policy = FilterPolicy::new([
-        FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
-        FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(9.0)),
-        FilterPolicyEntry::None,
-    ]);
+    let filter_policy = FilterPolicy::new([FilterPolicyEntry::Bloom(
+        fjall::config::BloomConstructionPolicy::FalsePositiveRate(0.54321),
+    )]);
 
     let data_block_hash_ratio_policy = HashRatioPolicy::all(0.5);
 
     {
         let db = Database::builder(&folder).open()?;
 
-        let _tree = db.keyspace("default", || {
+        let keyspace = db.keyspace("default", || {
             KeyspaceCreateOptions::default()
                 .data_block_size_policy(data_block_size.clone())
                 .data_block_restart_interval_policy(data_block_interval_policy.clone())
@@ -114,15 +111,13 @@ fn reload_keyspace_config() -> fjall::Result<()> {
                 .filter_policy(filter_policy.clone())
                 .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone())
         })?;
-    };
 
-    {
-        let db = Database::builder(&folder).open()?;
-        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-        assert_eq!(data_block_size, tree.config.data_block_size_policy);
+        let real_config = keyspace.tree.tree_config();
+
+        assert_eq!(data_block_size, real_config.data_block_size_policy);
         assert_eq!(
             data_block_interval_policy,
-            tree.config.data_block_restart_interval_policy,
+            real_config.data_block_restart_interval_policy,
         );
         // assert_eq!(
         //     index_block_interval_policy,
@@ -130,27 +125,71 @@ fn reload_keyspace_config() -> fjall::Result<()> {
         // );
         assert_eq!(
             filter_block_partitioning_policy,
-            tree.config.filter_block_partitioning_policy,
+            real_config.filter_block_partitioning_policy,
         );
         assert_eq!(
             filter_block_pinning_policy,
-            tree.config.filter_block_pinning_policy,
+            real_config.filter_block_pinning_policy,
         );
         assert_eq!(
             index_block_partitioning_policy,
-            tree.config.index_block_partitioning_policy,
+            real_config.index_block_partitioning_policy,
         );
         assert_eq!(
             index_block_pinning_policy,
-            tree.config.index_block_pinning_policy,
+            real_config.index_block_pinning_policy,
         );
-        assert!(tree.config.expect_point_read_hits);
-        assert_eq!(filter_policy, tree.config.filter_policy);
+
+        assert_eq!(filter_policy, real_config.filter_policy);
 
         assert_eq!(
             data_block_hash_ratio_policy,
-            tree.config.data_block_hash_ratio_policy,
+            real_config.data_block_hash_ratio_policy,
         );
+
+        assert!(keyspace.config.expect_point_read_hits);
+    };
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let keyspace = db.keyspace("default", || unreachable!())?;
+
+        let real_config = keyspace.tree.tree_config();
+
+        assert_eq!(data_block_size, real_config.data_block_size_policy);
+        assert_eq!(
+            data_block_interval_policy,
+            real_config.data_block_restart_interval_policy,
+        );
+        // assert_eq!(
+        //     index_block_interval_policy,
+        //     tree.config.index_block_restart_interval_policy,
+        // );
+        assert_eq!(
+            filter_block_partitioning_policy,
+            real_config.filter_block_partitioning_policy,
+        );
+        assert_eq!(
+            filter_block_pinning_policy,
+            real_config.filter_block_pinning_policy,
+        );
+        assert_eq!(
+            index_block_partitioning_policy,
+            real_config.index_block_partitioning_policy,
+        );
+        assert_eq!(
+            index_block_pinning_policy,
+            real_config.index_block_pinning_policy,
+        );
+
+        assert_eq!(filter_policy, real_config.filter_policy);
+
+        assert_eq!(
+            data_block_hash_ratio_policy,
+            real_config.data_block_hash_ratio_policy,
+        );
+
+        assert!(keyspace.config.expect_point_read_hits);
     }
 
     Ok(())
