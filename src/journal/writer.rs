@@ -261,7 +261,7 @@ impl Writer {
         Ok(self.buf.len())
     }
 
-    pub(crate) fn write_raw(
+    pub fn write_raw(
         &mut self,
         keyspace_id: InternalKeyspaceId,
         key: &[u8],

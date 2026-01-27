@@ -90,7 +90,9 @@ macro_rules! fail_iter {
     };
 }
 
-mod batch;
+#[doc(hidden)]
+pub mod batch;
+
 mod builder;
 
 /// Contains compaction strategies
@@ -113,7 +115,10 @@ mod flush;
 mod guard;
 mod ingestion;
 mod iter;
-mod journal;
+
+#[doc(hidden)]
+pub mod journal;
+
 mod keyspace;
 mod locked_file;
 mod meta_keyspace;
