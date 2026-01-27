@@ -33,6 +33,9 @@ pub enum Entry {
         compression: CompressionType,
     },
     End(u64),
+    Clear {
+        keyspace_id: InternalKeyspaceId,
+    },
 }
 
 pub fn serialize_marker_item<W: Write>(
@@ -85,18 +88,20 @@ pub enum Tag {
     Start = 1,
     Item = 2,
     End = 3,
+    Clear = 4,
 }
 
 impl TryFrom<u8> for Tag {
     type Error = crate::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        use Tag::{End, Item, Start};
+        use Tag::{Clear, End, Item, Start};
 
         match value {
             1 => Ok(Start),
             2 => Ok(Item),
             3 => Ok(End),
+            4 => Ok(Clear),
             _ => Err(crate::Error::InvalidTag(("JournalMarkerTag", value))),
         }
     }
@@ -117,7 +122,7 @@ impl Entry {
     }
 
     pub(crate) fn encode_into<W: Write>(&self, writer: &mut W) -> Result<(), crate::Error> {
-        use Entry::{End, Item, Start};
+        use Entry::{Clear, End, Item, Start};
 
         match self {
             Start { item_count, seqno } => {
@@ -142,6 +147,10 @@ impl Entry {
                 // Otherwise we couldn't know if the checksum value is maybe mangled
                 // (only partially written, with the rest being padding zeroes)
                 writer.write_all(MAGIC_BYTES)?;
+            }
+            Clear { keyspace_id } => {
+                writer.write_u8(Tag::Clear.into())?;
+                writer.write_u64::<LittleEndian>(*keyspace_id)?;
             }
         }
         Ok(())
@@ -226,6 +235,10 @@ impl Entry {
 
                 Ok(Self::End(checksum))
             }
+            Tag::Clear => {
+                let keyspace_id = reader.read_u64::<LittleEndian>()?;
+                Ok(Self::Clear { keyspace_id })
+            }
         }
     }
 }
@@ -276,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_invalid_tag() {
-        let invalid_data = [4u8; 1]; // Invalid tag
+        let invalid_data = [5u8; 1]; // Invalid tag
 
         // Try to deserialize with invalid data
         let mut reader = &invalid_data[..];
@@ -285,7 +298,7 @@ mod tests {
         match result {
             Ok(_) => panic!("should error"),
             Err(error) => match error {
-                crate::Error::InvalidTag(("JournalMarkerTag", 4)) => {}
+                crate::Error::InvalidTag(("JournalMarkerTag", 5)) => {}
                 _ => panic!("should throw InvalidTag"),
             },
         }

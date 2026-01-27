@@ -106,6 +106,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
     Ok(())
 }
 
+#[expect(clippy::too_many_lines)]
 pub fn recover_sealed_memtables(
     db: &Database,
     sealed_journal_paths: &[PathBuf],
@@ -170,6 +171,28 @@ pub fn recover_sealed_memtables(
                         unreachable!()
                     }
                 }
+            }
+
+            for keyspace_id in &batch.cleared_keyspaces {
+                let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
+                    continue;
+                };
+
+                let Some(handle) = keyspaces_lock.get(&keyspace_name) else {
+                    continue;
+                };
+
+                watermarks
+                    .entry(*keyspace_id)
+                    .and_modify(|prev| {
+                        prev.lsn = prev.lsn.max(batch.seqno);
+                    })
+                    .or_insert_with(|| EvictionWatermark {
+                        keyspace: handle.clone(),
+                        lsn: batch.seqno,
+                    });
+
+                handle.tree.clear().ok();
             }
         }
 

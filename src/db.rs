@@ -709,6 +709,18 @@ impl Database {
                             }
                         }
                     }
+
+                    for keyspace_id in &batch.cleared_keyspaces {
+                        let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
+                            continue;
+                        };
+
+                        let Some(keyspace) = keyspaces.get(&keyspace_name) else {
+                            continue;
+                        };
+
+                        keyspace.tree.clear().ok();
+                    }
                 }
 
                 for keyspace in keyspaces.values() {
