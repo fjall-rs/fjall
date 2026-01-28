@@ -69,6 +69,10 @@ impl Writer {
         Ok(self.file.get_ref().metadata()?.len())
     }
 
+    pub fn is_empty(&self) -> bool {
+        !self.is_buffer_dirty
+    }
+
     pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
         self.persist(PersistMode::SyncAll)?;
 
