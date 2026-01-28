@@ -63,9 +63,8 @@ cargo add fjall
 
 ```rust
 use fjall::{Database, KeyspaceCreateOptions, PersistMode};
-use std::path::Path;
 
-fn example(path: impl AsRef<Path>) -> fjall::Result<()> {
+fn main() -> fjall::Result<()> {
     // A database may contain multiple keyspaces
     // You should probably only use a single database for your application
     let db = Database::builder(path).open()?;
