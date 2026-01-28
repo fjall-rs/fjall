@@ -91,10 +91,6 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
     /// Returns the last key-value pair in the snapshot.
@@ -117,10 +113,6 @@ pub trait Readable {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard>;
 
     /// Retrieves the size of an item from the snapshot.
