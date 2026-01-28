@@ -605,10 +605,6 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> Option<Guard> {
         self.tree.first_key_value(SeqNo::MAX, None).map(Guard)
     }
@@ -633,10 +629,6 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> Option<Guard> {
         self.tree.last_key_value(SeqNo::MAX, None).map(Guard)
     }
