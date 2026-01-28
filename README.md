@@ -62,43 +62,46 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, PersistMode};
+use std::path::Path;
 
-// A database may contain multiple keyspaces
-// You should probably only use a single database for your application
-let db = Database::builder(folder).open()?;
-// TxDatabase::builder for transactional semantics
+fn example(path: impl AsRef<Path>) -> fjall::Result<()> {
+    // A database may contain multiple keyspaces
+    // You should probably only use a single database for your application
+    let db = Database::builder(path).open()?;
+    // TxDatabase::builder for transactional semantics
 
-// Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
-let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
+    // Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
+    let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
-// Write some data
-items.insert("a", "hello")?;
+    // Write some data
+    items.insert("a", "hello")?;
 
-// And retrieve it
-let bytes = items.get("a")?;
+    // And retrieve it
+    let bytes = items.get("a")?;
 
-// Or remove it again
-items.remove("a")?;
+    // Or remove it again
+    items.remove("a")?;
 
-// Search by prefix
-for kv in items.prefix("prefix") {
-  // ...
+    // Search by prefix
+    for kv in items.prefix("prefix") {
+        // ...
+    }
+
+    // Search by range
+    for kv in items.range("a"..="z") {
+        // ...
+    }
+
+    // Iterators implement DoubleEndedIterator, so you can search backwards, too!
+    for kv in items.prefix("prefix").rev() {
+        // ...
+    }
+
+    // Sync the journal to disk to make sure data is definitely durable
+    // When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
+    db.persist(PersistMode::SyncAll)
 }
-
-// Search by range
-for kv in items.range("a"..="z") {
-  // ...
-}
-
-// Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for kv in items.prefix("prefix").rev() {
-  // ...
-}
-
-// Sync the journal to disk to make sure data is definitely durable
-// When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
-keyspace.persist(PersistMode::SyncAll)?;
 ```
 
 > [!TIP]
@@ -193,7 +196,7 @@ How can you help?
 - [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
   - or join the Discord server: [https://discord.com/invite/HvYGp4NFFk](https://discord.com/invite/HvYGp4NFFk)
 - [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
-- [Open a PR](https://github.com/fjall-rs/fjall/compare), 
+- [Open a PR](https://github.com/fjall-rs/fjall/compare),
   - [See open issues to pick up here](https://github.com/search?q=org%3Afjall-rs+label%3A%22help+wanted%22+state%3Aopen+&type=issues)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
 
