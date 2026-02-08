@@ -78,8 +78,10 @@ impl<O: Openable> Builder<O> {
     /// Sets the upper limit for cached file descriptors.
     ///
     /// Use `None` to disable file caching.
-    /// In that case, every table file will pins its own file descriptor which
-    /// may be more performant for very small databases.
+    /// In that case, every table file will pins its own file descriptor
+    /// which avoids cache accesses when the block cache has frequent cache misses.
+    ///
+    /// Note that for very large databases, this can open a lot of files.
     #[must_use]
     pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
         self.inner.descriptor_table = n.map(|n| Arc::new(DescriptorTable::new(n)));
