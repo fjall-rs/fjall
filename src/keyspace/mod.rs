@@ -197,6 +197,12 @@ impl Keyspace {
         &self.name
     }
 
+    pub fn drop_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
+        let _journal_lock = self.supervisor.journal.get_writer();
+        self.tree.drop_range(range)?;
+        Ok(())
+    }
+
     /// Clears the entire keyspace in O(1) time.
     ///
     /// # Errors
