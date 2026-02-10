@@ -197,7 +197,7 @@ impl Keyspace {
         &self.name
     }
 
-/// Drops a range of tables.
+    /// Drops a range of tables.
     ///
     /// Note that this operation works at the table-file level, and is not thus
     /// a arbitrary, logical range deletion.
