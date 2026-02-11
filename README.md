@@ -62,43 +62,45 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptions, PersistMode};
 
-// A database may contain multiple keyspaces
-// You should probably only use a single database for your application
-let db = Database::builder(folder).open()?;
-// TxDatabase::builder for transactional semantics
+fn main() -> fjall::Result<()> {
+    // A database may contain multiple keyspaces
+    // You should probably only use a single database for your application
+    let db = Database::builder(path).open()?;
+    // TxDatabase::builder for transactional semantics
 
-// Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
-let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
+    // Each keyspace is its own physical LSM-tree, and thus isolated from other keyspaces
+    let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
-// Write some data
-items.insert("a", "hello")?;
+    // Write some data
+    items.insert("a", "hello")?;
 
-// And retrieve it
-let bytes = items.get("a")?;
+    // And retrieve it
+    let bytes = items.get("a")?;
 
-// Or remove it again
-items.remove("a")?;
+    // Or remove it again
+    items.remove("a")?;
 
-// Search by prefix
-for kv in items.prefix("prefix") {
-  // ...
+    // Search by prefix
+    for kv in items.prefix("prefix") {
+        // ...
+    }
+
+    // Search by range
+    for kv in items.range("a"..="z") {
+        // ...
+    }
+
+    // Iterators implement DoubleEndedIterator, so you can search backwards, too!
+    for kv in items.prefix("prefix").rev() {
+        // ...
+    }
+
+    // Sync the journal to disk to make sure data is definitely durable
+    // When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
+    db.persist(PersistMode::SyncAll)
 }
-
-// Search by range
-for kv in items.range("a"..="z") {
-  // ...
-}
-
-// Iterators implement DoubleEndedIterator, so you can search backwards, too!
-for kv in items.prefix("prefix").rev() {
-  // ...
-}
-
-// Sync the journal to disk to make sure data is definitely durable
-// When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
-keyspace.persist(PersistMode::SyncAll)?;
 ```
 
 > [!TIP]
@@ -145,7 +147,7 @@ It's best to let the application crash and restart, which is the [safest way to 
 The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
 However this isolation level can not do read-modify-write operations without the chance of lost updates.
 Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
-For that reason, if you need transactional semantics, you need to use one of the transactional database implementation (`OptimisticTransactionDatabase` or `SingleWriterTransactionDatabase`).
+For that reason, if you need transactional semantics, you need to use one of the transactional database implementation (`OptimisticTxDatabase` or `SingleWriterTxDatabase`).
 
 TL;DR: Fjall supports both transactional and non-transactional workloads.
 Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
@@ -193,7 +195,7 @@ How can you help?
 - [Ask a question](https://github.com/fjall-rs/fjall/discussions/new?category=q-a)
   - or join the Discord server: [https://discord.com/invite/HvYGp4NFFk](https://discord.com/invite/HvYGp4NFFk)
 - [Post benchmarks and things you created](https://github.com/fjall-rs/fjall/discussions/new?category=show-and-tell)
-- [Open a PR](https://github.com/fjall-rs/fjall/compare), 
+- [Open a PR](https://github.com/fjall-rs/fjall/compare),
   - [See open issues to pick up here](https://github.com/search?q=org%3Afjall-rs+label%3A%22help+wanted%22+state%3Aopen+&type=issues)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
 
