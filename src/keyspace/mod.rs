@@ -236,7 +236,7 @@ impl Keyspace {
     /// // Create table file d-e
     /// tree.rotate_memtable_and_wait()?;
     ///
-    /// tree.drop_range("a"..="c")?;
+    /// tree.drop_table_in_range("a"..="c")?;
     /// assert!(!tree.contains_key("a")?);
     /// assert!(!tree.contains_key("b")?);
     /// assert!(!tree.contains_key("c")?);
@@ -250,7 +250,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn drop_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
+    pub fn drop_table_in_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
         let _journal_lock = self.supervisor.journal.get_writer();
         self.tree.drop_range(range)?;
         Ok(())
