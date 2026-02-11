@@ -212,8 +212,8 @@ impl Keyspace {
 
     /// Drops a range of tables.
     ///
-    /// Note that this operation works at the table-file level, and is not thus
-    /// a arbitrary, logical range deletion.
+    /// Note that this operation works at the table-file level, and thus is not
+    /// an arbitrary, logical range deletion.
     /// That means, table files that are fully enclosed in the range will simply
     /// be dropped, but other data (e.g. in the Memtable) will continue to exist.
     ///
