@@ -335,10 +335,6 @@ impl WriteTransaction {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         keyspace: impl AsRef<Keyspace>,
@@ -382,10 +378,6 @@ impl WriteTransaction {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn remove<K: Into<UserKey>>(&mut self, keyspace: impl AsRef<Keyspace>, key: K) {
         let keyspace = keyspace.as_ref();
         let key: UserKey = key.into();
@@ -430,10 +422,6 @@ impl WriteTransaction {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: impl AsRef<Keyspace>, key: K) {
         let keyspace = keyspace.as_ref();
