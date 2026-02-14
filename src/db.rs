@@ -417,7 +417,6 @@ impl Database {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[doc(hidden)]
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle.name)?;
