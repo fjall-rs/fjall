@@ -258,10 +258,6 @@ impl BaseTransaction {
     /// Shorter keys and values result in better performance.
     ///
     /// If the key already exists, the item will be overwritten.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub(super) fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         keyspace: &Keyspace,
@@ -285,10 +281,6 @@ impl BaseTransaction {
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub(super) fn remove<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
         self.memtables
             .entry(keyspace.clone())
@@ -307,10 +299,6 @@ impl BaseTransaction {
     ///
     /// The key may be up to 65536 bytes long.
     /// Shorter keys result in better performance.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub(super) fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &Keyspace, key: K) {
         self.memtables
             .entry(keyspace.clone())

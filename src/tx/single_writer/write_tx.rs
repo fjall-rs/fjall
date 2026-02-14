@@ -7,7 +7,7 @@ use crate::{
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
     Guard, Iter, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
 };
-use lsm_tree::{KvPair, UserKey, UserValue};
+use lsm_tree::{UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
 
 /// A single-writer (serialized) cross-keyspace transaction
@@ -274,10 +274,6 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(
         &mut self,
         keyspace: &SingleWriterTxKeyspace,
@@ -317,10 +313,6 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn remove<K: Into<UserKey>>(&mut self, keyspace: &SingleWriterTxKeyspace, key: K) {
         self.inner.remove(keyspace.inner(), key);
     }
@@ -361,10 +353,6 @@ impl<'tx> WriteTransaction<'tx> {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, keyspace: &SingleWriterTxKeyspace, key: K) {
         self.inner.remove_weak(keyspace.inner(), key);

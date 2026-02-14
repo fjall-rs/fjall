@@ -400,10 +400,6 @@ impl SingleWriterTxKeyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[must_use]
     pub fn first_key_value(&self) -> Option<Guard> {
         let read_tx = self.db.read_tx();
@@ -430,10 +426,6 @@ impl SingleWriterTxKeyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     #[must_use]
     pub fn last_key_value(&self) -> Option<Guard> {
         let read_tx = self.db.read_tx();

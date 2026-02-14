@@ -192,12 +192,42 @@ impl Keyspace {
     }
 
     /// Returns the keyspace's name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// assert_eq!("default", &**tree.name());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     #[must_use]
     pub fn name(&self) -> &KeyspaceKey {
         &self.name
     }
 
     /// Clears the entire keyspace in O(1) time.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "a")?;
+    /// assert!(tree.contains_key("a")?);
+    ///
+    /// tree.clear()?;
+    /// assert!(!tree.contains_key("a")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -605,10 +635,6 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn first_key_value(&self) -> Option<Guard> {
         self.tree.first_key_value(SeqNo::MAX, None).map(Guard)
     }
@@ -633,10 +659,6 @@ impl Keyspace {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
     pub fn last_key_value(&self) -> Option<Guard> {
         self.tree.last_key_value(SeqNo::MAX, None).map(Guard)
     }
