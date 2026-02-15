@@ -93,12 +93,6 @@ impl SingleWriterTxKeyspace {
     ///
     /// The operation will run wrapped in a transaction.
     ///
-    /// # Note
-    ///
-    /// The provided closure can be called multiple times as this function
-    /// automatically retries on conflict. Since this is an `FnMut`, make sure
-    /// it is idempotent and will not cause side-effects.
-    ///
     /// # Examples
     ///
     /// ```
@@ -140,7 +134,7 @@ impl SingleWriterTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: Into<UserKey>, F: FnOnce(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
         f: F,
@@ -160,12 +154,6 @@ impl SingleWriterTxKeyspace {
     /// Returning `None` removes the item if it existed before.
     ///
     /// The operation will run wrapped in a transaction.
-    ///
-    /// # Note
-    ///
-    /// The provided closure can be called multiple times as this function
-    /// automatically retries on conflict. Since this is an `FnMut`, make sure
-    /// it is idempotent and will not cause side-effects.
     ///
     /// # Examples
     ///
@@ -208,7 +196,7 @@ impl SingleWriterTxKeyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: Into<UserKey>, F: FnOnce(Option<&UserValue>) -> Option<UserValue>>(
         &self,
         key: K,
         f: F,

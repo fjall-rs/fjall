@@ -197,7 +197,7 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn update_fetch<
         K: Into<UserKey>,
-        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+        F: FnOnce(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
         keyspace: &Keyspace,
@@ -229,7 +229,7 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn fetch_update<
         K: Into<UserKey>,
-        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+        F: FnOnce(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
         keyspace: &Keyspace,
