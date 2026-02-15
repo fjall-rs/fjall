@@ -86,10 +86,7 @@ impl<O: Openable> Builder<O> {
     /// Panics if n < 10 or `None`.
     #[must_use]
     pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
-        let n = n.expect("Setting max_cached_files to None is currently not supported - see https://github.com/fjall-rs/lsm-tree/issues/195");
-        assert!(n >= 10);
-
-        self.inner.descriptor_table = Arc::new(DescriptorTable::new(n));
+        self.inner.descriptor_table = n.map(|n| Arc::new(DescriptorTable::new(n)));
         self
     }
 
