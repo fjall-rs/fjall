@@ -233,8 +233,35 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        let _journal_lock = self.supervisor.journal.get_writer();
+        use std::sync::atomic::Ordering;
+
+        let mut journal_writer = self.supervisor.journal.get_writer();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
+        let seqno = self.supervisor.seqno.next();
+
+        journal_writer.write_clear(self.id, seqno)?;
+
+        if !self.config.manual_journal_persist {
+            journal_writer
+                .persist(crate::PersistMode::Buffer)
+                .map_err(|e| {
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
+                    self.is_poisoned.store(true, Ordering::Relaxed);
+                    e
+                })?;
+        }
+
         self.tree.clear()?;
+
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        drop(journal_writer);
+
         Ok(())
     }
 

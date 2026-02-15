@@ -19,12 +19,14 @@ pub struct ReadBatchItem {
 pub struct Batch {
     pub(crate) seqno: SeqNo,
     pub(crate) items: Vec<ReadBatchItem>,
+    pub(crate) cleared_keyspaces: Vec<InternalKeyspaceId>,
 }
 
 #[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
     items: Vec<ReadBatchItem>,
+    cleared_keyspaces: Vec<InternalKeyspaceId>,
     is_in_batch: bool,
     batch_counter: u32,
     batch_seqno: SeqNo,
@@ -37,6 +39,7 @@ impl JournalBatchReader {
         Self {
             reader,
             items: Vec::with_capacity(10),
+            cleared_keyspaces: Vec::new(),
             checksum_builder: xxhash_rust::xxh3::Xxh3::new(),
             is_in_batch: false,
             batch_seqno: 0,
@@ -73,6 +76,7 @@ impl JournalBatchReader {
 impl Iterator for JournalBatchReader {
     type Item = crate::Result<Batch>;
 
+    #[expect(clippy::too_many_lines)]
     fn next(&mut self) -> Option<Self::Item> {
         use crate::Error::JournalRecovery;
 
@@ -132,9 +136,11 @@ impl Iterator for JournalBatchReader {
                     self.last_valid_pos = journal_file_pos;
 
                     let items = std::mem::take(&mut self.items);
+                    let cleared_keyspaces = std::mem::take(&mut self.cleared_keyspaces);
                     return Some(Ok(Batch {
                         seqno: self.batch_seqno,
                         items,
+                        cleared_keyspaces,
                     }));
                 }
                 Entry::Item {
@@ -178,6 +184,31 @@ impl Iterator for JournalBatchReader {
                         value,
                         value_type,
                     });
+                }
+                Entry::Clear { keyspace_id } => {
+                    let entry = Entry::Clear { keyspace_id };
+                    let mut bytes = Vec::with_capacity(16);
+                    fail_iter!(entry.encode_into(&mut bytes));
+
+                    self.checksum_builder.update(&bytes);
+
+                    if !self.is_in_batch {
+                        log::debug!("Invalid batch: found clear marker without start marker");
+
+                        // Discard batch
+                        fail_iter!(self.truncate_to(self.last_valid_pos));
+
+                        return None;
+                    }
+
+                    if self.batch_counter == 0 {
+                        log::error!("Invalid batch: Expected end marker (too many items in batch)");
+                        return Some(Err(JournalRecovery(JournalRecoveryError::TooManyItems)));
+                    }
+
+                    self.batch_counter -= 1;
+
+                    self.cleared_keyspaces.push(keyspace_id);
                 }
             }
         }

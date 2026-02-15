@@ -297,6 +297,32 @@ impl Writer {
         Ok(byte_count)
     }
 
+    pub(crate) fn write_clear(
+        &mut self,
+        keyspace_id: InternalKeyspaceId,
+        seqno: SeqNo,
+    ) -> crate::Result<usize> {
+        self.is_buffer_dirty = true;
+
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+        let mut byte_count = 0;
+
+        self.buf.clear();
+        byte_count += self.write_start(1, seqno)?;
+        self.buf.clear();
+
+        Entry::Clear { keyspace_id }.encode_into(&mut self.buf)?;
+        self.file.write_all(&self.buf)?;
+        hasher.update(&self.buf);
+        byte_count += self.buf.len();
+
+        self.buf.clear();
+        let checksum = hasher.finish();
+        byte_count += self.write_end(checksum)?;
+
+        Ok(byte_count)
+    }
+
     pub fn write_batch<'a>(
         &mut self,
         items: impl Iterator<Item = &'a BatchItem>,
