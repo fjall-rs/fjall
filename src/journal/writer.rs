@@ -4,9 +4,15 @@
 
 use super::entry::{serialize_marker_item, Entry};
 use crate::{
-    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    batch::item::Item as BatchItem,
+    file::fsync_directory,
+    journal::{
+        entry::{serialize_item, Tag},
+        recovery::JournalId,
+    },
     keyspace::InternalKeyspaceId,
 };
+use byteorder::{LittleEndian, WriteBytesExt};
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -61,6 +67,10 @@ impl Writer {
 
     pub fn len(&self) -> crate::Result<u64> {
         Ok(self.file.get_ref().metadata()?.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.is_buffer_dirty
     }
 
     pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
@@ -255,7 +265,7 @@ impl Writer {
         Ok(self.buf.len())
     }
 
-    pub(crate) fn write_raw(
+    pub fn write_raw(
         &mut self,
         keyspace_id: InternalKeyspaceId,
         key: &[u8],
@@ -264,37 +274,45 @@ impl Writer {
         seqno: u64,
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
-
-        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        let mut byte_count = 0;
-
-        self.buf.clear();
-        byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(
+        let compression =
+            if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
+                self.compression
+            } else {
+                CompressionType::None
+            };
+
+        self.buf.write_u8(Tag::SingleItem.into())?;
+        self.buf.write_u64::<LittleEndian>(seqno)?;
+
+        let item_start = self.buf.len();
+
+        serialize_item(
             &mut self.buf,
             keyspace_id,
             key,
             value,
             value_type,
-            if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
-                self.compression
-            } else {
-                CompressionType::None
-            },
+            compression,
         )?;
+
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+
+        debug_assert!(
+            item_start <= self.buf.len(),
+            "item_start must be valid after serialize_item"
+        );
+        let (_, item_data) = self.buf.split_at(item_start);
+        hasher.update(item_data);
+
+        let checksum = hasher.finish();
+
+        self.buf.write_u64::<LittleEndian>(checksum)?;
 
         self.file.write_all(&self.buf)?;
 
-        hasher.update(&self.buf);
-        byte_count += self.buf.len();
-
-        self.buf.clear();
-        let checksum = hasher.finish();
-        byte_count += self.write_end(checksum)?;
-
-        Ok(byte_count)
+        Ok(self.buf.len()) // tag + seqno + item + checksum
     }
 
     pub fn write_batch<'a>(

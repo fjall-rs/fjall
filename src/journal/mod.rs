@@ -7,7 +7,7 @@ pub mod entry;
 pub mod error;
 pub mod manager;
 pub mod reader;
-mod recovery;
+pub mod recovery;
 pub mod writer;
 
 #[cfg(test)]
