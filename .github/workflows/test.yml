@@ -102,3 +102,32 @@ jobs:
         run: cargo nextest run --features lz4
       - name: Run doc tests
         run: cargo test --doc
+  codecov:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ runner.os }}-cargo
+          workspaces: >
+            . -> target
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@nextest
+      - name: Run tests
+        run: cargo llvm-cov --no-report nextest --features lz4
+      - name: Run doc tests
+        run: cargo llvm-cov --no-report --doc
+      - name: Create code coverage report
+        run: cargo llvm-cov report --doctests --lcov --output-path lcov.info
+      - name: Upload coverage data to codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
