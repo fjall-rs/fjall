@@ -138,9 +138,6 @@ macro_rules! policy {
 }
 
 impl CreateOptions {
-    // TODO: we need a database-level factory to assign compaction filter factories on recovery...
-
-    // TODO: add more docs or reference to lsm-tree compaction filter docs
     /// Installs a compaction filter factory.
     pub(crate) fn with_compaction_filter_factory(
         mut self,
