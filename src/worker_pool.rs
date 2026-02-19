@@ -189,7 +189,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         for keyspace in stragglers {
                             log::info!(
                                 "Rotating {:?} to try to reduce journal size",
-                                keyspace.name
+                                keyspace.name,
                             );
                             keyspace.request_rotation();
                         }
@@ -226,6 +226,19 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             }
 
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
+
+            ctx.supervisor.snapshot_tracker.pullup();
+            ctx.supervisor.snapshot_tracker.gc();
+
+            if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
+                keyspace.path(),
+                ctx.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
+            ) {
+                log::warn!(
+                    "Version history GC failed for keyspace {:?}: {e:?}",
+                    keyspace.name,
+                );
+            }
         }
     }
 
