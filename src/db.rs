@@ -458,7 +458,19 @@ impl Database {
 
             let keyspace_id = self.keyspace_id_counter.next();
 
-            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options())?;
+            let mut opts = create_options();
+
+            // Install compaction filter factory if needed
+            if let Some(f) = self
+                .config
+                .compaction_filter_factory_assigner
+                .as_ref()
+                .and_then(|f| f(&name))
+            {
+                opts = opts.with_compaction_filter_factory(f);
+            }
+
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
 
             self.meta_keyspace
                 .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;

@@ -9,6 +9,9 @@ use std::{
     sync::Arc,
 };
 
+pub(crate) type CompactionFilterAssigner =
+    &'static (dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync);
+
 /// Global database configuration
 #[derive(Clone)]
 pub struct Config {
@@ -41,7 +44,10 @@ pub struct Config {
     pub(crate) journal_compression_type: CompressionType,
 
     pub(crate) journal_compression_threshold: usize,
+
     // pub(crate) journal_recovery_mode: RecoveryMode,
+    //
+    pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
 }
 
 const DEFAULT_CPU_CORES: usize = 4;
@@ -82,6 +88,8 @@ impl Config {
             journal_compression_threshold: 4_096,
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
+
+            compaction_filter_factory_assigner: None,
         }
     }
 }
