@@ -615,11 +615,11 @@ impl Database {
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
-            keyspaces: keyspaces.clone(),
+            keyspaces: keyspaces,
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
-            journal: active_journal.clone(),
+            journal: active_journal,
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
