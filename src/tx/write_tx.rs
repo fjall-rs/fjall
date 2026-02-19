@@ -202,7 +202,7 @@ impl BaseTransaction {
         &mut self,
         keyspace: &Keyspace,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
         let prev = self.get(keyspace, &key)?;
@@ -234,7 +234,7 @@ impl BaseTransaction {
         &mut self,
         keyspace: &Keyspace,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
         let prev = self.get(keyspace, &key)?;

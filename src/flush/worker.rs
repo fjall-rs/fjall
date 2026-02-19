@@ -13,7 +13,7 @@ pub fn run(
     task: &Task,
     write_buffer_manager: &WriteBufferManager,
     snapshot_tracker: &SnapshotTracker,
-    stats: &Stats,
+    _stats: &Stats,
 ) -> crate::Result<()> {
     log::debug!("Flushing keyspace {:?}", task.keyspace.name);
 
