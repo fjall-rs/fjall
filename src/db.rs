@@ -615,7 +615,7 @@ impl Database {
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
-            keyspaces: keyspaces,
+            keyspaces,
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
