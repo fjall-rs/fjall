@@ -40,10 +40,10 @@ fn compaction_filter() -> fjall::Result<()> {
     let folder = get_tmp_folder();
 
     let db = fjall::Database::builder(&folder)
-        .with_compaction_filter_factories(&|keyspace| match keyspace {
+        .with_compaction_filter_factories(Arc::new(|keyspace| match keyspace {
             "my_items" => Some(Arc::new(MyFactory)),
             _ => None,
-        })
+        }))
         .open()?;
 
     {
@@ -95,10 +95,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
 
     {
         let db = fjall::Database::builder(&folder)
-            .with_compaction_filter_factories(&|keyspace| match keyspace {
+            .with_compaction_filter_factories(Arc::new(|keyspace| match keyspace {
                 "my_items" => Some(Arc::new(MyFactory)),
                 _ => None,
-            })
+            }))
             .open()?;
 
         let _tree = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
@@ -107,10 +107,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
 
     {
         let db = fjall::Database::builder(&folder)
-            .with_compaction_filter_factories(&|keyspace| match keyspace {
+            .with_compaction_filter_factories(Arc::new(|keyspace| match keyspace {
                 "my_items" => Some(Arc::new(MyFactory)),
                 _ => None,
-            })
+            }))
             .open()?;
 
         {

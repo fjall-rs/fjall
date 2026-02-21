@@ -10,7 +10,7 @@ use std::{
 };
 
 pub(crate) type CompactionFilterAssigner =
-    &'static (dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync);
+    Arc<dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync>;
 
 /// Global database configuration
 #[derive(Clone)]
