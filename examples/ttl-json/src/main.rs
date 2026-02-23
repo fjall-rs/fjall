@@ -20,7 +20,7 @@ impl CompactionFilter for MyFilter {
         };
 
         if self.0 >= item.ttl {
-            eprintln!("Drop stale value: {}", std::str::from_utf8(&i).unwrap());
+            eprintln!("Drop stale value: {:?}", std::str::from_utf8(&i));
             Ok(Verdict::Remove)
         } else {
             Ok(Verdict::Keep)
