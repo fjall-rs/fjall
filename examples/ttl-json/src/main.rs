@@ -20,7 +20,13 @@ impl CompactionFilter for MyFilter {
         };
 
         if self.0 >= item.ttl {
-            eprintln!("Drop stale value: {:?}", std::str::from_utf8(&i));
+            eprintln!(
+                "Drop stale value: {}",
+                match std::str::from_utf8(&i) {
+                    Ok(s) => s,
+                    Err(_) => "<invalid json>", // should not be possible
+                },
+            );
             Ok(Verdict::Remove)
         } else {
             Ok(Verdict::Keep)
@@ -69,6 +75,8 @@ fn main() -> fjall::Result<()> {
         "c",
         serde_json::to_string(&Record { id: 3, ttl: 15 }).unwrap(),
     )?;
+    items.insert("d", "dsadasdasd")?;
+    items.insert("e", &[255])?;
     items.rotate_memtable_and_wait()?;
 
     items.major_compact()?;
@@ -103,7 +111,6 @@ fn main() -> fjall::Result<()> {
     assert!(!items.contains_key("a")?);
     assert!(!items.contains_key("b")?);
     assert!(!items.contains_key("c")?);
-    assert!(items.is_empty()?);
 
     Ok(())
 }
