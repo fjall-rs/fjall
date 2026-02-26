@@ -791,18 +791,31 @@ impl Keyspace {
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
+            throttled = true;
+
             perform_write_stall(l0_run_count);
             self.check_write_halt();
-            throttled = true;
         }
 
+        let start = std::time::Instant::now();
+
         while self.tree.sealed_memtable_count() >= 4 {
+            throttled = true;
+
             log::debug!(
                 "Halting writes because we have 4+ sealed memtables in {:?} queued up",
                 self.name,
             );
             std::thread::sleep(Duration::from_millis(100));
-            throttled = true;
+
+            if start.elapsed() > Duration::from_secs(5) {
+                log::debug!("Flushing {:?} took too long - giving up", self.name);
+                self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+                    keyspace: self.clone(),
+                }));
+                self.worker_messager.send(WorkerMessage::Flush).ok();
+                break;
+            }
         }
 
         throttled
