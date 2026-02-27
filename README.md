@@ -38,6 +38,7 @@ It features:
 - Built-in compression (default = `LZ4`)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
+- Custom compaction filters to run custom logic during compactions (optional)
 - Automatic background maintenance
 
 It is not:

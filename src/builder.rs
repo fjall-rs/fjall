@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{tx::single_writer::Openable, Config};
+use crate::{db_config::CompactionFilterAssigner, tx::single_writer::Openable, Config};
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{marker::PhantomData, path::Path, sync::Arc};
 
@@ -33,6 +33,15 @@ impl<O: Openable> Builder<O> {
     /// Errors if an I/O error occurred, or if the database can not be opened.
     pub fn open(self) -> crate::Result<O> {
         O::open(self.inner)
+    }
+
+    /// Sets the cache capacity in bytes.
+    ///
+    /// It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
+    #[must_use]
+    pub fn cache_size(mut self, size_bytes: u64) -> Self {
+        self.inner.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
+        self
     }
 
     /// Sets the compression type to use for large values that are written into the journal file.
@@ -87,15 +96,6 @@ impl<O: Openable> Builder<O> {
     #[must_use]
     pub fn max_cached_files(mut self, n: Option<usize>) -> Self {
         self.inner.descriptor_table = n.map(|n| Arc::new(DescriptorTable::new(n)));
-        self
-    }
-
-    /// Sets the cache capacity in bytes.
-    ///
-    /// It is recommended to configure the block cache capacity to be ~20-25% of the available memory - or more **if** the data set _fully_ fits into memory.
-    #[must_use]
-    pub fn cache_size(mut self, size_bytes: u64) -> Self {
-        self.inner.cache = Arc::new(Cache::with_capacity_bytes(size_bytes));
         self
     }
 
@@ -157,6 +157,36 @@ impl<O: Openable> Builder<O> {
     #[must_use]
     pub fn temporary(mut self, flag: bool) -> Self {
         self.inner.clean_path_on_drop = flag;
+        self
+    }
+
+    // TODO: 3.1.0 add more docs or reference to lsm-tree compaction filter docs
+
+    /// Installs a factory that assigns compaction filters to new or recovered keyspaces.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+    /// # use std::sync::Arc;
+    /// # let folder = tempfile::tempdir()?.keep();
+    /// use lsm_tree::compaction::filter::Factory;
+    ///
+    /// let db = Database::builder(&folder)
+    ///     .temporary(true)
+    ///     .with_compaction_filter_factories(
+    ///         &|keyspace| {
+    ///             // Match on the keyspace name to assign specific compaction filters
+    ///             todo!()
+    ///         }
+    ///     )
+    ///     .open()?;
+    ///
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    pub fn with_compaction_filter_factories(mut self, f: CompactionFilterAssigner) -> Self {
+        self.inner.compaction_filter_factory_assigner = Some(f);
         self
     }
 }
