@@ -210,6 +210,55 @@ impl Keyspace {
         &self.name
     }
 
+    /// Drops a range of tables.
+    ///
+    /// Note that this operation works at the table-file level, and thus is not
+    /// an arbitrary, logical range deletion.
+    /// That means, table files that are fully enclosed in the range will simply
+    /// be dropped, but other data (e.g. in the Memtable) will continue to exist.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "a")?;
+    /// tree.insert("b", "b")?;
+    /// tree.insert("c", "c")?;
+    /// // Create table file a-c
+    /// tree.rotate_memtable_and_wait()?;
+    ///
+    /// tree.insert("d", "d")?;
+    /// tree.insert("e", "e")?;
+    /// // Create table file d-e
+    /// tree.rotate_memtable_and_wait()?;
+    ///
+    /// tree.drop_tables_in_range("a"..="c")?;
+    /// assert!(!tree.contains_key("a")?);
+    /// assert!(!tree.contains_key("b")?);
+    /// assert!(!tree.contains_key("c")?);
+    /// assert!(tree.contains_key("d")?);
+    /// assert!(tree.contains_key("e")?);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn drop_tables_in_range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        range: R,
+    ) -> crate::Result<()> {
+        let _journal_lock = self.supervisor.journal.get_writer();
+        self.tree.drop_range(range)?;
+        Ok(())
+    }
+
     /// Clears the entire keyspace in O(1) time.
     ///
     /// # Examples
