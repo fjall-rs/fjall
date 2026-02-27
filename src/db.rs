@@ -375,6 +375,12 @@ impl Database {
         self.config.cache.capacity()
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn cache_size(&self) -> u64 {
+        self.config.cache.size()
+    }
+
     /// Opens a database in the given directory.
     ///
     /// # Errors

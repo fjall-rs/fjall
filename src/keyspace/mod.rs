@@ -273,6 +273,12 @@ impl Keyspace {
         self.tree.stale_blob_bytes()
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn sealed_memtable_count(&self) -> usize {
+        self.tree.sealed_memtable_count()
+    }
+
     /// Prepare ingestiom of a pre-sorted stream of key-value pairs into the keyspace.
     ///
     /// Prefer this method over singular inserts or write batches/transactions
@@ -297,16 +303,16 @@ impl Keyspace {
         config: CreateOptions,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
-            supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_pool.sender.clone(),
             id: keyspace_id,
             name,
             tree,
+            config,
+            supervisor: db.supervisor.clone(),
+            worker_messager: db.worker_pool.sender.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            config,
-            stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
+            stats: db.stats.clone(),
         }))
     }
 
