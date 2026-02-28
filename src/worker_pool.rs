@@ -189,7 +189,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         for keyspace in stragglers {
                             log::info!(
                                 "Rotating {:?} to try to reduce journal size",
-                                keyspace.name
+                                keyspace.name,
                             );
                             keyspace.request_rotation();
                         }
