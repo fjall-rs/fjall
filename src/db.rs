@@ -768,6 +768,14 @@ impl Database {
         {
             if keyspace.tree.sealed_memtable_count() > 0 {
                 log::trace!("Queuing keyspace {:?} to get flushed", keyspace.name());
+
+                // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
+                db.supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: keyspace.clone(),
+                    }));
+
                 keyspace.worker_messager.send(WorkerMessage::Flush).ok();
             }
         }
