@@ -149,7 +149,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             };
 
             {
-                log::trace!("acquiring journal lock to rotate journal");
+                log::trace!("acquiring journal lock to maybe rotate journal");
                 let mut journal_writer = ctx.supervisor.journal.get_writer();
 
                 if journal_writer.pos()? > 64_000_000 {
