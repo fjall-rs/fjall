@@ -238,13 +238,6 @@ pub fn recover_sealed_memtables(
 
                 // TODO: unit test write buffer size after recovery
 
-                // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                db.supervisor
-                    .flush_manager
-                    .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: wm.keyspace.clone(),
-                    }));
-
                 recovered_count += 1;
             }
         }
