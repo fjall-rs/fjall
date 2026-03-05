@@ -375,6 +375,12 @@ impl Database {
         self.config.cache.capacity()
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn cache_size(&self) -> u64 {
+        self.config.cache.size()
+    }
+
     /// Opens a database in the given directory.
     ///
     /// # Errors
@@ -773,6 +779,15 @@ impl Database {
             .values()
         {
             if keyspace.tree.sealed_memtable_count() > 0 {
+                log::trace!("Queuing keyspace {:?} to get flushed", keyspace.name());
+
+                // IMPORTANT: Add task to flush manager, so it can be flushed
+                db.supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: keyspace.clone(),
+                    }));
+
                 keyspace.worker_messager.send(WorkerMessage::Flush).ok();
             }
         }
