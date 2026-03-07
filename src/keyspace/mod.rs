@@ -54,6 +54,7 @@ pub fn apply_to_base_config(
         .index_block_partitioning_policy(our_config.index_block_partitioning_policy.clone())
         .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
         .filter_policy(our_config.filter_policy.clone())
+        .with_compaction_filter_factory(our_config.compaction_filter_factory.clone())
 }
 
 pub struct KeyspaceInner {
