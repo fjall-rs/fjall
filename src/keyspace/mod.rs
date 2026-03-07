@@ -54,6 +54,7 @@ pub fn apply_to_base_config(
         .index_block_partitioning_policy(our_config.index_block_partitioning_policy.clone())
         .filter_block_partitioning_policy(our_config.filter_block_partitioning_policy.clone())
         .filter_policy(our_config.filter_policy.clone())
+        .with_compaction_filter_factory(our_config.compaction_filter_factory.clone())
 }
 
 pub struct KeyspaceInner {
@@ -233,8 +234,35 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        let _journal_lock = self.supervisor.journal.get_writer();
+        use std::sync::atomic::Ordering;
+
+        let mut journal_writer = self.supervisor.journal.get_writer();
+
+        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+        if self.is_poisoned.load(Ordering::Relaxed) {
+            return Err(crate::Error::Poisoned);
+        }
+
+        let seqno = self.supervisor.seqno.next();
+
+        journal_writer.write_clear(self.id, seqno)?;
+
+        if !self.config.manual_journal_persist {
+            journal_writer
+                .persist(crate::PersistMode::Buffer)
+                .map_err(|e| {
+                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
+                    self.is_poisoned.store(true, Ordering::Relaxed);
+                    e
+                })?;
+        }
+
         self.tree.clear()?;
+
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        drop(journal_writer);
+
         Ok(())
     }
 
@@ -244,6 +272,12 @@ impl Keyspace {
     #[must_use]
     pub fn fragmented_blob_bytes(&self) -> u64 {
         self.tree.stale_blob_bytes()
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn sealed_memtable_count(&self) -> usize {
+        self.tree.sealed_memtable_count()
     }
 
     /// Prepare ingestiom of a pre-sorted stream of key-value pairs into the keyspace.
@@ -270,16 +304,16 @@ impl Keyspace {
         config: CreateOptions,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
-            supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_pool.sender.clone(),
             id: keyspace_id,
             name,
             tree,
+            config,
+            supervisor: db.supervisor.clone(),
+            worker_messager: db.worker_pool.sender.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            config,
-            stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
+            stats: db.stats.clone(),
         }))
     }
 

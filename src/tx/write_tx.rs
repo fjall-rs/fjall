@@ -197,12 +197,12 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn update_fetch<
         K: Into<UserKey>,
-        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+        F: FnOnce(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
         keyspace: &Keyspace,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
         let prev = self.get(keyspace, &key)?;
@@ -229,12 +229,12 @@ impl BaseTransaction {
     /// Will return `Err` if an IO error occurs.
     pub(super) fn fetch_update<
         K: Into<UserKey>,
-        F: FnMut(Option<&UserValue>) -> Option<UserValue>,
+        F: FnOnce(Option<&UserValue>) -> Option<UserValue>,
     >(
         &mut self,
         keyspace: &Keyspace,
         key: K,
-        mut f: F,
+        f: F,
     ) -> crate::Result<Option<UserValue>> {
         let key = key.into();
         let prev = self.get(keyspace, &key)?;

@@ -1,3 +1,8 @@
+# 3.1.0
+
+- [feat] Implemented support for compaction filters (custom logic during compactions)
+- [msrv] Reduced MSRV to 1.90
+
 # 3.0.0
 
 - [feat] Implemented new block format in `lsm-tree`
