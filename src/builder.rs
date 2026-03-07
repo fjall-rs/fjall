@@ -160,8 +160,6 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    // TODO: 3.1.0 add more docs or reference to lsm-tree compaction filter docs
-
     /// Installs a factory that assigns compaction filters to new or recovered keyspaces.
     ///
     /// # Examples
