@@ -375,6 +375,12 @@ impl Database {
         self.config.cache.capacity()
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn cache_size(&self) -> u64 {
+        self.config.cache.size()
+    }
+
     /// Opens a database in the given directory.
     ///
     /// # Errors
@@ -458,7 +464,19 @@ impl Database {
 
             let keyspace_id = self.keyspace_id_counter.next();
 
-            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), create_options())?;
+            let mut opts = create_options();
+
+            // Install compaction filter factory if needed
+            if let Some(f) = self
+                .config
+                .compaction_filter_factory_assigner
+                .as_ref()
+                .and_then(|f| f(&name))
+            {
+                opts = opts.with_compaction_filter_factory(f);
+            }
+
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
 
             self.meta_keyspace
                 .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;
@@ -615,11 +633,11 @@ impl Database {
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
-            keyspaces: keyspaces.clone(),
+            keyspaces,
             flush_manager: FlushManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
-            journal: active_journal.clone(),
+            journal: active_journal,
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
@@ -708,6 +726,18 @@ impl Database {
                             }
                         }
                     }
+
+                    for keyspace_id in &batch.cleared_keyspaces {
+                        let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
+                            continue;
+                        };
+
+                        let Some(keyspace) = keyspaces.get(&keyspace_name) else {
+                            continue;
+                        };
+
+                        keyspace.tree.clear().ok();
+                    }
                 }
 
                 for keyspace in keyspaces.values() {
@@ -749,6 +779,15 @@ impl Database {
             .values()
         {
             if keyspace.tree.sealed_memtable_count() > 0 {
+                log::trace!("Queuing keyspace {:?} to get flushed", keyspace.name());
+
+                // IMPORTANT: Add task to flush manager, so it can be flushed
+                db.supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: keyspace.clone(),
+                    }));
+
                 keyspace.worker_messager.send(WorkerMessage::Flush).ok();
             }
         }

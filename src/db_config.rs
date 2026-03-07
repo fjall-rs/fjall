@@ -9,6 +9,9 @@ use std::{
     sync::Arc,
 };
 
+pub(crate) type CompactionFilterAssigner =
+    Arc<dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync>;
+
 /// Global database configuration
 #[derive(Clone)]
 pub struct Config {
@@ -22,7 +25,7 @@ pub struct Config {
     pub cache: Arc<Cache>,
 
     /// Descriptor table that will be shared between keyspaces
-    pub(crate) descriptor_table: Arc<DescriptorTable>,
+    pub(crate) descriptor_table: Option<Arc<DescriptorTable>>,
 
     /// Max size of all journals in bytes
     pub(crate) max_journaling_size_in_bytes: u64, // TODO: should be configurable during runtime: AtomicU64
@@ -41,7 +44,10 @@ pub struct Config {
     pub(crate) journal_compression_type: CompressionType,
 
     pub(crate) journal_compression_threshold: usize,
+
     // pub(crate) journal_recovery_mode: RecoveryMode,
+    //
+    pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
 }
 
 const DEFAULT_CPU_CORES: usize = 4;
@@ -66,7 +72,7 @@ impl Config {
         Self {
             path: absolute_path(path),
             clean_path_on_drop: false,
-            descriptor_table: Arc::new(DescriptorTable::new(get_open_file_limit())),
+            descriptor_table: Some(Arc::new(DescriptorTable::new(get_open_file_limit()))),
             max_write_buffer_size_in_bytes: None,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_threads,
@@ -82,6 +88,8 @@ impl Config {
             journal_compression_threshold: 4_096,
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
+
+            compaction_filter_factory_assigner: None,
         }
     }
 }
