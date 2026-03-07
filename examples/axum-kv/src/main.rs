@@ -65,8 +65,8 @@ async fn insert_batch(
     Ok((
         StatusCode::OK,
         [(
-            HeaderName::from_bytes(b"x-took-ms").unwrap(),
-            before.elapsed().as_millis().to_string(),
+            HeaderName::from_static("server-timing"),
+            format!("total;dur={}", before.elapsed().as_millis()),
         )],
         "OK",
     ))
@@ -90,8 +90,8 @@ async fn delete_item(
     Ok((
         StatusCode::OK,
         [(
-            HeaderName::from_bytes(b"x-took-ms").unwrap(),
-            before.elapsed().as_millis().to_string(),
+            HeaderName::from_static("server-timing"),
+            format!("total;dur={}", before.elapsed().as_millis()),
         )],
         "OK",
     ))
@@ -122,8 +122,8 @@ async fn insert_item(
     Ok((
         StatusCode::CREATED,
         [(
-            HeaderName::from_bytes(b"x-took-ms").unwrap(),
-            before.elapsed().as_millis().to_string(),
+            HeaderName::from_static("server-timing"),
+            format!("total;dur={}", before.elapsed().as_millis()),
         )],
         "Created",
     ))
@@ -146,8 +146,8 @@ async fn get_item(
             StatusCode::OK,
             [
                 (
-                    HeaderName::from_bytes(b"x-took-ms").unwrap(),
-                    before.elapsed().as_millis().to_string(),
+                    HeaderName::from_static("server-timing"),
+                    format!("total;dur={}", before.elapsed().as_millis()),
                 ),
                 (header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()),
             ],
@@ -157,8 +157,8 @@ async fn get_item(
             StatusCode::NOT_FOUND,
             [
                 (
-                    HeaderName::from_bytes(b"x-took-ms").unwrap(),
-                    before.elapsed().as_millis().to_string(),
+                    HeaderName::from_static("server-timing"),
+                    format!("total;dur={}", before.elapsed().as_millis()),
                 ),
                 (header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()),
             ],
