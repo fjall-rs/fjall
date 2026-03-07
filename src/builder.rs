@@ -175,10 +175,10 @@ impl<O: Openable> Builder<O> {
     /// let db = Database::builder(&folder)
     ///     .temporary(true)
     ///     .with_compaction_filter_factories(
-    ///         &|keyspace| {
+    ///         Arc::new(|keyspace| {
     ///             // Match on the keyspace name to assign specific compaction filters
     ///             todo!()
-    ///         }
+    ///         })
     ///     )
     ///     .open()?;
     ///
