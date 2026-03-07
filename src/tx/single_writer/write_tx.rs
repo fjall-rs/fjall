@@ -183,7 +183,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn update_fetch<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn update_fetch<K: Into<UserKey>, F: FnOnce(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         keyspace: &SingleWriterTxKeyspace,
         key: K,
@@ -242,7 +242,7 @@ impl<'tx> WriteTransaction<'tx> {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn fetch_update<K: Into<UserKey>, F: FnMut(Option<&UserValue>) -> Option<UserValue>>(
+    pub fn fetch_update<K: Into<UserKey>, F: FnOnce(Option<&UserValue>) -> Option<UserValue>>(
         &mut self,
         keyspace: &SingleWriterTxKeyspace,
         key: K,

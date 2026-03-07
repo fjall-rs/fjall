@@ -1,6 +1,44 @@
 use crate::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
+#[test_log::test]
+fn clear_recover_sealed() -> crate::Result<()> {
+    use crate::{Database, KeyspaceCreateOptions};
+
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        assert!(tree.is_empty()?);
+
+        tree.insert("a", "a")?;
+        assert!(tree.contains_key("a")?);
+
+        tree.clear()?;
+        assert!(tree.is_empty()?);
+
+        tree.rotate_memtable_and_wait()?;
+        assert!(tree.is_empty()?);
+        db.supervisor.journal.get_writer().rotate()?;
+
+        tree.insert("b", "a")?;
+        assert!(tree.contains_key("b")?);
+    }
+
+    {
+        let db = Database::builder(&folder).open()?;
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+        assert!(!tree.contains_key("a")?);
+        assert!(tree.contains_key("b")?);
+    }
+
+    Ok(())
+}
+
 // TODO: investigate: flaky on macOS???
 #[cfg(feature = "__internal_whitebox")]
 #[test_log::test]

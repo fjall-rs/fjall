@@ -63,7 +63,7 @@ async fn insert_batch(
     .unwrap()?;
 
     Ok(HttpResponse::Ok()
-        .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
         .body("OK"))
 }
 
@@ -85,7 +85,7 @@ async fn delete_item(
     .unwrap()?;
 
     Ok(HttpResponse::Ok()
-        .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
         .body("OK"))
 }
 
@@ -113,7 +113,7 @@ async fn insert_item(
     .unwrap()?;
 
     Ok(HttpResponse::Created()
-        .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
         .body("Created"))
 }
 
@@ -139,7 +139,7 @@ async fn get_item(
             let body = actix_web::body::BoxBody::new(actix_web::web::Bytes::from(item));
 
             Ok(HttpResponse::Ok()
-                .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+                .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
                 .content_type("application/json; utf-8")
                 .body(body))
         }
@@ -147,7 +147,7 @@ async fn get_item(
             let body = json!(null);
 
             Ok(HttpResponse::NotFound()
-                .append_header(("x-took-ms", before.elapsed().as_millis().to_string()))
+                .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
                 .content_type("application/json; utf-8")
                 .body(serde_json::to_string(&body).unwrap()))
         }

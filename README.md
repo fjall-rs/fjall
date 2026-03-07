@@ -12,7 +12,7 @@
   <a href="https://crates.io/crates/fjall">
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.91.0-blue" alt="MSRV" />
+  <img src="https://img.shields.io/badge/MSRV-1.90.0-blue" alt="MSRV" />
   <a href="https://deps.rs/repo/github/fjall-rs/fjall">
     <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
   </a>
@@ -38,6 +38,7 @@ It features:
 - Built-in compression (default = `LZ4`)
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
+- Custom compaction filters to run custom logic during compactions (optional)
 - Automatic background maintenance
 
 It is not:
