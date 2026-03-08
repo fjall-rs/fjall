@@ -12,7 +12,9 @@ use crate::{
     meta_keyspace::{encode_config_key, MetaKeyspace},
 };
 use byteorder::ReadBytesExt;
-use lsm_tree::{CompressionType, KvPair, KvSeparationOptions};
+use lsm_tree::{
+    compaction::Factory as CompactionFilterFactory, CompressionType, KvPair, KvSeparationOptions,
+};
 use std::sync::Arc;
 
 /// Options to configure a keyspace
@@ -74,6 +76,8 @@ pub struct CreateOptions {
 
     #[doc(hidden)]
     pub kv_separation_opts: Option<KvSeparationOptions>,
+
+    pub(crate) compaction_filter_factory: Option<Arc<dyn CompactionFilterFactory>>,
 }
 
 impl Default for CreateOptions {
@@ -120,6 +124,8 @@ impl Default for CreateOptions {
             ),
 
             kv_separation_opts: None,
+
+            compaction_filter_factory: None,
         }
     }
 }
@@ -132,6 +138,15 @@ macro_rules! policy {
 }
 
 impl CreateOptions {
+    /// Installs a compaction filter factory.
+    pub(crate) fn with_compaction_filter_factory(
+        mut self,
+        factory: Arc<dyn CompactionFilterFactory + 'static>,
+    ) -> Self {
+        self.compaction_filter_factory = Some(factory);
+        self
+    }
+
     #[expect(clippy::expect_used, clippy::too_many_lines)]
     pub(crate) fn from_kvs(
         keyspace_id: InternalKeyspaceId,
@@ -355,6 +370,8 @@ impl CreateOptions {
             compaction_strategy,
 
             kv_separation_opts: blob_opts.transpose()?,
+
+            compaction_filter_factory: None,
         })
     }
 

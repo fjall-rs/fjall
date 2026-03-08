@@ -73,7 +73,17 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let path = keyspaces_folder.join(keyspace_id.to_string());
 
-        let recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
+        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
+
+        // Install compaction filter factory if needed
+        if let Some(f) = db
+            .config
+            .compaction_filter_factory_assigner
+            .as_ref()
+            .and_then(|f| f(&keyspace_name))
+        {
+            recovered_config = recovered_config.with_compaction_filter_factory(f);
+        }
 
         let base_config = lsm_tree::Config::new(
             path,
@@ -237,13 +247,6 @@ pub fn recover_sealed_memtables(
                     .allocate(sealed_memtable.size());
 
                 // TODO: unit test write buffer size after recovery
-
-                // IMPORTANT: Add sealed memtable to flush manager, so it can be flushed
-                db.supervisor
-                    .flush_manager
-                    .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: wm.keyspace.clone(),
-                    }));
 
                 recovered_count += 1;
             }
