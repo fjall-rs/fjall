@@ -33,10 +33,9 @@ impl LockedFileGuard {
 
         let file = match File::create_new(path) {
             Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(path)?,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                OpenOptions::new().read(true).write(true).open(path)?
+            }
             e => e?,
         };
 
@@ -79,5 +78,35 @@ impl LockedFileGuard {
         }
 
         Ok(Self(Arc::new(LockedFileGuardInner(file))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LockedFileGuard;
+    use std::fs::File;
+
+    #[test]
+    fn create_new_acquires_lock_when_file_already_exists() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("lock");
+
+        File::create(&path)?;
+
+        let _guard = LockedFileGuard::create_new(&path)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_acquire_acquires_lock_on_existing_file() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("lock");
+
+        File::create(&path)?;
+
+        let _guard = LockedFileGuard::try_acquire(&path)?;
+
+        Ok(())
     }
 }
