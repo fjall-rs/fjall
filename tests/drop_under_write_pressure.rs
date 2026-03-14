@@ -33,7 +33,9 @@ fn drop_completes_under_write_pressure() {
                 b.wait();
                 for i in 0..10_000 {
                     let key = format!("t{t}-k{i}");
-                    // Writes may fail once drop starts — that's expected
+                    // Errors (poisoned DB, closed channel) are expected once drop starts.
+                    // We intentionally ignore them — this test validates that drop()
+                    // completes without deadlock, not write correctness.
                     let _ = ks.insert(&key, b"value");
                 }
             }));

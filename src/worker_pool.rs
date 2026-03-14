@@ -149,7 +149,13 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
 
     let item = match ctx.rx.recv_timeout(std::time::Duration::from_millis(100)) {
         Ok(item) => item,
-        Err(flume::RecvTimeoutError::Timeout) => return Ok(false),
+        Err(flume::RecvTimeoutError::Timeout) => {
+            // Worker #0 recovers dropped Flush signals on idle channel too
+            if ctx.worker_id == 0 && ctx.supervisor.flush_manager.len() > 0 {
+                ctx.sender.try_send(WorkerMessage::Flush).ok();
+            }
+            return Ok(false);
+        }
         Err(flume::RecvTimeoutError::Disconnected) => return Ok(true),
     };
 
