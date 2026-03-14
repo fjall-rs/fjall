@@ -7,7 +7,7 @@ use crate::{
     journal::manager::EvictionWatermark, poison_dart::PoisonDart, stats::Stats,
     supervisor::Supervisor, Keyspace,
 };
-use lsm_tree::{AbstractTree, MemtableId};
+use lsm_tree::{stop_signal::StopSignal, AbstractTree, MemtableId};
 use std::{
     borrow::Cow,
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -63,6 +63,7 @@ impl WorkerPool {
         stats: &Arc<Stats>,
         poison_dart: &PoisonDart,
         thread_counter: &Arc<AtomicUsize>,
+        stop_signal: &StopSignal,
     ) -> crate::Result<()> {
         use std::sync::atomic::Ordering::Relaxed;
 
@@ -84,6 +85,7 @@ impl WorkerPool {
                             supervisor: supervisor.clone(),
                             stats: stats.clone(),
                             sender: self.sender.clone(),
+                            stop_signal: stop_signal.clone(),
                         };
 
                         let thread_counter = thread_counter.clone();
@@ -125,12 +127,21 @@ struct WorkerState {
     rx: flume::Receiver<WorkerMessage>,
     sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
+    stop_signal: StopSignal,
 }
 
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
+    if ctx.stop_signal.is_stopped() {
+        return Ok(true);
+    }
+
     let Ok(item) = ctx.rx.recv() else {
         return Ok(true);
     };
+
+    if ctx.stop_signal.is_stopped() {
+        return Ok(true);
+    }
 
     log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
 
@@ -221,7 +232,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             //
             // Disable when only 1 worker exists to avoid deadlock
             if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
+                ctx.sender.try_send(WorkerMessage::Compact(keyspace)).ok();
                 return Ok(false);
             }
 

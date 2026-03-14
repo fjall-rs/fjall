@@ -76,7 +76,7 @@ impl Drop for DatabaseInner {
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
+            let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
 
@@ -798,6 +798,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         log::trace!("Recovery successful");
@@ -910,6 +911,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         Ok(db)
