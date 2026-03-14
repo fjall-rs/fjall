@@ -91,7 +91,7 @@ fn custom_generator_recovery() -> fjall::Result<()> {
         db.persist(fjall::PersistMode::SyncAll)?;
     }
 
-    // Recover with a new custom generator — recovery calls .set()/.fetch_max()
+    // Recover with a new custom generator — recovery should call .set()/.fetch_max()
     {
         let generator = Arc::new(TrackingGenerator::new());
         let db = Database::builder(&folder)
@@ -104,12 +104,12 @@ fn custom_generator_recovery() -> fjall::Result<()> {
         assert_eq!(b"value1", &*tree.get("key1")?.unwrap());
         assert_eq!(b"value2", &*tree.get("key2")?.unwrap());
 
-        // Recovery used the generator (fetch_max or get)
+        // Recovery advanced the generator state (via fetch_max or set)
         let fetch_max_calls = generator.fetch_max_count.load(Ordering::Relaxed);
-        let get_calls = generator.get_count.load(Ordering::Relaxed);
+        let set_calls = generator.set_count.load(Ordering::Relaxed);
         assert!(
-            fetch_max_calls > 0 || get_calls > 0,
-            "Recovery should use the custom generator",
+            fetch_max_calls > 0 || set_calls > 0,
+            "Recovery should advance the custom generator state via fetch_max()/set()",
         );
 
         // Can write after recovery
