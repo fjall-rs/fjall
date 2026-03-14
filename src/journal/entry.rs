@@ -8,10 +8,7 @@ use lsm_tree::{
     coding::{Decode, Encode},
     CompressionType, SeqNo, UserKey, UserValue, ValueType,
 };
-use std::{
-    hash::Hasher,
-    io::{Read, Write},
-};
+use std::io::{Read, Write};
 
 /// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
 ///
@@ -339,6 +336,7 @@ impl Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hash::Hasher;
     use test_log::test;
 
     #[test]
