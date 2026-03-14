@@ -212,11 +212,12 @@ impl Iterator for JournalBatchReader {
                 }
                 Entry::SingleItem {
                     seqno,
+                    checksum: expected_checksum,
                     keyspace_id,
                     key,
                     value,
                     value_type,
-                    ..
+                    compression,
                 } => {
                     if self.is_in_batch {
                         log::debug!("Invalid batch: found single-item entry inside batch");
@@ -227,7 +228,28 @@ impl Iterator for JournalBatchReader {
                         return None;
                     }
 
-                    // Checksum already verified during decode — emit batch directly
+                    // Verify checksum (consistent with multi-item batch path,
+                    // surfacing ChecksumMismatch as Err instead of silent truncation)
+                    let mut payload_bytes = Vec::with_capacity(100);
+                    fail_iter!(super::entry::serialize_item_payload(
+                        &mut payload_bytes,
+                        keyspace_id,
+                        &key,
+                        &value,
+                        value_type,
+                        compression,
+                    )
+                    .map_err(crate::Error::from));
+
+                    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+                    hasher.update(&payload_bytes);
+                    let got_checksum = hasher.finish();
+
+                    if got_checksum != expected_checksum {
+                        log::error!("Invalid single-item entry: checksum check failed, expected: {expected_checksum}, got: {got_checksum}");
+                        return Some(Err(JournalRecovery(JournalRecoveryError::ChecksumMismatch)));
+                    }
+
                     self.last_valid_pos = journal_file_pos;
 
                     return Some(Ok(Batch {

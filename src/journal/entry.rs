@@ -41,8 +41,11 @@ pub enum Entry {
     },
     /// Compact encoding for single-item batches.
     /// Combines Start + Item + End into one entry, saving 6 bytes of overhead.
+    /// Checksum is stored here and verified by `JournalBatchReader` (consistent
+    /// with how multi-item batch checksums are handled).
     SingleItem {
         seqno: SeqNo,
+        checksum: u64,
         keyspace_id: InternalKeyspaceId,
         key: UserKey,
         value: UserValue,
@@ -240,6 +243,7 @@ impl Entry {
             }
             SingleItem {
                 seqno,
+                checksum,
                 keyspace_id,
                 key,
                 value,
@@ -249,10 +253,8 @@ impl Entry {
                 writer.write_u8(Tag::SingleItem.into())?;
                 writer.write_u64::<LittleEndian>(*seqno)?;
 
-                // Encode payload into temp buffer to compute checksum
-                let mut payload_buf = Vec::with_capacity(key.len() + value.len() + 32);
                 serialize_item_payload(
-                    &mut payload_buf,
+                    writer,
                     *keyspace_id,
                     key,
                     value,
@@ -260,12 +262,7 @@ impl Entry {
                     *compression,
                 )?;
 
-                let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-                hasher.update(&payload_buf);
-                let checksum = hasher.finish();
-
-                writer.write_all(&payload_buf)?;
-                writer.write_u64::<LittleEndian>(checksum)?;
+                writer.write_u64::<LittleEndian>(*checksum)?;
                 writer.write_all(MAGIC_BYTES)?;
             }
         }
@@ -314,8 +311,9 @@ impl Entry {
                 let (keyspace_id, key, value, value_type, compression) =
                     decode_item_payload(reader)?;
 
-                // Read checksum + trailer
-                let expected_checksum = reader.read_u64::<LittleEndian>()?;
+                // Read checksum + trailer (verification deferred to JournalBatchReader,
+                // consistent with how multi-item batch checksums are handled)
+                let checksum = reader.read_u64::<LittleEndian>()?;
 
                 let mut magic = [0u8; MAGIC_BYTES.len()];
                 reader.read_exact(&mut magic)?;
@@ -324,30 +322,9 @@ impl Entry {
                     return Err(crate::Error::InvalidTrailer);
                 }
 
-                // Re-encode payload to verify checksum
-                let mut payload_buf = Vec::with_capacity(key.len() + value.len() + 32);
-                serialize_item_payload(
-                    &mut payload_buf,
-                    keyspace_id,
-                    &key,
-                    &value,
-                    value_type,
-                    compression,
-                )?;
-
-                let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-                hasher.update(&payload_buf);
-                let got_checksum = hasher.finish();
-
-                if got_checksum != expected_checksum {
-                    log::error!("Invalid single-item entry: checksum mismatch, expected: {expected_checksum}, got: {got_checksum}");
-                    return Err(crate::Error::JournalRecovery(
-                        crate::JournalRecoveryError::ChecksumMismatch,
-                    ));
-                }
-
                 Ok(Self::SingleItem {
                     seqno,
+                    checksum,
                     keyspace_id,
                     key,
                     value,
@@ -420,10 +397,35 @@ mod tests {
         }
     }
 
+    /// Helper to compute the checksum for a SingleItem payload.
+    fn compute_single_item_checksum(
+        keyspace_id: u64,
+        key: &[u8],
+        value: &[u8],
+        value_type: ValueType,
+        compression: CompressionType,
+    ) -> u64 {
+        let mut buf = Vec::new();
+        serialize_item_payload(&mut buf, keyspace_id, key, value, value_type, compression)
+            .expect("encoding should not fail");
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+        hasher.update(&buf);
+        hasher.finish()
+    }
+
     #[test]
     fn test_single_item_roundtrip() -> crate::Result<()> {
+        let checksum = compute_single_item_checksum(
+            7,
+            &[1, 2, 3],
+            &[4, 5, 6],
+            ValueType::Value,
+            CompressionType::None,
+        );
+
         let entry = Entry::SingleItem {
             seqno: 42,
+            checksum,
             keyspace_id: 7,
             key: vec![1, 2, 3].into(),
             value: vec![4, 5, 6].into(),
@@ -441,13 +443,17 @@ mod tests {
     }
 
     #[test]
-    fn test_single_item_smaller_than_batch() {
+    fn test_single_item_smaller_than_batch() -> crate::Result<()> {
         // Encode a single item as both SingleItem and Start+Item+End batch
         let key = vec![1, 2, 3];
         let value = vec![4, 5, 6];
 
+        let checksum =
+            compute_single_item_checksum(0, &key, &value, ValueType::Value, CompressionType::None);
+
         let single = Entry::SingleItem {
             seqno: 1,
+            checksum,
             keyspace_id: 0,
             key: key.clone().into(),
             value: value.clone().into(),
@@ -461,8 +467,7 @@ mod tests {
             item_count: 1,
             seqno: 1,
         }
-        .encode_into(&mut batch_bytes)
-        .unwrap();
+        .encode_into(&mut batch_bytes)?;
         Entry::Item {
             keyspace_id: 0,
             key: key.into(),
@@ -470,8 +475,7 @@ mod tests {
             value_type: ValueType::Value,
             compression: CompressionType::None,
         }
-        .encode_into(&mut batch_bytes)
-        .unwrap();
+        .encode_into(&mut batch_bytes)?;
         // Compute checksum the same way the batch reader does
         let item_bytes = Entry::Item {
             keyspace_id: 0,
@@ -484,7 +488,7 @@ mod tests {
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         hasher.update(&item_bytes);
         let checksum = hasher.finish();
-        Entry::End(checksum).encode_into(&mut batch_bytes).unwrap();
+        Entry::End(checksum).encode_into(&mut batch_bytes)?;
 
         // SingleItem format should be 6 bytes shorter
         assert_eq!(
@@ -494,5 +498,7 @@ mod tests {
             batch_bytes.len(),
             single_bytes.len()
         );
+
+        Ok(())
     }
 }

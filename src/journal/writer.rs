@@ -298,7 +298,9 @@ impl Writer {
 
         // Checksum covers only the item payload
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        hasher.update(&self.buf[payload_start..]);
+        if let Some(payload) = self.buf.get(payload_start..) {
+            hasher.update(payload);
+        }
         let checksum = hasher.finish();
 
         self.buf.write_u64::<LittleEndian>(checksum)?;
