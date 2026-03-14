@@ -44,7 +44,9 @@ impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
 ///
 /// - The end entry contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
-/// - The end entry terminates each batch with the magic bytes: [`MAGIC_BYTES`].
+/// - Each encoded batch (both multi-item and `SingleItem`) is terminated with
+///   the magic bytes: [`MAGIC_BYTES`]. For multi-item batches, the trailer is
+///   written as part of the `End` entry.
 ///
 /// - If a start entry is detected while already inside a batch, the batch is broken.
 #[derive(Debug, Eq, PartialEq)]
