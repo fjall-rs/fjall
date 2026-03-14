@@ -599,6 +599,11 @@ impl Database {
             .seqno_generator
             .clone()
             .unwrap_or_else(|| Arc::new(SequenceNumberCounter::default()));
+
+        // NOTE: visible_seqno is intentionally a separate default counter, not the custom
+        // generator. It serves as the MVCC visibility watermark, updated via publish()/set()
+        // from the write seqno values — it tracks "up to which seqno are writes visible",
+        // not "generate the next seqno".
         let visible_seqno: SharedSequenceNumberGenerator =
             Arc::new(SequenceNumberCounter::default());
 
@@ -844,6 +849,11 @@ impl Database {
             .seqno_generator
             .clone()
             .unwrap_or_else(|| Arc::new(SequenceNumberCounter::default()));
+
+        // NOTE: visible_seqno is intentionally a separate default counter, not the custom
+        // generator. It serves as the MVCC visibility watermark, updated via publish()/set()
+        // from the write seqno values — it tracks "up to which seqno are writes visible",
+        // not "generate the next seqno".
         let visible_seqno: SharedSequenceNumberGenerator =
             Arc::new(SequenceNumberCounter::default());
 
