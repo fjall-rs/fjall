@@ -260,9 +260,10 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         }
     }
 
-    // Recover dropped Flush signals: if flush_manager has pending tasks
-    // but no Flush message is queued, re-inject one so flushes aren't starved
-    if ctx.supervisor.flush_manager.len() > 0 {
+    // Worker #0 recovers dropped Flush signals: if flush_manager has pending
+    // tasks, re-inject one Flush. Only worker #0 does this to avoid N workers
+    // flooding the channel with redundant Flush messages under pressure.
+    if ctx.worker_id == 0 && ctx.supervisor.flush_manager.len() > 0 {
         ctx.sender.try_send(WorkerMessage::Flush).ok();
     }
 
