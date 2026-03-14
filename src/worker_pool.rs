@@ -91,21 +91,27 @@ impl WorkerPool {
                         let thread_counter = thread_counter.clone();
                         let poison_dart = poison_dart.clone();
 
-                        move || loop {
-                            match worker_tick(&worker_state) {
-                                Ok(should_abort) => {
-                                    if should_abort {
-                                        log::debug!("Worker #{i} closes because DB is dropping");
-                                        thread_counter.fetch_sub(1, Relaxed);
-                                        return Ok(());
+                        move || {
+                            let result = loop {
+                                match worker_tick(&worker_state) {
+                                    Ok(should_abort) => {
+                                        if should_abort {
+                                            log::debug!(
+                                                "Worker #{i} closes because DB is dropping"
+                                            );
+                                            break Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Worker #{i} crashed: {e:?}");
+                                        poison_dart.poison();
+                                        break Err(e);
                                     }
                                 }
-                                Err(e) => {
-                                    log::error!("Worker #{i} crashed: {e:?}");
-                                    poison_dart.poison();
-                                    return Err(e);
-                                }
-                            }
+                            };
+                            // Always decrement on exit — error or clean shutdown
+                            thread_counter.fetch_sub(1, Relaxed);
+                            result
                         }
                     })
                     .inspect_err(|_| {
