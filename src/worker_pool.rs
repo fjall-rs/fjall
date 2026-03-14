@@ -92,26 +92,32 @@ impl WorkerPool {
                         let poison_dart = poison_dart.clone();
 
                         move || {
-                            let result = loop {
+                            // Decrement counter on all exit paths including panic/unwind
+                            struct CounterGuard(Arc<AtomicUsize>);
+                            impl Drop for CounterGuard {
+                                fn drop(&mut self) {
+                                    self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
+                            let _guard = CounterGuard(thread_counter);
+
+                            loop {
                                 match worker_tick(&worker_state) {
                                     Ok(should_abort) => {
                                         if should_abort {
                                             log::debug!(
                                                 "Worker #{i} closes because DB is dropping"
                                             );
-                                            break Ok(());
+                                            return Ok(());
                                         }
                                     }
                                     Err(e) => {
                                         log::error!("Worker #{i} crashed: {e:?}");
                                         poison_dart.poison();
-                                        break Err(e);
+                                        return Err(e);
                                     }
                                 }
-                            };
-                            // Always decrement on exit — error or clean shutdown
-                            thread_counter.fetch_sub(1, Relaxed);
-                            result
+                            }
                         }
                     })
                     .inspect_err(|_| {

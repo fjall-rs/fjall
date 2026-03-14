@@ -12,7 +12,7 @@ pub struct FlushManager {
 
 impl FlushManager {
     pub fn new() -> Self {
-        let (tx, rx) = flume::bounded(1_000);
+        let (tx, rx) = flume::unbounded();
 
         Self {
             sender: tx,
@@ -35,7 +35,7 @@ impl FlushManager {
     }
 
     pub fn enqueue(&self, task: Arc<Task>) {
-        self.sender.try_send(task).ok();
+        self.sender.send(task).ok();
     }
 
     pub fn dequeue(&self) -> Option<Arc<Task>> {
