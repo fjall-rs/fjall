@@ -13,6 +13,29 @@ use std::{
     io::{Read, Write},
 };
 
+/// Write adapter that hashes bytes as they pass through to the inner writer.
+/// Used by `SingleItem` encoding to compute the checksum without a temp buffer.
+struct HashingWriter<'a, W: Write, H: Hasher> {
+    inner: &'a mut W,
+    hasher: &'a mut H,
+}
+
+impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        if n != 0 {
+            if let Some(written) = buf.get(..n) {
+                self.hasher.write(written);
+            }
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
 ///
 /// - The start entry contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
@@ -253,23 +276,25 @@ impl Entry {
                 writer.write_u8(Tag::SingleItem.into())?;
                 writer.write_u64::<LittleEndian>(*seqno)?;
 
-                // Serialize payload into temp buffer to compute checksum,
-                // ensuring encoding is defined in a single place.
-                let mut payload_buf = Vec::with_capacity(key.len() + value.len() + 32);
-                serialize_item_payload(
-                    &mut payload_buf,
-                    *keyspace_id,
-                    key,
-                    value,
-                    *value_type,
-                    *compression,
-                )?;
-
+                // Serialize payload directly into the destination writer
+                // while computing checksum, avoiding a temp buffer allocation.
                 let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-                hasher.update(&payload_buf);
+                {
+                    let mut hashing_writer = HashingWriter {
+                        inner: writer,
+                        hasher: &mut hasher,
+                    };
+                    serialize_item_payload(
+                        &mut hashing_writer,
+                        *keyspace_id,
+                        key,
+                        value,
+                        *value_type,
+                        *compression,
+                    )?;
+                }
                 let checksum = hasher.finish();
 
-                writer.write_all(&payload_buf)?;
                 writer.write_u64::<LittleEndian>(checksum)?;
                 writer.write_all(MAGIC_BYTES)?;
             }

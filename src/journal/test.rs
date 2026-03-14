@@ -198,10 +198,19 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
     let reader = journal.get_reader()?;
     let batches: Vec<_> = reader.collect();
 
-    // The batch reader should surface the checksum error
+    // The batch reader should surface the specific checksum error
+    let has_checksum_mismatch = batches.iter().any(|b| {
+        matches!(
+            b,
+            Err(crate::Error::JournalRecovery(
+                crate::JournalRecoveryError::ChecksumMismatch
+            ))
+        )
+    });
+
     assert!(
-        batches.iter().any(|b| b.is_err()),
-        "expected ChecksumMismatch error, but all batches succeeded: {batches:?}",
+        has_checksum_mismatch,
+        "expected ChecksumMismatch error, but got: {batches:?}",
     );
 
     Ok(())
