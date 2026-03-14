@@ -5,7 +5,7 @@
 use super::reader::JournalReader;
 use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
-use std::{fs::OpenOptions, hash::Hasher};
+use std::{fs::OpenOptions, hash::Hasher, io::Write};
 
 #[derive(Debug)]
 pub struct ReadBatchItem {
@@ -229,20 +229,38 @@ impl Iterator for JournalBatchReader {
                     }
 
                     // Verify checksum (consistent with multi-item batch path,
-                    // surfacing ChecksumMismatch as Err instead of silent truncation)
-                    let mut payload_bytes = Vec::with_capacity(100);
-                    fail_iter!(super::entry::serialize_item_payload(
-                        &mut payload_bytes,
-                        keyspace_id,
-                        &key,
-                        &value,
-                        value_type,
-                        compression,
-                    )
-                    .map_err(crate::Error::from));
-
+                    // surfacing ChecksumMismatch as Err instead of silent truncation).
+                    // Use a hash-only sink to avoid allocating a temp buffer.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
-                    hasher.update(&payload_bytes);
+                    {
+                        struct HashingSink<'a, H: Hasher> {
+                            hasher: &'a mut H,
+                        }
+
+                        impl<H: Hasher> Write for HashingSink<'_, H> {
+                            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                                self.hasher.write(buf);
+                                Ok(buf.len())
+                            }
+
+                            fn flush(&mut self) -> std::io::Result<()> {
+                                Ok(())
+                            }
+                        }
+
+                        let mut sink = HashingSink {
+                            hasher: &mut hasher,
+                        };
+                        fail_iter!(super::entry::serialize_item_payload(
+                            &mut sink,
+                            keyspace_id,
+                            &key,
+                            &value,
+                            value_type,
+                            compression,
+                        )
+                        .map_err(crate::Error::from));
+                    }
                     let got_checksum = hasher.finish();
 
                     if got_checksum != expected_checksum {

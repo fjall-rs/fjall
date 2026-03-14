@@ -185,8 +185,28 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
 
         // Flip a byte inside the item payload area.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
-        // Byte 15 is safely within the payload (after tag+seqno, before checksum).
-        buf[15] ^= 0xFF;
+        // Find the entry end by locating the magic trailer bytes.
+        let magic: &[u8] = &[b'F', b'J', b'L', 3];
+        let entry_end = buf
+            .windows(4)
+            .position(|w| w == magic)
+            .expect("magic trailer not found")
+            + 4;
+
+        let header_len: usize = 1 + 8; // tag + seqno
+        let trailer_len: usize = 8 + 4; // checksum + magic
+        let payload_start = header_len;
+        let payload_end = entry_end - trailer_len;
+
+        assert!(
+            payload_end > payload_start,
+            "entry too small to have a payload"
+        );
+
+        // Corrupt the last byte of the value data (avoids hitting length
+        // fields which would trigger debug_assert before checksum check).
+        let flip_index = payload_end - 1;
+        buf[flip_index] ^= 0xFF;
 
         file.seek(SeekFrom::Start(0))?;
         file.write_all(&buf)?;

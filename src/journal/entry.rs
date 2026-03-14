@@ -266,12 +266,12 @@ impl Entry {
             }
             SingleItem {
                 seqno,
+                checksum,
                 keyspace_id,
                 key,
                 value,
                 value_type,
                 compression,
-                ..
             } => {
                 writer.write_u8(Tag::SingleItem.into())?;
                 writer.write_u64::<LittleEndian>(*seqno)?;
@@ -293,9 +293,14 @@ impl Entry {
                         *compression,
                     )?;
                 }
-                let checksum = hasher.finish();
+                let computed_checksum = hasher.finish();
 
-                writer.write_u64::<LittleEndian>(checksum)?;
+                debug_assert!(
+                    *checksum == 0 || *checksum == computed_checksum,
+                    "SingleItem checksum field does not match computed checksum"
+                );
+
+                writer.write_u64::<LittleEndian>(computed_checksum)?;
                 writer.write_all(MAGIC_BYTES)?;
             }
         }
