@@ -2,11 +2,14 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::entry::{serialize_marker_item, Entry};
+use super::entry::{serialize_item_payload, serialize_marker_item, Entry, Tag};
 use crate::{
-    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    batch::item::Item as BatchItem,
+    file::{fsync_directory, MAGIC_BYTES},
+    journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
+use byteorder::{LittleEndian, WriteBytesExt};
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -255,6 +258,12 @@ impl Writer {
         Ok(self.buf.len())
     }
 
+    /// Writes a single key-value item using the compact `SingleItem` format.
+    ///
+    /// Layout: `[tag=5][seqno][item_payload][checksum][magic]`
+    ///
+    /// Saves 6 bytes per write vs the full `Start + Item + End` batch encoding
+    /// by eliminating the item_count field and two extra tag bytes.
     pub(crate) fn write_raw(
         &mut self,
         keyspace_id: InternalKeyspaceId,
@@ -265,14 +274,16 @@ impl Writer {
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 
-        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        let mut byte_count = 0;
-
-        self.buf.clear();
-        byte_count += self.write_start(1, seqno)?;
         self.buf.clear();
 
-        serialize_marker_item(
+        // Tag + seqno
+        self.buf.write_u8(Tag::SingleItem.into())?;
+        self.buf.write_u64::<LittleEndian>(seqno)?;
+
+        let payload_start = self.buf.len();
+
+        // Item payload (without tag byte)
+        serialize_item_payload(
             &mut self.buf,
             keyspace_id,
             key,
@@ -285,16 +296,18 @@ impl Writer {
             },
         )?;
 
+        // Checksum covers only the item payload
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+        hasher.update(&self.buf[payload_start..]);
+        let checksum = hasher.finish();
+
+        self.buf.write_u64::<LittleEndian>(checksum)?;
+        self.buf.write_all(MAGIC_BYTES)?;
+
+        // Single write for entire entry
         self.file.write_all(&self.buf)?;
 
-        hasher.update(&self.buf);
-        byte_count += self.buf.len();
-
-        self.buf.clear();
-        let checksum = hasher.finish();
-        byte_count += self.write_end(checksum)?;
-
-        Ok(byte_count)
+        Ok(self.buf.len())
     }
 
     pub(crate) fn write_clear(

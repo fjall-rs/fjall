@@ -6,6 +6,147 @@ use std::io::Write;
 use tempfile::tempdir;
 use test_log::test;
 
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_single_item_write_and_recovery() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+
+        // Write single items via write_raw (uses compact SingleItem format)
+        writer.write_raw(keyspace.id, b"key1", b"val1", ValueType::Value, 0)?;
+        writer.write_raw(keyspace.id, b"key2", b"val2", ValueType::Value, 1)?;
+        writer.write_raw(keyspace.id, b"key3", b"", ValueType::Tombstone, 2)?;
+    }
+
+    // Recover and verify
+    let journal = Journal::from_file(&path)?;
+    let reader = journal.get_reader()?;
+    let batches: Vec<_> = reader.flatten().collect();
+
+    assert_eq!(batches.len(), 3);
+
+    assert_eq!(batches[0].seqno, 0);
+    assert_eq!(batches[0].items.len(), 1);
+    assert_eq!(batches[0].items[0].key.as_ref(), b"key1");
+    assert_eq!(batches[0].items[0].value.as_ref(), b"val1");
+
+    assert_eq!(batches[1].seqno, 1);
+    assert_eq!(batches[1].items[0].key.as_ref(), b"key2");
+
+    assert_eq!(batches[2].seqno, 2);
+    assert_eq!(batches[2].items[0].key.as_ref(), b"key3");
+    assert_eq!(batches[2].items[0].value_type, ValueType::Tombstone);
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_mixed_single_and_batch() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+
+        // Single item (compact format)
+        writer.write_raw(keyspace.id, b"single1", b"v1", ValueType::Value, 0)?;
+
+        // Multi-item batch (standard format)
+        let batch_items = [
+            BatchItem::new(keyspace.clone(), *b"batch_a", *b"ba", ValueType::Value),
+            BatchItem::new(keyspace.clone(), *b"batch_b", *b"bb", ValueType::Value),
+        ];
+        writer.write_batch(batch_items.iter(), 2, 1)?;
+
+        // Another single item (compact format)
+        writer.write_raw(keyspace.id, b"single2", b"v2", ValueType::Value, 2)?;
+    }
+
+    // Recover and verify all 3 batches
+    let journal = Journal::from_file(&path)?;
+    let reader = journal.get_reader()?;
+    let batches: Vec<_> = reader.flatten().collect();
+
+    assert_eq!(batches.len(), 3);
+
+    // First: single item
+    assert_eq!(batches[0].seqno, 0);
+    assert_eq!(batches[0].items.len(), 1);
+    assert_eq!(batches[0].items[0].key.as_ref(), b"single1");
+
+    // Second: multi-item batch
+    assert_eq!(batches[1].seqno, 1);
+    assert_eq!(batches[1].items.len(), 2);
+    assert_eq!(batches[1].items[0].key.as_ref(), b"batch_a");
+    assert_eq!(batches[1].items[1].key.as_ref(), b"batch_b");
+
+    // Third: single item
+    assert_eq!(batches[2].seqno, 2);
+    assert_eq!(batches[2].items.len(), 1);
+    assert_eq!(batches[2].items[0].key.as_ref(), b"single2");
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_truncation_corrupt_single_item() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+
+        writer.write_raw(keyspace.id, b"good", b"data", ValueType::Value, 0)?;
+    }
+
+    // Verify initial recovery
+    {
+        let journal = Journal::from_file(&path)?;
+        let reader = journal.get_reader()?;
+        let batches: Vec<_> = reader.flatten().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].items[0].key.as_ref(), b"good");
+    }
+
+    // Append corrupt bytes after valid single item
+    {
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+        file.write_all(b"corrupt_garbage_data_here")?;
+        file.sync_all()?;
+    }
+
+    // Recovery should still yield the valid single item
+    for _ in 0..10 {
+        let journal = Journal::from_file(&path)?;
+        let reader = journal.get_reader()?;
+        let batches: Vec<_> = reader.flatten().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].items[0].key.as_ref(), b"good");
+    }
+
+    Ok(())
+}
+
 impl PartialEq<BatchItem> for crate::journal::batch_reader::ReadBatchItem {
     fn eq(&self, other: &BatchItem) -> bool {
         self.keyspace_id == other.keyspace.id

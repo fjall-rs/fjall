@@ -210,6 +210,37 @@ impl Iterator for JournalBatchReader {
 
                     self.cleared_keyspaces.push(keyspace_id);
                 }
+                Entry::SingleItem {
+                    seqno,
+                    keyspace_id,
+                    key,
+                    value,
+                    value_type,
+                    ..
+                } => {
+                    if self.is_in_batch {
+                        log::debug!("Invalid batch: found single-item entry inside batch");
+
+                        // Discard batch
+                        fail_iter!(self.truncate_to(self.last_valid_pos));
+
+                        return None;
+                    }
+
+                    // Checksum already verified during decode — emit batch directly
+                    self.last_valid_pos = journal_file_pos;
+
+                    return Some(Ok(Batch {
+                        seqno,
+                        items: vec![ReadBatchItem {
+                            keyspace_id,
+                            key,
+                            value,
+                            value_type,
+                        }],
+                        cleared_keyspaces: Vec::new(),
+                    }));
+                }
             }
         }
     }
