@@ -15,9 +15,9 @@ use std::{
 
 /// Write adapter that hashes bytes as they pass through to the inner writer.
 /// Used by `SingleItem` encoding to compute the checksum without a temp buffer.
-struct HashingWriter<'a, W: Write, H: Hasher> {
-    inner: &'a mut W,
-    hasher: &'a mut H,
+pub(crate) struct HashingWriter<'a, W: Write, H: Hasher> {
+    pub(crate) inner: &'a mut W,
+    pub(crate) hasher: &'a mut H,
 }
 
 impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {

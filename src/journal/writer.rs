@@ -2,11 +2,14 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::entry::{serialize_marker_item, Entry};
+use super::entry::{serialize_item_payload, serialize_marker_item, Entry, Tag};
 use crate::{
-    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    batch::item::Item as BatchItem,
+    file::{fsync_directory, MAGIC_BYTES},
+    journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
+use byteorder::{LittleEndian, WriteBytesExt};
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -278,20 +281,26 @@ impl Writer {
                 CompressionType::None
             };
 
-        // Delegate encoding to Entry::encode_into so the on-disk layout
-        // is defined in a single place.
-        let entry = Entry::SingleItem {
-            seqno,
-            checksum: 0, // computed by encode_into
-            keyspace_id,
-            key: key.into(),
-            value: value.into(),
-            value_type,
-            compression,
-        };
-
+        // Write directly from borrowed slices to avoid copying key/value
+        // into owned Entry. The on-disk layout is shared via
+        // serialize_item_payload (same function used by encode_into).
         self.buf.clear();
-        entry.encode_into(&mut self.buf)?;
+        self.buf.write_u8(Tag::SingleItem.into())?;
+        self.buf.write_u64::<LittleEndian>(seqno)?;
+
+        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+        {
+            // HashingWriter writes to buf while feeding bytes to hasher
+            let mut hw = super::entry::HashingWriter {
+                inner: &mut self.buf,
+                hasher: &mut hasher,
+            };
+            serialize_item_payload(&mut hw, keyspace_id, key, value, value_type, compression)?;
+        }
+        let checksum = hasher.finish();
+
+        self.buf.write_u64::<LittleEndian>(checksum)?;
+        self.buf.write_all(MAGIC_BYTES)?;
 
         // Single write for entire entry
         self.file.write_all(&self.buf)?;
