@@ -4,12 +4,12 @@
 
 use crate::{snapshot_nonce::SnapshotNonce, SeqNo};
 use dashmap::DashMap;
-use lsm_tree::SequenceNumberCounter;
+use lsm_tree::{SequenceNumberGenerator, SharedSequenceNumberGenerator};
 use std::sync::{atomic::AtomicU64, Arc, RwLock};
 
 /// Keeps track of open snapshots
 pub struct SnapshotTrackerInner {
-    seqno: SequenceNumberCounter,
+    seqno: SharedSequenceNumberGenerator,
 
     gc_lock: RwLock<()>,
 
@@ -33,7 +33,7 @@ impl std::ops::Deref for SnapshotTracker {
 }
 
 impl SnapshotTracker {
-    pub fn new(seqno: SequenceNumberCounter) -> Self {
+    pub fn new(seqno: SharedSequenceNumberGenerator) -> Self {
         Self(Arc::new(SnapshotTrackerInner {
             data: DashMap::default(),
             freed_count: AtomicU64::default(),
@@ -43,7 +43,7 @@ impl SnapshotTracker {
         }))
     }
 
-    pub fn get_ref(&self) -> SequenceNumberCounter {
+    pub fn get_ref(&self) -> SharedSequenceNumberGenerator {
         self.seqno.clone()
     }
 
@@ -183,6 +183,7 @@ impl SnapshotTracker {
 #[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use lsm_tree::SequenceNumberCounter;
     use test_log::test;
 
     #[test]
@@ -285,7 +286,7 @@ mod tests {
     fn snapshot_tracker_basic() {
         let global_seqno = SequenceNumberCounter::default();
 
-        let map = SnapshotTracker::new(global_seqno.clone());
+        let map = SnapshotTracker::new(global_seqno.clone().into());
 
         let nonce = map.open();
         assert_eq!(0, nonce.instant);
@@ -304,7 +305,7 @@ mod tests {
     fn snapshot_tracker_increase_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
-        let map = SnapshotTracker::new(global_seqno.clone());
+        let map = SnapshotTracker::new(global_seqno.clone().into());
 
         // Simulates some tx committing
         for _ in 0..100_000 {
@@ -320,7 +321,7 @@ mod tests {
     fn snapshot_tracker_prevent_watermark() {
         let global_seqno = SequenceNumberCounter::default();
 
-        let map = SnapshotTracker::new(global_seqno.clone());
+        let map = SnapshotTracker::new(global_seqno.clone().into());
 
         // This nonce prevents the watermark from increasing
         let _old_nonce = map.open();
@@ -342,7 +343,7 @@ mod tests {
     #[test]
     fn snapshot_tracker_close_never_opened_does_not_underflow_or_panic() {
         let global_seqno = SequenceNumberCounter::default();
-        let map = SnapshotTracker::new(global_seqno);
+        let map = SnapshotTracker::new(global_seqno.into());
 
         assert_eq!(map.len(), 0);
         map.close_raw(42);
@@ -352,7 +353,7 @@ mod tests {
     #[test]
     fn snapshot_tracker_concurrent_open_same_seqno_counts_correctly() {
         let global_seqno = SequenceNumberCounter::default();
-        let map = SnapshotTracker::new(global_seqno);
+        let map = SnapshotTracker::new(global_seqno.into());
 
         // make sure seqno doesn't change between two opens
         let n1 = map.open();
@@ -372,7 +373,7 @@ mod tests {
     #[test]
     fn snapshot_tracker_publish_moves_seqno_forward_and_ignores_older() {
         let global_seqno = SequenceNumberCounter::default();
-        let map = SnapshotTracker::new(global_seqno);
+        let map = SnapshotTracker::new(global_seqno.into());
 
         let big = 100u64;
         map.publish(big);
@@ -386,7 +387,7 @@ mod tests {
     #[test]
     fn snapshot_tracker_clone_snapshot_behaves_like_second_open() {
         let global_seqno = SequenceNumberCounter::default();
-        let map = SnapshotTracker::new(global_seqno);
+        let map = SnapshotTracker::new(global_seqno.into());
 
         let orig = map.open();
         let clone = map.clone_snapshot(&orig);

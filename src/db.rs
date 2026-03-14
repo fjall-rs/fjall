@@ -23,7 +23,9 @@ use crate::{
     write_buffer_manager::WriteBufferManager,
     HashMap, Keyspace, KeyspaceCreateOptions,
 };
-use lsm_tree::{AbstractTree, SequenceNumberCounter};
+use lsm_tree::{
+    AbstractTree, SequenceNumberCounter, SequenceNumberGenerator, SharedSequenceNumberGenerator,
+};
 use std::{
     fs::remove_dir_all,
     path::Path,
@@ -56,7 +58,7 @@ pub struct DatabaseInner {
 
     pub(crate) stats: Arc<Stats>,
 
-    pub(crate) keyspace_id_counter: SequenceNumberCounter,
+    pub(crate) keyspace_id_counter: SharedSequenceNumberGenerator,
 
     pub worker_pool: WorkerPool,
 
@@ -593,15 +595,19 @@ impl Database {
 
         let journal_manager = JournalManager::new();
 
-        let seqno = SequenceNumberCounter::default();
-        let visible_seqno = SequenceNumberCounter::default();
+        let seqno: SharedSequenceNumberGenerator = config
+            .seqno_generator
+            .clone()
+            .unwrap_or_else(|| Arc::new(SequenceNumberCounter::default()));
+        let visible_seqno: SharedSequenceNumberGenerator =
+            Arc::new(SequenceNumberCounter::default());
 
         let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
             10,
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree = lsm_tree::Config::new(
+        let meta_tree = lsm_tree::Config::new_with_generators(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
             visible_seqno.clone(),
@@ -652,7 +658,7 @@ impl Database {
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
-            keyspace_id_counter: SequenceNumberCounter::new(1),
+            keyspace_id_counter: Arc::new(SequenceNumberCounter::new(1)),
             meta_keyspace: meta_keyspace.clone(),
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
@@ -834,15 +840,19 @@ impl Database {
         fsync_directory(&keyspaces_folder_path)?;
         fsync_directory(&config.path)?;
 
-        let seqno = SequenceNumberCounter::default();
-        let visible_seqno = SequenceNumberCounter::default();
+        let seqno: SharedSequenceNumberGenerator = config
+            .seqno_generator
+            .clone()
+            .unwrap_or_else(|| Arc::new(SequenceNumberCounter::default()));
+        let visible_seqno: SharedSequenceNumberGenerator =
+            Arc::new(SequenceNumberCounter::default());
 
         let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
             10,
             xxhash_rust::xxh3::Xxh3Builder::new(),
         )));
 
-        let meta_tree = lsm_tree::Config::new(
+        let meta_tree = lsm_tree::Config::new_with_generators(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
             visible_seqno.clone(),
@@ -892,7 +902,7 @@ impl Database {
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
-            keyspace_id_counter: SequenceNumberCounter::new(1),
+            keyspace_id_counter: Arc::new(SequenceNumberCounter::new(1)),
             meta_keyspace,
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),

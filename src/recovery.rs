@@ -13,7 +13,7 @@ use crate::{
     meta_keyspace::MetaKeyspace,
     Database, HashMap, Keyspace,
 };
-use lsm_tree::AbstractTree;
+use lsm_tree::{AbstractTree, SequenceNumberGenerator};
 use std::{path::PathBuf, sync::Arc};
 
 /// Recovers keyspaces
@@ -85,7 +85,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             recovered_config = recovered_config.with_compaction_filter_factory(f);
         }
 
-        let base_config = lsm_tree::Config::new(
+        let base_config = lsm_tree::Config::new_with_generators(
             path,
             db.supervisor.seqno.clone(),
             db.supervisor.snapshot_tracker.get_ref(),

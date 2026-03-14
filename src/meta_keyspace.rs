@@ -4,7 +4,9 @@
 
 use crate::{db::Keyspaces, keyspace::InternalKeyspaceId, Keyspace};
 use byteview::StrView;
-use lsm_tree::{AbstractTree, AnyTree, SeqNo, SequenceNumberCounter, UserValue};
+use lsm_tree::{
+    AbstractTree, AnyTree, SeqNo, SequenceNumberGenerator, SharedSequenceNumberGenerator, UserValue,
+};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 pub fn encode_config_key(
@@ -30,16 +32,16 @@ pub struct MetaKeyspace {
     #[doc(hidden)]
     pub keyspaces: Arc<RwLock<Keyspaces>>,
 
-    seqno_generator: SequenceNumberCounter,
-    visible_seqno: SequenceNumberCounter,
+    seqno_generator: SharedSequenceNumberGenerator,
+    visible_seqno: SharedSequenceNumberGenerator,
 }
 
 impl MetaKeyspace {
     pub(crate) fn new(
         inner: AnyTree,
         keyspaces: Arc<RwLock<Keyspaces>>,
-        seqno_generator: SequenceNumberCounter,
-        visible_seqno: SequenceNumberCounter,
+        seqno_generator: SharedSequenceNumberGenerator,
+        visible_seqno: SharedSequenceNumberGenerator,
     ) -> Self {
         Self {
             inner,

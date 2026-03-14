@@ -6,7 +6,7 @@ pub mod item;
 
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
-use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
+use lsm_tree::{AbstractTree, SequenceNumberGenerator, UserKey, UserValue, ValueType};
 use std::collections::HashSet;
 
 /// An atomic write batch

@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::path::absolute_path;
-use lsm_tree::{Cache, CompressionType, DescriptorTable};
+use lsm_tree::{Cache, CompressionType, DescriptorTable, SharedSequenceNumberGenerator};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -48,6 +48,12 @@ pub struct Config {
     // pub(crate) journal_recovery_mode: RecoveryMode,
     //
     pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
+
+    /// Custom sequence number generator.
+    ///
+    /// When set, this generator is used instead of the default
+    /// [`SequenceNumberCounter`](lsm_tree::SequenceNumberCounter).
+    pub(crate) seqno_generator: Option<SharedSequenceNumberGenerator>,
 }
 
 const DEFAULT_CPU_CORES: usize = 4;
@@ -90,6 +96,7 @@ impl Config {
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
 
             compaction_filter_factory_assigner: None,
+            seqno_generator: None,
         }
     }
 }

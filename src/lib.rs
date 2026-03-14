@@ -170,7 +170,8 @@ pub use tx::optimistic::{
 pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
 
 pub use lsm_tree::{
-    CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,
+    CompressionType, KvPair, KvSeparationOptions, SeqNo, SequenceNumberCounter,
+    SequenceNumberGenerator, SharedSequenceNumberGenerator, Slice, UserKey, UserValue,
 };
 
 /// Utility functions

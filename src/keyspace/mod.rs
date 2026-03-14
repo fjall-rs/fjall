@@ -20,7 +20,7 @@ use crate::{
     worker_pool::WorkerMessage,
     Database, Guard, Iter,
 };
-use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
+use lsm_tree::{AbstractTree, AnyTree, SeqNo, SequenceNumberGenerator, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
     ops::RangeBounds,
@@ -334,7 +334,7 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(
+        let base_config = lsm_tree::Config::new_with_generators(
             base_folder,
             db.supervisor.seqno.clone(),
             db.supervisor.snapshot_tracker.get_ref(),

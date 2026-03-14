@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use lsm_tree::SequenceNumberCounter;
+use lsm_tree::SharedSequenceNumberGenerator;
 
 use crate::{
     db::Keyspaces,
@@ -23,7 +23,7 @@ pub struct SupervisorInner {
     pub(crate) write_buffer_size: WriteBufferManager,
     pub(crate) flush_manager: FlushManager,
 
-    pub seqno: SequenceNumberCounter,
+    pub seqno: SharedSequenceNumberGenerator,
 
     pub snapshot_tracker: SnapshotTracker,
 
