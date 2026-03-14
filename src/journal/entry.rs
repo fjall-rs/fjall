@@ -299,10 +299,10 @@ impl Entry {
                 }
                 let computed_checksum = hasher.finish();
 
-                // debug_assert (not hard error) because checksum == 0 is the
-                // normal write path: write_raw sets checksum: 0 and relies on
-                // encode_into to compute it. A hard error would break writes.
-                // The field is only authoritative after decode_from.
+                // debug_assert (not hard error) because checksum == 0 is valid
+                // when constructing entries for encoding (encode_into always
+                // computes the checksum from payload). The field is only
+                // authoritative after decode_from populates it from the file.
                 debug_assert!(
                     *checksum == 0 || *checksum == computed_checksum,
                     "SingleItem checksum field does not match computed checksum"
