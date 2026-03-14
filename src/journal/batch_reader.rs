@@ -228,8 +228,10 @@ impl Iterator for JournalBatchReader {
                         return None;
                     }
 
-                    // Verify checksum (consistent with multi-item batch path,
-                    // surfacing ChecksumMismatch as Err instead of silent truncation).
+                    // Verify checksum — surfaces ChecksumMismatch as Err
+                    // (consistent with multi-item batch error handling).
+                    // Checksum scope: serialize_item_payload output only (no Item
+                    // tag byte), matching what encode_into and write_raw produce.
                     // Reuse HashingWriter with io::sink() to hash without allocating.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {

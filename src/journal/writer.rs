@@ -288,9 +288,12 @@ impl Writer {
         self.buf.write_u8(Tag::SingleItem.into())?;
         self.buf.write_u64::<LittleEndian>(seqno)?;
 
+        // NOTE: SingleItem checksum covers serialize_item_payload output only
+        // (not the Tag::Item byte). This is intentional — SingleItem is a distinct
+        // on-disk format from Start+Item+End batches, with its own checksum scope.
+        // Both encode_into and batch_reader verify use the same scope.
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         {
-            // HashingWriter writes to buf while feeding bytes to hasher
             let mut hw = super::entry::HashingWriter {
                 inner: &mut self.buf,
                 hasher: &mut hasher,
