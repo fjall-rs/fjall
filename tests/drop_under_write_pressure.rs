@@ -16,7 +16,9 @@ fn drop_completes_under_write_pressure() {
 
     for iteration in 0..ITERATIONS {
         let folder = tempfile::tempdir().unwrap();
-        let db = Database::builder(&folder).open().unwrap();
+        // Explicitly use 4 worker threads so pool_size > 1 worker #0 behavior
+        // is exercised even on single-core CI environments
+        let db = Database::builder(&folder).worker_threads(4).open().unwrap();
         let keyspace = db
             .keyspace("default", || {
                 KeyspaceCreateOptions::default().max_memtable_size(1_024)
@@ -70,8 +72,10 @@ fn drop_completes_under_write_pressure() {
 
         db_drop.join().expect("drop thread panicked");
 
-        for h in handles {
-            let _ = h.join();
+        for (i, h) in handles.into_iter().enumerate() {
+            if let Err(e) = h.join() {
+                panic!("iteration {iteration}: writer thread {i} panicked: {e:?}");
+            }
         }
     }
 }
