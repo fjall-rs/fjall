@@ -5,7 +5,7 @@
 use super::reader::JournalReader;
 use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
-use std::{fs::OpenOptions, hash::Hasher, io::Write};
+use std::{fs::OpenOptions, hash::Hasher};
 
 #[derive(Debug)]
 pub struct ReadBatchItem {
@@ -230,29 +230,15 @@ impl Iterator for JournalBatchReader {
 
                     // Verify checksum (consistent with multi-item batch path,
                     // surfacing ChecksumMismatch as Err instead of silent truncation).
-                    // Use a hash-only sink to avoid allocating a temp buffer.
+                    // Reuse HashingWriter with io::sink() to hash without allocating.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {
-                        struct HashingSink<'a, H: Hasher> {
-                            hasher: &'a mut H,
-                        }
-
-                        impl<H: Hasher> Write for HashingSink<'_, H> {
-                            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                                self.hasher.write(buf);
-                                Ok(buf.len())
-                            }
-
-                            fn flush(&mut self) -> std::io::Result<()> {
-                                Ok(())
-                            }
-                        }
-
-                        let mut sink = HashingSink {
+                        let mut hw = super::entry::HashingWriter {
+                            inner: &mut std::io::sink(),
                             hasher: &mut hasher,
                         };
                         fail_iter!(super::entry::serialize_item_payload(
-                            &mut sink,
+                            &mut hw,
                             keyspace_id,
                             &key,
                             &value,

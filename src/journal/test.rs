@@ -1,5 +1,6 @@
 use super::*;
 use crate::batch::item::Item as BatchItem;
+use crate::file::MAGIC_BYTES;
 use entry::Entry;
 use lsm_tree::ValueType;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -186,12 +187,11 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
         // Flip a byte inside the item payload area.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
         // Find the entry end by locating the magic trailer bytes.
-        let magic: &[u8] = &[b'F', b'J', b'L', 3];
         let entry_end = buf
-            .windows(4)
-            .position(|w| w == magic)
+            .windows(MAGIC_BYTES.len())
+            .rposition(|w| w == MAGIC_BYTES)
             .expect("magic trailer not found")
-            + 4;
+            + MAGIC_BYTES.len();
 
         let header_len: usize = 1 + 8; // tag + seqno
         let trailer_len: usize = 8 + 4; // checksum + magic
