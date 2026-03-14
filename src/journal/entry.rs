@@ -36,15 +36,17 @@ impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
     }
 }
 
-/// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
+/// Journal entry. Batches are encoded either as:
+/// - a `Start` entry, followed by N `Item` entries, followed by an `End` entry, or
+/// - a single `SingleItem` entry (compact encoding for single-item batches).
 ///
-/// - The start entry contains the numbers of items. If the numbers of items following doesn't match, the batch is broken.
+/// - The start entry contains the number of items. If the number of items following doesn't match, the batch is broken.
 ///
 /// - The end entry contains a checksum value. If the checksum of the items doesn't match that, the batch is broken.
 ///
-/// - The end entry terminates each batch with the magic string: [`TRAILER_MAGIC`].
+/// - The end entry terminates each batch with the magic bytes: [`MAGIC_BYTES`].
 ///
-/// - If a start entry is detected, while inside a batch, the batch is broken.
+/// - If a start entry is detected while already inside a batch, the batch is broken.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Entry {
     Start {

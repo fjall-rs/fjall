@@ -235,8 +235,9 @@ impl Iterator for JournalBatchReader {
                     // Reuse HashingWriter with io::sink() to hash without allocating.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {
+                        let mut sink = std::io::sink();
                         let mut hw = super::entry::HashingWriter {
-                            inner: &mut std::io::sink(),
+                            inner: &mut sink,
                             hasher: &mut hasher,
                         };
                         fail_iter!(super::entry::serialize_item_payload(
