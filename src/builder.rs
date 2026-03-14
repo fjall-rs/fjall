@@ -202,11 +202,16 @@ impl<O: Openable> Builder<O> {
     ///
     /// ```
     /// use fjall::Database;
+    /// use lsm_tree::{SharedSequenceNumberGenerator, SequenceNumberCounter};
     /// use std::sync::Arc;
     ///
     /// # let folder = tempfile::tempdir()?;
-    /// // Use default generator (SequenceNumberCounter)
-    /// let db = Database::builder(&folder).open()?;
+    /// let generator: SharedSequenceNumberGenerator =
+    ///     Arc::new(SequenceNumberCounter::default());
+    ///
+    /// let db = Database::builder(&folder)
+    ///     .seqno_generator(generator)
+    ///     .open()?;
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
