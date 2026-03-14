@@ -8,7 +8,10 @@ use lsm_tree::{
     coding::{Decode, Encode},
     CompressionType, SeqNo, UserKey, UserValue, ValueType,
 };
-use std::io::{Read, Write};
+use std::{
+    hash::Hasher,
+    io::{Read, Write},
+};
 
 /// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
 ///
@@ -240,18 +243,21 @@ impl Entry {
             }
             SingleItem {
                 seqno,
-                checksum,
                 keyspace_id,
                 key,
                 value,
                 value_type,
                 compression,
+                ..
             } => {
                 writer.write_u8(Tag::SingleItem.into())?;
                 writer.write_u64::<LittleEndian>(*seqno)?;
 
+                // Serialize payload into temp buffer to compute checksum,
+                // ensuring encoding is defined in a single place.
+                let mut payload_buf = Vec::with_capacity(key.len() + value.len() + 32);
                 serialize_item_payload(
-                    writer,
+                    &mut payload_buf,
                     *keyspace_id,
                     key,
                     value,
@@ -259,7 +265,12 @@ impl Entry {
                     *compression,
                 )?;
 
-                writer.write_u64::<LittleEndian>(*checksum)?;
+                let mut hasher = xxhash_rust::xxh3::Xxh3::default();
+                hasher.update(&payload_buf);
+                let checksum = hasher.finish();
+
+                writer.write_all(&payload_buf)?;
+                writer.write_u64::<LittleEndian>(checksum)?;
                 writer.write_all(MAGIC_BYTES)?;
             }
         }
@@ -336,7 +347,6 @@ impl Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::hash::Hasher;
     use test_log::test;
 
     #[test]

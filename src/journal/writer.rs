@@ -2,14 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::entry::{serialize_item_payload, serialize_marker_item, Entry, Tag};
+use super::entry::{serialize_marker_item, Entry};
 use crate::{
-    batch::item::Item as BatchItem,
-    file::{fsync_directory, MAGIC_BYTES},
-    journal::recovery::JournalId,
+    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
     keyspace::InternalKeyspaceId,
 };
-use byteorder::{LittleEndian, WriteBytesExt};
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
     fs::{File, OpenOptions},
@@ -274,37 +271,27 @@ impl Writer {
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 
-        self.buf.clear();
-
-        // Tag + seqno
-        self.buf.write_u8(Tag::SingleItem.into())?;
-        self.buf.write_u64::<LittleEndian>(seqno)?;
-
-        let payload_start = self.buf.len();
-
-        // Item payload (without tag byte)
-        serialize_item_payload(
-            &mut self.buf,
-            keyspace_id,
-            key,
-            value,
-            value_type,
+        let compression =
             if self.compression_threshold > 0 && value.len() >= self.compression_threshold {
                 self.compression
             } else {
                 CompressionType::None
-            },
-        )?;
+            };
 
-        // Checksum covers only the item payload
-        let mut hasher = xxhash_rust::xxh3::Xxh3::default();
-        if let Some(payload) = self.buf.get(payload_start..) {
-            hasher.update(payload);
-        }
-        let checksum = hasher.finish();
+        // Delegate encoding to Entry::encode_into so the on-disk layout
+        // is defined in a single place.
+        let entry = Entry::SingleItem {
+            seqno,
+            checksum: 0, // computed by encode_into
+            keyspace_id,
+            key: key.into(),
+            value: value.into(),
+            value_type,
+            compression,
+        };
 
-        self.buf.write_u64::<LittleEndian>(checksum)?;
-        self.buf.write_all(MAGIC_BYTES)?;
+        self.buf.clear();
+        entry.encode_into(&mut self.buf)?;
 
         // Single write for entire entry
         self.file.write_all(&self.buf)?;

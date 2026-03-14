@@ -2,7 +2,7 @@ use super::*;
 use crate::batch::item::Item as BatchItem;
 use entry::Entry;
 use lsm_tree::ValueType;
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use tempfile::tempdir;
 use test_log::test;
 
@@ -143,6 +143,66 @@ fn journal_truncation_corrupt_single_item() -> crate::Result<()> {
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].items[0].key.as_ref(), b"good");
     }
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+
+        writer.write_raw(keyspace.id, b"good", b"data", ValueType::Value, 0)?;
+    }
+
+    // Verify initial recovery succeeds
+    {
+        let journal = Journal::from_file(&path)?;
+        let reader = journal.get_reader()?;
+        let batches: Vec<_> = reader.flatten().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].items[0].key.as_ref(), b"good");
+    }
+
+    // Corrupt a byte in the payload while keeping the trailer intact
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)?;
+
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+
+        // Flip a byte inside the item payload area.
+        // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
+        // Byte 15 is safely within the payload (after tag+seqno, before checksum).
+        buf[15] ^= 0xFF;
+
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&buf)?;
+        file.sync_all()?;
+    }
+
+    // Recovery should fail due to checksum mismatch rather than silently truncating
+    let journal = Journal::from_file(&path)?;
+    let reader = journal.get_reader()?;
+    let batches: Vec<_> = reader.collect();
+
+    // The batch reader should surface the checksum error
+    assert!(
+        batches.iter().any(|b| b.is_err()),
+        "expected ChecksumMismatch error, but all batches succeeded: {batches:?}",
+    );
 
     Ok(())
 }
