@@ -77,7 +77,7 @@ impl Drop for DatabaseInner {
             > 0
         {
             let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
         // Drain again after threads are closed

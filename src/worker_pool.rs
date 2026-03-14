@@ -135,8 +135,10 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         return Ok(true);
     }
 
-    let Ok(item) = ctx.rx.recv() else {
-        return Ok(true);
+    let item = match ctx.rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        Ok(item) => item,
+        Err(flume::RecvTimeoutError::Timeout) => return Ok(false),
+        Err(flume::RecvTimeoutError::Disconnected) => return Ok(true),
     };
 
     if ctx.stop_signal.is_stopped() {
@@ -232,8 +234,14 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             //
             // Disable when only 1 worker exists to avoid deadlock
             if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.try_send(WorkerMessage::Compact(keyspace)).ok();
-                return Ok(false);
+                if ctx
+                    .sender
+                    .try_send(WorkerMessage::Compact(keyspace.clone()))
+                    .is_ok()
+                {
+                    return Ok(false);
+                }
+                // Channel full — run compaction here instead of dropping the work
             }
 
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
