@@ -250,7 +250,8 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         WorkerMessage::Compact(keyspace) => {
             // NOTE: Let one worker prioritize flushing if there are pending flushes
             //
-            // Disable when only 1 worker exists to avoid deadlock
+            // Disable when only 1 worker exists to avoid stalling/livelock: a single
+            // worker would keep re-enqueuing compaction and never actually run it.
             if ctx.pool_size > 1 && ctx.worker_id == 0 {
                 if ctx
                     .sender
