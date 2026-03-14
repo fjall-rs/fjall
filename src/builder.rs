@@ -188,14 +188,15 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Sets a custom sequence number generator.
+    /// Sets a custom sequence number generator for write operations.
     ///
     /// By default, the database uses [`SequenceNumberCounter`](lsm_tree::SequenceNumberCounter),
     /// a simple atomic counter. Use this to plug in a custom generator,
     /// e.g., a Hybrid Logical Clock (HLC) for distributed databases.
     ///
     /// The generator is shared across all keyspaces and is used for
-    /// both write sequencing and MVCC visibility.
+    /// write sequencing (assigning seqnos to new writes). The MVCC
+    /// visibility watermark is managed internally by the snapshot tracker.
     ///
     /// # Examples
     ///
