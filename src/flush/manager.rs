@@ -35,7 +35,7 @@ impl FlushManager {
     }
 
     pub fn enqueue(&self, task: Arc<Task>) {
-        self.sender.send(task).ok();
+        self.sender.try_send(task).ok();
     }
 
     pub fn dequeue(&self) -> Option<Arc<Task>> {
