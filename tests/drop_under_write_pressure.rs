@@ -62,10 +62,12 @@ fn drop_completes_under_write_pressure() {
                 break;
             }
             if std::time::Instant::now() > deadline {
-                // Don't join (would hang) — just fail the test
-                panic!(
-                    "iteration {iteration}: drop did not complete within {WATCHDOG_SECS}s — likely deadlock"
+                // Don't join (would hang). Abort the process so a deadlocked drop
+                // thread cannot keep the test binary alive indefinitely.
+                eprintln!(
+                    "iteration {iteration}: drop did not complete within {WATCHDOG_SECS}s — likely deadlock; aborting process"
                 );
+                std::process::abort();
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
