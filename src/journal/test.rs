@@ -245,6 +245,129 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
     Ok(())
 }
 
+/// SingleItem entry appearing inside a multi-item batch is invalid.
+/// The batch reader should discard the incomplete batch and truncate.
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_single_item_inside_batch_discarded() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+
+        // Write a valid batch first
+        let batch_items = [
+            BatchItem::new(keyspace.clone(), *b"aaa", *b"bbb", ValueType::Value),
+            BatchItem::new(keyspace.clone(), *b"ccc", *b"ddd", ValueType::Value),
+        ];
+        writer.write_batch(batch_items.iter(), 2, 0)?;
+    }
+
+    // Verify valid batch recovers
+    {
+        let journal = Journal::from_file(&path)?;
+        let reader = journal.get_reader()?;
+        let batches: Vec<_> = reader.flatten().collect();
+        assert_eq!(batches.len(), 1);
+    }
+
+    // Append a Start marker followed by a raw SingleItem entry (invalid: SingleItem inside batch)
+    {
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+        Entry::Start {
+            item_count: 2,
+            seqno: 1,
+        }
+        .encode_into(&mut file)?;
+        // Write a SingleItem inside the open batch — this is invalid
+        Entry::SingleItem {
+            seqno: 1,
+            checksum: 0,
+            keyspace_id: keyspace.id,
+            key: vec![1, 2, 3].into(),
+            value: vec![4, 5, 6].into(),
+            value_type: ValueType::Value,
+            compression: lsm_tree::CompressionType::None,
+        }
+        .encode_into(&mut file)?;
+        file.sync_all()?;
+    }
+
+    // Recovery should yield only the first valid batch; the incomplete
+    // second batch (Start + misplaced SingleItem) is truncated.
+    for _ in 0..3 {
+        let journal = Journal::from_file(&path)?;
+        let reader = journal.get_reader()?;
+        let batches: Vec<_> = reader.flatten().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].items[0].key.as_ref(), b"aaa");
+    }
+
+    Ok(())
+}
+
+/// SingleItem with mangled magic trailer should produce InvalidTrailer error.
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_single_item_invalid_trailer() -> crate::Result<()> {
+    let dir1 = tempdir()?;
+    let db = crate::Database::builder(&dir1).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir2 = tempdir()?;
+    let path = dir2.path().join("0.jnl");
+
+    {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer();
+        writer.write_raw(keyspace.id, b"key1", b"val1", ValueType::Value, 0)?;
+    }
+
+    // Corrupt the MAGIC_BYTES trailer of the SingleItem entry
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)?;
+
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+
+        // Find MAGIC_BYTES position and corrupt one byte in the trailer
+        let magic_pos = buf
+            .windows(MAGIC_BYTES.len())
+            .position(|w| w == MAGIC_BYTES)
+            .expect("should find magic bytes");
+
+        buf[magic_pos] ^= 0xFF;
+
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&buf)?;
+        file.sync_all()?;
+    }
+
+    // decode_from should return InvalidTrailer, which surfaces as an
+    // I/O-level error during batch reading (the reader treats it as
+    // a broken entry and stops iteration).
+    let journal = Journal::from_file(&path)?;
+    let reader = journal.get_reader()?;
+    let batches: Vec<_> = reader.collect();
+
+    // No valid batches should be returned
+    assert!(
+        batches.iter().all(|b| b.is_err()),
+        "expected all entries to error due to invalid trailer, got: {batches:?}",
+    );
+
+    Ok(())
+}
+
 impl PartialEq<BatchItem> for crate::journal::batch_reader::ReadBatchItem {
     fn eq(&self, other: &BatchItem) -> bool {
         self.keyspace_id == other.keyspace.id
