@@ -786,7 +786,7 @@ impl Keyspace {
             }
         }
 
-        #[expect(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         self.supervisor
             .journal_manager
             .write()
