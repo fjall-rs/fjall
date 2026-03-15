@@ -85,11 +85,19 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+        #[expect(
+            clippy::expect_used,
+            reason = "Drop impl cannot propagate errors from poisoned locks"
+        )]
         self.supervisor
             .keyspaces
             .write()
             .expect("lock is poisoned")
             .clear();
+        #[expect(
+            clippy::expect_used,
+            reason = "Drop impl cannot propagate errors from poisoned locks"
+        )]
         self.supervisor
             .journal_manager
             .write()
@@ -277,7 +285,12 @@ impl Database {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panics only if internal RwLock is poisoned"
+    )]
     pub fn journal_count(&self) -> usize {
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         self.supervisor
             .journal_manager
             .read()
@@ -288,6 +301,7 @@ impl Database {
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         Ok(self.supervisor.journal.get_writer().len()?
             + self
                 .supervisor
@@ -311,9 +325,18 @@ impl Database {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an IO error occurs.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panics only if internal RwLock is poisoned"
+    )]
     pub fn disk_space(&self) -> crate::Result<u64> {
         let journal_size = self.journal_disk_space()?;
 
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         let keyspaces_size = self
             .supervisor
             .keyspaces
@@ -349,7 +372,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
@@ -385,7 +408,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!(
             "cache capacity={}MiB",
@@ -443,7 +466,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     ///
     /// # Panics
     ///
@@ -455,6 +478,7 @@ impl Database {
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         let keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
@@ -490,7 +514,12 @@ impl Database {
 
     /// Returns the number of keyspaces.
     #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panics only if internal RwLock is poisoned"
+    )]
     pub fn keyspace_count(&self) -> usize {
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         self.supervisor
             .keyspaces
             .read()
@@ -500,7 +529,12 @@ impl Database {
 
     /// Gets a list of all keyspace names in the database.
     #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panics only if internal RwLock is poisoned"
+    )]
     pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         self.supervisor
             .keyspaces
             .read()
@@ -771,6 +805,10 @@ impl Database {
 
         db.supervisor.snapshot_tracker.gc();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "poisoned lock during recovery is unrecoverable"
+        )]
         for keyspace in db
             .supervisor
             .keyspaces

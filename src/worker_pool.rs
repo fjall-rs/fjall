@@ -126,7 +126,10 @@ impl WorkerPool {
             })
             .collect::<Result<_, _>>()?;
 
-        *self.thread_handles.lock().expect("lock is poisoned") = thread_handles;
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
+        {
+            *self.thread_handles.lock().expect("lock is poisoned") = thread_handles;
+        }
 
         Ok(())
     }
@@ -241,6 +244,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     .ok();
             }
 
+            #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
             ctx.supervisor
                 .journal_manager
                 .write()

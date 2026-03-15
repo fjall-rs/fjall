@@ -83,6 +83,10 @@ pub struct KeyspaceInner {
     pub(crate) supervisor: Supervisor,
 
     /// Database-level stats
+    #[expect(
+        dead_code,
+        reason = "stats field reserved for future per-keyspace metrics"
+    )]
     pub(crate) stats: Arc<Stats>,
 
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
@@ -366,8 +370,9 @@ impl Keyspace {
     /// This function is experimental and metric names may change in future releases.
     #[cfg(feature = "metrics")]
     #[doc(hidden)]
+    #[must_use]
     pub fn metrics(&self) -> &lsm_tree::Metrics {
-        &**self.tree.metrics()
+        self.tree.metrics()
     }
 
     /// Returns the underlying LSM-tree's path.
@@ -757,6 +762,7 @@ impl Keyspace {
             self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
 
+            #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
             for keyspace in self
                 .supervisor
                 .keyspaces
@@ -764,6 +770,10 @@ impl Keyspace {
                 .expect("lock is poisoned")
                 .values()
             {
+                #[expect(
+                    clippy::significant_drop_in_scrutinee,
+                    reason = "version history lock is short-lived and does not risk deadlock here"
+                )]
                 if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
                     keyspace.path(),
                     self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
@@ -776,7 +786,7 @@ impl Keyspace {
             }
         }
 
-        #[expect(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         self.supervisor
             .journal_manager
             .write()
