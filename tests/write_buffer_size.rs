@@ -52,6 +52,16 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
     assert!(write_buffer_size_after_batch > write_buffer_size_after);
 
     tree.rotate_memtable_and_wait()?;
+
+    // Write buffer counter may be updated asynchronously after flush
+    // completes, especially on Windows where thread scheduling is less
+    // predictable. Poll briefly instead of asserting immediately.
+    for _ in 0..50 {
+        if db.write_buffer_size() == 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert_eq!(0, db.write_buffer_size());
 
     Ok(())

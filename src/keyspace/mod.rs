@@ -83,7 +83,7 @@ pub struct KeyspaceInner {
     pub(crate) supervisor: Supervisor,
 
     /// Database-level stats
-    #[allow(
+    #[expect(
         dead_code,
         reason = "stats field reserved for future per-keyspace metrics"
     )]
