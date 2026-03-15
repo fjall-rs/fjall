@@ -5,6 +5,7 @@
 /// Recovery mode to use
 ///
 /// Based on `RocksDB`'s WAL Recovery Modes: <https://github.com/facebook/rocksdb/wiki/WAL-Recovery-Modes>
+#[expect(dead_code, reason = "reserved for future WAL recovery mode selection")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum RecoveryMode {

@@ -56,6 +56,7 @@ impl Drop for Journal {
 impl Journal {
     pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
         {
+            #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
             let mut writer = self.writer.lock().expect("lock is poisoned");
             writer.set_compression(comp, threshold);
         }
@@ -72,6 +73,10 @@ impl Journal {
         let path = path.as_ref();
         log::trace!("Creating new journal at {}", path.display());
 
+        #[expect(
+            clippy::expect_used,
+            reason = "journal path always has a parent directory"
+        )]
         let folder = path.parent().expect("parent should exist");
 
         std::fs::create_dir_all(folder).inspect_err(|e| {

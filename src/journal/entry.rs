@@ -196,7 +196,13 @@ impl Entry {
                         let compressed_value =
                             Slice::from_reader(reader, on_disk_value_len as usize)?;
 
-                        #[warn(unsafe_code)]
+                        #[expect(
+                            unsafe_code,
+                            reason = "unzeroed buffer for LZ4 decompression performance"
+                        )]
+                        // SAFETY: decompress_into writes exactly value_len bytes on success
+                        // (validated by the size check below). The buffer is fully initialized
+                        // before freeze() is called.
                         let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
 
                         let size = lz4_flex::decompress_into(&compressed_value, &mut value)

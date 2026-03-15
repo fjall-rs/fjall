@@ -82,12 +82,20 @@ impl Writer {
 
         let prev_path = self.path.clone();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "journal path always has a parent directory"
+        )]
         let folder = self
             .path
             .parent()
             .expect("should have parent")
             .to_path_buf();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "journal file names are always valid .jnl files"
+        )]
         let Some(basename) = self
             .path
             .file_name()

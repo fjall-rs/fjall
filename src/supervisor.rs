@@ -32,6 +32,10 @@ pub struct SupervisorInner {
     /// Tracks journal size and garbage collects sealed journals when possible
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
 
+    #[expect(
+        dead_code,
+        reason = "backpressure_lock reserved for future write throttling"
+    )]
     pub(crate) backpressure_lock: Mutex<()>,
 }
 
