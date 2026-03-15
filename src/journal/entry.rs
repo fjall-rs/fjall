@@ -15,9 +15,9 @@ use std::{
 
 /// Write adapter that hashes bytes as they pass through to the inner writer.
 /// Used by `SingleItem` encoding to compute the checksum without a temp buffer.
-pub(crate) struct HashingWriter<'a, W: Write, H: Hasher> {
-    pub(crate) inner: &'a mut W,
-    pub(crate) hasher: &'a mut H,
+pub struct HashingWriter<'a, W: Write, H: Hasher> {
+    pub inner: &'a mut W,
+    pub hasher: &'a mut H,
 }
 
 impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
@@ -209,7 +209,13 @@ fn decode_item_payload<R: Read>(
         CompressionType::Lz4 => {
             let compressed_value = Slice::from_reader(reader, on_disk_value_len as usize)?;
 
-            #[warn(unsafe_code)]
+            #[expect(
+                unsafe_code,
+                reason = "unzeroed buffer for LZ4 decompression performance"
+            )]
+            // SAFETY: decompress_into writes exactly value_len bytes on success
+            // (validated by the size check below). The buffer is fully initialized
+            // before freeze() is called.
             let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
 
             let size = lz4_flex::decompress_into(&compressed_value, &mut value).map_err(|e| {

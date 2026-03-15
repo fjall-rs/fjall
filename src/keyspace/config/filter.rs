@@ -15,6 +15,7 @@ impl EncodeConfig for crate::config::FilterPolicy {
         v.write_u8(self.len() as u8)
             .expect("cannot fail writing into a vec");
 
+        #[expect(clippy::expect_used, reason = "writing into a Vec cannot fail")]
         for item in self.iter() {
             match item {
                 crate::config::FilterPolicyEntry::None => {

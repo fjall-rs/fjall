@@ -85,12 +85,20 @@ impl Writer {
 
         let prev_path = self.path.clone();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "journal path always has a parent directory"
+        )]
         let folder = self
             .path
             .parent()
             .expect("should have parent")
             .to_path_buf();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "journal file names are always valid .jnl files"
+        )]
         let Some(basename) = self
             .path
             .file_name()
@@ -263,7 +271,7 @@ impl Writer {
     /// Layout: `[tag=5][seqno][item_payload][checksum][magic]`
     ///
     /// Saves 6 bytes per write vs the full `Start + Item + End` batch encoding
-    /// by eliminating the item_count field and two extra tag bytes.
+    /// by eliminating the `item_count` field and two extra tag bytes.
     pub(crate) fn write_raw(
         &mut self,
         keyspace_id: InternalKeyspaceId,
