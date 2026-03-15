@@ -187,13 +187,15 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
 
-        // Find actual entry end by locating MAGIC_BYTES trailer.
+        // Find actual entry end by locating MAGIC_BYTES trailer from the end.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
+        let magic_len = MAGIC_BYTES.len();
         let entry_end = buf
-            .windows(MAGIC_BYTES.len())
-            .position(|w| w == MAGIC_BYTES)
-            .expect("should find magic bytes")
-            + MAGIC_BYTES.len();
+            .windows(magic_len)
+            .rposition(|w| w == MAGIC_BYTES)
+            .expect("should find magic bytes at end of entry")
+            + magic_len;
+        assert_eq!(entry_end, buf.len(), "magic bytes must terminate the entry");
 
         let header_len: usize = 1 + 8; // tag + seqno
         let trailer_len: usize = 8 + 4; // checksum + magic
@@ -332,10 +334,10 @@ fn journal_single_item_invalid_trailer() -> crate::Result<()> {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
 
-        // Find MAGIC_BYTES position and corrupt one byte in the trailer
+        // Find MAGIC_BYTES position from end and corrupt one byte in the trailer
         let magic_pos = buf
             .windows(MAGIC_BYTES.len())
-            .position(|w| w == MAGIC_BYTES)
+            .rposition(|w| w == MAGIC_BYTES)
             .expect("should find magic bytes");
 
         buf[magic_pos] ^= 0xFF;
