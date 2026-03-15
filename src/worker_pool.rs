@@ -257,15 +257,16 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             //
             // Disable when only 1 worker exists to avoid stalling/livelock: a single
             // worker would keep re-enqueuing compaction and never actually run it.
-            if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                if ctx
+            // If try_send fails (channel full), fall through to run
+            // compaction here instead of dropping the work.
+            if ctx.pool_size > 1
+                && ctx.worker_id == 0
+                && ctx
                     .sender
                     .try_send(WorkerMessage::Compact(keyspace.clone()))
                     .is_ok()
-                {
-                    return Ok(false);
-                }
-                // Channel full — run compaction here instead of dropping the work
+            {
+                return Ok(false);
             }
 
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
