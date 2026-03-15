@@ -9,6 +9,8 @@ use std::{
     sync::Arc,
 };
 
+// NOTE: This type is used crate-internally. The module is private so `pub` here
+// is effectively `pub(crate)`. Using `pub` avoids clippy::redundant_pub_crate.
 pub type CompactionFilterAssigner =
     Arc<dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync>;
 
