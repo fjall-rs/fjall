@@ -308,10 +308,14 @@ impl Entry {
                 }
                 let computed_checksum = hasher.finish();
 
-                // debug_assert (not runtime error) because checksum == 0 is valid
-                // during encoding (encode_into computes it from payload). The
-                // stored checksum is only authoritative after decode_from reads
-                // it from the file. Runtime verification happens in batch_reader.
+                // The checksum field is dual-purpose:
+                //   - During encoding: ignored (always recomputed from payload).
+                //     Callers may pass 0. The hot path (write_raw) bypasses
+                //     Entry entirely and writes directly from borrowed slices.
+                //   - During decoding: populated from the on-disk bytes and
+                //     verified by JournalBatchReader.
+                // debug_assert catches test mistakes where a pre-computed
+                // checksum doesn't match, but is not a runtime invariant.
                 debug_assert!(
                     *checksum == 0 || *checksum == computed_checksum,
                     "SingleItem checksum field does not match computed checksum"
