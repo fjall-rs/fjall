@@ -14,7 +14,7 @@ use crate::{
     Database, HashMap, Keyspace,
 };
 use lsm_tree::AbstractTree;
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 /// Recovers keyspaces
 pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::Result<()> {
@@ -39,6 +39,10 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             continue;
         }
 
+        #[expect(
+            clippy::expect_used,
+            reason = "keyspace dirs are always valid numeric names"
+        )]
         let keyspace_id = dirent
             .file_name()
             .to_str()

@@ -183,6 +183,7 @@ impl<O: Openable> Builder<O> {
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
+    #[must_use]
     pub fn with_compaction_filter_factories(mut self, f: CompactionFilterAssigner) -> Self {
         self.inner.compaction_filter_factory_assigner = Some(f);
         self

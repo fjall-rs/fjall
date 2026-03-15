@@ -196,7 +196,10 @@ impl Entry {
                         let compressed_value =
                             Slice::from_reader(reader, on_disk_value_len as usize)?;
 
-                        #[warn(unsafe_code)]
+                        #[expect(
+                            unsafe_code,
+                            reason = "unzeroed buffer for LZ4 decompression performance"
+                        )]
                         let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
 
                         let size = lz4_flex::decompress_into(&compressed_value, &mut value)

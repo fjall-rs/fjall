@@ -76,9 +76,8 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::indexing_slicing)]
 #![warn(clippy::pedantic, clippy::nursery)]
-#![warn(clippy::expect_used)]
+#![deny(clippy::expect_used)]
 #![allow(clippy::missing_const_for_fn, clippy::significant_drop_tightening)]
-#![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 macro_rules! fail_iter {
