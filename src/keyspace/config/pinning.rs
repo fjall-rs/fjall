@@ -25,12 +25,12 @@ impl EncodeConfig for crate::config::PinningPolicy {
 
 impl DecodeConfig for crate::config::PinningPolicy {
     fn decode(mut bytes: &[u8]) -> crate::Result<Self> {
-        let len = bytes.read_u8().expect("cannot fail");
+        let len = bytes.read_u8()?;
 
         let mut v = vec![];
 
         for _ in 0..len {
-            let b = bytes.read_u8().expect("cannot fail");
+            let b = bytes.read_u8()?;
             v.push(b == 1);
         }
 
