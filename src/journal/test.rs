@@ -174,7 +174,11 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
         assert_eq!(batches[0].items[0].key.as_ref(), b"good");
     }
 
-    // Corrupt a byte in the payload while keeping the trailer intact
+    // Corrupt a byte in the payload while keeping the trailer intact.
+    // Note: we read the entire pre-allocated file (~64MB) into memory.
+    // A seek+write-1-byte approach would be lighter, but clarity matters
+    // more than performance in tests — the full buffer lets us compute
+    // entry_end via MAGIC_BYTES scan in a straightforward way.
     {
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -187,6 +191,11 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
         // Find actual entry end by locating MAGIC_BYTES trailer.
         // The file is pre-allocated to 64MB, so buf.len() != entry size.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
+        //
+        // .position() is correct here (not .rposition()): there is exactly one
+        // MAGIC_BYTES occurrence in the file — the entry trailer. The rest of
+        // the 64MB is zero-padding from pre-allocation. Test key/value data
+        // (b"good", b"data") does not contain the 4-byte magic sequence.
         let entry_end = buf
             .windows(MAGIC_BYTES.len())
             .position(|w| w == MAGIC_BYTES)

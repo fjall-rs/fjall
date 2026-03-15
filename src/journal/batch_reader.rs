@@ -228,10 +228,20 @@ impl Iterator for JournalBatchReader {
                         return None;
                     }
 
-                    // Verify checksum by re-serializing the decoded payload through
-                    // serialize_item_payload (which re-compresses when compression != None).
-                    // Both write_raw and encode_into hash the same serialized output,
-                    // so the checksum scope matches regardless of compression mode.
+                    // Verify checksum using serialize_item_payload — NOT encode_into.
+                    //
+                    // Why serialize_item_payload and not encode_into:
+                    //   encode_into for Entry::Item prepends the tag byte (0x02), but
+                    //   the write path (write_raw / SingleItem::encode_into) hashes
+                    //   only the serialize_item_payload output (no tag). Using
+                    //   encode_into here would include the tag in the hash and the
+                    //   checksum would never match.
+                    //
+                    // Why re-compression is safe:
+                    //   lz4_flex is deterministic for the same input. The decoded
+                    //   value passed here matches the original uncompressed value
+                    //   from the write path, so re-compressing produces identical
+                    //   bytes and the checksum matches.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {
                         let mut sink = std::io::sink();
