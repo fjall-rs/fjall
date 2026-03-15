@@ -1,0 +1,112 @@
+name: CoordiNode CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/#*"
+      - "fix/#*"
+  pull_request:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        rust_version:
+          - stable
+          - "1.90.0"
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust_version }}
+          components: rustfmt, clippy
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ runner.os }}-cargo
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Setup SSH for private git deps
+        if: env.SSH_PRIVATE_KEY != ''
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (strict)
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo nextest run --all-features
+
+      - name: Run doc tests
+        run: cargo test --doc --features lz4
+
+  codecov:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ runner.os }}-cargo
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Setup SSH for private git deps
+        if: env.SSH_PRIVATE_KEY != ''
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --no-report nextest --all-features
+
+      - name: Run doc tests with coverage
+        run: cargo llvm-cov --no-report --doc --features lz4
+
+      - name: Create coverage report
+        run: cargo llvm-cov report --doctests --lcov --output-path lcov.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
