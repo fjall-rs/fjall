@@ -149,7 +149,7 @@ fn journal_truncation_corrupt_single_item() -> crate::Result<()> {
 }
 
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+#[expect(clippy::unwrap_used, clippy::expect_used, clippy::redundant_clone)]
 fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -307,7 +307,7 @@ fn journal_single_item_inside_batch_discarded() -> crate::Result<()> {
 
 /// SingleItem with mangled magic trailer should produce InvalidTrailer error.
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+#[expect(clippy::unwrap_used, clippy::expect_used, clippy::redundant_clone)]
 fn journal_single_item_invalid_trailer() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -345,17 +345,17 @@ fn journal_single_item_invalid_trailer() -> crate::Result<()> {
         file.sync_all()?;
     }
 
-    // decode_from should return InvalidTrailer, which surfaces as an
-    // I/O-level error during batch reading (the reader treats it as
-    // a broken entry and stops iteration).
+    // InvalidTrailer is treated as an incomplete write — the reader
+    // truncates the file to last_valid_pos and returns no batches.
+    // This is correct crash recovery: a corrupt trailer means the
+    // entry was not fully committed to disk.
     let journal = Journal::from_file(&path)?;
     let reader = journal.get_reader()?;
-    let batches: Vec<_> = reader.collect();
+    let batches: Vec<_> = reader.flatten().collect();
 
-    // No valid batches should be returned
     assert!(
-        batches.iter().all(|b| b.is_err()),
-        "expected all entries to error due to invalid trailer, got: {batches:?}",
+        batches.is_empty(),
+        "expected no valid batches after trailer corruption, got: {batches:?}",
     );
 
     Ok(())
