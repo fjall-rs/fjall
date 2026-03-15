@@ -1,0 +1,7 @@
+[workspace]
+# Don't publish to crates.io — we're a maintained fork using git dependencies
+publish = false
+# Create GitHub releases with changelog
+git_release_enable = true
+# Use conventional commits for changelog
+changelog_update = true
