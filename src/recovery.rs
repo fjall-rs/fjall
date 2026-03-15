@@ -39,16 +39,19 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             continue;
         }
 
-        #[expect(
-            clippy::expect_used,
-            reason = "keyspace dirs are always valid numeric names"
-        )]
-        let keyspace_id = dirent
-            .file_name()
-            .to_str()
-            .expect("should be valid keyspace name")
-            .parse::<InternalKeyspaceId>()
-            .expect("should be valid integer");
+        let file_name = dirent.file_name();
+        let Some(file_name_str) = file_name.to_str() else {
+            log::warn!(
+                "Keyspace directory with non-UTF-8 name {}, skipping",
+                file_name.to_string_lossy()
+            );
+            continue;
+        };
+
+        let Ok(keyspace_id) = file_name_str.parse::<InternalKeyspaceId>() else {
+            log::warn!("Non-numeric keyspace directory `{file_name_str}`, skipping");
+            continue;
+        };
 
         // NOTE: Is meta keyspace
         if keyspace_id == 0 {
