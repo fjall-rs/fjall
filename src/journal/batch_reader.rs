@@ -228,11 +228,10 @@ impl Iterator for JournalBatchReader {
                         return None;
                     }
 
-                    // Verify checksum — surfaces ChecksumMismatch as Err
-                    // (consistent with multi-item batch error handling).
-                    // Checksum scope: serialize_item_payload output only (no Item
-                    // tag byte), matching what encode_into and write_raw produce.
-                    // Reuse HashingWriter with io::sink() to hash without allocating.
+                    // Verify checksum by re-serializing the decoded (uncompressed) payload.
+                    // This is correct because both write_raw and encode_into hash the
+                    // serialize_item_payload output (uncompressed), not raw on-disk bytes.
+                    // The value is already decompressed at this point, matching the write path.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {
                         let mut sink = std::io::sink();

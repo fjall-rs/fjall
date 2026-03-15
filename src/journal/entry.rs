@@ -305,10 +305,10 @@ impl Entry {
                 }
                 let computed_checksum = hasher.finish();
 
-                // debug_assert (not hard error) because checksum == 0 is valid
-                // when constructing entries for encoding (encode_into always
-                // computes the checksum from payload). The field is only
-                // authoritative after decode_from populates it from the file.
+                // debug_assert (not runtime error) because checksum == 0 is valid
+                // during encoding (encode_into computes it from payload). The
+                // stored checksum is only authoritative after decode_from reads
+                // it from the file. Runtime verification happens in batch_reader.
                 debug_assert!(
                     *checksum == 0 || *checksum == computed_checksum,
                     "SingleItem checksum field does not match computed checksum"

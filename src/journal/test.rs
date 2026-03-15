@@ -186,12 +186,8 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
 
         // Flip a byte inside the item payload area.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
-        // Find the entry end by locating the magic trailer bytes.
-        let entry_end = buf
-            .windows(MAGIC_BYTES.len())
-            .rposition(|w| w == MAGIC_BYTES)
-            .expect("magic trailer not found")
-            + MAGIC_BYTES.len();
+        // Use total buffer length as entry end — single entry fills the entire buffer.
+        let entry_end = buf.len();
 
         let header_len: usize = 1 + 8; // tag + seqno
         let trailer_len: usize = 8 + 4; // checksum + magic
