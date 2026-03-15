@@ -3,8 +3,11 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/structured-world/fjall/actions/workflows/coordinode-ci.yml">
+    <img src="https://github.com/structured-world/fjall/actions/workflows/coordinode-ci.yml/badge.svg" alt="CoordiNode CI" />
+  </a>
   <a href="https://github.com/fjall-rs/fjall/actions/workflows/test.yml">
-    <img src="https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg" alt="CI" />
+    <img src="https://github.com/fjall-rs/fjall/actions/workflows/test.yml/badge.svg" alt="Upstream CI" />
   </a>
   <a href="https://docs.rs/fjall">
     <img src="https://img.shields.io/docsrs/fjall?color=green" alt="docs.rs" />
@@ -13,10 +16,10 @@
     <img src="https://img.shields.io/crates/v/fjall?color=blue" alt="Crates.io" />
   </a>
   <img src="https://img.shields.io/badge/MSRV-1.90.0-blue" alt="MSRV" />
-  <a href="https://deps.rs/repo/github/fjall-rs/fjall">
-    <img src="https://deps.rs/repo/github/fjall-rs/fjall/status.svg" alt="dependency status" />
-  </a>
 </p>
+
+> **Maintained fork** by [Structured World Foundation](https://sw.foundation) for the [CoordiNode](https://github.com/structured-world/coordinode) database engine.
+> Based on [fjall-rs/fjall](https://github.com/fjall-rs/fjall). We contribute patches upstream and maintain additional features needed for CoordiNode (deadlock fixes, custom sequence number generators, journal optimizations, zstd compression).
 
 <p align="center">
   <a href="https://discord.com/invite/HvYGp4NFFk">
@@ -200,8 +203,20 @@ How can you help?
   - [See open issues to pick up here](https://github.com/search?q=org%3Afjall-rs+label%3A%22help+wanted%22+state%3Aopen+&type=issues)
 - [Open an issue](https://github.com/fjall-rs/fjall/issues/new) (bug report, weirdness)
 
+## Support the Project
+
+<div align="center">
+
+![USDT TRC-20 Donation QR Code](assets/usdt-qr.svg)
+
+USDT (TRC-20): `TFDsezHa1cBkoeZT5q2T49Wp66K8t2DmdA`
+
+</div>
+
 ## License
 
 All source code is licensed under MIT OR Apache-2.0.
 
 All contributions are to be licensed as MIT OR Apache-2.0.
+
+Original project by [fjall-rs](https://github.com/fjall-rs/fjall). This fork is maintained by [Structured World Foundation](https://sw.foundation).
