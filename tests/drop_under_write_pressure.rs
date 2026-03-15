@@ -74,9 +74,26 @@ fn drop_completes_under_write_pressure() {
 
         db_drop.join().expect("drop thread panicked");
 
+        // Writers may block on backpressure inside insert(), so apply the same
+        // watchdog pattern: poll is_finished() with a deadline instead of a
+        // bare join() that could hang indefinitely.
+        let writer_deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(WATCHDOG_SECS);
         for (i, h) in handles.into_iter().enumerate() {
-            if let Err(e) = h.join() {
-                panic!("iteration {iteration}: writer thread {i} panicked: {e:?}");
+            loop {
+                if h.is_finished() {
+                    if let Err(e) = h.join() {
+                        panic!("iteration {iteration}: writer thread {i} panicked: {e:?}");
+                    }
+                    break;
+                }
+                if std::time::Instant::now() > writer_deadline {
+                    eprintln!(
+                        "iteration {iteration}: writer thread {i} did not complete within {WATCHDOG_SECS}s — likely stuck on backpressure; aborting process"
+                    );
+                    std::process::abort();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
     }

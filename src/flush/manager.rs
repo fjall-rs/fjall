@@ -12,6 +12,10 @@ pub struct FlushManager {
 
 impl FlushManager {
     pub fn new() -> Self {
+        // Unbounded: flush tasks are tiny (Arc<Task>) and bounded by memtable
+        // rotation rate. A bounded channel here participated in the deadlock
+        // chain (#260) — workers blocked on flush enqueue while holding the
+        // worker channel slot needed for Close delivery.
         let (tx, rx) = flume::unbounded();
 
         Self {

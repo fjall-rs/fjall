@@ -69,11 +69,9 @@ impl WorkerPool {
 
         log::debug!("Starting worker pool with {pool_size} threads");
 
-        thread_counter.fetch_add(pool_size, Relaxed);
-
         let thread_handles = (0..pool_size)
             .map(|i| {
-                std::thread::Builder::new()
+                let handle = std::thread::Builder::new()
                     .name("fjall:worker".to_string())
                     .spawn({
                         log::trace!("Starting fjall worker thread #{i}");
@@ -119,12 +117,15 @@ impl WorkerPool {
                                 }
                             }
                         }
-                    })
-                    .inspect_err(|_| {
-                        thread_counter.fetch_sub(1, Relaxed);
-                    })
+                    })?;
+
+                // Increment only after successful spawn — if spawn fails mid-
+                // startup, .collect() short-circuits and unattempted workers
+                // must not be counted, otherwise drop() waits forever.
+                thread_counter.fetch_add(1, Relaxed);
+                Ok(handle)
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, crate::Error>>()?;
 
         #[expect(clippy::expect_used, reason = "poisoned lock is unrecoverable")]
         {
