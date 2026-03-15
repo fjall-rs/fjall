@@ -328,7 +328,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     #[expect(
         clippy::missing_panics_doc,
         reason = "panics only if internal RwLock is poisoned"
@@ -372,7 +372,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
         if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Poisoned);
@@ -408,7 +408,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     pub fn open(config: Config) -> crate::Result<Self> {
         log::debug!(
             "cache capacity={}MiB",
@@ -466,7 +466,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error if an IO error occurs.
     ///
     /// # Panics
     ///
