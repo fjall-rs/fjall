@@ -15,9 +15,15 @@ use std::{
 
 /// Write adapter that hashes bytes as they pass through to the inner writer.
 /// Used by `SingleItem` encoding to compute the checksum without a temp buffer.
-pub struct HashingWriter<'a, W: Write, H: Hasher> {
-    pub inner: &'a mut W,
-    pub hasher: &'a mut H,
+pub(super) struct HashingWriter<'a, W: Write, H: Hasher> {
+    inner: &'a mut W,
+    hasher: &'a mut H,
+}
+
+impl<'a, W: Write, H: Hasher> HashingWriter<'a, W, H> {
+    pub(super) fn new(inner: &'a mut W, hasher: &'a mut H) -> Self {
+        Self { inner, hasher }
+    }
 }
 
 impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
@@ -84,7 +90,7 @@ pub enum Entry {
 /// Serializes item payload (value type, compression, keyspace ID, key, value)
 /// without the entry tag byte. Used by both `serialize_marker_item` and the
 /// compact `SingleItem` format.
-pub fn serialize_item_payload<W: Write>(
+pub(super) fn serialize_item_payload<W: Write>(
     writer: &mut W,
     keyspace_id: InternalKeyspaceId,
     key: &[u8],
@@ -128,7 +134,7 @@ pub fn serialize_item_payload<W: Write>(
     Ok(())
 }
 
-pub fn serialize_marker_item<W: Write>(
+pub(super) fn serialize_marker_item<W: Write>(
     writer: &mut W,
     keyspace_id: InternalKeyspaceId,
     key: &[u8],
@@ -290,10 +296,7 @@ impl Entry {
                 // while computing checksum, avoiding a temp buffer allocation.
                 let mut hasher = xxhash_rust::xxh3::Xxh3::default();
                 {
-                    let mut hashing_writer = HashingWriter {
-                        inner: writer,
-                        hasher: &mut hasher,
-                    };
+                    let mut hashing_writer = HashingWriter::new(writer, &mut hasher);
                     serialize_item_payload(
                         &mut hashing_writer,
                         *keyspace_id,
@@ -449,7 +452,7 @@ mod tests {
         }
     }
 
-    /// Helper to compute the checksum for a SingleItem payload.
+    /// Helper to compute the checksum for a `SingleItem` payload.
     fn compute_single_item_checksum(
         keyspace_id: u64,
         key: &[u8],
@@ -458,6 +461,7 @@ mod tests {
         compression: CompressionType,
     ) -> u64 {
         let mut buf = Vec::new();
+        #[expect(clippy::expect_used, reason = "test helper, Vec<u8> write cannot fail")]
         serialize_item_payload(&mut buf, keyspace_id, key, value, value_type, compression)
             .expect("encoding should not fail");
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();

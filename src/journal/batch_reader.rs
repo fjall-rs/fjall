@@ -228,17 +228,14 @@ impl Iterator for JournalBatchReader {
                         return None;
                     }
 
-                    // Verify checksum by re-serializing the decoded (uncompressed) payload.
-                    // This is correct because both write_raw and encode_into hash the
-                    // serialize_item_payload output (uncompressed), not raw on-disk bytes.
-                    // The value is already decompressed at this point, matching the write path.
+                    // Verify checksum by re-serializing the decoded payload through
+                    // serialize_item_payload (which re-compresses when compression != None).
+                    // Both write_raw and encode_into hash the same serialized output,
+                    // so the checksum scope matches regardless of compression mode.
                     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
                     {
                         let mut sink = std::io::sink();
-                        let mut hw = super::entry::HashingWriter {
-                            inner: &mut sink,
-                            hasher: &mut hasher,
-                        };
+                        let mut hw = super::entry::HashingWriter::new(&mut sink, &mut hasher);
                         fail_iter!(super::entry::serialize_item_payload(
                             &mut hw,
                             keyspace_id,
@@ -257,6 +254,13 @@ impl Iterator for JournalBatchReader {
                     }
 
                     self.last_valid_pos = journal_file_pos;
+
+                    // SingleItem entries appear outside batches, so no
+                    // cleared_keyspaces should have been buffered.
+                    debug_assert!(
+                        self.cleared_keyspaces.is_empty(),
+                        "cleared_keyspaces should be empty for SingleItem"
+                    );
 
                     return Some(Ok(Batch {
                         seqno,

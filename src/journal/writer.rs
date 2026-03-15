@@ -302,10 +302,7 @@ impl Writer {
         // Both encode_into and batch_reader verify use the same scope.
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         {
-            let mut hw = super::entry::HashingWriter {
-                inner: &mut self.buf,
-                hasher: &mut hasher,
-            };
+            let mut hw = super::entry::HashingWriter::new(&mut self.buf, &mut hasher);
             serialize_item_payload(&mut hw, keyspace_id, key, value, value_type, compression)?;
         }
         let checksum = hasher.finish();

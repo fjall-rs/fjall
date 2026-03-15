@@ -184,10 +184,14 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
 
-        // Flip a byte inside the item payload area.
+        // Find actual entry end by locating MAGIC_BYTES trailer.
+        // The file is pre-allocated to 64MB, so buf.len() != entry size.
         // Entry layout: tag(1) + seqno(8) + payload(...) + checksum(8) + magic(4)
-        // Use total buffer length as entry end — single entry fills the entire buffer.
-        let entry_end = buf.len();
+        let entry_end = buf
+            .windows(MAGIC_BYTES.len())
+            .position(|w| w == MAGIC_BYTES)
+            .expect("should find magic bytes")
+            + MAGIC_BYTES.len();
 
         let header_len: usize = 1 + 8; // tag + seqno
         let trailer_len: usize = 8 + 4; // checksum + magic
