@@ -1,0 +1,131 @@
+name: Upstream Monitor
+
+on:
+  schedule:
+    - cron: "0 8 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-upstream:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/fjall-rs/fjall.git
+
+      - name: Fetch upstream and origin
+        run: |
+          git fetch upstream main
+          git fetch origin main
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          BEHIND=$(git rev-list origin/main..upstream/main --count)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Commits behind upstream: $BEHIND"
+
+      - name: Try merge and create PR or issue
+        if: steps.check.outputs.behind > 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          SYNC_BRANCH="chore/upstream-sync-$(date +%Y%m%d)"
+          git checkout -b "$SYNC_BRANCH" origin/main
+
+          if git merge --no-commit --no-ff upstream/main 2>&1; then
+            git commit -m "chore: sync upstream ($BEHIND new commits)"
+            git push origin "$SYNC_BRANCH"
+
+            gh pr create \
+              --title "chore: sync upstream ($BEHIND new commits)" \
+              --body "$(cat <<'EOF'
+          ## Upstream Sync
+
+          Automated sync from [fjall-rs/fjall](https://github.com/fjall-rs/fjall) main branch.
+
+          **Commits behind:** ${{ steps.check.outputs.behind }}
+
+          ### Review checklist
+          - [ ] Review upstream changes for breaking modifications
+          - [ ] Verify our patches still apply cleanly
+          - [ ] Check lsm-tree dependency compatibility
+          - [ ] Run full test suite
+          EOF
+          )" \
+              --base main \
+              --head "$SYNC_BRANCH"
+          else
+            CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+            git merge --abort
+
+            gh issue create \
+              --title "Upstream sync conflict ($BEHIND new commits)" \
+              --body "$(cat <<EOF
+          ## Upstream Sync Conflict
+
+          Automated merge from [fjall-rs/fjall](https://github.com/fjall-rs/fjall) main branch failed due to conflicts.
+
+          **Commits behind:** $BEHIND
+
+          ### Conflicting files
+          \`\`\`
+          $CONFLICTS
+          \`\`\`
+
+          ### Resolution
+          Manual merge required:
+          \`\`\`bash
+          git remote add upstream https://github.com/fjall-rs/fjall.git
+          git fetch upstream main
+          git checkout -b chore/upstream-sync main
+          git merge upstream/main
+          # Resolve conflicts, then push
+          \`\`\`
+          EOF
+          )" \
+              --label "upstream-sync"
+          fi
+
+      - name: Check for merged feature branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch upstream main
+
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat/#* refs/remotes/origin/fix/#*); do
+            BRANCH="${ref#origin/}"
+            BRANCH_TIP=$(git rev-parse "$ref")
+
+            if git merge-base --is-ancestor "$BRANCH_TIP" upstream/main 2>/dev/null; then
+              echo "Branch '$BRANCH' is fully merged into upstream/main"
+
+              EXISTING=$(gh issue list --search "Upstream merged: $BRANCH" --state open --json number --jq 'length')
+              if [ "$EXISTING" = "0" ]; then
+                gh issue create \
+                  --title "Upstream merged: $BRANCH" \
+                  --body "$(cat <<EOF
+          Branch \`$BRANCH\` has been fully merged into upstream's main branch.
+
+          This branch can likely be deleted. Please verify and clean up.
+
+          **Branch tip:** \`$BRANCH_TIP\`
+          EOF
+          )" \
+                  --label "upstream-sync"
+              fi
+            fi
+          done
