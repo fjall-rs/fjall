@@ -38,21 +38,13 @@ fn ingested_data_visible_in_tx_after_reopen() -> fjall::Result<()> {
         );
 
         let snapshot = db.read_tx();
-        assert_eq!(
-            b"value1",
-            &*snapshot.get(&items, "key1")?.unwrap(),
-            "ingested data should be visible in read_tx after reopen"
-        );
-        assert_eq!(
-            b"value2",
-            &*snapshot.get(&items, "key2")?.unwrap(),
-            "ingested data should be visible in read_tx after reopen"
-        );
-        assert_eq!(
-            b"value3",
-            &*snapshot.get(&items, "key3")?.unwrap(),
-            "ingested data should be visible in read_tx after reopen"
-        );
+        for (key, expected) in [("key1", "value1"), ("key2", "value2"), ("key3", "value3")] {
+            assert_eq!(
+                expected.as_bytes(),
+                &*snapshot.get(&items, key)?.unwrap(),
+                "ingested data should be visible in read_tx after reopen"
+            );
+        }
     }
 
     Ok(())
@@ -88,20 +80,18 @@ fn ingested_data_visible_in_snapshot_after_reopen() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
         let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
-        assert_eq!(b"value1", &*items.get("key1")?.unwrap());
-        assert_eq!(b"value2", &*items.get("key2")?.unwrap());
+        for (key, expected) in [("key1", "value1"), ("key2", "value2")] {
+            assert_eq!(expected.as_bytes(), &*items.get(key)?.unwrap());
+        }
 
         let snapshot = db.snapshot();
-        assert_eq!(
-            b"value1",
-            &*snapshot.get(&items, "key1")?.unwrap(),
-            "ingested data should be visible in snapshot after reopen"
-        );
-        assert_eq!(
-            b"value2",
-            &*snapshot.get(&items, "key2")?.unwrap(),
-            "ingested data should be visible in snapshot after reopen"
-        );
+        for (key, expected) in [("key1", "value1"), ("key2", "value2")] {
+            assert_eq!(
+                expected.as_bytes(),
+                &*snapshot.get(&items, key)?.unwrap(),
+                "ingested data should be visible in snapshot after reopen"
+            );
+        }
     }
 
     Ok(())
