@@ -752,7 +752,7 @@ impl Keyspace {
             keyspace: self.clone(),
         }));
 
-        self.worker_messager.send(WorkerMessage::Flush).ok();
+        self.worker_messager.try_send(WorkerMessage::Flush).ok();
 
         {
             // NOTE: If the difference between watermark is too large, and
