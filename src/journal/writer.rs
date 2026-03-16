@@ -278,7 +278,7 @@ impl Writer {
         key: &[u8],
         value: &[u8],
         value_type: ValueType,
-        seqno: u64,
+        seqno: SeqNo,
     ) -> crate::Result<usize> {
         self.is_buffer_dirty = true;
 

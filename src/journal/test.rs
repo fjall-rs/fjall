@@ -8,7 +8,6 @@ use tempfile::tempdir;
 use test_log::test;
 
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
 fn journal_single_item_write_and_recovery() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -50,7 +49,7 @@ fn journal_single_item_write_and_recovery() -> crate::Result<()> {
 }
 
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+#[expect(clippy::redundant_clone)]
 fn journal_mixed_single_and_batch() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -104,7 +103,6 @@ fn journal_mixed_single_and_batch() -> crate::Result<()> {
 }
 
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
 fn journal_truncation_corrupt_single_item() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -149,7 +147,7 @@ fn journal_truncation_corrupt_single_item() -> crate::Result<()> {
 }
 
 #[test]
-#[expect(clippy::unwrap_used, clippy::expect_used, clippy::redundant_clone)]
+#[expect(clippy::expect_used)]
 fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -243,7 +241,7 @@ fn journal_single_item_checksum_mismatch() -> crate::Result<()> {
 /// SingleItem entry appearing inside a multi-item batch is invalid.
 /// The batch reader should discard the incomplete batch and truncate.
 #[test]
-#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+#[expect(clippy::redundant_clone)]
 fn journal_single_item_inside_batch_discarded() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
@@ -309,7 +307,7 @@ fn journal_single_item_inside_batch_discarded() -> crate::Result<()> {
 
 /// SingleItem with mangled magic trailer should produce InvalidTrailer error.
 #[test]
-#[expect(clippy::unwrap_used, clippy::expect_used, clippy::redundant_clone)]
+#[expect(clippy::expect_used)]
 fn journal_single_item_invalid_trailer() -> crate::Result<()> {
     let dir1 = tempdir()?;
     let db = crate::Database::builder(&dir1).open()?;
