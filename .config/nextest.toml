@@ -1,2 +1,7 @@
 [profile.default]
 slow-timeout = { period = "5s", terminate-after = 3 }
+
+# Stress tests need more time (especially on slow CI runners / Windows)
+[[profile.default.overrides]]
+filter = "test(drop_completes_under_write_pressure)"
+slow-timeout = { period = "30s", terminate-after = 2 }

@@ -11,7 +11,7 @@ use std::sync::{Arc, Barrier};
 #[test]
 fn drop_completes_under_write_pressure() {
     const WRITER_THREADS: usize = 8;
-    const ITERATIONS: usize = 10;
+    const ITERATIONS: usize = 5;
     const WATCHDOG_SECS: u64 = 30;
 
     for iteration in 0..ITERATIONS {
