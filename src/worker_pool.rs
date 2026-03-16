@@ -71,6 +71,13 @@ impl WorkerPool {
 
         let thread_handles = (0..pool_size)
             .map(|i| {
+                // Increment BEFORE spawn so the counter is already visible when
+                // the worker's CounterGuard runs.  Without this, a thread that
+                // exits immediately (e.g. stop_signal already set) could
+                // decrement before the parent increments, wrapping to
+                // usize::MAX and causing drop() to wait forever.
+                thread_counter.fetch_add(1, Relaxed);
+
                 let handle = std::thread::Builder::new()
                     .name("fjall:worker".to_string())
                     .spawn({
@@ -117,12 +124,12 @@ impl WorkerPool {
                                 }
                             }
                         }
+                    })
+                    .inspect_err(|_| {
+                        // Roll back the counter if the thread could not be spawned.
+                        thread_counter.fetch_sub(1, Relaxed);
                     })?;
 
-                // Increment only after successful spawn — if spawn fails mid-
-                // startup, .collect() short-circuits and unattempted workers
-                // must not be counted, otherwise drop() waits forever.
-                thread_counter.fetch_add(1, Relaxed);
                 Ok(handle)
             })
             .collect::<Result<Vec<_>, crate::Error>>()?;
@@ -151,6 +158,8 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         return Ok(true);
     }
 
+    // 100ms timeout: balances stop_signal responsiveness vs idle CPU cost.
+    // Worker #0 also uses the timeout to recover dropped Flush signals.
     let item = match ctx.rx.recv_timeout(std::time::Duration::from_millis(100)) {
         Ok(item) => item,
         Err(flume::RecvTimeoutError::Timeout) => {

@@ -77,9 +77,10 @@ fn drop_completes_under_write_pressure() {
         // Writers may block on backpressure inside insert(), so apply the same
         // watchdog pattern: poll is_finished() with a deadline instead of a
         // bare join() that could hang indefinitely.
-        let writer_deadline =
-            std::time::Instant::now() + std::time::Duration::from_secs(WATCHDOG_SECS);
         for (i, h) in handles.into_iter().enumerate() {
+            // Per-thread deadline so earlier joins don't eat into later threads' budget.
+            let writer_deadline =
+                std::time::Instant::now() + std::time::Duration::from_secs(WATCHDOG_SECS);
             loop {
                 if h.is_finished() {
                     if let Err(e) = h.join() {
