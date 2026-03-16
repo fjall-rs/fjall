@@ -71,13 +71,17 @@ impl Drop for DatabaseInner {
 
         let _ = self.worker_pool.rx.drain().count();
 
+        // Workers have two independent exit paths: (1) stop_signal checked on
+        // every tick via recv_timeout, and (2) Close message in the channel.
+        // try_send(Close) is best-effort — if the channel is full, workers will
+        // still exit via stop_signal within one recv_timeout period (~100ms).
         while self
             .active_thread_counter
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
+            let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
         // Drain again after threads are closed
@@ -836,6 +840,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         log::trace!("Recovery successful");
@@ -948,6 +953,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         Ok(db)
