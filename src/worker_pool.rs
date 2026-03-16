@@ -7,7 +7,7 @@ use crate::{
     journal::manager::EvictionWatermark, poison_dart::PoisonDart, stats::Stats,
     supervisor::Supervisor, Keyspace,
 };
-use lsm_tree::{AbstractTree, MemtableId};
+use lsm_tree::{stop_signal::StopSignal, AbstractTree, MemtableId};
 use std::{
     borrow::Cow,
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -63,16 +63,22 @@ impl WorkerPool {
         stats: &Arc<Stats>,
         poison_dart: &PoisonDart,
         thread_counter: &Arc<AtomicUsize>,
+        stop_signal: &StopSignal,
     ) -> crate::Result<()> {
         use std::sync::atomic::Ordering::Relaxed;
 
         log::debug!("Starting worker pool with {pool_size} threads");
 
-        thread_counter.fetch_add(pool_size, Relaxed);
-
         let thread_handles = (0..pool_size)
             .map(|i| {
-                std::thread::Builder::new()
+                // Increment BEFORE spawn so the counter is already visible when
+                // the worker's CounterGuard runs.  Without this, a thread that
+                // exits immediately (e.g. stop_signal already set) could
+                // decrement before the parent increments, wrapping to
+                // usize::MAX and causing drop() to wait forever.
+                thread_counter.fetch_add(1, Relaxed);
+
+                let handle = std::thread::Builder::new()
                     .name("fjall:worker".to_string())
                     .spawn({
                         log::trace!("Starting fjall worker thread #{i}");
@@ -84,33 +90,49 @@ impl WorkerPool {
                             supervisor: supervisor.clone(),
                             stats: stats.clone(),
                             sender: self.sender.clone(),
+                            stop_signal: stop_signal.clone(),
                         };
 
                         let thread_counter = thread_counter.clone();
                         let poison_dart = poison_dart.clone();
 
-                        move || loop {
-                            match worker_tick(&worker_state) {
-                                Ok(should_abort) => {
-                                    if should_abort {
-                                        log::debug!("Worker #{i} closes because DB is dropping");
-                                        thread_counter.fetch_sub(1, Relaxed);
-                                        return Ok(());
-                                    }
+                        move || {
+                            // Decrement counter on all exit paths including panic/unwind
+                            struct CounterGuard(Arc<AtomicUsize>);
+                            impl Drop for CounterGuard {
+                                fn drop(&mut self) {
+                                    self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                                 }
-                                Err(e) => {
-                                    log::error!("Worker #{i} crashed: {e:?}");
-                                    poison_dart.poison();
-                                    return Err(e);
+                            }
+                            let _guard = CounterGuard(thread_counter);
+
+                            loop {
+                                match worker_tick(&worker_state) {
+                                    Ok(should_abort) => {
+                                        if should_abort {
+                                            log::debug!(
+                                                "Worker #{i} closes because DB is dropping"
+                                            );
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Worker #{i} crashed: {e:?}");
+                                        poison_dart.poison();
+                                        return Err(e);
+                                    }
                                 }
                             }
                         }
                     })
                     .inspect_err(|_| {
+                        // Roll back the counter if the thread could not be spawned.
                         thread_counter.fetch_sub(1, Relaxed);
-                    })
+                    })?;
+
+                Ok(handle)
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, crate::Error>>()?;
 
         *self.thread_handles.lock().expect("lock is poisoned") = thread_handles;
 
@@ -125,12 +147,35 @@ struct WorkerState {
     rx: flume::Receiver<WorkerMessage>,
     sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
+    stop_signal: StopSignal,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "splitting would fragment tightly-coupled message dispatch"
+)]
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
-    let Ok(item) = ctx.rx.recv() else {
+    if ctx.stop_signal.is_stopped() {
         return Ok(true);
+    }
+
+    // 100ms timeout: balances stop_signal responsiveness vs idle CPU cost.
+    // Worker #0 also uses the timeout to recover dropped Flush signals.
+    let item = match ctx.rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        Ok(item) => item,
+        Err(flume::RecvTimeoutError::Timeout) => {
+            // Worker #0 recovers dropped Flush signals on idle channel too
+            if ctx.worker_id == 0 && ctx.supervisor.flush_manager.len() > 0 {
+                ctx.sender.try_send(WorkerMessage::Flush).ok();
+            }
+            return Ok(false);
+        }
+        Err(flume::RecvTimeoutError::Disconnected) => return Ok(true),
     };
+
+    if ctx.stop_signal.is_stopped() {
+        return Ok(true);
+    }
 
     log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
 
@@ -219,14 +264,29 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         WorkerMessage::Compact(keyspace) => {
             // NOTE: Let one worker prioritize flushing if there are pending flushes
             //
-            // Disable when only 1 worker exists to avoid deadlock
-            if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
+            // Disable when only 1 worker exists to avoid stalling/livelock: a single
+            // worker would keep re-enqueuing compaction and never actually run it.
+            // If try_send fails (channel full), fall through to run
+            // compaction here instead of dropping the work.
+            if ctx.pool_size > 1
+                && ctx.worker_id == 0
+                && ctx
+                    .sender
+                    .try_send(WorkerMessage::Compact(keyspace.clone()))
+                    .is_ok()
+            {
                 return Ok(false);
             }
 
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
         }
+    }
+
+    // Worker #0 recovers dropped Flush signals: if flush_manager has pending
+    // tasks, re-inject one Flush. Only worker #0 does this to avoid N workers
+    // flooding the channel with redundant Flush messages under pressure.
+    if ctx.worker_id == 0 && ctx.supervisor.flush_manager.len() > 0 {
+        ctx.sender.try_send(WorkerMessage::Flush).ok();
     }
 
     Ok(false)
