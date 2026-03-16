@@ -29,8 +29,8 @@ impl<'a, W: Write, H: Hasher> HashingWriter<'a, W, H> {
 impl<W: Write, H: Hasher> Write for HashingWriter<'_, W, H> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = self.inner.write(buf)?;
-        if n != 0 {
-            self.hasher.write(&buf[..n]);
+        if let Some(written) = buf.get(..n) {
+            self.hasher.write(written);
         }
         Ok(n)
     }
