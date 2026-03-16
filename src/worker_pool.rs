@@ -153,6 +153,10 @@ struct WorkerState {
     stop_signal: StopSignal,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "splitting would fragment tightly-coupled message dispatch"
+)]
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     if ctx.stop_signal.is_stopped() {
         return Ok(true);
