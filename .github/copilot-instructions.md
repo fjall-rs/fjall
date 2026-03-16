@@ -25,6 +25,7 @@ This is a **maintained fork** of [fjall-rs/fjall](https://github.com/fjall-rs/fj
 - **Clippy:** Code must pass `cargo clippy --all-features -- -D warnings`. Use `#[expect(...)]` (not `#[allow(...)]`) for justified suppressions.
 - **Casts:** Prefer `TryFrom`/`TryInto`. `as` casts need `#[expect(clippy::cast_possible_truncation)]` with reason.
 - **Feature gates:** Code behind `#[cfg(feature = "...")]` must compile with any feature combination.
+- **Definite initialization:** `let x: T;` without a default value is valid Rust — the compiler tracks initialization per control-flow path and does not drop uninitialized bindings; do not flag this as a bug when the variable is only used in paths that initialize it.
 
 ## Testing Standards
 
