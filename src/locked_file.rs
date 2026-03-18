@@ -2,7 +2,11 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use std::{fs::File, path::Path, sync::Arc};
+use std::{
+    fs::{File, OpenOptions},
+    path::Path,
+    sync::Arc,
+};
 
 struct LockedFileGuardInner(File);
 
@@ -29,7 +33,9 @@ impl LockedFileGuard {
 
         let file = match File::create_new(path) {
             Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => File::open(path)?,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                OpenOptions::new().read(true).write(true).open(path)?
+            }
             e => e?,
         };
 
@@ -49,7 +55,7 @@ impl LockedFileGuard {
 
         log::debug!("Acquiring database lock at {}", path.display());
 
-        let file = File::open(path)?;
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
 
         for i in 1..=RETRIES {
             if let Err(e) = file.try_lock() {
@@ -72,5 +78,35 @@ impl LockedFileGuard {
         }
 
         Ok(Self(Arc::new(LockedFileGuardInner(file))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LockedFileGuard;
+    use std::fs::File;
+
+    #[test]
+    fn create_new_acquires_lock_when_file_already_exists() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("lock");
+
+        File::create(&path)?;
+
+        let _guard = LockedFileGuard::create_new(&path)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_acquire_acquires_lock_on_existing_file() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("lock");
+
+        File::create(&path)?;
+
+        let _guard = LockedFileGuard::try_acquire(&path)?;
+
+        Ok(())
     }
 }
