@@ -472,6 +472,54 @@ impl Keyspace {
         crate::iter::Iter::new(nonce, iter)
     }
 
+    /// Returns an iterator over a prefixed set of items, starting at `from`.
+    ///
+    /// The iterator yields all items whose key starts with `prefix` and is >= `from`.
+    /// This is equivalent to `prefix()` but skips keys before `from`, allowing
+    /// efficient repositioning within a prefix range without scanning from the start.
+    ///
+    /// If `from` is lexicographically before the prefix, the lower bound is clamped
+    /// to the prefix itself, so non-prefix keys are never returned. If `from` is
+    /// beyond the prefix range, the iterator is empty.
+    ///
+    /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("ab:1", "v1")?;
+    /// tree.insert("ab:2", "v2")?;
+    /// tree.insert("ab:3", "v3")?;
+    /// assert_eq!(2, tree.prefix_from("ab", "ab:2").count());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    pub fn prefix_from<P: AsRef<[u8]>, K: AsRef<[u8]>>(&self, prefix: P, from: K) -> Iter {
+        let prefix_bytes = prefix.as_ref();
+        let from_bytes = from.as_ref();
+        let (prefix_lower, upper) = lsm_tree::range::prefix_to_range(prefix_bytes);
+
+        // Clamp: if `from` precedes the prefix range, use the prefix's own lower
+        // bound so non-prefix keys are never yielded.  Compare raw byte slices
+        // before allocating a UserKey to avoid a wasted allocation in each branch.
+        let lower = match &prefix_lower {
+            std::ops::Bound::Included(p) if from_bytes > p.as_ref() => {
+                std::ops::Bound::Included(UserKey::from(from_bytes))
+            }
+            std::ops::Bound::Unbounded => {
+                std::ops::Bound::Included(UserKey::from(from_bytes))
+            }
+            _ => prefix_lower,
+        };
+
+        self.range((lower, upper))
+    }
+
     /// Approximates the amount of items in the keyspace.
     ///
     /// For update- or delete-heavy workloads, this value will
