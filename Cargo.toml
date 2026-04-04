@@ -35,9 +35,43 @@ lz4_flex = { version = "0.13.0", optional = true }
 flume = { version = "0.12.0", default-features = false }
 
 [dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.18"
 rand = "0.9.2"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+
+[[bench]]
+name = "keyspace"
+harness = false
+
+[[bench]]
+name = "large_values"
+harness = false
+
+[[bench]]
+name = "mixed_workload"
+harness = false
+
+[[bench]]
+name = "multi_keyspace"
+harness = false
+
+[[bench]]
+name = "persist"
+harness = false
+
+[[bench]]
+name = "recovery"
+harness = false
+
+[[bench]]
+name = "snapshot"
+harness = false
+
+[[bench]]
+name = "transactions"
+harness = false
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
