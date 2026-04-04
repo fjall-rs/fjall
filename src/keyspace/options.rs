@@ -475,7 +475,7 @@ impl CreateOptions {
                 );
             }
             name => {
-                panic!("Invalid/unsupported compaction stratey: {name:?}");
+                panic!("Invalid/unsupported compaction strategy: {name:?}");
             }
         }
 
