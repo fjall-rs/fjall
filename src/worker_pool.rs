@@ -3,9 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as run_flush,
-    journal::manager::EvictionWatermark, poison_dart::PoisonDart, stats::Stats,
-    supervisor::Supervisor, Keyspace,
+    compaction::worker::run as run_compaction, file::fsync_directory,
+    flush::worker::run as run_flush, journal::manager::EvictionWatermark,
+    journal::writer::PersistMode, poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor,
+    Keyspace,
 };
 use lsm_tree::{AbstractTree, MemtableId};
 use std::{
@@ -178,21 +179,27 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         seqnos
                     };
 
-                    journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+                    let (mut sealed, folder) =
+                        journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+                    drop(journal_writer);
 
-                    if journal_manager.disk_space_used()
+                    let stragglers = if journal_manager.disk_space_used()
                         >= ctx.supervisor.db_config.max_journaling_size_in_bytes
                     {
-                        let stragglers =
-                            journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
+                        journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction()
+                    } else {
+                        Vec::new()
+                    };
+                    drop(journal_manager);
 
-                        for keyspace in stragglers {
-                            log::info!(
-                                "Rotating {:?} to try to reduce journal size",
-                                keyspace.name,
-                            );
-                            keyspace.request_rotation();
-                        }
+                    // Sync the directory changes and the old journal outside the lock.
+                    // Do both before run_flush() reads the sealed file below.
+                    fsync_directory(&folder)?;
+                    sealed.persist(PersistMode::SyncAll)?;
+
+                    for keyspace in stragglers {
+                        log::info!("Rotating {:?} to try to reduce journal size", keyspace.name,);
+                        keyspace.request_rotation();
                     }
                 }
             }

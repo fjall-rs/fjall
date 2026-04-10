@@ -4,8 +4,7 @@
 
 use super::entry::{serialize_marker_item, Entry};
 use crate::{
-    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
-    keyspace::InternalKeyspaceId,
+    batch::item::Item as BatchItem, journal::recovery::JournalId, keyspace::InternalKeyspaceId,
 };
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
@@ -63,8 +62,14 @@ impl Writer {
         Ok(self.file.get_ref().metadata()?.len())
     }
 
-    pub fn rotate(&mut self) -> crate::Result<(PathBuf, PathBuf)> {
-        self.persist(PersistMode::SyncAll)?;
+    /// Creates the next journal file inline, swaps `self` to it, and returns the old journal.
+    ///
+    /// IMPORTANT: this function doesn't fsync the directory nor the old journal. It's the
+    /// responsibility of the caller to sync both!
+    /// We split it out so that we can sync it without holding the journal writer lock.
+    pub(crate) fn rotate_no_fsync(&mut self) -> crate::Result<(Writer, PathBuf)> {
+        // Flush write buffer to kernel (no fsync, that's the caller's job).
+        self.persist(PersistMode::Buffer)?;
 
         log::debug!(
             "Sealing active journal at {}, len={}B",
@@ -79,8 +84,6 @@ impl Writer {
                 })?
                 .len(),
         );
-
-        let prev_path = self.path.clone();
 
         let folder = self
             .path
@@ -112,13 +115,11 @@ impl Writer {
 
         let comp = self.compression;
         let compt = self.compression_threshold;
-        *self = Self::create_new(new_path.clone())?;
-        self.set_compression(comp, compt);
+        let mut old = Self::create_new(new_path)?;
+        old.set_compression(comp, compt);
+        std::mem::swap(self, &mut old);
 
-        // IMPORTANT: fsync folder on Unix
-        fsync_directory(&folder)?;
-
-        Ok((prev_path, new_path))
+        Ok((old, folder))
     }
 
     pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {

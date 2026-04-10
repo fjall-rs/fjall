@@ -166,21 +166,25 @@ impl JournalManager {
         }
     }
 
+    /// Seals the current journal and enqueues it for eviction tracking.
+    ///
+    /// IMPORTANT: this function uses `rotate_no_fsync` which doesn't fsync the directory nor the old journal. It's the
+    /// responsibility of the caller to sync both!
     pub(crate) fn rotate_journal(
         &mut self,
         journal_writer: &mut MutexGuard<Writer>,
         watermarks: Vec<EvictionWatermark>,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<(Writer, PathBuf)> {
         let journal_size = journal_writer.len()?;
 
-        let (sealed_path, _) = journal_writer.rotate()?;
+        let (sealed, folder) = journal_writer.rotate_no_fsync()?;
 
         self.enqueue(Item {
-            path: sealed_path,
+            path: sealed.path.clone(),
             watermarks,
             size_in_bytes: journal_size,
         });
 
-        Ok(())
+        Ok((sealed, folder))
     }
 }
