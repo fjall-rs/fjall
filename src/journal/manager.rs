@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::writer::Writer;
+use super::writer::{DeferredSync, Writer};
 use crate::Keyspace;
 use lsm_tree::{AbstractTree, SeqNo};
 use std::{path::PathBuf, sync::MutexGuard};
@@ -168,23 +168,24 @@ impl JournalManager {
 
     /// Seals the current journal and enqueues it for eviction tracking.
     ///
-    /// IMPORTANT: this function uses `rotate_no_fsync` which doesn't fsync the directory nor the old journal. It's the
-    /// responsibility of the caller to sync both!
+    /// Returns a [`DeferredSync`] that must be persisted by the caller (outside the journal lock).
+    /// The new active writer also holds a clone of it and will resolve it on its next
+    /// [`PersistMode::SyncData`] or [`PersistMode::SyncAll`] call, whichever comes first.
     pub(crate) fn rotate_journal(
         &mut self,
         journal_writer: &mut MutexGuard<Writer>,
         watermarks: Vec<EvictionWatermark>,
-    ) -> crate::Result<(Writer, PathBuf)> {
+    ) -> crate::Result<DeferredSync> {
         let journal_size = journal_writer.len()?;
 
-        let (sealed, folder) = journal_writer.rotate_no_fsync()?;
+        let (deferred, sealed_path) = journal_writer.rotate_no_fsync()?;
 
         self.enqueue(Item {
-            path: sealed.path.clone(),
+            path: sealed_path,
             watermarks,
             size_in_bytes: journal_size,
         });
 
-        Ok((sealed, folder))
+        Ok(deferred)
     }
 }
