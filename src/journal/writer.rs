@@ -4,7 +4,8 @@
 
 use super::entry::{serialize_marker_item, Entry};
 use crate::{
-    batch::item::Item as BatchItem, journal::recovery::JournalId, keyspace::InternalKeyspaceId,
+    batch::item::Item as BatchItem, file::fsync_directory, journal::recovery::JournalId,
+    keyspace::InternalKeyspaceId,
 };
 use lsm_tree::{CompressionType, SeqNo, ValueType};
 use std::{
@@ -12,6 +13,7 @@ use std::{
     hash::Hasher,
     io::{BufWriter, Seek, Write},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 // TODO: this should be a database configuration
@@ -19,11 +21,52 @@ pub const PRE_ALLOCATED_BYTES: u64 = 64 * 1_024 * 1_024;
 
 pub const JOURNAL_BUFFER_BYTES: usize = 8 * 1_024;
 
+struct DeferredSyncState {
+    folder: PathBuf,
+    sealed: Writer,
+}
+
+/// Wraps the two fsyncs that must happen after a journal rotation
+/// (directory fsync + sealed journal fsync). Shared between the new
+/// journal writer and the worker pool via [`Arc`]. Whichever side calls
+/// [`DeferredSync::persist`] first does the actual work; the other is a no-op.
+#[derive(Clone)]
+pub(crate) struct DeferredSync {
+    inner: Arc<Mutex<Option<DeferredSyncState>>>,
+}
+
+impl DeferredSync {
+    fn new(folder: PathBuf, sealed: Writer) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Some(DeferredSyncState { folder, sealed }))),
+        }
+    }
+
+    /// Performs the deferred fsyncs (directory + sealed journal).
+    /// Safe to call concurrently and multiple times. Only the first call does something.
+    pub(crate) fn persist(&self) -> std::io::Result<()> {
+        #[expect(clippy::expect_used)]
+        let mut guard = self.inner.lock().expect("lock is poisoned");
+
+        let Some(mut state) = guard.take() else {
+            return Ok(());
+        };
+
+        fsync_directory(&state.folder)?;
+        state.sealed.persist(PersistMode::SyncAll)?;
+
+        Ok(())
+    }
+}
+
 pub struct Writer {
     pub(crate) path: PathBuf,
     file: BufWriter<File>,
     buf: Vec<u8>,
     is_buffer_dirty: bool,
+
+    /// Deferred sync obligations from a recent journal rotation.
+    pub(crate) deferred_sync: Option<DeferredSync>,
 
     compression: CompressionType,
     compression_threshold: usize,
@@ -62,12 +105,20 @@ impl Writer {
         Ok(self.file.get_ref().metadata()?.len())
     }
 
-    /// Creates the next journal file inline, swaps `self` to it, and returns the old journal.
+    /// Creates the next journal file inline, swaps `self` to it, and returns a [`DeferredSync`]
+    /// (shared with `self.deferred_sync`) and the sealed journal's path.
     ///
-    /// IMPORTANT: this function doesn't fsync the directory nor the old journal. It's the
-    /// responsibility of the caller to sync both!
-    /// We split it out so that we can sync it without holding the journal writer lock.
-    pub(crate) fn rotate_no_fsync(&mut self) -> crate::Result<(Writer, PathBuf)> {
+    /// The caller must call [`DeferredSync::persist`] outside the journal lock. The new writer
+    /// also holds a clone and will resolve it on its next [`PersistMode::SyncData`] or
+    /// [`PersistMode::SyncAll`] call, whichever comes first.
+    pub(crate) fn rotate_no_fsync(&mut self) -> crate::Result<(DeferredSync, PathBuf)> {
+        // Resolve any pending deferred sync from a prior rotation before creating a new one.
+        // This ensures an unresolved sync is not silently dropped when self.deferred_sync is
+        // overwritten below.
+        if let Some(deferred) = self.deferred_sync.take() {
+            deferred.persist()?;
+        }
+
         // Flush write buffer to kernel (no fsync, that's the caller's job).
         self.persist(PersistMode::Buffer)?;
 
@@ -115,11 +166,16 @@ impl Writer {
 
         let comp = self.compression;
         let compt = self.compression_threshold;
-        let mut old = Self::create_new(new_path)?;
-        old.set_compression(comp, compt);
-        std::mem::swap(self, &mut old);
+        let mut swapped = Self::create_new(new_path)?;
+        swapped.set_compression(comp, compt);
+        // Make `self` the new active writer.
+        std::mem::swap(self, &mut swapped);
 
-        Ok((old, folder))
+        let sealed_path = swapped.path.clone();
+        let deferred = DeferredSync::new(folder, swapped);
+        self.deferred_sync = Some(deferred.clone());
+
+        Ok((deferred, sealed_path))
     }
 
     pub fn create_new<P: Into<PathBuf>>(path: P) -> crate::Result<Self> {
@@ -145,6 +201,7 @@ impl Writer {
             file: BufWriter::new(file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            deferred_sync: None,
             compression: CompressionType::None,
             compression_threshold: 0,
         })
@@ -178,6 +235,7 @@ impl Writer {
                 file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
                 buf: Vec::new(),
                 is_buffer_dirty: false,
+                deferred_sync: None,
                 compression: CompressionType::None,
                 compression_threshold: 0,
             });
@@ -195,6 +253,7 @@ impl Writer {
             file: BufWriter::with_capacity(JOURNAL_BUFFER_BYTES, file),
             buf: Vec::new(),
             is_buffer_dirty: false,
+            deferred_sync: None,
             compression: CompressionType::None,
             compression_threshold: 0,
         })
@@ -215,6 +274,14 @@ impl Writer {
                 );
             })?;
             self.is_buffer_dirty = false;
+        }
+
+        // Resolve any deferred rotation sync obligations before fsyncing this journal,
+        // so a Sync* caller gets a true end-to-end durability guarantee.
+        if matches!(mode, PersistMode::SyncData | PersistMode::SyncAll) {
+            if let Some(deferred) = self.deferred_sync.take() {
+                deferred.persist()?;
+            }
         }
 
         match mode {

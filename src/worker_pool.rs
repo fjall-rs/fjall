@@ -3,10 +3,9 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, file::fsync_directory,
-    flush::worker::run as run_flush, journal::manager::EvictionWatermark,
-    journal::writer::PersistMode, poison_dart::PoisonDart, stats::Stats, supervisor::Supervisor,
-    Keyspace,
+    compaction::worker::run as run_compaction, flush::worker::run as run_flush,
+    journal::manager::EvictionWatermark, poison_dart::PoisonDart, stats::Stats,
+    supervisor::Supervisor, Keyspace,
 };
 use lsm_tree::{AbstractTree, MemtableId};
 use std::{
@@ -179,7 +178,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         seqnos
                     };
 
-                    let (mut sealed, folder) =
+                    let deferred =
                         journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
                     drop(journal_writer);
 
@@ -193,9 +192,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     drop(journal_manager);
 
                     // Sync the directory changes and the old journal outside the lock.
-                    // Do both before run_flush() reads the sealed file below.
-                    fsync_directory(&folder)?;
-                    sealed.persist(PersistMode::SyncAll)?;
+                    deferred.persist()?;
 
                     for keyspace in stragglers {
                         log::info!("Rotating {:?} to try to reduce journal size", keyspace.name,);
