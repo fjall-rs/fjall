@@ -48,12 +48,13 @@ impl DeferredSync {
         #[expect(clippy::expect_used)]
         let mut guard = self.inner.lock().expect("lock is poisoned");
 
-        let Some(mut state) = guard.take() else {
+        let Some(state) = guard.as_mut() else {
             return Ok(());
         };
 
         fsync_directory(&state.folder)?;
         state.sealed.persist(PersistMode::SyncAll)?;
+        guard.take();
 
         Ok(())
     }
@@ -115,8 +116,9 @@ impl Writer {
         // Resolve any pending deferred sync from a prior rotation before creating a new one.
         // This ensures an unresolved sync is not silently dropped when self.deferred_sync is
         // overwritten below.
-        if let Some(deferred) = self.deferred_sync.take() {
+        if let Some(deferred) = self.deferred_sync.clone() {
             deferred.persist()?;
+            self.deferred_sync = None;
         }
 
         // Flush write buffer to kernel (no fsync, that's the caller's job).
@@ -279,8 +281,9 @@ impl Writer {
         // Resolve any deferred rotation sync obligations before fsyncing this journal,
         // so a Sync* caller gets a true end-to-end durability guarantee.
         if matches!(mode, PersistMode::SyncData | PersistMode::SyncAll) {
-            if let Some(deferred) = self.deferred_sync.take() {
+            if let Some(deferred) = self.deferred_sync.clone() {
                 deferred.persist()?;
+                self.deferred_sync = None;
             }
         }
 
