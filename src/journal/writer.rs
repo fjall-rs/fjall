@@ -173,15 +173,14 @@ impl Writer {
         let new_path = folder.join(format!("{}.jnl", journal_id + 1));
         log::debug!("Rotating active journal to {}", new_path.display());
 
-        let comp = self.compression;
-        let compt = self.compression_threshold;
-        let mut swapped = Self::create_new(new_path)?;
-        swapped.set_compression(comp, compt);
-        // Make `self` the new active writer.
-        std::mem::swap(self, &mut swapped);
+        let old_journal = {
+          let mut new_journal = Self::create_new(new_path)?;
+          new_journal.set_compression(self.compression, self.compression_threshold);
+          std::mem::replace(self, new_journal)
+        };
 
-        let sealed_path = swapped.path.clone();
-        let deferred = DeferredSync::new(folder, swapped);
+        let sealed_path = old_journal.path.clone();
+        let deferred = DeferredSync::new(folder, old_journal);
         self.deferred_sync = Some(deferred.clone());
 
         Ok((deferred, sealed_path))

@@ -195,7 +195,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     deferred.persist()?;
 
                     for keyspace in stragglers {
-                        log::info!("Rotating {:?} to try to reduce journal size", keyspace.name,);
+                        log::info!("Rotating {:?} to try to reduce journal size", keyspace.name);
                         keyspace.request_rotation();
                     }
                 }
