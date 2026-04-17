@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptionsBuilder};
 use test_log::test;
 
 #[test]
@@ -8,7 +8,9 @@ fn write_during_read() -> fjall::Result<()> {
     let db = Database::builder(&folder).open()?;
 
     let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default().max_memtable_size(128_000)
+        KeyspaceCreateOptionsBuilder::default()
+            .max_memtable_size(128_000)
+            .build()
     })?;
 
     for x in 0u64..50_000 {

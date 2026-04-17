@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, KeyspaceCreateOptions, KeyspaceCreateOptionsBuilder, KvSeparationOptions};
 use lsm_tree::AbstractTree;
 use test_log::test;
 
@@ -8,7 +8,9 @@ fn blob_kv_simple() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
     let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default()))
+        KeyspaceCreateOptionsBuilder::default()
+            .with_kv_separation(Some(KvSeparationOptions::default()))
+            .build()
     })?;
 
     assert_eq!(tree.len()?, 0);
@@ -40,8 +42,9 @@ fn blob_kv_simple_recovery() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default()
+            KeyspaceCreateOptionsBuilder::default()
                 .with_kv_separation(Some(KvSeparationOptions::default()))
+                .build()
         })?;
 
         assert_eq!(tree.len()?, 0);

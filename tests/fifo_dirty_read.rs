@@ -2,7 +2,7 @@ use fjall::Readable;
 
 #[test_log::test]
 fn fifo_dirty_read() -> fjall::Result<()> {
-    use fjall::{KeyspaceCreateOptions, SingleWriterTxDatabase};
+    use fjall::{KeyspaceCreateOptionsBuilder, SingleWriterTxDatabase};
     use std::sync::Arc;
 
     let folder = tempfile::tempdir()?;
@@ -10,8 +10,9 @@ fn fifo_dirty_read() -> fjall::Result<()> {
     let db = SingleWriterTxDatabase::builder(&folder).open()?;
 
     let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default()
+        KeyspaceCreateOptionsBuilder::default()
             .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(1, None)))
+            .build()
     })?;
 
     assert!(!tree.contains_key("a")?);

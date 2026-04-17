@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, KeyspaceCreateOptionsBuilder};
 use test_log::test;
 
 #[test]
@@ -8,7 +8,9 @@ fn keyspace_prefix_carl() -> fjall::Result<()> {
     let db = Database::builder(&folder).open()?;
 
     let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default().with_kv_separation(Default::default())
+        KeyspaceCreateOptionsBuilder::default()
+            .with_kv_separation(Default::default())
+            .build()
     })?;
 
     tree.insert("a#1", "a".repeat(4_096))?;

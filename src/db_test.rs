@@ -1,4 +1,4 @@
-use crate::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use crate::{Database, KeyspaceCreateOptions, KeyspaceCreateOptionsBuilder, KvSeparationOptions};
 use test_log::test;
 
 #[test_log::test]
@@ -193,9 +193,10 @@ fn recover_sealed_blob() -> crate::Result<()> {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default()
+            KeyspaceCreateOptionsBuilder::default()
                 .max_memtable_size(1_000)
                 .with_kv_separation(Some(KvSeparationOptions::default()))
+                .build()
         })?;
 
         assert_eq!(i, tree.len()?.try_into().unwrap());
@@ -218,12 +219,15 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
         let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
 
         let tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default().max_memtable_size(1_000)
+            KeyspaceCreateOptionsBuilder::default()
+                .max_memtable_size(1_000)
+                .build()
         })?;
         let tree2 = db.keyspace("default2", || {
-            KeyspaceCreateOptions::default()
+            KeyspaceCreateOptionsBuilder::default()
                 .max_memtable_size(1_000)
                 .with_kv_separation(Some(KvSeparationOptions::default()))
+                .build()
         })?;
 
         assert_eq!(i, tree.len()?.try_into().unwrap());

@@ -151,7 +151,10 @@ pub use {
     guard::Guard,
     iter::Iter,
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
-    keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
+    keyspace::{
+        options::Builder as KeyspaceCreateOptionsBuilder,
+        options::CreateOptions as KeyspaceCreateOptions, Keyspace,
+    },
     readable::Readable,
     snapshot::Snapshot,
     version::FormatVersion,

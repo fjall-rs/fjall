@@ -2,7 +2,10 @@ use fjall::config::{
     BlockSizePolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy, PinningPolicy,
     RestartIntervalPolicy,
 };
-use fjall::{AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{
+    AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KeyspaceCreateOptionsBuilder,
+    KvSeparationOptions,
+};
 use lsm_tree::compaction::CompactionStrategy;
 use std::sync::Arc;
 use test_log::test;
@@ -21,7 +24,9 @@ fn reload_keyspace_config_fifo() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
 
         let _tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy))
+            KeyspaceCreateOptionsBuilder::default()
+                .compaction_strategy(Arc::new(strategy))
+                .build()
         })?;
     };
 
@@ -55,7 +60,9 @@ fn reload_keyspace_config_leveled() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
 
         let _tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default().compaction_strategy(Arc::new(strategy))
+            KeyspaceCreateOptionsBuilder::default()
+                .compaction_strategy(Arc::new(strategy))
+                .build()
         })?;
     };
 
@@ -99,7 +106,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
 
         let keyspace = db.keyspace("default", || {
-            KeyspaceCreateOptions::default()
+            KeyspaceCreateOptionsBuilder::default()
                 .data_block_size_policy(data_block_size.clone())
                 .data_block_restart_interval_policy(data_block_interval_policy.clone())
                 // .index_block_restart_interval_policy(index_block_policy.clone())
@@ -110,6 +117,7 @@ fn reload_keyspace_config() -> fjall::Result<()> {
                 .expect_point_read_hits(true)
                 .filter_policy(filter_policy.clone())
                 .data_block_hash_ratio_policy(data_block_hash_ratio_policy.clone())
+                .build()
         })?;
 
         let real_config = keyspace.tree.tree_config();
@@ -203,14 +211,16 @@ fn reload_keyspace_config_blob_opts() -> fjall::Result<()> {
         let db = Database::builder(&folder).open()?;
 
         let _tree = db.keyspace("default", || {
-            KeyspaceCreateOptions::default().with_kv_separation(Some(
-                KvSeparationOptions::default()
-                    .age_cutoff(0.55)
-                    .compression(CompressionType::None)
-                    .file_target_size(124)
-                    .separation_threshold(515)
-                    .staleness_threshold(0.77),
-            ))
+            KeyspaceCreateOptionsBuilder::default()
+                .with_kv_separation(Some(
+                    KvSeparationOptions::default()
+                        .age_cutoff(0.55)
+                        .compression(CompressionType::None)
+                        .file_target_size(124)
+                        .separation_threshold(515)
+                        .staleness_threshold(0.77),
+                ))
+                .build()
         })?;
     };
 

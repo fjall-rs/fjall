@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, KeyspaceCreateOptions, KeyspaceCreateOptionsBuilder, KvSeparationOptions};
 use test_log::test;
 
 #[test]
@@ -27,7 +27,9 @@ fn blob_batch_simple() -> fjall::Result<()> {
 
     let db = Database::builder(&folder).open()?;
     let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default()))
+        KeyspaceCreateOptionsBuilder::default()
+            .with_kv_separation(Some(KvSeparationOptions::default()))
+            .build()
     })?;
 
     let blob = "oxygen".repeat(128_000);

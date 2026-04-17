@@ -8,7 +8,8 @@ use crate::{
         batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
     },
     keyspace::{
-        apply_to_base_config, options::CreateOptions as KeyspaceCreateOptions, InternalKeyspaceId,
+        apply_to_base_config, options::Builder as KeyspaceCreateOptionsBuilder,
+        options::CreateOptions as KeyspaceCreateOptions, InternalKeyspaceId,
     },
     meta_keyspace::MetaKeyspace,
     Database, HashMap, Keyspace,
@@ -73,7 +74,8 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         let path = keyspaces_folder.join(keyspace_id.to_string());
 
-        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
+        let mut recovered_config =
+            KeyspaceCreateOptionsBuilder::from_kvs(keyspace_id, &db.meta_keyspace)?;
 
         // Install compaction filter factory if needed
         if let Some(f) = db
@@ -93,6 +95,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
         .use_descriptor_table(db.config.descriptor_table.clone())
         .use_cache(db.config.cache.clone());
 
+        let recovered_config = recovered_config.build();
         let base_config = apply_to_base_config(base_config, &recovered_config);
 
         let tree = base_config.open()?;

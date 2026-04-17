@@ -473,7 +473,9 @@ impl Database {
                 .as_ref()
                 .and_then(|f| f(&name))
             {
-                opts = opts.with_compaction_filter_factory(f);
+                opts = crate::keyspace::options::Builder::from(opts)
+                    .with_compaction_filter_factory(f)
+                    .build();
             }
 
             let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
