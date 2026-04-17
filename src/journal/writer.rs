@@ -112,6 +112,13 @@ impl Writer {
     /// The caller must call [`DeferredSync::persist`] outside the journal lock. The new writer
     /// also holds a clone and will resolve it on its next [`PersistMode::SyncData`] or
     /// [`PersistMode::SyncAll`] call, whichever comes first.
+    #[cfg(test)]
+    pub(crate) fn rotate(&mut self) -> crate::Result<PathBuf> {
+        let (deferred, path) = self.start_rotation()?;
+        deferred.persist()?;
+        Ok(path)
+    }
+
     pub(crate) fn start_rotation(&mut self) -> crate::Result<(DeferredSync, PathBuf)> {
         // Resolve any pending deferred sync from a prior rotation before creating a new one.
         // This ensures an unresolved sync is not silently dropped when self.deferred_sync is

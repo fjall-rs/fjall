@@ -45,7 +45,7 @@ fn journal_rotation() -> crate::Result<()> {
             2,
             0,
         )?;
-        writer.start_rotation()?.0.persist()?;
+        writer.rotate()?;
     }
 
     assert!(path.try_exists()?);
@@ -81,7 +81,7 @@ fn journal_recovery_active() -> crate::Result<()> {
             2,
             0,
         )?;
-        writer.start_rotation()?.0.persist()?;
+        writer.rotate()?;
 
         writer.write_batch(
             [
@@ -92,7 +92,7 @@ fn journal_recovery_active() -> crate::Result<()> {
             2,
             1,
         )?;
-        writer.start_rotation()?.0.persist()?;
+        writer.rotate()?;
 
         writer.write_batch(
             [
@@ -144,7 +144,7 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
             2,
             0,
         )?;
-        writer.start_rotation()?.0.persist()?;
+        writer.rotate()?;
 
         writer.write_batch(
             [
@@ -155,7 +155,7 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
             2,
             1,
         )?;
-        writer.start_rotation()?.0.persist()?;
+        writer.rotate()?;
 
         writer.write_batch(
             [
@@ -205,7 +205,7 @@ fn journal_recovery_no_active() -> crate::Result<()> {
                 2,
                 0,
             )?;
-            writer.start_rotation()?.0.persist()?;
+            writer.rotate()?;
         }
 
         // NOTE: Delete the new, active journal -> old journal will be
