@@ -178,21 +178,25 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         seqnos
                     };
 
-                    journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+                    let deferred =
+                        journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+                    drop(journal_writer);
 
-                    if journal_manager.disk_space_used()
+                    let stragglers = if journal_manager.disk_space_used()
                         >= ctx.supervisor.db_config.max_journaling_size_in_bytes
                     {
-                        let stragglers =
-                            journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
+                        journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction()
+                    } else {
+                        Vec::new()
+                    };
+                    drop(journal_manager);
 
-                        for keyspace in stragglers {
-                            log::info!(
-                                "Rotating {:?} to try to reduce journal size",
-                                keyspace.name,
-                            );
-                            keyspace.request_rotation();
-                        }
+                    // Sync the directory changes and the old journal outside the lock.
+                    deferred.persist()?;
+
+                    for keyspace in stragglers {
+                        log::info!("Rotating {:?} to try to reduce journal size", keyspace.name);
+                        keyspace.request_rotation();
                     }
                 }
             }
