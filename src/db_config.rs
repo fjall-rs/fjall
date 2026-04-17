@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) type CompactionFilterAssigner =
+pub type CompactionFilterAssigner =
     Arc<dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync>;
 
 /// Global database configuration
