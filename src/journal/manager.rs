@@ -178,7 +178,7 @@ impl JournalManager {
     ) -> crate::Result<DeferredSync> {
         let journal_size = journal_writer.len()?;
 
-        let (deferred, sealed_path) = journal_writer.rotate_no_fsync()?;
+        let (deferred, sealed_path) = journal_writer.start_rotation()?;
 
         self.enqueue(Item {
             path: sealed_path,

@@ -24,7 +24,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
         db.supervisor
             .journal
             .get_writer()
-            .rotate_no_fsync()?
+            .start_rotation()?
             .0
             .persist()?;
 
