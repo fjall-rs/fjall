@@ -174,9 +174,9 @@ impl Writer {
         log::debug!("Rotating active journal to {}", new_path.display());
 
         let old_journal = {
-          let mut new_journal = Self::create_new(new_path)?;
-          new_journal.set_compression(self.compression, self.compression_threshold);
-          std::mem::replace(self, new_journal)
+            let mut new_journal = Self::create_new(new_path)?;
+            new_journal.set_compression(self.compression, self.compression_threshold);
+            std::mem::replace(self, new_journal)
         };
 
         let sealed_path = old_journal.path.clone();
