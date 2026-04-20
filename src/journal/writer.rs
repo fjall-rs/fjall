@@ -123,6 +123,9 @@ impl Writer {
         // Resolve any pending deferred sync from a prior rotation before creating a new one.
         // This ensures an unresolved sync is not silently dropped when self.deferred_sync is
         // overwritten below.
+        //
+        // We purposefully clone the guard and only set it to `None` if the persist is actually successful,
+        // otherwise we may remove sync barrier even though it failed.
         if let Some(deferred) = self.deferred_sync.clone() {
             deferred.persist()?;
             self.deferred_sync = None;
