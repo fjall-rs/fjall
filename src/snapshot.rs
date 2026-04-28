@@ -10,7 +10,7 @@ use std::ops::RangeBounds;
 ///
 /// Snapshots keep a consistent view of the database at the time,
 /// meaning old data will not be dropped until it is not referenced by any active snapshot.
-/// For that reason, you should try to keep transactions short-lived, and make sure they
+/// For that reason, you should try to keep snapshots short-lived, and make sure they
 /// are not held somewhere *forever*.
 #[clippy::has_significant_drop]
 #[derive(Clone)]
