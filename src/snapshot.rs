@@ -9,8 +9,7 @@ use std::ops::RangeBounds;
 /// A cross-keyspace snapshot
 ///
 /// Snapshots keep a consistent view of the database at the time,
-/// meaning old data will not be dropped until it is not referenced by any active transaction.
-///
+/// meaning old data will not be dropped until it is not referenced by any active snapshot.
 /// For that reason, you should try to keep transactions short-lived, and make sure they
 /// are not held somewhere *forever*.
 #[clippy::has_significant_drop]
