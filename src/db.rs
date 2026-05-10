@@ -85,13 +85,37 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+
+        // Clear journal manager first to release any internal Keyspace references
         self.supervisor
-            .keyspaces
+            .journal_manager
             .write()
             .expect("lock is poisoned")
             .clear();
+
+        // Check if any keyspaces have external handles
+        // After clearing internal owners (flush_manager, journal_manager),
+        // strong_count > 1 indicates user-held handles
+        {
+            let keyspaces = self.supervisor.keyspaces.read().expect("lock is poisoned");
+            let leaked_keyspaces: Vec<_> = keyspaces
+                .iter()
+                .filter(|(_, keyspace)| Arc::strong_count(&keyspace.0) > 1)
+                .map(|(name, _)| name.as_ref())
+                .collect();
+
+            if !leaked_keyspaces.is_empty() {
+                log::warn!(
+                    "Database is being dropped while keyspace handles still exist: {:?}. \
+                     Write operations on these keyspaces may hang indefinitely. \
+                     Ensure the Database outlives all Keyspace handles.",
+                    leaked_keyspaces
+                );
+            }
+        }
+
         self.supervisor
-            .journal_manager
+            .keyspaces
             .write()
             .expect("lock is poisoned")
             .clear();
@@ -118,9 +142,43 @@ impl Drop for DatabaseInner {
 /// A database is a single logical database
 /// which can house multiple keyspaces
 ///
+/// # Lifetime Requirements
+///
+/// **CRITICAL**: The `Database` handle **must** outlive all `Keyspace` handles.
+/// Dropping the `Database` while `Keyspace` handles exist will stop background
+/// worker threads, causing write operations and maintenance tasks to hang indefinitely.
+///
 /// In your application, you should create a single database
 /// and keep it around for as long as needed
 /// (as long as you are using its keyspaces).
+///
+/// # Example of Incorrect Usage (Will Hang)
+///
+/// ```no_run
+/// # use fjall::{Database, KeyspaceCreateOptions};
+/// # let folder = tempfile::tempdir().unwrap();
+/// let keyspace = {
+///     let db = Database::builder(&folder).open().unwrap();
+///     db.keyspace("default", KeyspaceCreateOptions::default).unwrap()
+///     // db is dropped here, but keyspace still exists
+/// };
+///
+/// // This will HANG because the database's worker threads are stopped
+/// keyspace.insert("key", "value").unwrap(); // Will deadlock!
+/// ```
+///
+/// # Example of Correct Usage
+///
+/// ```
+/// # use fjall::{Database, KeyspaceCreateOptions};
+/// # let folder = tempfile::tempdir().unwrap();
+/// let db = Database::builder(&folder).open().unwrap();
+/// let keyspace = db.keyspace("default", KeyspaceCreateOptions::default).unwrap();
+///
+/// keyspace.insert("key", "value").unwrap(); // Works correctly
+/// // db outlives keyspace
+/// # Ok::<(), fjall::Error>(())
+/// ```
 #[derive(Clone)]
 #[doc(alias = "database")]
 #[doc(alias = "collection")]
