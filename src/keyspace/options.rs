@@ -28,6 +28,7 @@ pub struct CreateOptions {
     pub(crate) max_memtable_size: u64,
 
     /// Data block hash ratio
+    #[doc(hidden)]
     pub data_block_hash_ratio_policy: HashRatioPolicy,
 
     /// Block size of data blocks.
@@ -475,7 +476,7 @@ impl CreateOptions {
                 );
             }
             name => {
-                panic!("Invalid/unsupported compaction stratey: {name:?}");
+                panic!("Invalid/unsupported compaction strategy: {name:?}");
             }
         }
 

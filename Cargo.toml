@@ -2,7 +2,7 @@
 name = "fjall"
 description = "Log-structured, embeddable key-value storage engine"
 license = "MIT OR Apache-2.0"
-version = "3.1.1"
+version = "3.1.4"
 edition = "2021"
 rust-version = "1.90.0"
 readme = "README.md"
@@ -26,18 +26,18 @@ __internal_whitebox = []
 [dependencies]
 byteorder = { package = "byteorder-lite", version = "0.1.0" }
 byteview = "~0.10.1"
-lsm-tree = { version = "~3.1.1", default-features = false, features = [] }
+lsm-tree = { version = "~3.1.4", default-features = false, features = [] }
 log = "0.4.27"
 tempfile = "3.20.0"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
-lz4_flex = { version = "0.11.5", optional = true }
+lz4_flex = { version = "0.13.0", optional = true }
 flume = { version = "0.12.0", default-features = false }
 
 [dev-dependencies]
 nanoid = "0.4.0"
 test-log = "0.2.18"
-rand = "0.9.2"
+rand = "0.10.0"
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
