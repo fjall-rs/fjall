@@ -38,7 +38,7 @@ pub struct Config {
 
     pub(crate) manual_journal_persist: bool,
 
-    /// Amount of concurrent worker threads
+    /// Number of concurrent worker threads
     pub(crate) worker_threads: usize,
 
     pub(crate) journal_compression_type: CompressionType,

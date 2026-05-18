@@ -250,7 +250,7 @@ impl Database {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Returns the amount of completed compactions.
+    /// Returns the number of completed compactions.
     ///
     /// # Experimental
     ///
@@ -263,7 +263,7 @@ impl Database {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Returns the amount of journals on disk.
+    /// Returns the number of journals on disk.
     ///
     /// # Examples
     ///

@@ -27,7 +27,7 @@ impl OptimisticTxKeyspace {
         self.inner.path().into()
     }
 
-    /// Approximates the amount of items in the keyspace.
+    /// Approximates the number of items in the keyspace.
     ///
     /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.

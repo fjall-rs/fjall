@@ -21,7 +21,7 @@ use std::sync::Arc;
 #[expect(clippy::module_name_repetitions)]
 #[derive(Clone)]
 pub struct CreateOptions {
-    /// Amount of levels of the LSM tree (depth of tree).
+    /// Number of levels of the LSM tree (depth of tree).
     pub(crate) level_count: u8,
 
     /// Maximum size of this keyspace's memtable - can be changed during runtime
