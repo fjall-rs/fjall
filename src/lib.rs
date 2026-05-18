@@ -128,6 +128,7 @@ mod stats;
 mod supervisor;
 mod tx;
 mod version;
+mod r#virtual;
 mod worker_pool;
 mod write_buffer_manager;
 
@@ -152,6 +153,7 @@ pub use {
     iter::Iter,
     journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
+    r#virtual::VirtualKeyspace,
     readable::Readable,
     snapshot::Snapshot,
     version::FormatVersion,
