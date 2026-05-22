@@ -7,6 +7,11 @@ use std::ops::RangeBounds;
 ///
 /// This allows easily sharing one physical keyspace for multiple logical collections.
 ///
+/// # Caution
+///
+/// You need to make sure that the prefix you choose for a `VirtualKeyspace` is unique, and is
+/// not a prefix of any other virtual prefixes (each `VirtualKeyspace` needs to be distinguishable).
+///
 /// # Example
 ///
 /// ```
@@ -46,6 +51,39 @@ impl VirtualKeyspace {
         Self {
             prefix: prefix.into(),
             inner,
+        }
+    }
+
+    /// Further divides the keyspace by another level of prefixing.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions, VirtualKeyspace};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    ///
+    /// let users = VirtualKeyspace::new("users\0", ks.clone());
+    ///
+    /// {
+    ///     let user0 = users.drilldown("user0\0");
+    ///
+    ///     let metadata = user0.drilldown("meta\0");
+    ///     metadata.insert("name", "Jack Doe")?;
+    ///
+    ///     let files = user0.drilldown("files\0");
+    ///     files.insert("file0", "...")?;
+    /// }
+    ///
+    /// assert!(ks.contains_key("users\0user0\0files\0file0")?);
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    pub fn drilldown(&self, prefix: impl AsRef<[u8]>) -> Self {
+        Self {
+            prefix: ByteView::fused(&self.prefix, prefix.as_ref()),
+            inner: self.inner.clone(),
         }
     }
 
