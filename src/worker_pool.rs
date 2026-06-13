@@ -140,7 +140,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         }
         WorkerMessage::RotateMemtable(keyspace, memtable_id) => {
             log::trace!("acquiring journal lock");
-            let journal_writer = keyspace.supervisor.journal.get_writer();
+            let journal_writer = keyspace.supervisor.journal.get_writer()?;
             keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
         }
         WorkerMessage::Flush => {
@@ -150,7 +150,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
 
             {
                 log::trace!("acquiring journal lock to maybe rotate journal");
-                let mut journal_writer = ctx.supervisor.journal.get_writer();
+                let mut journal_writer = ctx.supervisor.journal.get_writer()?;
 
                 if journal_writer.pos()? > 64_000_000 {
                     #[expect(clippy::expect_used)]
