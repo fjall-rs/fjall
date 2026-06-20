@@ -7,7 +7,6 @@ pub mod item;
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
 use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
-use std::collections::HashSet;
 
 /// An atomic write batch
 ///
@@ -128,9 +127,9 @@ impl WriteBatch {
             }
         }
 
-        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-        #[expect(clippy::mutable_key_type)]
-        let mut keyspaces_with_possible_stall = HashSet::new();
+        // NOTE: Typically only a handful of keyspaces are touched per batch, so a
+        // linear-dedup Vec avoids the per-commit heap allocation + hashing of a HashSet.
+        let mut keyspaces_with_possible_stall: Vec<Keyspace> = Vec::new();
 
         let mut batch_size = 0u64;
 
@@ -148,7 +147,9 @@ impl WriteBatch {
             batch_size += item_size;
 
             // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
-            keyspaces_with_possible_stall.insert(item.keyspace.clone());
+            if !keyspaces_with_possible_stall.contains(&item.keyspace) {
+                keyspaces_with_possible_stall.push(item.keyspace.clone());
+            }
         }
 
         self.db.supervisor.snapshot_tracker.publish(batch_seqno);
