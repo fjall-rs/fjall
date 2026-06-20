@@ -5,7 +5,7 @@
 use super::writer::Writer;
 use crate::Keyspace;
 use lsm_tree::{AbstractTree, SeqNo};
-use std::{path::PathBuf, sync::MutexGuard};
+use std::{collections::VecDeque, path::PathBuf, sync::MutexGuard};
 
 /// Stores the highest seqno of a keyspace found in a journal.
 #[derive(Clone)]
@@ -42,7 +42,7 @@ impl std::fmt::Debug for Item {
 #[expect(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct JournalManager {
-    items: Vec<Item>,
+    items: VecDeque<Item>,
     disk_space_in_bytes: u64,
 }
 
@@ -61,7 +61,7 @@ impl JournalManager {
         crate::drop::increment_drop_counter();
 
         Self {
-            items: Vec::with_capacity(10),
+            items: VecDeque::with_capacity(10),
             disk_space_in_bytes: 0,
         }
     }
@@ -72,7 +72,7 @@ impl JournalManager {
 
     pub(crate) fn enqueue(&mut self, item: Item) {
         self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_add(item.size_in_bytes);
-        self.items.push(item);
+        self.items.push_back(item);
     }
 
     /// Returns the number of journals
@@ -95,7 +95,7 @@ impl JournalManager {
     pub(crate) fn get_keyspaces_to_flush_for_oldest_journal_eviction(&self) -> Vec<Keyspace> {
         let mut items = vec![];
 
-        if let Some(item) = self.items.first() {
+        if let Some(item) = self.items.front() {
             for item in &item.watermarks {
                 let Some(partition_seqno) = item.keyspace.tree.get_highest_persisted_seqno() else {
                     items.push(item.keyspace.clone());
@@ -116,7 +116,7 @@ impl JournalManager {
         log::debug!("Running journal maintenance");
 
         loop {
-            let Some(item) = self.items.first() else {
+            let Some(item) = self.items.front() else {
                 return Ok(());
             };
 
@@ -162,7 +162,7 @@ impl JournalManager {
             })?;
 
             self.disk_space_in_bytes = self.disk_space_in_bytes.saturating_sub(item.size_in_bytes);
-            self.items.remove(0);
+            self.items.pop_front();
         }
     }
 
