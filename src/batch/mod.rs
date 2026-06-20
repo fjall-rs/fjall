@@ -132,14 +132,6 @@ impl WriteBatch {
         #[expect(clippy::mutable_key_type)]
         let mut keyspaces_with_possible_stall = HashSet::new();
 
-        #[expect(clippy::expect_used)]
-        let keyspaces = self
-            .db
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned");
-
         let mut batch_size = 0u64;
 
         log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
@@ -164,8 +156,6 @@ impl WriteBatch {
         drop(journal_writer);
 
         log::trace!("batch: Freed journal writer");
-
-        drop(keyspaces);
 
         // IMPORTANT: Add batch size to current write buffer size
         // Otherwise write buffer growth is unbounded when using batches
