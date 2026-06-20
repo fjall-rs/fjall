@@ -184,3 +184,124 @@ impl JournalManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    /// Builds a sealed-journal item backed by a real (empty) file on disk.
+    ///
+    /// `watermarks` is left empty so `maintenance` treats the journal as fully
+    /// flushed and evicts it without needing a live keyspace.
+    fn make_item(dir: &std::path::Path, id: u64, size_in_bytes: u64) -> Item {
+        let path = dir.join(format!("{id}.jnl"));
+        std::fs::File::create(&path).unwrap();
+        Item {
+            path,
+            size_in_bytes,
+            watermarks: vec![],
+        }
+    }
+
+    #[test]
+    fn journal_manager_enqueue_is_fifo_and_accounts_disk_space() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut manager = JournalManager::new();
+        assert_eq!(0, manager.sealed_journal_count());
+        assert_eq!(0, manager.disk_space_used());
+
+        manager.enqueue(make_item(dir.path(), 1, 100));
+        manager.enqueue(make_item(dir.path(), 2, 200));
+        manager.enqueue(make_item(dir.path(), 3, 300));
+
+        assert_eq!(3, manager.sealed_journal_count());
+        // active journal is not tracked here, so journal_count == sealed + 1
+        assert_eq!(4, manager.journal_count());
+        assert_eq!(600, manager.disk_space_used());
+
+        // FIFO invariant: the oldest enqueued journal is at the front.
+        // `maintenance` relies on this to evict from oldest to newest.
+        let order: Vec<_> = manager
+            .items
+            .iter()
+            .map(|i| i.path.file_name().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            vec![
+                std::ffi::OsString::from("1.jnl"),
+                std::ffi::OsString::from("2.jnl"),
+                std::ffi::OsString::from("3.jnl"),
+            ],
+            order,
+        );
+    }
+
+    #[test]
+    fn journal_manager_maintenance_evicts_all_fully_flushed_journals() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut manager = JournalManager::new();
+        let paths: Vec<_> = (1..=3)
+            .map(|id| {
+                let item = make_item(dir.path(), id, 100);
+                let path = item.path.clone();
+                manager.enqueue(item);
+                path
+            })
+            .collect();
+
+        assert_eq!(3, manager.sealed_journal_count());
+        assert_eq!(300, manager.disk_space_used());
+        for path in &paths {
+            assert!(path.try_exists().unwrap());
+        }
+
+        // With empty watermarks every journal counts as fully flushed, so all
+        // are evicted (front to back) and their files deleted from disk.
+        manager.maintenance().unwrap();
+
+        assert_eq!(0, manager.sealed_journal_count());
+        assert_eq!(0, manager.disk_space_used());
+        for path in &paths {
+            assert!(!path.try_exists().unwrap());
+        }
+    }
+
+    #[test]
+    fn journal_manager_clear_drops_items_without_touching_disk() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut manager = JournalManager::new();
+        let item = make_item(dir.path(), 1, 100);
+        let path = item.path.clone();
+        manager.enqueue(item);
+        assert_eq!(1, manager.sealed_journal_count());
+
+        manager.clear();
+
+        assert_eq!(0, manager.sealed_journal_count());
+        // clear only drops the in-memory queue; the file is left for recovery.
+        assert!(path.try_exists().unwrap());
+    }
+
+    #[test]
+    fn journal_manager_oldest_eviction_candidates_reads_front() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut manager = JournalManager::new();
+        // Empty queue: nothing to flush.
+        assert!(manager
+            .get_keyspaces_to_flush_for_oldest_journal_eviction()
+            .is_empty());
+
+        // With a sealed journal present (and no watermarks), the oldest journal
+        // has no keyspaces blocking its eviction, so the candidate list is empty.
+        manager.enqueue(make_item(dir.path(), 1, 100));
+        assert!(manager
+            .get_keyspaces_to_flush_for_oldest_journal_eviction()
+            .is_empty());
+    }
+}
