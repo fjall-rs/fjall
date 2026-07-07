@@ -792,18 +792,16 @@ impl Database {
                     }));
 
                 keyspace.worker_messager.send(WorkerMessage::Flush).ok();
-            } else {
-                if keyspace.tree.l0_run_count() > 0 {
-                    log::debug!(
-                        "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
-                        keyspace.name(),
-                    );
+            } else if keyspace.tree.l0_run_count() > 0 {
+                log::debug!(
+                    "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
+                    keyspace.name(),
+                );
 
-                    keyspace
-                        .worker_messager
-                        .send(WorkerMessage::Compact(keyspace.clone()))
-                        .ok();
-                }
+                keyspace
+                    .worker_messager
+                    .send(WorkerMessage::Compact(keyspace.clone()))
+                    .ok();
             }
         }
 
