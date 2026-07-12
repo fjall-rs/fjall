@@ -7,16 +7,23 @@ use byteview::StrView;
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, SequenceNumberCounter, UserValue};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
-pub fn encode_config_key(
-    keyspace_id: InternalKeyspaceId,
-    name: impl AsRef<[u8]>,
-) -> crate::UserKey {
-    let mut key: Vec<u8> =
-        Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1 + name.as_ref().len());
-    key.push(b'c');
-    key.extend(keyspace_id.to_be_bytes());
-    key.extend(name.as_ref());
-    key.into()
+pub fn encode_config_key(keyspace_id: InternalKeyspaceId, name: &str) -> crate::UserKey {
+    use byteorder::{WriteBytesExt, BE};
+    use std::io::Write;
+
+    #[expect(unsafe_code)]
+    let mut key = unsafe {
+        crate::UserKey::builder_unzeroed(1 + std::mem::size_of::<InternalKeyspaceId>() + name.len())
+    };
+
+    {
+        let mut writer = &mut key[..];
+        writer.write_u8(b'c').unwrap();
+        writer.write_u64::<BE>(keyspace_id).unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+
+    key.freeze().into()
 }
 
 /// The meta keyspace keeps mappings of keyspace names to their internal IDs and configurations
