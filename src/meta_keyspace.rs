@@ -16,6 +16,10 @@ pub fn encode_config_key(keyspace_id: InternalKeyspaceId, name: &str) -> crate::
         crate::UserKey::builder_unzeroed(1 + std::mem::size_of::<InternalKeyspaceId>() + name.len())
     };
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "writing into preallocated buffer should not trigger IO or EOF error"
+    )]
     {
         let mut writer = &mut key[..];
         writer.write_u8(b'c').unwrap();
