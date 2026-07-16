@@ -288,7 +288,7 @@ impl Database {
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
-        Ok(self.supervisor.journal.get_writer().len()?
+        Ok(self.supervisor.journal.get_writer()?.len()?
             + self
                 .supervisor
                 .journal_manager
@@ -587,7 +587,7 @@ impl Database {
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
         let active_journal = Arc::new(journal_recovery.active);
-        active_journal.get_writer().persist(PersistMode::SyncAll)?;
+        active_journal.get_writer()?.persist(PersistMode::SyncAll)?;
 
         let sealed_journals = journal_recovery.sealed;
 
