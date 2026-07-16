@@ -21,7 +21,12 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
         tree.rotate_memtable_and_wait()?;
         assert!(tree.is_empty()?);
-        db.supervisor.journal.get_writer().rotate()?;
+        db.supervisor
+            .journal
+            .get_writer()
+            .start_rotation()?
+            .0
+            .persist()?;
 
         tree.insert("b", "a")?;
         assert!(tree.contains_key("b")?);
