@@ -7,23 +7,45 @@ use byteview::StrView;
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, SequenceNumberCounter, UserValue};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
-pub fn encode_config_key(
-    keyspace_id: InternalKeyspaceId,
-    name: impl AsRef<[u8]>,
-) -> crate::UserKey {
-    let mut key: Vec<u8> =
-        Vec::with_capacity(std::mem::size_of::<InternalKeyspaceId>() + 1 + name.as_ref().len());
-    key.push(b'c');
-    key.extend(keyspace_id.to_be_bytes());
-    key.extend(name.as_ref());
-    key.into()
+pub fn encode_config_key(keyspace_id: InternalKeyspaceId, name: &str) -> crate::UserKey {
+    use byteorder::{WriteBytesExt, BE};
+    use std::io::Write;
+
+    #[expect(unsafe_code)]
+    let mut key = unsafe {
+        crate::UserKey::builder_unzeroed(1 + std::mem::size_of::<InternalKeyspaceId>() + name.len())
+    };
+
+    #[expect(
+        clippy::unwrap_used,
+        reason = "writing into preallocated buffer should not trigger IO or EOF error"
+    )]
+    {
+        let mut writer = &mut key[..];
+        writer.write_u8(b'c').unwrap();
+        writer.write_u64::<BE>(keyspace_id).unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+
+    key.freeze().into()
 }
 
 /// The meta keyspace keeps mappings of keyspace names to their internal IDs and configurations
 ///
 /// The meta keyspace is always keyspace #0.
+///
+/// The schema looks roughtly like this:
+///
+/// ```md
+/// 'c' + <keyspace_id> + <config_key> -> <serialized config parameter>
+/// 'n' + <keyspace_id>                -> <name as UTF-8 bytes>
+/// ```
 #[derive(Clone)]
 pub struct MetaKeyspace {
+    /// The actual backing LSM-tree
+    ///
+    /// We never commit data through the WAL but write tables directly using
+    /// lsm-tree's ingestion API.
     inner: AnyTree,
 
     /// Dictionary of all keyspaces
@@ -206,6 +228,77 @@ mod tests {
     use test_log::test;
 
     const ITEM_COUNT: usize = 10;
+
+    #[test]
+    fn meta_keyspace_smoke_test() -> crate::Result<()> {
+        use crate::AbstractTree;
+        use lsm_tree::SeqNo;
+
+        let folder = tempfile::tempdir()?;
+
+        {
+            let db = Database::builder(&folder).open()?;
+
+            assert_eq!(
+                None,
+                db.meta_keyspace
+                    .inner
+                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .as_deref(),
+            );
+
+            let _ks = db.keyspace("items", Default::default)?;
+
+            assert_eq!(
+                Some(b"items".as_slice()),
+                db.meta_keyspace
+                    .inner
+                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .as_deref(),
+            );
+            assert_eq!(
+                Some([3u8].as_slice()),
+                db.meta_keyspace
+                    .inner
+                    .get(
+                        &[
+                            'c' as u8, 0, 0, 0, 0, 0, 0, 0, 1, 'v' as u8, 'e' as u8, 'r' as u8,
+                            's' as u8, 'i' as u8, 'o' as u8, 'n' as u8
+                        ],
+                        SeqNo::MAX
+                    )?
+                    .as_deref(),
+            );
+        }
+
+        // Config should still exists after recovery, even without opening the keyspace
+        {
+            let db = Database::builder(&folder).open()?;
+
+            assert_eq!(
+                Some(b"items".as_slice()),
+                db.meta_keyspace
+                    .inner
+                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .as_deref(),
+            );
+            assert_eq!(
+                Some([3u8].as_slice()),
+                db.meta_keyspace
+                    .inner
+                    .get(
+                        &[
+                            'c' as u8, 0, 0, 0, 0, 0, 0, 0, 1, 'v' as u8, 'e' as u8, 'r' as u8,
+                            's' as u8, 'i' as u8, 'o' as u8, 'n' as u8
+                        ],
+                        SeqNo::MAX
+                    )?
+                    .as_deref(),
+            );
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn keyspace_delete() -> crate::Result<()> {

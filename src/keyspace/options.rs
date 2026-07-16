@@ -472,7 +472,14 @@ impl CreateOptions {
                     self.compaction_strategy
                         .get_config()
                         .into_iter()
-                        .map(|(k, v)| (encode_config_key(keyspace_id, k), v)),
+                        .map(|(k, v)| {
+                            // TODO: this is a bit stupid right now because we depend on behaviour in lsm-tree
+                            // we should probably make lsm-tree just return a String for the key
+                            let k = std::str::from_utf8(&k)
+                                .expect("compaction strategy should return UTF-8 key");
+
+                            (encode_config_key(keyspace_id, k), v)
+                        }),
                 );
             }
             name => {
