@@ -34,7 +34,7 @@ fn journal_rotation() -> crate::Result<()> {
 
     {
         let journal = Journal::create_new(&path)?;
-        let mut writer = journal.get_writer();
+        let mut writer = journal.get_writer()?;
 
         writer.write_batch(
             [
@@ -70,7 +70,7 @@ fn journal_recovery_active() -> crate::Result<()> {
 
     {
         let journal = Journal::create_new(&path)?;
-        let mut writer = journal.get_writer();
+        let mut writer = journal.get_writer()?;
 
         writer.write_batch(
             [
@@ -110,7 +110,7 @@ fn journal_recovery_active() -> crate::Result<()> {
     assert!(next_next_path.try_exists()?);
 
     let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
-    assert_eq!(journal_recovered.active.path(), next_next_path);
+    assert_eq!(journal_recovered.active.path()?, next_next_path);
     assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
     Ok(())
@@ -133,7 +133,7 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
 
     {
         let journal = Journal::create_new(&path)?.with_compression(CompressionType::Lz4, 1);
-        let mut writer = journal.get_writer();
+        let mut writer = journal.get_writer()?;
 
         writer.write_batch(
             [
@@ -173,7 +173,7 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
     assert!(next_next_path.try_exists()?);
 
     let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
-    assert_eq!(journal_recovered.active.path(), next_next_path);
+    assert_eq!(journal_recovered.active.path()?, next_next_path);
     assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
     Ok(())
@@ -194,7 +194,7 @@ fn journal_recovery_no_active() -> crate::Result<()> {
         let journal = Journal::create_new(&path)?;
 
         {
-            let mut writer = journal.get_writer();
+            let mut writer = journal.get_writer()?;
 
             writer.write_batch(
                 [
@@ -217,7 +217,7 @@ fn journal_recovery_no_active() -> crate::Result<()> {
     assert!(!next_path.try_exists()?);
 
     let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
-    assert_eq!(journal_recovered.active.path(), path);
+    assert_eq!(journal_recovered.active.path()?, path);
     assert_eq!(journal_recovered.sealed, &[]);
 
     Ok(())
@@ -241,7 +241,7 @@ fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
     {
         let journal = Journal::create_new(&path)?;
         journal
-            .get_writer()
+            .get_writer()?
             .write_batch(values.iter(), values.len(), 0)?;
     }
 
@@ -301,7 +301,7 @@ fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
     {
         let journal = Journal::create_new(&path)?;
         journal
-            .get_writer()
+            .get_writer()?
             .write_batch(values.iter(), values.len(), 0)?;
     }
 
@@ -369,7 +369,7 @@ fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
     {
         let journal = Journal::create_new(&path)?;
         journal
-            .get_writer()
+            .get_writer()?
             .write_batch(values.iter(), values.len(), 0)?;
     }
 
@@ -429,7 +429,7 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
     {
         let journal = Journal::create_new(&path)?;
         journal
-            .get_writer()
+            .get_writer()?
             .write_batch(values.iter(), values.len(), 0)?;
     }
 

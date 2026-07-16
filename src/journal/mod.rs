@@ -31,7 +31,13 @@ pub struct Journal {
 
 impl std::fmt::Debug for Journal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.path().display())
+        write!(
+            f,
+            "{}",
+            self.path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| String::from("<failed to read path>"))
+        )
     }
 }
 
@@ -94,24 +100,27 @@ impl Journal {
         })
     }
 
-    /// Hands out write access for the journal.
-    pub(crate) fn get_writer(&self) -> MutexGuard<'_, Writer> {
-        #[expect(clippy::expect_used)]
-        self.writer.lock().expect("lock is poisoned")
+    /// Hands out write access to the journal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the journal writer is poisoned.
+    pub(crate) fn get_writer(&self) -> crate::Result<MutexGuard<'_, Writer>> {
+        self.writer.lock().map_err(|_| crate::Error::Poisoned)
     }
 
-    pub fn path(&self) -> PathBuf {
-        self.get_writer().path.clone()
+    pub fn path(&self) -> crate::Result<PathBuf> {
+        Ok(self.get_writer()?.path.clone())
     }
 
     pub fn get_reader(&self) -> crate::Result<JournalBatchReader> {
-        let raw_reader = JournalReader::new(self.path())?;
+        let raw_reader = JournalReader::new(self.path()?)?;
         Ok(JournalBatchReader::new(raw_reader))
     }
 
     /// Persists the journal.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
-        let mut journal_writer = self.get_writer();
+        let mut journal_writer = self.get_writer()?;
         journal_writer.persist(mode).map_err(Into::into)
     }
 
