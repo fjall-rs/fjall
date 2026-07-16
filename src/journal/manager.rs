@@ -75,18 +75,18 @@ impl JournalManager {
         self.items.push(item);
     }
 
-    /// Returns the amount of journals
+    /// Returns the number of journals
     pub(crate) fn journal_count(&self) -> usize {
         // NOTE: + 1 = active journal
         self.sealed_journal_count() + 1
     }
 
-    /// Returns the amount of sealed journals
+    /// Returns the number of sealed journals
     pub(crate) fn sealed_journal_count(&self) -> usize {
         self.items.len()
     }
 
-    /// Returns the amount of bytes used on disk by journals
+    /// Returns the number of bytes used on disk by journals
     pub(crate) fn disk_space_used(&self) -> u64 {
         self.disk_space_in_bytes
     }

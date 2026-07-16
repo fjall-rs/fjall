@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) type CompactionFilterAssigner =
+pub type CompactionFilterAssigner =
     Arc<dyn Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> + Send + Sync>;
 
 /// Global database configuration
@@ -38,7 +38,7 @@ pub struct Config {
 
     pub(crate) manual_journal_persist: bool,
 
-    /// Amount of concurrent worker threads
+    /// Number of concurrent worker threads
     pub(crate) worker_threads: usize,
 
     pub(crate) journal_compression_type: CompressionType,

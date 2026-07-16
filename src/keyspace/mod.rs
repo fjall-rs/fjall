@@ -236,7 +236,7 @@ impl Keyspace {
     pub fn clear(&self) -> crate::Result<()> {
         use std::sync::atomic::Ordering;
 
-        let mut journal_writer = self.supervisor.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -472,7 +472,7 @@ impl Keyspace {
         crate::iter::Iter::new(nonce, iter)
     }
 
-    /// Approximates the amount of items in the keyspace.
+    /// Approximates the number of items in the keyspace.
     ///
     /// For update- or delete-heavy workloads, this value will
     /// diverge from the real value, but is a O(1) operation.
@@ -504,7 +504,7 @@ impl Keyspace {
         self.tree.approximate_len()
     }
 
-    /// Scans the entire keyspace, returning the amount of items.
+    /// Scans the entire keyspace, returning the number of items.
     ///
     /// # Caution
     ///
@@ -719,7 +719,7 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::trace!("acquiring journal lock");
-        let journal_writer = self.supervisor.journal.get_writer();
+        let journal_writer = self.supervisor.journal.get_writer()?;
         let active_memtable_id = self.tree.active_memtable().id();
         self.inner_rotate_memtable(journal_writer, active_memtable_id)
     }
@@ -916,7 +916,7 @@ impl Keyspace {
         let key = key.into();
         let value = value.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -987,7 +987,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {
@@ -1070,7 +1070,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer();
+        let mut journal_writer = self.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.load(Ordering::Relaxed) {

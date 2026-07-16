@@ -105,7 +105,7 @@ impl WriteBatch {
         }
 
         log::trace!("batch: Acquiring journal writer");
-        let mut journal_writer = self.db.supervisor.journal.get_writer();
+        let mut journal_writer = self.db.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.db.is_poisoned.load(Ordering::Relaxed) {
@@ -114,7 +114,7 @@ impl WriteBatch {
 
         let batch_seqno = self.db.supervisor.seqno.next();
 
-        let _ = journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno);
+        journal_writer.write_batch(self.data.iter(), self.data.len(), batch_seqno)?;
 
         if let Some(mode) = self.durability {
             if let Err(e) = journal_writer.persist(mode) {

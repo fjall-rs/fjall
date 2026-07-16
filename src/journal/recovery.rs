@@ -66,7 +66,7 @@ pub fn recover_journals<P: AsRef<Path>>(
     }
 
     // NOTE: Sort ascending, so the last item is the active journal
-    journal_fragments.sort_by(|(a, _), (b, _)| a.cmp(b));
+    journal_fragments.sort_by_key(|(a, _)| *a);
 
     log::trace!("Recovered {journal_fragments:#?}");
 

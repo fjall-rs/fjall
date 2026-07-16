@@ -8,6 +8,8 @@ use lsm_tree::{Guard as _Guard, UserKey, UserValue};
 pub struct Guard(pub(crate) lsm_tree::IterGuardImpl);
 
 impl Guard {
+    // TODO: is_ok?
+
     /// Accesses the key-value pair if the predicate returns `true`.
     ///
     /// The predicate receives the key - if returning `false`, the value
