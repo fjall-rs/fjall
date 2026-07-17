@@ -231,3 +231,52 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
 
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AbstractTree, Database, KeyspaceCreateOptions};
+    use test_log::test;
+
+    // https://github.com/fjall-rs/fjall/pull/303
+    #[test]
+    fn keyspace_compact_after_startup() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let db = Database::builder(&folder).open()?;
+
+            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+            ks.insert("a", "a")?;
+            ks.rotate_memtable_and_wait()?;
+
+            ks.insert("a", "a")?;
+            ks.rotate_memtable_and_wait()?;
+
+            ks.insert("a", "a")?;
+            ks.rotate_memtable_and_wait()?;
+
+            assert!(ks.tree.l0_run_count() > 0);
+        }
+
+        {
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
+
+            assert_eq!(
+                1,
+                db.worker_pool.rx.len(),
+                "worker message should be enqueued on startup",
+            );
+            let item = db.worker_pool.rx.try_recv().expect("should get message");
+            assert!(
+                matches!(item, WorkerMessage::Compact(_)),
+                "worker message should be compaction request",
+            );
+        }
+
+        Ok(())
+    }
+}

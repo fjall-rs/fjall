@@ -1,7 +1,7 @@
+use fjall::{Database, KeyspaceCreateOptions};
+
 #[test_log::test]
 fn clear_recover() -> fjall::Result<()> {
-    use fjall::{Database, KeyspaceCreateOptions};
-
     let folder = tempfile::tempdir()?;
 
     {
@@ -30,8 +30,6 @@ fn clear_recover() -> fjall::Result<()> {
 
 #[test_log::test]
 fn clear_recover_multi_tree() -> fjall::Result<()> {
-    use fjall::{Database, KeyspaceCreateOptions};
-
     let folder = tempfile::tempdir()?;
 
     {
