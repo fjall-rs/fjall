@@ -158,7 +158,7 @@ pub use {
 };
 
 pub use tx::single_writer::{
-    SingleWriterTxKeyspace, TxDatabase as SingleWriterTxDatabase,
+    Openable, SingleWriterTxKeyspace, TxDatabase as SingleWriterTxDatabase,
     WriteTransaction as SingleWriterWriteTx,
 };
 
