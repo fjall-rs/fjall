@@ -118,7 +118,7 @@ mod keyspace;
 mod locked_file;
 mod meta_keyspace;
 mod path;
-mod poison_dart;
+mod poison;
 mod readable;
 mod recovery;
 mod snapshot;

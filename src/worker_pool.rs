@@ -3,11 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as run_flush,
-    journal::manager::EvictionWatermark, poison_dart::PoisonDart, stats::Stats,
-    supervisor::Supervisor, Keyspace,
+    compaction::worker::run as run_compaction, flush::worker::run as run_flush, poison::PoisonDart,
+    stats::Stats, supervisor::Supervisor, Keyspace,
 };
-use lsm_tree::{AbstractTree, MemtableId};
+use lsm_tree::MemtableId;
 use std::{
     borrow::Cow,
     sync::{atomic::AtomicUsize, Arc, Mutex},
@@ -164,18 +163,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                         #[expect(clippy::expect_used)]
                         let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
 
-                        let mut seqnos = Vec::with_capacity(keyspaces.len());
-
-                        for keyspace in keyspaces.values() {
-                            if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
-                                seqnos.push(EvictionWatermark {
-                                    lsn,
-                                    keyspace: keyspace.clone(),
-                                });
-                            }
-                        }
-
-                        seqnos
+                        ctx.supervisor.build_seqno_map(&keyspaces)
                     };
 
                     journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;

@@ -141,7 +141,7 @@ pub fn recover_sealed_memtables(
         let raw_reader = JournalReader::new(journal_path)?;
         let reader = JournalBatchReader::new(raw_reader);
 
-        let mut watermarks: HashMap<InternalKeyspaceId, EvictionWatermark> = HashMap::default();
+        let mut watermarks: HashMap<_, EvictionWatermark> = HashMap::default();
 
         for batch in reader {
             let batch = batch?;
@@ -216,8 +216,8 @@ pub fn recover_sealed_memtables(
 
             let keyspace_lsn = tree.get_highest_persisted_seqno();
 
-            // IMPORTANT: Only apply sealed memtables to keyspaces
-            // that have a lower seqno to avoid double flushing
+            // IMPORTANT: Apply the sealed memtable only if it contains data newer than the
+            // keyspace's persisted LSN.
             let should_skip_sealed_memtable =
                 keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn >= wm.lsn);
 

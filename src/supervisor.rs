@@ -50,4 +50,24 @@ impl Supervisor {
     pub fn new(inner: SupervisorInner) -> Self {
         Self(Arc::new(inner))
     }
+
+    pub fn build_seqno_map(
+        &self,
+        keyspaces: &Keyspaces,
+    ) -> Vec<crate::journal::manager::EvictionWatermark> {
+        use crate::AbstractTree;
+
+        let mut seqnos = Vec::with_capacity(keyspaces.len());
+
+        for keyspace in keyspaces.values() {
+            if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
+                seqnos.push(crate::journal::manager::EvictionWatermark {
+                    lsn,
+                    keyspace: keyspace.clone(),
+                });
+            }
+        }
+
+        seqnos
+    }
 }
