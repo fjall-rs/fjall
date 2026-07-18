@@ -41,7 +41,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
 // TODO: investigate: flaky on macOS???
 #[cfg(feature = "__internal_whitebox")]
-#[test_log::test]
+#[test]
 #[ignore = "restore"]
 fn whitebox_db_drop() -> crate::Result<()> {
     use crate::Database;
@@ -92,7 +92,7 @@ fn whitebox_db_drop() -> crate::Result<()> {
 }
 
 #[cfg(feature = "__internal_whitebox")]
-#[test_log::test]
+#[test]
 #[ignore = "restore"]
 fn whitebox_db_drop_2() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
@@ -132,7 +132,7 @@ pub fn test_exotic_keyspace_names() -> crate::Result<()> {
 
 #[test]
 #[expect(clippy::unwrap_used)]
-fn recover_sealed() -> crate::Result<()> {
+fn recover_sealed_smoke_test() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for i in 0_u128..3 {
