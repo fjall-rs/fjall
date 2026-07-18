@@ -15,6 +15,27 @@ impl Guard {
     /// The predicate receives the key - if returning `false`, the value
     /// may not be loaded if the tree is key-value separated.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("abc", "my_value")?;
+    ///
+    /// let (k,v) = tree.prefix("a")
+    ///     .next()
+    ///     .unwrap()
+    ///     .into_inner_if(|key| key.starts_with(b"a"))?;
+    ///
+    /// assert_eq!(b"abc", &*k);
+    /// assert_eq!(Some(b"my_value".as_slice()), v.as_deref());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -27,6 +48,27 @@ impl Guard {
 
     /// Returns the key-value tuple.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let (k,v) = tree.prefix("a")
+    ///     .next()
+    ///     .unwrap()
+    ///     .into_inner()?;
+    ///
+    /// assert_eq!(b"a", &*k);
+    /// assert_eq!(b"my_value", &*v);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -35,6 +77,22 @@ impl Guard {
     }
 
     /// Returns the key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let item = tree.prefix("a").next().unwrap().key()?;
+    /// assert_eq!(b"a", &*item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -45,6 +103,22 @@ impl Guard {
 
     /// Returns the value size.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let item = tree.prefix("a").next().unwrap().size()?;
+    /// assert_eq!(8, item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -53,6 +127,22 @@ impl Guard {
     }
 
     /// Returns the value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// # let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "my_value")?;
+    ///
+    /// let item = tree.prefix("a").next().unwrap().value()?;
+    /// assert_eq!(b"my_value", &*item);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
