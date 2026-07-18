@@ -202,7 +202,9 @@ pub fn recover_sealed_memtables(
                         lsn: batch.seqno,
                     });
 
-                handle.tree.clear().ok();
+                handle.tree.clear().inspect_err(|e| {
+                    log::error!("Keyspace clear failed during recovery: {e}");
+                })?;
             }
         }
 

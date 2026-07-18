@@ -11,7 +11,7 @@ use crate::{
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
     meta_keyspace::MetaKeyspace,
-    poison_dart::PoisonDart,
+    poison::{PoisonDart, PoisonSignal},
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
@@ -27,10 +27,7 @@ use lsm_tree::{AbstractTree, SequenceNumberCounter};
 use std::{
     fs::remove_dir_all,
     path::Path,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        Arc, Mutex, RwLock,
-    },
+    sync::{atomic::AtomicUsize, Arc, Mutex, RwLock},
 };
 
 pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
@@ -52,7 +49,7 @@ pub struct DatabaseInner {
     pub(crate) active_thread_counter: Arc<AtomicUsize>,
 
     /// True if fsync failed
-    pub(crate) is_poisoned: Arc<AtomicBool>,
+    pub(crate) is_poisoned: PoisonSignal,
 
     pub(crate) stats: Arc<Stats>,
 
@@ -351,13 +348,12 @@ impl Database {
     ///
     /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
-        if self.is_poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
         if let Err(e) = self.supervisor.journal.persist(mode) {
-            self.is_poisoned
-                .store(true, std::sync::atomic::Ordering::Release);
+            self.is_poisoned.poison();
 
             log::error!(
                 "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
@@ -646,8 +642,6 @@ impl Database {
         let active_thread_counter = Arc::<AtomicUsize>::default();
         let stats = Arc::<Stats>::default();
 
-        let is_poisoned = Arc::<AtomicBool>::default();
-
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             supervisor,
@@ -657,7 +651,7 @@ impl Database {
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned,
+            is_poisoned: PoisonSignal::default(),
             stats,
             lock_file,
         };
@@ -900,8 +894,6 @@ impl Database {
         let active_thread_counter = Arc::<AtomicUsize>::default();
         let stats = Arc::<Stats>::default();
 
-        let is_poisoned = Arc::<AtomicBool>::default();
-
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
@@ -910,7 +902,7 @@ impl Database {
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned,
+            is_poisoned: PoisonSignal::default(),
             stats,
             lock_file,
         };

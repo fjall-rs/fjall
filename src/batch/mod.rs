@@ -98,8 +98,6 @@ impl WriteBatch {
     /// Will return `Err` if an IO error occurs.
     #[allow(clippy::missing_panics_doc)]
     pub fn commit(mut self) -> crate::Result<()> {
-        use std::sync::atomic::Ordering;
-
         if self.is_empty() {
             return Ok(());
         }
@@ -108,7 +106,7 @@ impl WriteBatch {
         let mut journal_writer = self.db.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.db.is_poisoned.load(Ordering::Relaxed) {
+        if self.db.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
@@ -118,7 +116,7 @@ impl WriteBatch {
 
         if let Some(mode) = self.durability {
             if let Err(e) = journal_writer.persist(mode) {
-                self.db.is_poisoned.store(true, Ordering::Release);
+                self.db.is_poisoned.poison();
 
                 log::error!(
                     "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"

@@ -4,23 +4,30 @@
 
 use std::sync::{atomic::AtomicBool, Arc};
 
-type PoisonSignal = Arc<AtomicBool>;
+#[derive(Clone, Debug, Default)]
+pub struct PoisonSignal(Arc<AtomicBool>);
 
-/// RAII guard to catch panics in background workers
-/// and poison a database
-#[derive(Clone)]
-pub struct PoisonDart {
-    signal: PoisonSignal,
-}
-
-impl PoisonDart {
-    pub fn new(signal: PoisonSignal) -> Self {
-        Self { signal }
+impl PoisonSignal {
+    pub fn is_poisoned(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub fn poison(&self) {
-        self.signal
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// RAII guard to catch panics in background workers and poison a database
+#[derive(Clone)]
+pub struct PoisonDart(PoisonSignal);
+
+impl PoisonDart {
+    pub fn new(signal: PoisonSignal) -> Self {
+        Self(signal)
+    }
+
+    pub fn poison(&self) {
+        self.0.poison();
     }
 }
 
