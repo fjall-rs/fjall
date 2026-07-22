@@ -592,11 +592,6 @@ impl Database {
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
-        let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
-            10,
-            xxhash_rust::xxh3::Xxh3Builder::new(),
-        )));
-
         let meta_tree = lsm_tree::Config::new(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
@@ -619,6 +614,8 @@ impl Database {
             ),
         ]))
         .open()?;
+
+        let keyspaces = Arc::new(RwLock::default());
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
@@ -807,7 +804,7 @@ impl Database {
             &db.active_thread_counter,
         )?;
 
-        log::trace!("Recovery successful");
+        log::trace!("Database recovery successful");
 
         Ok(db)
     }
@@ -844,11 +841,6 @@ impl Database {
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
-        let keyspaces = Arc::new(RwLock::new(Keyspaces::with_capacity_and_hasher(
-            10,
-            xxhash_rust::xxh3::Xxh3Builder::new(),
-        )));
-
         let meta_tree = lsm_tree::Config::new(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
@@ -871,6 +863,8 @@ impl Database {
             ),
         ]))
         .open()?;
+
+        let keyspaces = Arc::new(RwLock::default());
 
         let meta_keyspace = MetaKeyspace::new(
             meta_tree,
