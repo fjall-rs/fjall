@@ -164,7 +164,8 @@ pub use tx::single_writer::{
 };
 
 pub use tx::optimistic::{
-    Conflict, OptimisticTxDatabase, OptimisticTxKeyspace, WriteTransaction as OptimisticWriteTx,
+    Conflict, OptimisticTxDatabase, OptimisticTxKeyspace,
+    UntrackedWriteTransaction as OptimisticUntrackedWriteTx, WriteTransaction as OptimisticWriteTx,
 };
 
 #[doc(hidden)]

@@ -132,6 +132,15 @@ impl WriteTransaction {
         }
     }
 
+    /// Returns a read-only view whose reads are not tracked for conflict detection.
+    ///
+    /// Reads through the returned handle won't cause this transaction to conflict.
+    /// Only use this when you know a read doesn't need to participate in conflict detection.
+    #[must_use]
+    pub fn untrack(&self) -> UntrackedWriteTransaction<'_> {
+        UntrackedWriteTransaction { tx: self }
+    }
+
     /// Sets the durability level.
     #[must_use]
     pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
@@ -458,6 +467,64 @@ impl WriteTransaction {
     /// to roll it back.
     pub fn rollback(self) {
         self.inner.rollback();
+    }
+}
+
+/// A read-only view of a [`WriteTransaction`] whose reads are not tracked for
+/// conflict detection.
+///
+/// Created via [`WriteTransaction::untrack`].
+pub struct UntrackedWriteTransaction<'a> {
+    tx: &'a WriteTransaction,
+}
+
+impl Readable for UntrackedWriteTransaction<'_> {
+    fn get<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<UserValue>> {
+        self.tx.inner.get(keyspace, key)
+    }
+
+    fn contains_key<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<bool> {
+        self.tx.inner.contains_key(keyspace, key)
+    }
+
+    fn first_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace).next()
+    }
+
+    fn last_key_value(&self, keyspace: impl AsRef<Keyspace>) -> Option<Guard> {
+        self.iter(keyspace).next_back()
+    }
+
+    fn size_of<K: AsRef<[u8]>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        key: K,
+    ) -> crate::Result<Option<u32>> {
+        self.tx.inner.size_of(keyspace, key)
+    }
+
+    fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
+        self.tx.inner.iter(keyspace)
+    }
+
+    fn range<K: AsRef<[u8]>, R: RangeBounds<K>>(
+        &self,
+        keyspace: impl AsRef<Keyspace>,
+        range: R,
+    ) -> Iter {
+        self.tx.inner.range(keyspace, range)
+    }
+
+    fn prefix<K: AsRef<[u8]>>(&self, keyspace: impl AsRef<Keyspace>, prefix: K) -> Iter {
+        self.range(keyspace, lsm_tree::range::prefix_to_range(prefix.as_ref()))
     }
 }
 

@@ -18,7 +18,7 @@ use std::{
 };
 
 pub use keyspace::OptimisticTxKeyspace;
-pub use write_tx::{Conflict, WriteTransaction};
+pub use write_tx::{Conflict, UntrackedWriteTransaction, WriteTransaction};
 
 /// Transactional database
 #[derive(Clone)]
