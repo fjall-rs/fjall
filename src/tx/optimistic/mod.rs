@@ -57,6 +57,59 @@ impl OptimisticTxDatabase {
         &self.inner
     }
 
+    /// Convenience method for running a write transaction.
+    ///
+    /// # Caution
+    ///
+    /// Note that the transaction function may be called multiple times in case of conflicts, so make sure it is idempotent.
+    ///
+    /// The transaction can be aborted by returning [`crate::Error::TransactionAborted`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use fjall::{Readable, PersistMode, OptimisticTxDatabase, KeyspaceCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let db = OptimisticTxDatabase::builder(folder).open()?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
+    ///
+    /// let mut attempt = 0;
+    ///
+    /// db.transact(move |tx| {
+    ///     attempt += 1;
+    ///
+    ///     if attempt > 100 {
+    ///         return Err(fjall::Error::TransactionAborted);
+    ///     }
+    ///
+    ///     tx.set_durability(Some(PersistMode::SyncAll));
+    ///
+    ///     if !tx.contains_key(&items, "hello")? {
+    ///         tx.insert(&items, "hello", "world");
+    ///     }
+    ///
+    ///     Ok(())
+    /// })?;
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    pub fn transact(
+        &self,
+        mut f: impl FnMut(&mut WriteTransaction) -> crate::Result<()>,
+    ) -> crate::Result<()> {
+        loop {
+            let mut wtx = self.write_tx()?;
+            f(&mut wtx)?;
+            let result = wtx.commit()?;
+
+            if result.is_ok() {
+                return Ok(());
+            }
+
+            // Retry
+        }
+    }
+
     /// Starts a new writeable transaction.
     ///
     /// # Errors
