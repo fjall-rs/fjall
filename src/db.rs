@@ -66,16 +66,12 @@ impl Drop for DatabaseInner {
 
         self.stop_signal.send();
 
-        let _ = self.worker_pool.rx.drain().count();
-
-        while self
-            .active_thread_counter
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0
-        {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
-        }
+        // Waits for the worker threads themselves, see
+        // `WorkerPool::stop_and_join`. Polling `active_thread_counter` and
+        // pushing `Close` into a bounded channel with a blocking send could
+        // deadlock: a busy worker stops reading, the channel fills up, and the
+        // send waits for a reader that is about to leave.
+        self.worker_pool.stop_and_join();
 
         // Drain again after threads are closed
         let _ = self.worker_pool.rx.drain().count();

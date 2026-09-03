@@ -117,6 +117,58 @@ impl WorkerPool {
 
         Ok(())
     }
+
+    /// Stops every worker and waits for its thread to finish.
+    ///
+    /// Wakes the workers parked in `rx.recv()` with a `Close` each, then joins
+    /// the handles kept since [`WorkerPool::start`]. The join is what makes the
+    /// shutdown observable: once this returns, no worker thread is left, so the
+    /// database is free to release its resources — the file lock among them.
+    ///
+    /// Two details are load-bearing, and both are why the previous shutdown
+    /// (`while active_thread_counter > 0 { sender.send(Close); sleep }`) could
+    /// hang forever:
+    ///
+    /// * `try_send`, never `send`. A worker busy with a compaction is not
+    ///   reading the channel, and the channel is bounded, so a blocking send on
+    ///   a full channel waits for a reader that is on its way out — and the
+    ///   loop never got back to re-check the counter.
+    /// * the queue is drained before every round of wake-ups, so the `Close`
+    ///   messages have room even when producers filled it up beforehand.
+    ///
+    /// Progress is judged by the threads themselves (`is_finished`) rather than
+    /// by the counter, so a leaked slot can no longer stall the shutdown.
+    pub fn stop_and_join(&self) {
+        // A poisoned lock is not a reason to panic here: this runs from
+        // `DatabaseInner::drop`, and a panic during another panic's unwind
+        // aborts the process. The handles behind the lock are intact whoever
+        // panicked while holding it, so take them and go on closing.
+        let mut guard = self
+            .thread_handles
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let handles = std::mem::take(&mut *guard);
+        drop(guard);
+
+        while handles.iter().any(|handle| !handle.is_finished()) {
+            // Whatever is still queued will never run: the database is going
+            // away. Dropping it now keeps room for the wake-ups.
+            let _ = self.rx.drain().count();
+
+            for _ in &handles {
+                let _ = self.sender.try_send(WorkerMessage::Close);
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        for handle in handles {
+            // A worker that returned an error has already logged it and
+            // poisoned the database; a panicking one is reported by its own
+            // hook. Here only the exit matters.
+            let _ = handle.join();
+        }
+    }
 }
 
 /// Claims one slot in the active thread counter per worker, immediately before
@@ -304,6 +356,53 @@ mod tests {
                 "worker message should be compaction request",
             );
         }
+
+        Ok(())
+    }
+
+    /// Closing a database whose worker queue is full still finishes.
+    ///
+    /// Covers the shutdown path that a full queue takes — drain, wake with
+    /// `try_send`, join — because that is where the deadlock of
+    /// <https://github.com/fjall-rs/fjall/issues/260> lived: `Close` used to go
+    /// in with a blocking `send`, and a full queue made it wait for a reader
+    /// while the only readers were the workers being stopped.
+    ///
+    /// It does **not** reproduce that deadlock, and passes on the old shutdown
+    /// too: idle workers keep draining the queue, so the send finds room. To
+    /// reproduce it, a worker has to be stuck long enough to stop reading —
+    /// a compaction blocked on I/O, which a test cannot arrange from the
+    /// outside.
+    ///
+    /// The drop runs on its own thread, so a shutdown that waits forever fails
+    /// here on a deadline instead of hanging the whole run.
+    #[test]
+    fn dropping_a_database_with_a_full_queue_finishes() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+
+        {
+            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+            ks.insert("a", "a")?;
+        }
+
+        // Fill the queue to the brim. Workers keep draining it, so the point is
+        // not that it stays full, but that the shutdown meets a full one at
+        // least once.
+        while db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok() {}
+
+        let closing = std::thread::spawn(move || drop(db));
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !closing.is_finished() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "closing the database did not finish in 30s: the shutdown is \
+                 waiting for a reader of the worker queue",
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(closing.join().is_ok(), "closing thread panicked");
 
         Ok(())
     }
