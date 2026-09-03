@@ -218,10 +218,35 @@ struct WorkerState {
     stats: Arc<Stats>,
 }
 
+/// Keeps a worker inside its current tick while a test asks for it.
+///
+/// A worker that holds a message stops reading the queue, which is the state a
+/// shutdown deadlock needs and the one a test cannot reach otherwise: real work
+/// (a flush with nothing queued, a compaction of three tiny segments) finishes
+/// faster than a single thread can refill the queue.
+#[cfg(test)]
+static HOLD_WORKERS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Blocks the calling worker while [`HOLD_WORKERS`] is set.
+#[cfg(test)]
+fn hold_while_requested() {
+    while HOLD_WORKERS.load(std::sync::atomic::Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Waits for one message and handles it; `true` means the worker should leave.
+///
+/// The worker also leaves when the channel is gone: with every sender dropped
+/// there is nobody left to ask it for work.
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     let Ok(item) = ctx.rx.recv() else {
         return Ok(true);
     };
+
+    // Holds the message — and with it the queue — for the shutdown tests.
+    #[cfg(test)]
+    hold_while_requested();
 
     log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
 
@@ -360,48 +385,72 @@ mod tests {
         Ok(())
     }
 
-    /// Closing a database whose worker queue is full still finishes.
+    /// Closing a database finishes even when its only worker holds the queue
+    /// shut and lets go mid-shutdown.
     ///
-    /// Covers the shutdown path that a full queue takes — drain, wake with
-    /// `try_send`, join — because that is where the deadlock of
-    /// <https://github.com/fjall-rs/fjall/issues/260> lived: `Close` used to go
-    /// in with a blocking `send`, and a full queue made it wait for a reader
-    /// while the only readers were the workers being stopped.
+    /// This is the hardest shutdown state a test can set up from the outside:
+    /// the worker parks inside a tick, so nothing reads the queue and the
+    /// shutdown's own `Close` messages fill it to the brim; then the worker
+    /// wakes and leaves while the shutdown is still working through a full
+    /// queue.
     ///
-    /// It does **not** reproduce that deadlock, and passes on the old shutdown
-    /// too: idle workers keep draining the queue, so the send finds room. To
-    /// reproduce it, a worker has to be stuck long enough to stop reading —
-    /// a compaction blocked on I/O, which a test cannot arrange from the
-    /// outside.
+    /// It does **not** reproduce the deadlock of
+    /// <https://github.com/fjall-rs/fjall/issues/260>, and passes on the old
+    /// `while counter > 0 { sender.send(Close); sleep }` too. Reaching that one
+    /// needs the last worker to leave *without taking a message*: as long as it
+    /// exits by reading `Close`, it frees a slot, the blocking send returns and
+    /// the loop gets to see the counter at zero. A worker leaves empty-handed
+    /// only when it bails out on its own — an `Err` out of `worker_tick`, an
+    /// unwind — and neither can be arranged from a test without reaching into
+    /// the worker body.
+    ///
+    /// So the value here is the state, not the failure: the current shutdown
+    /// never blocks on the queue (`try_send` returns either way, progress comes
+    /// from joining the threads), and this test pins that down for a queue that
+    /// stays full from beginning to end.
     ///
     /// The drop runs on its own thread, so a shutdown that waits forever fails
-    /// here on a deadline instead of hanging the whole run.
+    /// on a deadline here instead of hanging the whole test run.
     #[test]
-    fn dropping_a_database_with_a_full_queue_finishes() -> crate::Result<()> {
+    fn dropping_a_database_finishes_when_a_worker_holds_the_queue() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder).worker_threads(1).open()?;
 
         {
             let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
             ks.insert("a", "a")?;
         }
 
-        // Fill the queue to the brim. Workers keep draining it, so the point is
-        // not that it stays full, but that the shutdown meets a full one at
-        // least once.
+        // Park the worker inside a tick, then fill the queue it no longer
+        // reads.
+        HOLD_WORKERS.store(true, std::sync::atomic::Ordering::Release);
+        let _ = db.worker_pool.sender.try_send(WorkerMessage::Flush);
+        std::thread::sleep(std::time::Duration::from_millis(50));
         while db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok() {}
 
         let closing = std::thread::spawn(move || drop(db));
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        // Let the shutdown pile its own messages onto the full queue, then
+        // release the worker: it takes one message and leaves, and the queue
+        // is left without a reader.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        HOLD_WORKERS.store(false, std::sync::atomic::Ordering::Release);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut timed_out = false;
         while !closing.is_finished() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "closing the database did not finish in 30s: the shutdown is \
-                 waiting for a reader of the worker queue",
-            );
+            if std::time::Instant::now() >= deadline {
+                timed_out = true;
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+
+        assert!(
+            !timed_out,
+            "closing the database did not finish in 20s: the shutdown is \
+             waiting for room in a worker queue that has no reader left",
+        );
         assert!(closing.join().is_ok(), "closing thread panicked");
 
         Ok(())

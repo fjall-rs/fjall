@@ -61,6 +61,14 @@ pub struct DatabaseInner {
 }
 
 impl Drop for DatabaseInner {
+    /// Stops the background workers, then breaks the cyclic `Arc`s that keep
+    /// the supervisor alive.
+    ///
+    /// The order matters: workers hold keyspaces and journal handles, so they
+    /// have to be gone before those are cleared. The file lock goes last, with
+    /// `lock_file` — which is why this shutdown has to actually finish instead
+    /// of being abandoned halfway: whoever opens the same path next waits on
+    /// that lock.
     fn drop(&mut self) {
         log::debug!("Dropping database");
 
