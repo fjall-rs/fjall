@@ -212,6 +212,31 @@ impl Keyspace {
         &self.name
     }
 
+    /// Returns `true` if the keyspace is poisoned.
+    ///
+    /// Poisoning marks a write that could not be made durable. The flag is
+    /// shared with the database the keyspace belongs to, so a failure in any
+    /// keyspace, or in a background worker, is visible here as well; it is
+    /// never cleared, and every subsequent write returns
+    /// [`Error::Poisoned`](crate::Error::Poisoned).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// # let db = Database::builder(folder).open()?;
+    /// let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// assert!(!tree.is_poisoned());
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn is_poisoned(&self) -> bool {
+        self.is_poisoned.is_poisoned()
+    }
+
     /// Clears the entire keyspace in O(1) time.
     ///
     /// # Examples
