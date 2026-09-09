@@ -18,7 +18,6 @@ use crate::{
     poison::PoisonSignal,
     stats::Stats,
     supervisor::Supervisor,
-    worker_pool::WorkerMessage,
     Database, Guard, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
@@ -86,7 +85,13 @@ pub struct KeyspaceInner {
     /// Database-level stats
     pub(crate) stats: Arc<Stats>,
 
-    pub(crate) worker_messager: flume::Sender<WorkerMessage>,
+    pub(crate) worker_wake: flume::Sender<()>,
+
+    /// Coalesces rotate pokes: one outstanding "please rotate" per keyspace.
+    rotate_pending: AtomicBool,
+
+    /// Coalesces compact pokes. Cleared when a worker takes the compact.
+    compact_pending: AtomicBool,
 
     #[expect(unused)]
     lock_file: LockedFileGuard,
@@ -316,9 +321,11 @@ impl Keyspace {
             tree,
             config,
             supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_pool.sender.clone(),
+            worker_wake: db.worker_pool.wake.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
+            rotate_pending: AtomicBool::new(false),
+            compact_pending: AtomicBool::new(false),
             lock_file: db.lock_file.clone(),
             stats: db.stats.clone(),
         }))
@@ -354,13 +361,15 @@ impl Keyspace {
 
         Ok(Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
-            worker_messager: db.worker_pool.sender.clone(),
+            worker_wake: db.worker_pool.wake.clone(),
             id: keyspace_id,
             name,
             config,
             tree,
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
+            rotate_pending: AtomicBool::new(false),
+            compact_pending: AtomicBool::new(false),
             stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
         })))
@@ -754,7 +763,7 @@ impl Keyspace {
             keyspace: self.clone(),
         }));
 
-        self.worker_messager.send(WorkerMessage::Flush).ok();
+        self.poke_workers();
 
         {
             // NOTE: If the difference between watermark is too large, and
@@ -823,16 +832,43 @@ impl Keyspace {
     }
 
     pub(crate) fn request_rotation(&self) {
-        let lock = self.tree.get_version_history_lock();
-        let latest_version = lock.latest_version();
-        let active_memtable = &latest_version.active_memtable;
+        if self
+            .rotate_pending
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        self.poke_workers();
+    }
 
-        self.worker_messager
-            .try_send(WorkerMessage::RotateMemtable(
-                self.clone(),
-                active_memtable.id(),
-            ))
-            .ok();
+    pub(crate) fn poke_workers(&self) {
+        self.worker_wake.try_send(()).ok();
+    }
+
+    pub(crate) fn request_compact(&self) {
+        if self
+            .compact_pending
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        self.poke_workers();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_is_pending(&self) -> bool {
+        self.compact_pending
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn take_rotate_pending(&self) -> bool {
+        self.rotate_pending
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn take_compact_pending(&self) -> bool {
+        self.compact_pending
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {

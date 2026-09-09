@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{worker_pool::WorkerMessage, Keyspace};
+use crate::Keyspace;
 use lsm_tree::{AnyIngestion, UserKey, UserValue};
 
 pub struct Ingestion<'a> {
@@ -54,10 +54,7 @@ impl<'a> Ingestion<'a> {
         self.inner
             .finish()
             .inspect(|()| {
-                self.keyspace
-                    .worker_messager
-                    .try_send(WorkerMessage::Compact(self.keyspace.clone()))
-                    .ok();
+                self.keyspace.request_compact();
 
                 self.keyspace.supervisor.snapshot_tracker.gc();
             })

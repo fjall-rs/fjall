@@ -68,7 +68,7 @@ fn keyspace_ingest() -> crate::Result<()> {
     assert_eq!(15, items.len()?);
     assert_eq!(4, items.table_count());
 
-    while !db.worker_pool.sender.is_empty() {}
+    while !db.worker_pool.wake.is_empty() {}
     assert_eq!(1, items.table_count());
 
     Ok(())

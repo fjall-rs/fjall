@@ -19,7 +19,7 @@ use crate::{
     supervisor::{Supervisor, SupervisorInner},
     tx::single_writer::Openable,
     version::FormatVersion,
-    worker_pool::{WorkerMessage, WorkerPool},
+    worker_pool::WorkerPool,
     write_buffer_manager::WriteBufferManager,
     HashMap, Keyspace, KeyspaceCreateOptions,
 };
@@ -66,19 +66,14 @@ impl Drop for DatabaseInner {
 
         self.stop_signal.send();
 
-        let _ = self.worker_pool.rx.drain().count();
-
         while self
             .active_thread_counter
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
+            self.worker_pool.poke();
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
-
-        // Drain again after threads are closed
-        let _ = self.worker_pool.rx.drain().count();
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
@@ -779,17 +774,14 @@ impl Database {
                         keyspace: keyspace.clone(),
                     }));
 
-                keyspace.worker_messager.send(WorkerMessage::Flush).ok();
+                keyspace.poke_workers();
             } else if keyspace.tree.l0_run_count() > 0 {
                 log::debug!(
                     "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
                     keyspace.name(),
                 );
 
-                keyspace
-                    .worker_messager
-                    .send(WorkerMessage::Compact(keyspace.clone()))
-                    .ok();
+                keyspace.request_compact();
             }
         }
 
@@ -799,6 +791,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         log::trace!("Database recovery successful");
@@ -906,6 +899,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            &db.stop_signal,
         )?;
 
         Ok(db)

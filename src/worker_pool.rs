@@ -3,12 +3,15 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as run_flush, poison::PoisonDart,
-    stats::Stats, supervisor::Supervisor, Keyspace,
+    compaction::worker::run as run_compaction,
+    flush::{worker::run as run_flush, Task as FlushTask},
+    poison::PoisonDart,
+    stats::Stats,
+    supervisor::Supervisor,
+    Keyspace,
 };
-use lsm_tree::MemtableId;
+use lsm_tree::AbstractTree;
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicUsize, Ordering::Relaxed},
         Arc, Mutex,
@@ -16,46 +19,28 @@ use std::{
     thread::JoinHandle,
 };
 
-pub enum WorkerMessage {
-    Flush,
-    Compact(Keyspace),
-    Close,
-    RotateMemtable(Keyspace, MemtableId),
-}
-
-impl std::fmt::Debug for WorkerMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
-                Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
-                Self::Close => Cow::Borrowed("WorkerMessage:Close"),
-                Self::RotateMemtable(k, memtable_id) =>
-                    Cow::Owned(format!("WorkerMessage:Rotate({:?}, {memtable_id})", k.name)),
-            }
-        )
-    }
-}
-
 type WorkerHandle = JoinHandle<Result<(), crate::Error>>;
 
 pub struct WorkerPool {
     thread_handles: Mutex<Vec<WorkerHandle>>,
-    pub(crate) rx: flume::Receiver<WorkerMessage>,
-    pub(crate) sender: flume::Sender<WorkerMessage>,
+    /// One slot. Extra pokes while a worker is already awake are dropped.
+    pub(crate) wake: flume::Sender<()>,
+    wake_rx: flume::Receiver<()>,
 }
 
 impl WorkerPool {
     pub fn prepare() -> Self {
-        let (sender, rx) = flume::bounded(1_000);
+        let (wake, wake_rx) = flume::bounded(1);
 
         Self {
             thread_handles: Mutex::default(),
-            rx,
-            sender,
+            wake,
+            wake_rx,
         }
+    }
+
+    pub(crate) fn poke(&self) {
+        self.wake.try_send(()).ok();
     }
 
     pub fn start(
@@ -65,6 +50,7 @@ impl WorkerPool {
         stats: &Arc<Stats>,
         poison_dart: &PoisonDart,
         thread_counter: &Arc<AtomicUsize>,
+        stop: &lsm_tree::stop_signal::StopSignal,
     ) -> crate::Result<()> {
         log::debug!("Starting worker pool with {pool_size} threads");
 
@@ -75,12 +61,11 @@ impl WorkerPool {
                     log::trace!("Starting fjall worker thread #{i}");
 
                     let worker_state = WorkerState {
-                        pool_size,
-                        worker_id: i,
-                        rx: self.rx.clone(),
+                        wake: self.wake.clone(),
+                        wake_rx: self.wake_rx.clone(),
                         supervisor: supervisor.clone(),
                         stats: stats.clone(),
-                        sender: self.sender.clone(),
+                        stop: stop.clone(),
                     };
 
                     let thread_counter = thread_counter.clone();
@@ -158,106 +143,122 @@ impl Drop for ActiveThreadGuard {
 }
 
 struct WorkerState {
-    pool_size: usize,
-    worker_id: usize,
     supervisor: Supervisor,
-    rx: flume::Receiver<WorkerMessage>,
-    sender: flume::Sender<WorkerMessage>,
+    wake: flume::Sender<()>,
+    wake_rx: flume::Receiver<()>,
     stats: Arc<Stats>,
+    stop: lsm_tree::stop_signal::StopSignal,
+}
+
+impl WorkerState {
+    fn poke(&self) {
+        self.wake.try_send(()).ok();
+    }
 }
 
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
-    let Ok(item) = ctx.rx.recv() else {
+    if ctx.stop.is_stopped() {
         return Ok(true);
-    };
+    }
 
-    log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
+    if let Some(task) = ctx.supervisor.flush_manager.dequeue() {
+        ctx.poke();
+        process_one_flush(ctx, task.as_ref())?;
+        return Ok(false);
+    }
 
-    match item {
-        WorkerMessage::Close => {
-            return Ok(true);
-        }
-        WorkerMessage::RotateMemtable(keyspace, memtable_id) => {
+    if run_pending_keyspace_work(ctx)? {
+        ctx.poke();
+        return Ok(false);
+    }
+
+    if ctx.stop.is_stopped() {
+        return Ok(true);
+    }
+
+    Ok(ctx.wake_rx.recv().is_err())
+}
+
+fn run_pending_keyspace_work(ctx: &WorkerState) -> crate::Result<bool> {
+    let keyspaces: Vec<Keyspace> = ctx
+        .supervisor
+        .keyspaces
+        .read()
+        .expect("lock is poisoned")
+        .values()
+        .cloned()
+        .collect();
+
+    for keyspace in keyspaces {
+        if keyspace.take_rotate_pending() {
             log::trace!("acquiring journal lock");
             let journal_writer = keyspace.supervisor.journal.get_writer()?;
+            let memtable_id = keyspace.tree.active_memtable().id();
             keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
+            return Ok(true);
         }
-        WorkerMessage::Flush => {
-            let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
-                return Ok(false);
-            };
 
-            {
-                log::trace!("acquiring journal lock to maybe rotate journal");
-                let mut journal_writer = ctx.supervisor.journal.get_writer()?;
-
-                if journal_writer.pos()? > 64_000_000 {
-                    #[expect(clippy::expect_used)]
-                    let mut journal_manager = ctx
-                        .supervisor
-                        .journal_manager
-                        .write()
-                        .expect("lock is poisoned");
-
-                    let seqno_map = {
-                        #[expect(clippy::expect_used)]
-                        let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
-
-                        ctx.supervisor.build_seqno_map(&keyspaces)
-                    };
-
-                    journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
-
-                    if journal_manager.disk_space_used()
-                        >= ctx.supervisor.db_config.max_journaling_size_in_bytes
-                    {
-                        let stragglers =
-                            journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
-
-                        for keyspace in stragglers {
-                            log::info!(
-                                "Rotating {:?} to try to reduce journal size",
-                                keyspace.name,
-                            );
-                            keyspace.request_rotation();
-                        }
-                    }
-                }
-            }
-
-            run_flush(
-                &task,
-                &ctx.supervisor.write_buffer_size,
-                &ctx.supervisor.snapshot_tracker,
-                &ctx.stats,
-            )?;
-
-            for _ in 0..ctx.pool_size {
-                ctx.sender
-                    .try_send(WorkerMessage::Compact(task.keyspace.clone()))
-                    .ok();
-            }
-
-            ctx.supervisor
-                .journal_manager
-                .write()
-                .expect("lock is poisoned")
-                .maintenance()?;
-        }
-        WorkerMessage::Compact(keyspace) => {
-            // NOTE: Let one worker prioritize flushing if there are pending flushes
-            //
-            // Disable when only 1 worker exists to avoid deadlock
-            if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
-                return Ok(false);
-            }
-
+        if keyspace.take_compact_pending() {
             run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
+            return Ok(true);
         }
     }
 
     Ok(false)
+}
+
+fn process_one_flush(ctx: &WorkerState, task: &FlushTask) -> crate::Result<()> {
+    {
+        log::trace!("acquiring journal lock to maybe rotate journal");
+        let mut journal_writer = ctx.supervisor.journal.get_writer()?;
+
+        if journal_writer.pos()? > 64_000_000 {
+            #[expect(clippy::expect_used)]
+            let mut journal_manager = ctx
+                .supervisor
+                .journal_manager
+                .write()
+                .expect("lock is poisoned");
+
+            let seqno_map = {
+                #[expect(clippy::expect_used)]
+                let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
+
+                ctx.supervisor.build_seqno_map(&keyspaces)
+            };
+
+            journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+
+            if journal_manager.disk_space_used()
+                >= ctx.supervisor.db_config.max_journaling_size_in_bytes
+            {
+                let stragglers =
+                    journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
+
+                for keyspace in stragglers {
+                    log::info!("Rotating {:?} to try to reduce journal size", keyspace.name,);
+                    keyspace.request_rotation();
+                }
+            }
+        }
+    }
+
+    run_flush(
+        task,
+        &ctx.supervisor.write_buffer_size,
+        &ctx.supervisor.snapshot_tracker,
+        &ctx.stats,
+    )?;
+
+    task.keyspace.request_compact();
+
+    ctx.supervisor
+        .journal_manager
+        .write()
+        .expect("lock is poisoned")
+        .maintenance()?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -293,15 +294,10 @@ mod tests {
                 .worker_threads_unchecked(0)
                 .open()?;
 
-            assert_eq!(
-                1,
-                db.worker_pool.rx.len(),
-                "worker message should be enqueued on startup",
-            );
-            let item = db.worker_pool.rx.try_recv().expect("should get message");
+            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
             assert!(
-                matches!(item, WorkerMessage::Compact(_)),
-                "worker message should be compaction request",
+                ks.compact_is_pending(),
+                "compaction should be pending on startup when L0 exists",
             );
         }
 
