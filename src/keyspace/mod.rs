@@ -26,8 +26,11 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, MutexGuard},
-    time::Duration,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, MutexGuard,
+    },
+    time::{Duration, Instant},
 };
 use write_delay::perform_write_stall;
 
@@ -794,7 +797,20 @@ impl Keyspace {
     }
 
     fn check_write_halt(&self) {
+        let mut next_attempt = Instant::now();
         while self.tree.l0_run_count() >= 30 {
+            if Instant::now() >= next_attempt {
+                // A worker may finish the last queued pass at the write-halt
+                // threshold without lowering L0. Keep one compaction pending.
+                if self.worker_messager.is_empty()
+                    && self.stats.active_compaction_count.load(Ordering::Relaxed) == 0
+                {
+                    self.worker_messager
+                        .try_send(WorkerMessage::Compact(self.clone()))
+                        .ok();
+                }
+                next_attempt = Instant::now() + Duration::from_millis(250);
+            }
             std::thread::sleep(Duration::from_millis(10));
         }
     }
