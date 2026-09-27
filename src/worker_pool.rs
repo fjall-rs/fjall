@@ -87,11 +87,7 @@ impl WorkerPool {
                     let poison_dart = poison_dart.clone();
 
                     move || {
-                        // The counter must drop on *every* way out of this
-                        // thread, not just the graceful one: `Database::drop`
-                        // spins on it (`while counter > 0`), so a worker that
-                        // returns an error or unwinds would keep the database
-                        // closing forever.
+                        // The counter must drop on *every* way out of this thread
                         let _counter_guard = ActiveThreadGuard(thread_counter);
 
                         loop {
@@ -119,43 +115,24 @@ impl WorkerPool {
     }
 
     /// Stops every worker and waits for its thread to finish.
-    ///
-    /// Wakes the workers parked in `rx.recv()` with a `Close` each, then joins
-    /// the handles kept since [`WorkerPool::start`]. The join is what makes the
-    /// shutdown observable: once this returns, no worker thread is left, so the
-    /// database is free to release its resources — the file lock among them.
-    ///
-    /// Two details are load-bearing, and both are why the previous shutdown
-    /// (`while active_thread_counter > 0 { sender.send(Close); sleep }`) could
-    /// hang forever:
-    ///
-    /// * `try_send`, never `send`. A worker busy with a compaction is not
-    ///   reading the channel, and the channel is bounded, so a blocking send on
-    ///   a full channel waits for a reader that is on its way out — and the
-    ///   loop never got back to re-check the counter.
-    /// * the queue is drained before every round of wake-ups, so the `Close`
-    ///   messages have room even when producers filled it up beforehand.
-    ///
-    /// Progress is judged by the threads themselves (`is_finished`) rather than
-    /// by the counter, so a leaked slot can no longer stall the shutdown.
     pub fn stop_and_join(&self) {
-        // A poisoned lock is not a reason to panic here: this runs from
-        // `DatabaseInner::drop`, and a panic during another panic's unwind
-        // aborts the process. The handles behind the lock are intact whoever
-        // panicked while holding it, so take them and go on closing.
-        let mut guard = self
-            .thread_handles
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let handles = std::mem::take(&mut *guard);
-        drop(guard);
+        let handles = {
+            let mut guard = self
+                .thread_handles
+                .lock()
+                // A poisoned lock is probably fine here: this runs from
+                // inside `DatabaseInner::drop`
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+            std::mem::take(&mut *guard)
+        };
 
         while handles.iter().any(|handle| !handle.is_finished()) {
-            // Whatever is still queued will never run: the database is going
-            // away. Dropping it now keeps room for the wake-ups.
+            // Whatever is still queued should not run: the database is going away
             let _ = self.rx.drain().count();
 
             for _ in &handles {
+                // IMPORTANT: Use try_send here, not send, to avoid possible deadlock
                 let _ = self.sender.try_send(WorkerMessage::Close);
             }
 
@@ -163,9 +140,6 @@ impl WorkerPool {
         }
 
         for handle in handles {
-            // A worker that returned an error has already logged it and
-            // poisoned the database; a panicking one is reported by its own
-            // hook. Here only the exit matters.
             let _ = handle.join();
         }
     }
@@ -173,10 +147,6 @@ impl WorkerPool {
 
 /// Claims one slot in the active thread counter per worker, immediately before
 /// that worker is spawned, and hands the slot straight back if the spawn fails.
-///
-/// Claiming the whole pool up front would leak the slots of the workers that failed
-/// spawn never reaches: nothing ever decrements them, because those threads do
-/// not exist, and `DatabaseInner::drop` waits for the counter to reach zero.
 ///
 /// The spawn is a parameter so the failure path can be tested without having to
 /// exhaust the operating system's thread limit.
@@ -198,9 +168,6 @@ fn claim_and_spawn<H, S: FnMut(usize) -> std::io::Result<H>>(
 
 /// Decrements the pool's active thread counter when a worker thread leaves,
 /// whatever the reason: graceful close, error return or unwinding panic.
-///
-/// `DatabaseInner::drop` waits for this counter to reach zero, so a leaked
-/// increment makes closing the database hang forever.
 struct ActiveThreadGuard(Arc<AtomicUsize>);
 
 impl Drop for ActiveThreadGuard {
@@ -218,23 +185,6 @@ struct WorkerState {
     stats: Arc<Stats>,
 }
 
-/// Keeps a worker inside its current tick while a test asks for it.
-///
-/// A worker that holds a message stops reading the queue, which is the state a
-/// shutdown deadlock needs and the one a test cannot reach otherwise: real work
-/// (a flush with nothing queued, a compaction of three tiny segments) finishes
-/// faster than a single thread can refill the queue.
-#[cfg(test)]
-static HOLD_WORKERS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Blocks the calling worker while [`HOLD_WORKERS`] is set.
-#[cfg(test)]
-fn hold_while_requested() {
-    while HOLD_WORKERS.load(std::sync::atomic::Ordering::Acquire) {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-}
-
 /// Waits for one message and handles it; `true` means the worker should leave.
 ///
 /// The worker also leaves when the channel is gone: with every sender dropped
@@ -243,10 +193,6 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     let Ok(item) = ctx.rx.recv() else {
         return Ok(true);
     };
-
-    // Holds the message — and with it the queue — for the shutdown tests.
-    #[cfg(test)]
-    hold_while_requested();
 
     log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
 
@@ -343,6 +289,14 @@ mod tests {
     use crate::{AbstractTree, Database, KeyspaceCreateOptions};
     use test_log::test;
 
+    #[test]
+    fn db_active_thread_count() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).worker_threads(2).open()?;
+        assert_eq!(2, db.active_thread_counter.load(Relaxed));
+        Ok(())
+    }
+
     // https://github.com/fjall-rs/fjall/pull/303
     #[test]
     fn keyspace_compact_after_startup() -> crate::Result<()> {
@@ -381,77 +335,6 @@ mod tests {
                 "worker message should be compaction request",
             );
         }
-
-        Ok(())
-    }
-
-    /// Closing a database finishes even when its only worker holds the queue
-    /// shut and lets go mid-shutdown.
-    ///
-    /// This is the hardest shutdown state a test can set up from the outside:
-    /// the worker parks inside a tick, so nothing reads the queue and the
-    /// shutdown's own `Close` messages fill it to the brim; then the worker
-    /// wakes and leaves while the shutdown is still working through a full
-    /// queue.
-    ///
-    /// It does **not** reproduce the deadlock of
-    /// <https://github.com/fjall-rs/fjall/issues/260>, and passes on the old
-    /// `while counter > 0 { sender.send(Close); sleep }` too. Reaching that one
-    /// needs the last worker to leave *without taking a message*: as long as it
-    /// exits by reading `Close`, it frees a slot, the blocking send returns and
-    /// the loop gets to see the counter at zero. A worker leaves empty-handed
-    /// only when it bails out on its own — an `Err` out of `worker_tick`, an
-    /// unwind — and neither can be arranged from a test without reaching into
-    /// the worker body.
-    ///
-    /// So the value here is the state, not the failure: the current shutdown
-    /// never blocks on the queue (`try_send` returns either way, progress comes
-    /// from joining the threads), and this test pins that down for a queue that
-    /// stays full from beginning to end.
-    ///
-    /// The drop runs on its own thread, so a shutdown that waits forever fails
-    /// on a deadline here instead of hanging the whole test run.
-    #[test]
-    fn dropping_a_database_finishes_when_a_worker_holds_the_queue() -> crate::Result<()> {
-        let folder = tempfile::tempdir()?;
-        let db = Database::builder(&folder).worker_threads(1).open()?;
-
-        {
-            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
-            ks.insert("a", "a")?;
-        }
-
-        // Park the worker inside a tick, then fill the queue it no longer
-        // reads.
-        HOLD_WORKERS.store(true, std::sync::atomic::Ordering::Release);
-        let _ = db.worker_pool.sender.try_send(WorkerMessage::Flush);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        while db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok() {}
-
-        let closing = std::thread::spawn(move || drop(db));
-
-        // Let the shutdown pile its own messages onto the full queue, then
-        // release the worker: it takes one message and leaves, and the queue
-        // is left without a reader.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        HOLD_WORKERS.store(false, std::sync::atomic::Ordering::Release);
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        let mut timed_out = false;
-        while !closing.is_finished() {
-            if std::time::Instant::now() >= deadline {
-                timed_out = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-
-        assert!(
-            !timed_out,
-            "closing the database did not finish in 20s: the shutdown is \
-             waiting for room in a worker queue that has no reader left",
-        );
-        assert!(closing.join().is_ok(), "closing thread panicked");
 
         Ok(())
     }

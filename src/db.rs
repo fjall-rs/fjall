@@ -61,27 +61,17 @@ pub struct DatabaseInner {
 }
 
 impl Drop for DatabaseInner {
-    /// Stops the background workers, then breaks the cyclic `Arc`s that keep
-    /// the supervisor alive.
-    ///
-    /// The order matters: workers hold keyspaces and journal handles, so they
-    /// have to be gone before those are cleared. The file lock goes last, with
-    /// `lock_file` — which is why this shutdown has to actually finish instead
-    /// of being abandoned halfway: whoever opens the same path next waits on
-    /// that lock.
     fn drop(&mut self) {
         log::debug!("Dropping database");
 
+        // We stop the background workers
         self.stop_signal.send();
 
-        // Waits for the worker threads themselves, see
-        // `WorkerPool::stop_and_join`. Polling `active_thread_counter` and
-        // pushing `Close` into a bounded channel with a blocking send could
-        // deadlock: a busy worker stops reading, the channel fills up, and the
-        // send waits for a reader that is about to leave.
+        // Workers hold keyspaces and journal handles, so they
+        // have to be gone before those are cleared
         self.worker_pool.stop_and_join();
 
-        // Drain again after threads are closed
+        // Drain after threads are closed
         let _ = self.worker_pool.rx.drain().count();
 
         // IMPORTANT: Break cyclic Arcs
