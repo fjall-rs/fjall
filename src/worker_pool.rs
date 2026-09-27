@@ -116,6 +116,8 @@ impl WorkerPool {
 
     /// Stops every worker and waits for its thread to finish.
     pub fn stop_and_join(&self) {
+        log::debug!("Joining worker pool threads");
+
         let handles = {
             let mut guard = self
                 .thread_handles
