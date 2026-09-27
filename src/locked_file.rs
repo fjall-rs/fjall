@@ -12,7 +12,7 @@ struct LockedFileGuardInner(File);
 
 impl Drop for LockedFileGuardInner {
     fn drop(&mut self) {
-        log::debug!("Unlocking database lock");
+        log::info!("Unlocking database lock");
 
         self.0
             .unlock()

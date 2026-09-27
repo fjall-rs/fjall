@@ -56,8 +56,6 @@ pub struct DatabaseInner {
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
     pub worker_pool: WorkerPool,
-
-    pub(crate) lock_file: LockedFileGuard,
 }
 
 impl Drop for DatabaseInner {
@@ -73,13 +71,21 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+
         self.supervisor
             .keyspaces
             .write()
             .expect("lock is poisoned")
             .clear();
+
         self.supervisor
             .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .clear();
+
+        self.meta_keyspace
+            .keyspaces
             .write()
             .expect("lock is poisoned")
             .clear();
@@ -100,6 +106,8 @@ impl Drop for DatabaseInner {
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
+
+        log::trace!("Drop finished");
     }
 }
 
@@ -622,6 +630,7 @@ impl Database {
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
+            lock_file,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -638,7 +647,6 @@ impl Database {
             active_thread_counter,
             is_poisoned: PoisonSignal::default(),
             stats,
-            lock_file,
         };
 
         let db = Self(Arc::new(inner));
@@ -790,6 +798,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            db.stop_signal.clone(),
         )?;
 
         log::trace!("Database recovery successful");
@@ -871,6 +880,7 @@ impl Database {
             journal_manager: Arc::new(RwLock::new(JournalManager::new())),
             backpressure_lock: Mutex::default(),
             seqno,
+            lock_file,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -886,7 +896,6 @@ impl Database {
             active_thread_counter,
             is_poisoned: PoisonSignal::default(),
             stats,
-            lock_file,
         };
 
         let db = Self(Arc::new(inner));
@@ -897,6 +906,7 @@ impl Database {
             &db.stats,
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
+            db.stop_signal.clone(),
         )?;
 
         Ok(db)

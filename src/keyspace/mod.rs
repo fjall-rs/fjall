@@ -87,9 +87,6 @@ pub struct KeyspaceInner {
     pub(crate) stats: Arc<Stats>,
 
     pub(crate) worker_messager: flume::Sender<WorkerMessage>,
-
-    #[expect(unused)]
-    lock_file: LockedFileGuard,
 }
 
 impl Drop for KeyspaceInner {
@@ -319,7 +316,6 @@ impl Keyspace {
             worker_messager: db.worker_pool.sender.clone(),
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
-            lock_file: db.lock_file.clone(),
             stats: db.stats.clone(),
         }))
     }
@@ -362,7 +358,6 @@ impl Keyspace {
             is_deleted: AtomicBool::default(),
             is_poisoned: db.is_poisoned.clone(),
             stats: db.stats.clone(),
-            lock_file: db.lock_file.clone(),
         })))
     }
 

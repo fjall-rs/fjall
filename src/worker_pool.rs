@@ -65,6 +65,7 @@ impl WorkerPool {
         stats: &Arc<Stats>,
         poison_dart: &PoisonDart,
         thread_counter: &Arc<AtomicUsize>,
+        stop_signal: lsm_tree::stop_signal::StopSignal,
     ) -> crate::Result<()> {
         log::debug!("Starting worker pool with {pool_size} threads");
 
@@ -81,6 +82,7 @@ impl WorkerPool {
                         supervisor: supervisor.clone(),
                         stats: stats.clone(),
                         sender: self.sender.clone(),
+                        stop_signal: stop_signal.clone(),
                     };
 
                     let thread_counter = thread_counter.clone();
@@ -95,6 +97,8 @@ impl WorkerPool {
                                 Ok(should_abort) => {
                                     if should_abort {
                                         log::debug!("Worker #{i} closes because DB is dropping");
+                                        drop(worker_state);
+                                        log::debug!("Worker #{i} dropped supervisor Arc");
                                         return Ok(());
                                     }
                                 }
@@ -129,6 +133,8 @@ impl WorkerPool {
             std::mem::take(&mut *guard)
         };
 
+        log::trace!("Waiting for {} threads to close", handles.len());
+
         while handles.iter().any(|handle| !handle.is_finished()) {
             // Whatever is still queued should not run: the database is going away
             let _ = self.rx.drain().count();
@@ -138,7 +144,7 @@ impl WorkerPool {
                 let _ = self.sender.try_send(WorkerMessage::Close);
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         for handle in handles {
@@ -185,6 +191,7 @@ struct WorkerState {
     rx: flume::Receiver<WorkerMessage>,
     sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
+    stop_signal: lsm_tree::stop_signal::StopSignal,
 }
 
 /// Waits for one message and handles it; `true` means the worker should leave.
@@ -192,7 +199,12 @@ struct WorkerState {
 /// The worker also leaves when the channel is gone: with every sender dropped
 /// there is nobody left to ask it for work.
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
+    if ctx.stop_signal.is_stopped() {
+        return Ok(true);
+    }
+
     let Ok(item) = ctx.rx.recv() else {
+        // Channel is closed - should never happen
         return Ok(true);
     };
 

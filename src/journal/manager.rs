@@ -111,10 +111,15 @@ impl JournalManager {
         items
     }
 
-    /// Performs maintenance, maybe deleting some old journals
     pub(crate) fn maintenance(&mut self) -> crate::Result<()> {
         log::debug!("Running journal maintenance");
+        self.inner_maintenance()?;
+        log::debug!("Journal maintenance done");
+        Ok(())
+    }
 
+    /// Performs maintenance, maybe deleting some old journals
+    fn inner_maintenance(&mut self) -> crate::Result<()> {
         loop {
             let Some(item) = self.items.first() else {
                 return Ok(());

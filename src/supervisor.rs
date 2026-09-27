@@ -2,15 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use lsm_tree::SequenceNumberCounter;
-
 use crate::{
     db::Keyspaces,
     flush::manager::FlushManager,
     journal::{manager::JournalManager, Journal},
+    locked_file::LockedFileGuard,
     snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
 };
+use lsm_tree::SequenceNumberCounter;
 use std::sync::{Arc, Mutex, RwLock};
 
 pub struct SupervisorInner {
@@ -33,10 +33,19 @@ pub struct SupervisorInner {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
 
     pub(crate) backpressure_lock: Mutex<()>,
+
+    #[expect(unused)]
+    pub(crate) lock_file: LockedFileGuard,
 }
 
 #[derive(Clone)]
 pub struct Supervisor(Arc<SupervisorInner>);
+
+impl Drop for SupervisorInner {
+    fn drop(&mut self) {
+        log::debug!("Dropping supervisor");
+    }
+}
 
 impl std::ops::Deref for Supervisor {
     type Target = SupervisorInner;
