@@ -69,10 +69,9 @@ impl Drop for DatabaseInner {
 
         // Workers hold keyspaces and journal handles, so they
         // have to be gone before those are cleared
+        log::debug!("Joining workers");
         self.worker_pool.stop_and_join();
-
-        // Drain after threads are closed
-        let _ = self.worker_pool.rx.drain().count();
+        log::debug!("Joined");
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
