@@ -87,11 +87,7 @@ impl WorkerPool {
                     let poison_dart = poison_dart.clone();
 
                     move || {
-                        // The counter must drop on *every* way out of this
-                        // thread, not just the graceful one: `Database::drop`
-                        // spins on it (`while counter > 0`), so a worker that
-                        // returns an error or unwinds would keep the database
-                        // closing forever.
+                        // The counter must drop on *every* way out of this thread
                         let _counter_guard = ActiveThreadGuard(thread_counter);
 
                         loop {
@@ -117,14 +113,40 @@ impl WorkerPool {
 
         Ok(())
     }
+
+    /// Stops every worker and waits for its thread to finish.
+    pub fn stop_and_join(&self) {
+        let handles = {
+            let mut guard = self
+                .thread_handles
+                .lock()
+                // A poisoned lock is probably fine here: this runs from
+                // inside `DatabaseInner::drop`
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+            std::mem::take(&mut *guard)
+        };
+
+        while handles.iter().any(|handle| !handle.is_finished()) {
+            // Whatever is still queued should not run: the database is going away
+            let _ = self.rx.drain().count();
+
+            for _ in &handles {
+                // IMPORTANT: Use try_send here, not send, to avoid possible deadlock
+                let _ = self.sender.try_send(WorkerMessage::Close);
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        for handle in handles {
+            let _ = handle.join();
+        }
+    }
 }
 
 /// Claims one slot in the active thread counter per worker, immediately before
 /// that worker is spawned, and hands the slot straight back if the spawn fails.
-///
-/// Claiming the whole pool up front would leak the slots of the workers that failed
-/// spawn never reaches: nothing ever decrements them, because those threads do
-/// not exist, and `DatabaseInner::drop` waits for the counter to reach zero.
 ///
 /// The spawn is a parameter so the failure path can be tested without having to
 /// exhaust the operating system's thread limit.
@@ -146,9 +168,6 @@ fn claim_and_spawn<H, S: FnMut(usize) -> std::io::Result<H>>(
 
 /// Decrements the pool's active thread counter when a worker thread leaves,
 /// whatever the reason: graceful close, error return or unwinding panic.
-///
-/// `DatabaseInner::drop` waits for this counter to reach zero, so a leaked
-/// increment makes closing the database hang forever.
 struct ActiveThreadGuard(Arc<AtomicUsize>);
 
 impl Drop for ActiveThreadGuard {
@@ -166,6 +185,10 @@ struct WorkerState {
     stats: Arc<Stats>,
 }
 
+/// Waits for one message and handles it; `true` means the worker should leave.
+///
+/// The worker also leaves when the channel is gone: with every sender dropped
+/// there is nobody left to ask it for work.
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
     let Ok(item) = ctx.rx.recv() else {
         return Ok(true);
@@ -265,6 +288,14 @@ mod tests {
     use super::*;
     use crate::{AbstractTree, Database, KeyspaceCreateOptions};
     use test_log::test;
+
+    #[test]
+    fn db_active_thread_count() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).worker_threads(2).open()?;
+        assert_eq!(2, db.active_thread_counter.load(Relaxed));
+        Ok(())
+    }
 
     // https://github.com/fjall-rs/fjall/pull/303
     #[test]

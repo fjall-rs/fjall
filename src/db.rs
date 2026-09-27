@@ -64,20 +64,14 @@ impl Drop for DatabaseInner {
     fn drop(&mut self) {
         log::debug!("Dropping database");
 
+        // We stop the background workers
         self.stop_signal.send();
 
-        let _ = self.worker_pool.rx.drain().count();
+        // Workers hold keyspaces and journal handles, so they
+        // have to be gone before those are cleared
+        self.worker_pool.stop_and_join();
 
-        while self
-            .active_thread_counter
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0
-        {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
-        }
-
-        // Drain again after threads are closed
+        // Drain after threads are closed
         let _ = self.worker_pool.rx.drain().count();
 
         // IMPORTANT: Break cyclic Arcs
