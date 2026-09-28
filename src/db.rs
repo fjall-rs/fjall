@@ -362,6 +362,38 @@ impl Database {
         Ok(())
     }
 
+    /// Returns `true` if the database is poisoned.
+    ///
+    /// A database is poisoned when a write could not be made durable: a
+    /// failed journal write or fsync, or a background worker that stopped
+    /// with an error. The flag is shared by the database and all of its
+    /// keyspaces, and it is never cleared — every subsequent write returns
+    /// [`Error::Poisoned`](crate::Error::Poisoned) until the process
+    /// reopens the database.
+    ///
+    /// Without this accessor the state can only be discovered by attempting
+    /// a write, so an application that wants to expose it — a health check,
+    /// a metric, an alert — has to keep its own copy of the flag, updated
+    /// from whichever write happened to fail first. Reads never report it,
+    /// which is exactly the case where the database keeps answering while
+    /// no new data can be stored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::Database;
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// let db = Database::builder(folder).open()?;
+    /// assert!(!db.is_poisoned());
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    #[must_use]
+    pub fn is_poisoned(&self) -> bool {
+        self.is_poisoned.is_poisoned()
+    }
+
     #[doc(hidden)]
     #[must_use]
     pub fn cache_capacity(&self) -> u64 {
@@ -909,5 +941,35 @@ impl Database {
         )?;
 
         Ok(db)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Database, KeyspaceCreateOptions};
+    use test_log::test;
+
+    /// A poisoned database says so, through the database handle and through
+    /// every keyspace opened on it, and it says so before a write is
+    /// attempted — that is the point of the accessor, since reads keep
+    /// answering while no write can succeed any more.
+    #[test]
+    fn poisoning_is_observable_without_a_write() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+        let keyspace = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        assert!(!db.is_poisoned());
+        assert!(!keyspace.is_poisoned());
+
+        db.is_poisoned.poison();
+
+        assert!(db.is_poisoned());
+        assert!(keyspace.is_poisoned());
+        assert!(matches!(
+            keyspace.insert("a", "a"),
+            Err(crate::Error::Poisoned)
+        ));
+
+        Ok(())
     }
 }
