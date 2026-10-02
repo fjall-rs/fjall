@@ -25,7 +25,9 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
     #[expect(clippy::expect_used)]
     let mut keyspaces_lock = db.supervisor.keyspaces.write().expect("lock is poisoned");
 
-    let mut highest_id = 1;
+    let mut highest_id = meta_keyspace
+        .get_keyspace_id_high_water_mark()?
+        .unwrap_or(1);
 
     for dirent in std::fs::read_dir(&keyspaces_folder)? {
         let dirent = dirent?;
@@ -110,6 +112,9 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
 
         log::trace!("Recovered keyspace {keyspace_name:?}");
     }
+
+    // Migrate databases created before the high-water mark was persisted.
+    meta_keyspace.persist_keyspace_id_high_water_mark(highest_id)?;
 
     db.keyspace_id_counter.set(highest_id + 1);
 

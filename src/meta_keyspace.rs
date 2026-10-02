@@ -39,6 +39,7 @@ pub fn encode_config_key(keyspace_id: InternalKeyspaceId, name: &str) -> crate::
 /// ```md
 /// 'c' + <keyspace_id> + <config_key> -> <serialized config parameter>
 /// 'n' + <keyspace_id>                -> <name as UTF-8 bytes>
+/// 'i'                                -> <highest allocated keyspace ID>
 /// ```
 #[derive(Clone)]
 pub struct MetaKeyspace {
@@ -85,6 +86,39 @@ impl MetaKeyspace {
         self.inner.get(key, SeqNo::MAX).map_err(Into::into)
     }
 
+    pub(crate) fn get_keyspace_id_high_water_mark(
+        &self,
+    ) -> crate::Result<Option<InternalKeyspaceId>> {
+        let Some(value) = self.inner.get(b"i", SeqNo::MAX)? else {
+            return Ok(None);
+        };
+
+        let value: [u8; std::mem::size_of::<InternalKeyspaceId>()] = value
+            .as_ref()
+            .try_into()
+            .map_err(|_| crate::Error::Unrecoverable)?;
+
+        Ok(Some(InternalKeyspaceId::from_be_bytes(value)))
+    }
+
+    pub(crate) fn persist_keyspace_id_high_water_mark(
+        &self,
+        keyspace_id: InternalKeyspaceId,
+    ) -> crate::Result<()> {
+        if self
+            .get_keyspace_id_high_water_mark()?
+            .is_some_and(|id| id >= keyspace_id)
+        {
+            return Ok(());
+        }
+
+        let mut ingestion = self.inner.ingestion()?;
+        ingestion.write(b"i".to_vec(), UserValue::new(&keyspace_id.to_be_bytes()))?;
+        ingestion.finish()?;
+
+        Ok(())
+    }
+
     fn maintenance(&self) -> crate::Result<()> {
         self.inner
             .compact(
@@ -106,6 +140,12 @@ impl MetaKeyspace {
         mut keyspaces: RwLockWriteGuard<'_, Keyspaces>,
     ) -> crate::Result<()> {
         let mut kvs = keyspace.config.encode_kvs(keyspace_id);
+
+        // Preserve the largest allocated ID even after its keyspace is deleted.
+        kvs.push((
+            b"i".to_vec().into(),
+            UserValue::new(&keyspace_id.to_be_bytes()),
+        ));
 
         kvs.push({
             let mut key: Vec<u8> =
@@ -362,13 +402,15 @@ mod tests {
 
             db.delete_keyspace(tree)?;
             assert!(!path.try_exists()?);
-            assert_eq!(0, db.meta_keyspace.len()?);
+            assert_eq!(1, db.meta_keyspace.len()?);
+            assert_eq!(Some(1), db.meta_keyspace.get_keyspace_id_high_water_mark()?);
         }
 
         {
             let db = Database::builder(&folder).open()?;
             assert!(!path.try_exists()?);
-            assert_eq!(0, db.meta_keyspace.len()?);
+            assert_eq!(1, db.meta_keyspace.len()?);
+            assert_eq!(Some(1), db.meta_keyspace.get_keyspace_id_high_water_mark()?);
         }
 
         Ok(())

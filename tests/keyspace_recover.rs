@@ -2,7 +2,10 @@ use fjall::config::{
     BlockSizePolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy, PinningPolicy,
     RestartIntervalPolicy,
 };
-use fjall::{AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{
+    AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions,
+    PersistMode,
+};
 use lsm_tree::compaction::CompactionStrategy;
 use std::sync::Arc;
 use test_log::test;
@@ -284,6 +287,39 @@ fn reload_with_keyspaces() -> fjall::Result<()> {
                 ITEM_COUNT * 2
             );
         }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn deleted_highest_keyspace_id_is_not_reused_after_recovery() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let _anchor = db.keyspace("anchor", KeyspaceCreateOptions::default)?;
+        let deleted = db.keyspace("deleted", KeyspaceCreateOptions::default)?;
+        deleted.insert("old-key", "old-value")?;
+        db.persist(PersistMode::SyncAll)?;
+    }
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let deleted = db.keyspace("deleted", KeyspaceCreateOptions::default)?;
+        db.delete_keyspace(deleted)?;
+    }
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let replacement = db.keyspace("replacement", KeyspaceCreateOptions::default)?;
+        assert_eq!(None, replacement.get("old-key")?);
+    }
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let replacement = db.keyspace("replacement", KeyspaceCreateOptions::default)?;
+        assert_eq!(None, replacement.get("old-key")?);
     }
 
     Ok(())
