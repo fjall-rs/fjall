@@ -302,11 +302,6 @@ fn deleted_highest_keyspace_id_is_not_reused_after_recovery() -> fjall::Result<(
         let deleted = db.keyspace("deleted", KeyspaceCreateOptions::default)?;
         deleted.insert("old-key", "old-value")?;
         db.persist(PersistMode::SyncAll)?;
-    }
-
-    {
-        let db = Database::builder(&folder).open()?;
-        let deleted = db.keyspace("deleted", KeyspaceCreateOptions::default)?;
         db.delete_keyspace(deleted)?;
     }
 
