@@ -191,6 +191,8 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                 log::trace!("acquiring journal lock to maybe rotate journal");
                 let mut journal_writer = ctx.supervisor.journal.get_writer()?;
 
+                let mut rotated = false;
+
                 if journal_writer.pos()? > 64_000_000 {
                     #[expect(clippy::expect_used)]
                     let mut journal_manager = ctx
@@ -207,6 +209,7 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     };
 
                     journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+                    rotated = true;
 
                     if journal_manager.disk_space_used()
                         >= ctx.supervisor.db_config.max_journaling_size_in_bytes
@@ -222,6 +225,11 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                             keyspace.request_rotation();
                         }
                     }
+                }
+
+                // https://github.com/fjall-rs/fjall/issues/329
+                if !rotated {
+                    journal_writer.persist(crate::PersistMode::SyncAll)?;
                 }
             }
 
