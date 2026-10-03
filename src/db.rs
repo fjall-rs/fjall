@@ -6,7 +6,7 @@ use crate::{
     batch::WriteBatch,
     db_config::Config,
     file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
-    flush::manager::FlushManager,
+    flush::{manager::FlushManager, worker::run as run_flush},
     journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
@@ -358,6 +358,60 @@ impl Database {
             );
             self.is_poisoned.poison();
         })?;
+
+        Ok(())
+    }
+
+    /// Synchronously flushes all keyspaces into LSM-tree tables and starts a new journal.
+    ///
+    /// This blocks writes and keyspace changes for the duration of the operation.
+    /// Reads may continue.
+    /// The database remains usable afterwards, and reopening it
+    /// does not need to replay writes preceding the flush.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O error occurs.
+    /// A failure poisons the database.
+    pub fn flush_all(&self) -> crate::Result<()> {
+        self.flush_all_inner().inspect_err(|e| {
+            log::error!("flush_all failed, database is poisoned: {e:?}");
+            self.is_poisoned.poison();
+        })
+    }
+
+    fn flush_all_inner(&self) -> crate::Result<()> {
+        let keyspaces = self.supervisor.keyspaces.read()?;
+        let mut journal = self.supervisor.journal.get_writer()?;
+
+        // Check after acquiring the journal lock so a concurrent failure cannot race us.
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        let watermarks = self.supervisor.build_seqno_map(&keyspaces);
+
+        self.supervisor
+            .journal_manager
+            .write()?
+            .rotate_journal(&mut journal, watermarks)?;
+
+        self.supervisor.snapshot_tracker.advance_gc_watermark();
+
+        for keyspace in keyspaces.values() {
+            // NOTE: lsm-tree checks for empty memtable, so we don't have to
+            keyspace.tree.rotate_memtable();
+            run_flush(
+                keyspace,
+                &self.supervisor.write_buffer_size,
+                &self.supervisor.snapshot_tracker,
+                &self.stats,
+            )?;
+        }
+
+        self.supervisor.flush_manager.clear();
+        self.supervisor.journal_manager.write()?.maintenance()?;
+        fsync_directory(&self.config.path)?;
 
         Ok(())
     }
