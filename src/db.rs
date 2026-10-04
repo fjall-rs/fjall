@@ -427,6 +427,22 @@ impl Database {
         Ok(())
     }
 
+    fn allocate_keyspace_id(&self) -> crate::Result<u64> {
+        let mut keyspace_id = self.keyspace_id_counter.next();
+
+        while self
+            .config
+            .path
+            .join(KEYSPACES_FOLDER)
+            .join(keyspace_id.to_string())
+            .try_exists()?
+        {
+            keyspace_id = self.keyspace_id_counter.next()
+        }
+
+        Ok(keyspace_id)
+    }
+
     /// Creates or opens a keyspace.
     ///
     /// If the keyspace does not yet exist, it will be created configured with `create_options`.
@@ -451,12 +467,12 @@ impl Database {
         let keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
+            log::trace!("Opening existing keyspace {name:?}");
             keyspace.clone()
         } else {
+            let keyspace_id = self.allocate_keyspace_id()?;
+
             let name: KeyspaceKey = name.into();
-
-            let keyspace_id = self.keyspace_id_counter.next();
-
             let mut opts = create_options();
 
             // Install compaction filter factory if needed
@@ -677,10 +693,12 @@ impl Database {
                 }
             }
 
+            let mut highest_encountered_keyspace_id = 0;
+
             // NOTE: We only need to recover the active journal, if it actually existed before
             // nothing to recover, if we just created it
             if !journal_recovery.was_active_created {
-                log::trace!("Recovering active memtables from active journal");
+                log::trace!("Replaying active journal");
 
                 let reader = db.supervisor.journal.get_reader()?;
 
@@ -688,6 +706,9 @@ impl Database {
                     let batch = batch?;
 
                     for item in batch.items {
+                        highest_encountered_keyspace_id =
+                            highest_encountered_keyspace_id.max(item.keyspace_id);
+
                         let Some(keyspace_name) = db.meta_keyspace.resolve_id(item.keyspace_id)?
                         else {
                             continue;
@@ -750,6 +771,14 @@ impl Database {
                     db.supervisor.seqno.fetch_max(maybe_next_seqno);
                     log::debug!("Database seqno is now {}", db.supervisor.seqno.get());
                 }
+
+                db.keyspace_id_counter
+                    .fetch_max(highest_encountered_keyspace_id + 1);
+
+                log::trace!(
+                    "Set keyspace id counter to {}",
+                    db.keyspace_id_counter.get(),
+                );
             }
         }
 

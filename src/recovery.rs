@@ -25,7 +25,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
     #[expect(clippy::expect_used)]
     let mut keyspaces_lock = db.supervisor.keyspaces.write().expect("lock is poisoned");
 
-    let mut highest_id = 1;
+    let mut highest_keyspace_id = 1;
 
     for dirent in std::fs::read_dir(&keyspaces_folder)? {
         let dirent = dirent?;
@@ -51,7 +51,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             continue;
         }
 
-        highest_id = highest_id.max(keyspace_id);
+        highest_keyspace_id = highest_keyspace_id.max(keyspace_id);
 
         let Some(keyspace_name) = meta_keyspace.resolve_id(keyspace_id)? else {
             log::debug!("Deleting unreferenced keyspace id={keyspace_id}");
@@ -59,7 +59,7 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             continue;
         };
 
-        log::trace!("Recovering keyspace {keyspace_id}");
+        log::trace!("Recovering keyspace with id={keyspace_id}");
 
         // NOTE: Check for marker, maybe the keyspace is not fully initialized
         if !keyspace_path
@@ -111,7 +111,12 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
         log::trace!("Recovered keyspace {keyspace_name:?}");
     }
 
-    db.keyspace_id_counter.set(highest_id + 1);
+    db.keyspace_id_counter.set(highest_keyspace_id + 1);
+
+    log::trace!(
+        "Set keyspace id counter to {}",
+        db.keyspace_id_counter.get(),
+    );
 
     Ok(())
 }
@@ -121,6 +126,8 @@ pub fn recover_sealed_memtables(
     db: &Database,
     sealed_journal_paths: &[PathBuf],
 ) -> crate::Result<()> {
+    let mut highest_encountered_keyspace_id = 0;
+
     #[expect(clippy::expect_used)]
     let mut journal_manager_lock = db
         .supervisor
@@ -136,7 +143,7 @@ pub fn recover_sealed_memtables(
 
         let journal_size = journal_path.metadata()?.len();
 
-        log::debug!("Reading sealed journal at {}", journal_path.display());
+        log::debug!("Replaying sealed journal at {}", journal_path.display());
 
         let raw_reader = JournalReader::new(journal_path)?;
         let reader = JournalBatchReader::new(raw_reader);
@@ -147,6 +154,9 @@ pub fn recover_sealed_memtables(
             let batch = batch?;
 
             for item in batch.items {
+                highest_encountered_keyspace_id =
+                    highest_encountered_keyspace_id.max(item.keyspace_id);
+
                 let Some(keyspace_name) = db.meta_keyspace.resolve_id(item.keyspace_id)? else {
                     continue;
                 };
@@ -265,6 +275,14 @@ pub fn recover_sealed_memtables(
 
         log::debug!("Requeued sealed journal at {}", journal_path.display());
     }
+
+    db.keyspace_id_counter
+        .fetch_max(highest_encountered_keyspace_id + 1);
+
+    log::trace!(
+        "Set keyspace id counter to {}",
+        db.keyspace_id_counter.get(),
+    );
 
     Ok(())
 }
