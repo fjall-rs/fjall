@@ -6,8 +6,8 @@ pub mod item;
 
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
-use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
-use std::collections::HashSet;
+use lsm_tree::{UserKey, UserValue, ValueType};
+use std::sync::Arc;
 
 /// An atomic write batch
 ///
@@ -65,14 +65,22 @@ impl WriteBatch {
 
     /// Inserts a key-value pair into the batch.
     pub fn insert<K: Into<UserKey>, V: Into<UserValue>>(&mut self, p: &Keyspace, key: K, value: V) {
-        self.data
-            .push(Item::new(p.clone(), key, value, ValueType::Value));
+        self.data.push(Item::new(
+            p.clone(),
+            key.into(),
+            value.into(),
+            ValueType::Value,
+        ));
     }
 
     /// Removes a key-value pair.
     pub fn remove<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
-        self.data
-            .push(Item::new(p.clone(), key, vec![], ValueType::Tombstone));
+        self.data.push(Item::new(
+            p.clone(),
+            key.into(),
+            UserValue::default(),
+            ValueType::Tombstone,
+        ));
     }
 
     /// Adds a weak tombstone marker for a key.
@@ -87,8 +95,12 @@ impl WriteBatch {
     /// This function is currently experimental.
     #[doc(hidden)]
     pub fn remove_weak<K: Into<UserKey>>(&mut self, p: &Keyspace, key: K) {
-        self.data
-            .push(Item::new(p.clone(), key, vec![], ValueType::WeakTombstone));
+        self.data.push(Item::new(
+            p.clone(),
+            key.into(),
+            UserValue::default(),
+            ValueType::WeakTombstone,
+        ));
     }
 
     /// Commits the batch to the [`Database`] atomically.
@@ -97,88 +109,13 @@ impl WriteBatch {
     ///
     /// Will return `Err` if an IO error occurs.
     #[allow(clippy::missing_panics_doc)]
-    pub fn commit(mut self) -> crate::Result<()> {
+    pub fn commit(self) -> crate::Result<()> {
         if self.is_empty() {
             return Ok(());
         }
 
-        log::trace!("batch: Acquiring journal writer");
-        let mut journal_writer = self.db.supervisor.journal.get_writer()?;
-
-        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.db.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
-
-        let batch_seqno = self.db.supervisor.seqno.next();
-
-        journal_writer
-            .write_batch(self.data.iter(), self.data.len(), batch_seqno)
-            .inspect_err(|e| {
-                log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}",
-                );
-                self.db.is_poisoned.poison();
-            })?;
-
-        if let Some(mode) = self.durability {
-            journal_writer.persist(mode).inspect_err(|e| {
-                log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}",
-                );
-                self.db.is_poisoned.poison();
-            })?;
-        }
-
-        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-        #[expect(clippy::mutable_key_type)]
-        let mut keyspaces_with_possible_stall = HashSet::new();
-
-        #[expect(clippy::expect_used)]
-        let keyspaces = self
-            .db
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned");
-
-        let mut batch_size = 0u64;
-
-        log::trace!("Applying batch (size={}) to memtable(s)", self.data.len());
-
-        for item in std::mem::take(&mut self.data) {
-            // TODO: need a better, generic write op
-            let (item_size, _) = match item.value_type {
-                ValueType::Value => item.keyspace.tree.insert(item.key, item.value, batch_seqno),
-                ValueType::Tombstone => item.keyspace.tree.remove(item.key, batch_seqno),
-                ValueType::WeakTombstone => item.keyspace.tree.remove_weak(item.key, batch_seqno),
-                ValueType::Indirection => unreachable!(),
-            };
-
-            batch_size += item_size;
-
-            // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
-            keyspaces_with_possible_stall.insert(item.keyspace.clone());
-        }
-
-        self.db.supervisor.snapshot_tracker.publish(batch_seqno);
-
-        drop(journal_writer);
-
-        log::trace!("batch: Freed journal writer");
-
-        drop(keyspaces);
-
-        // IMPORTANT: Add batch size to current write buffer size
-        // Otherwise write buffer growth is unbounded when using batches
-        self.db.supervisor.write_buffer_size.allocate(batch_size);
-
-        // Check each affected keyspace for write stall/halt
-        for keyspace in &keyspaces_with_possible_stall {
-            let memtable_size = keyspace.tree.active_memtable().size();
-            keyspace.check_memtable_rotate(memtable_size);
-            keyspace.local_backpressure();
-        }
+        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(self.data));
+        self.db.supervisor.write_pipeline.commit(write_record);
 
         Ok(())
     }

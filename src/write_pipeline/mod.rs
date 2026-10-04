@@ -58,7 +58,7 @@ impl WritePipeline {
         }
     }
 
-    pub fn push(&self, record: Arc<WriteRecord>) {
+    pub fn commit(&self, record: Arc<WriteRecord>) {
         let lock = self.lock.read().unwrap();
 
         while self.queue.try_push(record.clone()).is_none() {}
@@ -139,7 +139,9 @@ impl WritePipeline {
                 }
 
                 // TODO: fsync or whatever persist wants to do
-                // TODO: handle error
+                // TODO: to do that, we will need the max. durability level of all the
+                // items we have written previously
+                // TODO: also, handle error
                 journal_writer.persist(crate::PersistMode::Buffer).unwrap();
 
                 if let Some(seqno) = highest_seqno_published {

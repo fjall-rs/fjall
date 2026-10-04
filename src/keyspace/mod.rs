@@ -926,7 +926,7 @@ impl Keyspace {
         let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
             crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
         ]));
-        self.supervisor.write_pipeline.push(write_record);
+        self.supervisor.write_pipeline.commit(write_record);
 
         Ok(())
     }
@@ -969,38 +969,10 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer()?;
-
-        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
-
-        let seqno = self.supervisor.seqno.next();
-
-        journal_writer
-            .write_raw(self.id, &key, &[], lsm_tree::ValueType::Tombstone, seqno)
-            .inspect_err(|_| {
-                self.is_poisoned.poison();
-            })?;
-
-        if !self.config.manual_journal_persist {
-            journal_writer
-                .persist(crate::PersistMode::Buffer)
-                .inspect_err(|e| {
-                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
-                    self.is_poisoned.poison();
-                })?;
-        }
-
-        let (item_size, memtable_size) = self.tree.remove(key, seqno);
-
-        self.supervisor.snapshot_tracker.publish(seqno);
-
-        drop(journal_writer);
-
-        self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+            crate::batch::item::Item::new_tombstone(self.clone(), key, false),
+        ]));
+        self.supervisor.write_pipeline.commit(write_record);
 
         Ok(())
     }
@@ -1055,46 +1027,10 @@ impl Keyspace {
 
         let key = key.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer()?;
-
-        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
-
-        let seqno = self.supervisor.seqno.next();
-
-        journal_writer
-            .write_raw(
-                self.id,
-                &key,
-                &[],
-                lsm_tree::ValueType::WeakTombstone,
-                seqno,
-            )
-            .inspect_err(|_| {
-                self.is_poisoned.poison();
-            })?;
-
-        if !self.config.manual_journal_persist {
-            journal_writer
-                .persist(crate::PersistMode::Buffer)
-                .inspect_err(|e| {
-                    log::error!(
-                        "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}"
-                    );
-                    self.is_poisoned.poison();
-                })?;
-        }
-
-        let (item_size, memtable_size) = self.tree.remove(key, seqno);
-
-        self.supervisor.snapshot_tracker.publish(seqno);
-
-        drop(journal_writer);
-
-        self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+            crate::batch::item::Item::new_tombstone(self.clone(), key, true),
+        ]));
+        self.supervisor.write_pipeline.commit(write_record);
 
         Ok(())
     }

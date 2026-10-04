@@ -14,7 +14,7 @@ use crate::{
     poison::{PoisonDart, PoisonSignal},
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
-    snapshot_tracker::{self, SnapshotTracker},
+    snapshot_tracker::SnapshotTracker,
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
     tx::single_writer::Openable,
