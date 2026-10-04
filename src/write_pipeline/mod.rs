@@ -1,39 +1,60 @@
 mod fifo;
 
 use fifo::Queue;
+use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
 use std::sync::{
     atomic::{AtomicBool, AtomicU8},
     Arc, RwLock,
 };
 
+use crate::{
+    journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
+};
+
+type WriteItem = crate::batch::item::Item;
+
 pub struct WriteRecord {
     state: AtomicU8,
     persist_mode: u8,
-    batch: (), // TODO: should be enum { item: WriteItem | batch: Vec<WriteItem> }
+    // TODO: should be enum { item: WriteItem | batch: Vec<WriteItem> }
+    batch: Vec<WriteItem>,
 }
 
 impl WriteRecord {
-    pub fn new() -> Self {
+    pub fn new(batch: Vec<WriteItem>) -> Self {
         WriteRecord {
             state: AtomicU8::default(),
             persist_mode: 0,
-            batch: (),
+            batch,
         }
     }
 }
 
-pub struct Pipeline {
+pub struct WritePipeline {
+    write_buffer_size: WriteBufferManager,
+    seqno: SequenceNumberCounter,
+    snapshot_tracker: SnapshotTracker,
+    journal: Arc<Journal>,
     queue: Queue<Arc<WriteRecord>>,
     master_lease: AtomicBool,
     lock: RwLock<()>,
 }
 
-impl Pipeline {
-    pub fn new() -> Self {
+impl WritePipeline {
+    pub fn new(
+        journal: Arc<Journal>,
+        seqno: SequenceNumberCounter,
+        snapshot_tracker: SnapshotTracker,
+        write_buffer_size: WriteBufferManager,
+    ) -> Self {
         Self {
             queue: Queue::with_capacity(1_024),
             master_lease: AtomicBool::new(true),
             lock: RwLock::default(),
+            journal,
+            seqno,
+            snapshot_tracker,
+            write_buffer_size,
         }
     }
 
@@ -58,21 +79,74 @@ impl Pipeline {
             if is_master {
                 // eprintln!("became leader");
 
+                let mut journal_writer = self.journal.get_writer().expect("lock is poisoned");
+
+                // TODO: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+
+                let mut highest_seqno_published = None;
+
                 // Process records
                 for _ in 0..1_000 {
                     // TODO: sum up batch sizes up until 1 MB or so...
 
-                    let Some(item) = self.queue.try_pop() else {
+                    let Some(write_record) = self.queue.try_pop() else {
                         break;
                     };
 
-                    // TODO: process write batch, e.g. get seqno etc.
+                    let batch_seqno = self.seqno.next();
 
-                    item.state.store(1, std::sync::atomic::Ordering::Release);
+                    journal_writer
+                        .write_batch(
+                            write_record.batch.iter(),
+                            write_record.batch.len(),
+                            batch_seqno,
+                        )
+                        // TODO: handle error
+                        .unwrap();
+
+                    let mut batch_size = 0;
+
+                    // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do
+                    for item in &write_record.batch {
+                        let item = item.clone();
+
+                        // TODO: need a better, generic write op
+                        let (item_size, _) = match item.value_type {
+                            ValueType::Value => {
+                                item.keyspace.tree.insert(item.key, item.value, batch_seqno)
+                            }
+                            ValueType::Tombstone => {
+                                item.keyspace.tree.remove(item.key, batch_seqno)
+                            }
+                            ValueType::WeakTombstone => {
+                                item.keyspace.tree.remove_weak(item.key, batch_seqno)
+                            }
+                            ValueType::Indirection => unreachable!(),
+                        };
+
+                        batch_size += item_size;
+                    }
+
+                    write_record
+                        .state
+                        .store(1, std::sync::atomic::Ordering::Release);
+
+                    highest_seqno_published = Some(batch_seqno);
+
+                    self.write_buffer_size.allocate(batch_size);
+
+                    // TODO: how to do write stalling etc.
                 }
 
                 // TODO: fsync or whatever persist wants to do
-                // TODO: also publish to snapshot tracker etc. (basically whatever the original write path is doing)
+                // TODO: handle error
+                journal_writer.persist(crate::PersistMode::Buffer).unwrap();
+
+                if let Some(seqno) = highest_seqno_published {
+                    self.snapshot_tracker.publish(seqno);
+                }
+
+                drop(journal_writer);
 
                 {
                     let _lock = self.lock.write().unwrap();
@@ -95,7 +169,7 @@ impl Pipeline {
                     let state = record.state.load(std::sync::atomic::Ordering::Relaxed);
 
                     match state {
-                        1 => return,
+                        1 => break,
                         2 => {
                             is_master = true;
                             continue 'start;
@@ -103,6 +177,10 @@ impl Pipeline {
                         _ => {}
                     }
                 }
+
+                // TODO: Wait batch is visible...
+
+                return;
             }
         }
     }

@@ -11,7 +11,9 @@ struct Slot<T> {
     published: AtomicBool,
 }
 
+#[expect(unsafe_code)]
 unsafe impl<T> Sync for Queue<T> {}
+#[expect(unsafe_code)]
 unsafe impl<T> Send for Queue<T> {}
 
 /// A bounded, FIFO MPSC queue
@@ -90,6 +92,7 @@ impl<T> Queue<T> {
                     let slot = &self.slots[idx];
 
                     // SAFETY: We won the CAS, and are setting a value
+                    #[expect(unsafe_code)]
                     unsafe {
                         *slot.data.get() = MaybeUninit::new(item);
                     }
@@ -119,6 +122,7 @@ impl<T> Queue<T> {
 
         // SAFETY: We set published=true after pushing a value
         // We set published=false after popping a value
+        #[expect(unsafe_code)]
         let value = unsafe { self.slots[idx].data.get().read().assume_init() };
 
         slot.published.store(false, Ordering::Release);
@@ -140,8 +144,12 @@ impl<T> Queue<T> {
         }
 
         // SAFETY: Uhhh
-        let ptr = slot.data.get().cast();
-        let ptr = unsafe { &*(ptr as *const T) };
+        #[expect(unsafe_code)]
+        let ptr = {
+            let ptr = slot.data.get().cast();
+            unsafe { &*(ptr as *const T) }
+        };
+
         Some(ptr)
     }
 }
@@ -159,6 +167,9 @@ impl<T> Drop for Queue<T> {
             let slot = &self.slots[idx];
 
             if slot.published.load(Ordering::Acquire) {
+                // TODO: we can easily test this by putting in some values that increment a global counter when dropped
+                // -> setting one to published=false should set the counter to |values| - 1
+                #[expect(unsafe_code)]
                 unsafe {
                     std::ptr::drop_in_place((*slot.data.get()).as_mut_ptr());
                 }

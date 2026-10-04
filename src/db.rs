@@ -14,13 +14,14 @@ use crate::{
     poison::{PoisonDart, PoisonSignal},
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
-    snapshot_tracker::SnapshotTracker,
+    snapshot_tracker::{self, SnapshotTracker},
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
     tx::single_writer::Openable,
     version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
+    write_pipeline::WritePipeline,
     HashMap, Keyspace, KeyspaceCreateOptions,
 };
 use lsm_tree::{AbstractTree, SequenceNumberCounter};
@@ -637,16 +638,28 @@ impl Database {
             visible_seqno.clone(),
         );
 
+        let snapshot_tracker = SnapshotTracker::new(visible_seqno);
+
+        let write_buffer_size = WriteBufferManager::default();
+
+        let write_pipeline = WritePipeline::new(
+            active_journal.clone(),
+            seqno.clone(),
+            snapshot_tracker.clone(),
+            write_buffer_size.clone(),
+        );
+
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
-            write_buffer_size: WriteBufferManager::default(),
-            snapshot_tracker: SnapshotTracker::new(visible_seqno),
+            write_buffer_size,
+            snapshot_tracker,
             journal: active_journal,
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
+            write_pipeline,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -899,16 +912,28 @@ impl Database {
             visible_seqno.clone(),
         );
 
+        let snapshot_tracker = SnapshotTracker::new(visible_seqno);
+
+        let write_buffer_size = WriteBufferManager::default();
+
+        let write_pipeline = WritePipeline::new(
+            journal.clone(),
+            seqno.clone(),
+            snapshot_tracker.clone(),
+            write_buffer_size.clone(),
+        );
+
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
-            write_buffer_size: WriteBufferManager::default(),
-            snapshot_tracker: SnapshotTracker::new(visible_seqno),
+            write_buffer_size,
+            snapshot_tracker,
             journal,
             journal_manager: Arc::new(RwLock::new(JournalManager::new())),
             backpressure_lock: Mutex::default(),
             seqno,
+            write_pipeline,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();

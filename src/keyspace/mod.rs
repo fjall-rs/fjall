@@ -923,38 +923,10 @@ impl Keyspace {
         let key = key.into();
         let value = value.into();
 
-        let mut journal_writer = self.supervisor.journal.get_writer()?;
-
-        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
-
-        let seqno = self.supervisor.seqno.next();
-
-        journal_writer
-            .write_raw(self.id, &key, &value, lsm_tree::ValueType::Value, seqno)
-            .inspect_err(|_| {
-                self.is_poisoned.poison();
-            })?;
-
-        if !self.config.manual_journal_persist {
-            journal_writer
-                .persist(crate::PersistMode::Buffer)
-                .inspect_err(|e| {
-                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
-                    self.is_poisoned.poison();
-                })?;
-        }
-
-        let (item_size, memtable_size) = self.tree.insert(key, value, seqno);
-
-        self.supervisor.snapshot_tracker.publish(seqno);
-
-        drop(journal_writer);
-
-        self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+            crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
+        ]));
+        self.supervisor.write_pipeline.push(write_record);
 
         Ok(())
     }
