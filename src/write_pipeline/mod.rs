@@ -2,9 +2,12 @@ mod fifo;
 
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
-use std::sync::{
-    atomic::{AtomicBool, AtomicU8},
-    Arc, RwLock,
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering::Acquire},
+        Arc, RwLock,
+    },
 };
 
 use crate::{
@@ -18,6 +21,7 @@ pub struct WriteRecord {
     persist_mode: u8,
     // TODO: should be enum { item: WriteItem | batch: Vec<WriteItem> }
     batch: Vec<WriteItem>,
+    assigned_seqno: AtomicU64,
 }
 
 impl WriteRecord {
@@ -26,6 +30,7 @@ impl WriteRecord {
             state: AtomicU8::default(),
             persist_mode: 0,
             batch,
+            assigned_seqno: AtomicU64::default(),
         }
     }
 }
@@ -77,8 +82,6 @@ impl WritePipeline {
 
         'start: loop {
             if is_master {
-                // eprintln!("became leader");
-
                 let mut journal_writer = self.journal.get_writer().expect("lock is poisoned");
 
                 // TODO: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
@@ -106,6 +109,10 @@ impl WritePipeline {
 
                     let mut batch_size = 0;
 
+                    // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
+                    #[expect(clippy::mutable_key_type)]
+                    let mut keyspaces_with_possible_stall = HashSet::new();
+
                     // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do
                     for item in &write_record.batch {
                         let item = item.clone();
@@ -125,24 +132,39 @@ impl WritePipeline {
                         };
 
                         batch_size += item_size;
+
+                        // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
+                        keyspaces_with_possible_stall.insert(item.keyspace.clone());
                     }
 
                     write_record
                         .state
                         .store(1, std::sync::atomic::Ordering::Release);
 
+                    write_record
+                        .assigned_seqno
+                        .store(batch_seqno, std::sync::atomic::Ordering::Release);
+
                     highest_seqno_published = Some(batch_seqno);
 
                     self.write_buffer_size.allocate(batch_size);
 
-                    // TODO: how to do write stalling etc.
+                    // TODO: how to do write stalling etc: like this?...
+                    // Check each affected keyspace for write stall/halt
+                    for keyspace in &keyspaces_with_possible_stall {
+                        let memtable_size = keyspace.tree.active_memtable().size();
+                        keyspace.check_memtable_rotate(memtable_size);
+                        keyspace.local_backpressure();
+                    }
                 }
 
                 // TODO: fsync or whatever persist wants to do
                 // TODO: to do that, we will need the max. durability level of all the
                 // items we have written previously
                 // TODO: also, handle error
-                journal_writer.persist(crate::PersistMode::Buffer).unwrap();
+                journal_writer
+                    .persist(crate::PersistMode::SyncData)
+                    .unwrap();
 
                 if let Some(seqno) = highest_seqno_published {
                     self.snapshot_tracker.publish(seqno);
@@ -163,9 +185,7 @@ impl WritePipeline {
 
                 return;
             } else {
-                // Spin on highest visible seqno, and sometimes check record state
-
-                // eprintln!("[{:?}] spin", std::time::Instant::now());
+                // Spin on record state and then on visible seqno
 
                 loop {
                     let state = record.state.load(std::sync::atomic::Ordering::Relaxed);
@@ -180,7 +200,15 @@ impl WritePipeline {
                     }
                 }
 
-                // TODO: Wait batch is visible...
+                let assigned_seqno = record.assigned_seqno.load(Acquire);
+
+                loop {
+                    let visible_seqno = self.snapshot_tracker.get();
+
+                    if visible_seqno > assigned_seqno {
+                        break;
+                    }
+                }
 
                 return;
             }
