@@ -147,22 +147,22 @@ It's best to let the application crash and restart, which is the [safest way to 
 
 The backing store (`lsm-tree`) is a MVCC key-value store, allowing repeatable snapshot reads.
 However this isolation level can not do read-modify-write operations without the chance of lost updates.
-Also, `WriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
+Also, `OwnedWriteBatch` does not allow reading the intermediary state back as you would expect from a proper transaction.
 For that reason, if you need transactional semantics, you need to use one of the transactional database implementation (`OptimisticTxDatabase` or `SingleWriterTxDatabase`).
 
 TL;DR: Fjall supports both transactional and non-transactional workloads.
 Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
+
+### Optimistic
+
+Opens a transactional database for multi-writer, serializable transactions.
+Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ### Single writer
 
 Opens a transactional database for single-writer (serialized) transactions.
 Single writer means only a single **write** transaction can run at a time.
 This is trivially serializable because it _literally_ serializes write transactions.
-
-### Optimistic
-
-Opens a transactional database for multi-writer, serializable transactions.
-Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ## Feature flags
 
