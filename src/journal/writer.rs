@@ -31,22 +31,39 @@ pub struct Writer {
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord)]
+#[repr(u8)]
 pub enum PersistMode {
     /// Flushes data to OS buffers. This allows the OS to write out data in case of an
     /// application crash.
     ///
     /// When this function returns, data is **not** guaranteed to be persisted in case
     /// of a power loss event or OS crash.
-    Buffer,
+    Buffer = 0,
 
     /// Flushes data using `fdatasync`.
     ///
     /// Use if you know that `fdatasync` is sufficient for your file system and/or operating system.
-    SyncData,
+    SyncData = 1,
 
     /// Flushes data + metadata using `fsync`.
-    SyncAll,
+    SyncAll = 2,
+}
+
+impl PersistMode {
+    pub(crate) fn with_manual_flag(mode: Option<PersistMode>, manual_flag: bool) -> Option<Self> {
+        if manual_flag {
+            None
+        } else {
+            mode
+        }
+    }
+}
+
+impl PartialOrd for PersistMode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        (*self as u8).partial_cmp(&(*other as u8))
+    }
 }
 
 impl Writer {

@@ -4,6 +4,7 @@
 
 pub mod item;
 
+use crate::write_pipeline::Batch as WritePipelineBatch;
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
 use lsm_tree::{UserKey, UserValue, ValueType};
@@ -114,8 +115,17 @@ impl WriteBatch {
             return Ok(());
         }
 
-        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(self.data));
-        self.db.supervisor.write_pipeline.commit(write_record);
+        let write_record =
+            crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Batch(self.data))
+                .persist_mode(PersistMode::with_manual_flag(
+                    self.durability,
+                    self.db.config.manual_journal_persist,
+                ));
+
+        self.db
+            .supervisor
+            .write_pipeline
+            .commit(Arc::new(write_record))?;
 
         Ok(())
     }

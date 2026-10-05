@@ -1,5 +1,9 @@
 mod fifo;
 
+use crate::{
+    journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
+    PersistMode,
+};
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
 use std::{
@@ -10,28 +14,33 @@ use std::{
     },
 };
 
-use crate::{
-    journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
-};
+type BatchEntry = crate::batch::item::Item;
 
-type WriteItem = crate::batch::item::Item;
+pub enum Batch {
+    Single(BatchEntry),
+    Batch(Vec<BatchEntry>),
+}
 
 pub struct WriteRecord {
     state: AtomicU8,
-    persist_mode: u8,
-    // TODO: should be enum { item: WriteItem | batch: Vec<WriteItem> }
-    batch: Vec<WriteItem>,
+    persist_mode: Option<PersistMode>,
+    batch: Batch,
     assigned_seqno: AtomicU64,
 }
 
 impl WriteRecord {
-    pub fn new(batch: Vec<WriteItem>) -> Self {
+    pub fn new(batch: Batch) -> Self {
         WriteRecord {
             state: AtomicU8::default(),
-            persist_mode: 0,
+            persist_mode: None,
             batch,
             assigned_seqno: AtomicU64::default(),
         }
+    }
+
+    pub fn persist_mode(mut self, mode: Option<PersistMode>) -> Self {
+        self.persist_mode = mode;
+        self
     }
 }
 
@@ -63,7 +72,7 @@ impl WritePipeline {
         }
     }
 
-    pub fn commit(&self, record: Arc<WriteRecord>) {
+    pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<()> {
         let lock = self.lock.read().unwrap();
 
         while self.queue.try_push(record.clone()).is_none() {}
@@ -87,6 +96,7 @@ impl WritePipeline {
                 // TODO: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
 
                 let mut highest_seqno_published = None;
+                let mut collected_persist: Option<PersistMode> = None;
 
                 // Process records
                 for _ in 0..1_000 {
@@ -98,14 +108,20 @@ impl WritePipeline {
 
                     let batch_seqno = self.seqno.next();
 
-                    journal_writer
-                        .write_batch(
-                            write_record.batch.iter(),
-                            write_record.batch.len(),
-                            batch_seqno,
-                        )
-                        // TODO: handle error
-                        .unwrap();
+                    match &write_record.batch {
+                        Batch::Single(item) => {
+                            journal_writer.write_raw(
+                                item.keyspace.id(),
+                                &item.key,
+                                &item.value,
+                                item.value_type,
+                                batch_seqno,
+                            )?;
+                        }
+                        Batch::Batch(batch) => {
+                            journal_writer.write_batch(batch.iter(), batch.len(), batch_seqno)?;
+                        }
+                    }
 
                     let mut batch_size = 0;
 
@@ -113,28 +129,58 @@ impl WritePipeline {
                     #[expect(clippy::mutable_key_type)]
                     let mut keyspaces_with_possible_stall = HashSet::new();
 
-                    // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do
-                    for item in &write_record.batch {
-                        let item = item.clone();
+                    match &write_record.batch {
+                        Batch::Single(item) => {
+                            // TODO: std::mem::take item instead...?
+                            let item = item.clone();
 
-                        // TODO: need a better, generic write op
-                        let (item_size, _) = match item.value_type {
-                            ValueType::Value => {
-                                item.keyspace.tree.insert(item.key, item.value, batch_seqno)
-                            }
-                            ValueType::Tombstone => {
-                                item.keyspace.tree.remove(item.key, batch_seqno)
-                            }
-                            ValueType::WeakTombstone => {
-                                item.keyspace.tree.remove_weak(item.key, batch_seqno)
-                            }
-                            ValueType::Indirection => unreachable!(),
-                        };
+                            // TODO: need a better, generic write op
+                            let (item_size, _) = match item.value_type {
+                                ValueType::Value => {
+                                    item.keyspace.tree.insert(item.key, item.value, batch_seqno)
+                                }
+                                ValueType::Tombstone => {
+                                    item.keyspace.tree.remove(item.key, batch_seqno)
+                                }
+                                ValueType::WeakTombstone => {
+                                    item.keyspace.tree.remove_weak(item.key, batch_seqno)
+                                }
+                                ValueType::Indirection => unreachable!(),
+                            };
 
-                        batch_size += item_size;
+                            batch_size += item_size;
 
-                        // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
-                        keyspaces_with_possible_stall.insert(item.keyspace.clone());
+                            {
+                                let memtable_size = item.keyspace.tree.active_memtable().size();
+                                item.keyspace.check_memtable_rotate(memtable_size);
+                                item.keyspace.local_backpressure();
+                            }
+                        }
+                        Batch::Batch(items) => {
+                            // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do?
+                            for item in items {
+                                let item = item.clone();
+
+                                // TODO: need a better, generic write op
+                                let (item_size, _) = match item.value_type {
+                                    ValueType::Value => {
+                                        item.keyspace.tree.insert(item.key, item.value, batch_seqno)
+                                    }
+                                    ValueType::Tombstone => {
+                                        item.keyspace.tree.remove(item.key, batch_seqno)
+                                    }
+                                    ValueType::WeakTombstone => {
+                                        item.keyspace.tree.remove_weak(item.key, batch_seqno)
+                                    }
+                                    ValueType::Indirection => unreachable!(),
+                                };
+
+                                batch_size += item_size;
+
+                                // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
+                                keyspaces_with_possible_stall.insert(item.keyspace.clone());
+                            }
+                        }
                     }
 
                     write_record
@@ -147,6 +193,13 @@ impl WritePipeline {
 
                     highest_seqno_published = Some(batch_seqno);
 
+                    collected_persist = match (collected_persist, write_record.persist_mode) {
+                        (Some(prev), Some(curr)) => Some(prev.max(curr)),
+                        (None, Some(curr)) => Some(curr),
+                        (Some(prev), _) => Some(prev),
+                        _ => collected_persist,
+                    };
+
                     self.write_buffer_size.allocate(batch_size);
 
                     // TODO: how to do write stalling etc: like this?...
@@ -158,13 +211,9 @@ impl WritePipeline {
                     }
                 }
 
-                // TODO: fsync or whatever persist wants to do
-                // TODO: to do that, we will need the max. durability level of all the
-                // items we have written previously
-                // TODO: also, handle error
-                journal_writer
-                    .persist(crate::PersistMode::SyncData)
-                    .unwrap();
+                if let Some(persist_mode) = collected_persist {
+                    journal_writer.persist(persist_mode)?;
+                }
 
                 if let Some(seqno) = highest_seqno_published {
                     self.snapshot_tracker.publish(seqno);
@@ -183,7 +232,7 @@ impl WritePipeline {
                     }
                 }
 
-                return;
+                return Ok(());
             } else {
                 // Spin on record state and then on visible seqno
 
@@ -210,7 +259,7 @@ impl WritePipeline {
                     }
                 }
 
-                return;
+                return Ok(());
             }
         }
     }

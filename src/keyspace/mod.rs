@@ -10,6 +10,7 @@ mod write_delay;
 #[cfg(test)]
 mod test;
 
+use crate::write_pipeline::Batch as WritePipelineBatch;
 use crate::{
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
@@ -19,7 +20,7 @@ use crate::{
     stats::Stats,
     supervisor::Supervisor,
     worker_pool::WorkerMessage,
-    Database, Guard, Iter,
+    Database, Guard, Iter, PersistMode,
 };
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
@@ -923,10 +924,17 @@ impl Keyspace {
         let key = key.into();
         let value = value.into();
 
-        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
             crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
-        ]));
-        self.supervisor.write_pipeline.commit(write_record);
+        ))
+        .persist_mode(PersistMode::with_manual_flag(
+            Some(PersistMode::Buffer),
+            self.config.manual_journal_persist,
+        ));
+
+        self.supervisor
+            .write_pipeline
+            .commit(Arc::new(write_record))?;
 
         Ok(())
     }
@@ -969,10 +977,17 @@ impl Keyspace {
 
         let key = key.into();
 
-        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, false),
-        ]));
-        self.supervisor.write_pipeline.commit(write_record);
+        ))
+        .persist_mode(PersistMode::with_manual_flag(
+            Some(PersistMode::Buffer),
+            self.config.manual_journal_persist,
+        ));
+
+        self.supervisor
+            .write_pipeline
+            .commit(Arc::new(write_record))?;
 
         Ok(())
     }
@@ -1027,10 +1042,17 @@ impl Keyspace {
 
         let key = key.into();
 
-        let write_record = Arc::new(crate::write_pipeline::WriteRecord::new(vec![
+        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, true),
-        ]));
-        self.supervisor.write_pipeline.commit(write_record);
+        ))
+        .persist_mode(PersistMode::with_manual_flag(
+            Some(PersistMode::Buffer),
+            self.config.manual_journal_persist,
+        ));
+
+        self.supervisor
+            .write_pipeline
+            .commit(Arc::new(write_record))?;
 
         Ok(())
     }
