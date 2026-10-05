@@ -153,16 +153,16 @@ For that reason, if you need transactional semantics, you need to use one of the
 TL;DR: Fjall supports both transactional and non-transactional workloads.
 Chances are you want to use a transactional database, unless you know your workload does not need serializable transaction semantics.
 
+### Optimistic
+
+Opens a transactional database for multi-writer, serializable transactions.
+Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
+
 ### Single writer
 
 Opens a transactional database for single-writer (serialized) transactions.
 Single writer means only a single **write** transaction can run at a time.
 This is trivially serializable because it _literally_ serializes write transactions.
-
-### Optimistic
-
-Opens a transactional database for multi-writer, serializable transactions.
-Conflict checking is done using optimistic concurrency control, meaning transactions can conflict and may have to be rerun.
 
 ## Feature flags
 
