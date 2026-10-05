@@ -48,11 +48,11 @@ fn tx_ryow_snapshot_ssi() -> fjall::Result<()> {
 
     assert_eq!(100, tx.iter(&tree).count());
 
-    tree.insert("2", "2")?;
+    tree.inner().insert("2", "2")?;
     assert_eq!(100, tx.iter(&tree).count());
 
     let iter = tx.iter(&tree);
-    tree.insert("3", "3")?;
+    tree.inner().insert("3", "3")?;
     assert_eq!(100, iter.count());
 
     Ok(())

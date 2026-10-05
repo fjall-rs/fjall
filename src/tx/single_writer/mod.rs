@@ -73,7 +73,13 @@ impl TxDatabase {
         write_tx
     }
 
-    /// Starts a new read-only transaction (a.k.a. [`Snapshot`]).
+    /// Acquires a snapshot for read isolation, a.k.a. "read transaction".
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
+        self.inner.snapshot()
+    }
+
+    /// Alias for [`TxDatabase::snapshot`].
     #[must_use]
     pub fn read_tx(&self) -> Snapshot {
         self.inner.snapshot()
@@ -128,10 +134,7 @@ impl TxDatabase {
     ) -> crate::Result<SingleWriterTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 
-        Ok(SingleWriterTxKeyspace {
-            inner: keyspace,
-            db: self.clone(),
-        })
+        Ok(SingleWriterTxKeyspace { inner: keyspace })
     }
 
     /// Returns the number of keyspaces.

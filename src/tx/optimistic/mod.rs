@@ -82,7 +82,13 @@ impl OptimisticTxDatabase {
         Ok(write_tx)
     }
 
-    /// Starts a new read-only transaction (a.k.a. [`Snapshot`]).
+    /// Acquires a snapshot for read isolation, a.k.a. "read transaction".
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
+        self.inner.snapshot()
+    }
+
+    /// Alias for [`OptimisticTxDatabase::snapshot`].
     #[must_use]
     pub fn read_tx(&self) -> Snapshot {
         self.inner.snapshot()
@@ -137,10 +143,7 @@ impl OptimisticTxDatabase {
     ) -> crate::Result<OptimisticTxKeyspace> {
         let keyspace = self.inner.keyspace(name, create_options)?;
 
-        Ok(OptimisticTxKeyspace {
-            inner: keyspace,
-            db: self.clone(),
-        })
+        Ok(OptimisticTxKeyspace { inner: keyspace })
     }
 
     /// Returns the number of keyspaces.

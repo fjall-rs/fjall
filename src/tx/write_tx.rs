@@ -385,7 +385,7 @@ mod tests {
     fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.tree.insert([2u8], [20u8])?;
+        env.tree.inner().insert([2u8], [20u8])?;
 
         let mut tx = BaseTransaction::new(
             env.db.inner.clone(),

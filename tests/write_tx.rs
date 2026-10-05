@@ -14,7 +14,7 @@ fn write_tx_multi_keys() -> fjall::Result<()> {
     wtx.insert(&tree, "1", "ghi");
     assert_eq!(&*wtx.get(&tree, "1")?.unwrap(), b"ghi");
     wtx.commit()?;
-    assert_eq!(&*tree.get("1")?.unwrap(), b"ghi");
+    assert_eq!(&*tree.inner().get("1")?.unwrap(), b"ghi");
 
     Ok(())
 }

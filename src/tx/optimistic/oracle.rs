@@ -84,7 +84,7 @@ mod tests {
         tx1.insert(tree.inner(), "hello", "world");
 
         tx1.commit()??;
-        assert!(tree.contains_key("hello")?);
+        assert!(tree.inner().contains_key("hello")?);
 
         _ = tx2.get(tree.inner(), "hello")?;
 

@@ -479,8 +479,8 @@ mod tests {
 
     impl TestEnv {
         fn seed_hermitage_data(&self) -> crate::Result<()> {
-            self.tree.insert([1u8], [10u8])?;
-            self.tree.insert([2u8], [20u8])?;
+            self.tree.inner().insert([1u8], [10u8])?;
+            self.tree.inner().insert([2u8], [20u8])?;
             Ok(())
         }
     }
@@ -627,7 +627,7 @@ mod tests {
         tx1.insert(env.tree.inner(), "hello", "world");
 
         tx1.commit()??;
-        assert!(env.tree.contains_key("hello")?);
+        assert!(env.tree.inner().contains_key("hello")?);
 
         assert_eq!(tx2.get(env.tree.inner(), "hello")?, None);
 
@@ -665,8 +665,8 @@ mod tests {
         tx2.insert(env.tree.inner(), "a", "c");
 
         tx2.commit()??;
-        assert_eq!(b"c", &*env.tree.get("a")?.unwrap());
-        assert_eq!(b"c", &*env.tree.get("b")?.unwrap());
+        assert_eq!(b"c", &*env.tree.inner().get("a")?.unwrap());
+        assert_eq!(b"c", &*env.tree.inner().get("b")?.unwrap());
 
         Ok(())
     }
@@ -676,8 +676,8 @@ mod tests {
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.tree.insert("x", "x")?;
-        env.tree.insert("y", "y")?;
+        env.tree.inner().insert("x", "x")?;
+        env.tree.inner().insert("y", "y")?;
 
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
@@ -711,13 +711,13 @@ mod tests {
         t1.insert(env.tree.inner(), [2u8], [21u8]);
         t1.commit()??;
 
-        assert_eq!(env.tree.get([1u8])?, Some([11u8].into()));
+        assert_eq!(env.tree.inner().get([1u8])?, Some([11u8].into()));
 
         t2.insert(env.tree.inner(), [2u8], [22u8]);
         t2.commit()??;
 
-        assert_eq!(env.tree.get([1u8])?, Some([12u8].into()));
-        assert_eq!(env.tree.get([2u8])?, Some([22u8].into()));
+        assert_eq!(env.tree.inner().get([1u8])?, Some([12u8].into()));
+        assert_eq!(env.tree.inner().get([2u8])?, Some([22u8].into()));
 
         Ok(())
     }
@@ -808,7 +808,7 @@ mod tests {
         t1.commit()??;
         assert!(matches!(t2.commit()?, Err(Conflict)));
 
-        assert_eq!(env.tree.get("hello")?, Some("world".into()));
+        assert_eq!(env.tree.inner().get("hello")?, Some("world".into()));
 
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
@@ -821,8 +821,8 @@ mod tests {
         t1.commit()??;
         t2.commit()??;
 
-        assert_eq!(env.tree.get("hello")?, Some("world3".into()));
-        assert_eq!(env.tree.get("hello2")?, Some("world2".into()));
+        assert_eq!(env.tree.inner().get("hello")?, Some("world3".into()));
+        assert_eq!(env.tree.inner().get("hello2")?, Some("world2".into()));
 
         Ok(())
     }
