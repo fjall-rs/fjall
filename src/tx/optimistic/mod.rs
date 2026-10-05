@@ -8,14 +8,16 @@ mod oracle;
 mod write_tx;
 
 use crate::{
-    keyspace::KeyspaceKey,
-    tx::{optimistic::oracle::Oracle, single_writer::Openable},
-    Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
+    keyspace::KeyspaceKey, tx::single_writer::Openable, Config, Database, KeyspaceCreateOptions,
+    PersistMode, Snapshot,
 };
 use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
+
+pub(crate) use conflict_manager::ConflictManager;
+pub(crate) use oracle::Oracle;
 
 pub use keyspace::OptimisticTxKeyspace;
 pub use write_tx::{Conflict, WriteTransaction};

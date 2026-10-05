@@ -10,7 +10,7 @@ mod write_delay;
 #[cfg(test)]
 mod test;
 
-use crate::write_pipeline::Batch as WritePipelineBatch;
+use crate::write_pipeline::WriteRecordData as WritePipelineBatch;
 use crate::{
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
@@ -934,7 +934,8 @@ impl Keyspace {
 
         self.supervisor
             .write_pipeline
-            .commit(Arc::new(write_record))?;
+            .commit(Arc::new(write_record))?
+            .expect("should not do OCC");
 
         Ok(())
     }
@@ -987,7 +988,8 @@ impl Keyspace {
 
         self.supervisor
             .write_pipeline
-            .commit(Arc::new(write_record))?;
+            .commit(Arc::new(write_record))?
+            .expect("should not do OCC");
 
         Ok(())
     }
@@ -1052,7 +1054,8 @@ impl Keyspace {
 
         self.supervisor
             .write_pipeline
-            .commit(Arc::new(write_record))?;
+            .commit(Arc::new(write_record))?
+            .expect("should not do OCC");
 
         Ok(())
     }

@@ -8,7 +8,6 @@ use lsm_tree::Slice;
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::RangeBounds,
-    sync::Mutex,
 };
 
 #[derive(Clone, Debug)]
@@ -23,38 +22,35 @@ enum Read {
 
 #[derive(Default, Debug)]
 pub struct ConflictManager {
-    reads: Mutex<BTreeMap<InternalKeyspaceId, Vec<Read>>>,
-    conflict_keys: Mutex<BTreeMap<InternalKeyspaceId, BTreeSet<Slice>>>,
+    reads: BTreeMap<InternalKeyspaceId, Vec<Read>>,
+    conflict_keys: BTreeMap<InternalKeyspaceId, BTreeSet<Slice>>,
 }
 
 impl ConflictManager {
-    fn push_read(&self, keyspace_id: InternalKeyspaceId, read: Read) {
-        #[expect(clippy::expect_used)]
-        let mut lock = self.reads.lock().expect("lock is poisoned");
-
-        if let Some(tbl) = lock.get_mut(&keyspace_id) {
+    fn push_read(&mut self, keyspace_id: InternalKeyspaceId, read: Read) {
+        if let Some(tbl) = self.reads.get_mut(&keyspace_id) {
             tbl.push(read);
         } else {
-            lock.entry(keyspace_id).or_default().push(read);
+            self.reads.entry(keyspace_id).or_default().push(read);
         }
     }
 
-    pub fn mark_read(&self, keyspace_id: InternalKeyspaceId, key: Slice) {
+    pub fn mark_read(&mut self, keyspace_id: InternalKeyspaceId, key: Slice) {
         self.push_read(keyspace_id, Read::Single(key));
     }
 
-    pub fn mark_conflict(&self, keyspace_id: InternalKeyspaceId, key: Slice) {
-        #[expect(clippy::expect_used)]
-        let mut lock = self.conflict_keys.lock().expect("lock is poisoned");
-
-        if let Some(tbl) = lock.get_mut(&keyspace_id) {
+    pub fn mark_conflict(&mut self, keyspace_id: InternalKeyspaceId, key: Slice) {
+        if let Some(tbl) = self.conflict_keys.get_mut(&keyspace_id) {
             tbl.insert(key);
         } else {
-            lock.entry(keyspace_id).or_default().insert(key);
+            self.conflict_keys
+                .entry(keyspace_id)
+                .or_default()
+                .insert(key);
         }
     }
 
-    pub fn mark_range(&self, keyspace_id: InternalKeyspaceId, range: impl RangeBounds<Slice>) {
+    pub fn mark_range(&mut self, keyspace_id: InternalKeyspaceId, range: impl RangeBounds<Slice>) {
         let start = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.clone()),
             Bound::Excluded(k) => Bound::Excluded(k.clone()),
@@ -78,11 +74,8 @@ impl ConflictManager {
 
     #[expect(clippy::too_many_lines, clippy::significant_drop_tightening)]
     pub fn has_conflict(&self, other: &Self) -> bool {
-        #[expect(clippy::expect_used)]
-        let reads_lock = self.reads.lock().expect("lock is poisoned");
-
-        #[expect(clippy::expect_used)]
-        let conflict_keys_lock = other.conflict_keys.lock().expect("lock is poisoned");
+        let reads_lock = &self.reads;
+        let conflict_keys_lock = &other.conflict_keys;
 
         if reads_lock.is_empty() {
             return false;

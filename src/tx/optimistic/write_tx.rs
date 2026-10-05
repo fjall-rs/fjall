@@ -5,19 +5,17 @@
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{
-        optimistic::{
-            conflict_manager::ConflictManager,
-            oracle::{CommitOutcome, Oracle},
-        },
+        optimistic::{conflict_manager::ConflictManager, oracle::Oracle},
         write_tx::BaseTransaction,
     },
+    write_pipeline::OptimisticConflictCheck,
     Database, Guard, Iter, Keyspace, PersistMode, Readable,
 };
 use lsm_tree::{Slice, UserKey, UserValue};
 use std::{
     fmt,
     ops::{Bound, RangeBounds, RangeFull},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 /// Transaction conflict
@@ -50,7 +48,7 @@ impl fmt::Display for Conflict {
 #[clippy::has_significant_drop]
 pub struct WriteTransaction {
     inner: BaseTransaction,
-    cm: ConflictManager,
+    cm: Mutex<ConflictManager>,
     oracle: Arc<Oracle>,
 }
 
@@ -64,7 +62,10 @@ impl Readable for WriteTransaction {
 
         let res = self.inner.get(keyspace, key.as_ref())?;
 
-        self.cm.mark_read(keyspace.id, key.as_ref().into());
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_read(keyspace.id, key.as_ref().into());
 
         Ok(res)
     }
@@ -78,7 +79,10 @@ impl Readable for WriteTransaction {
 
         let contains = self.inner.contains_key(keyspace, key.as_ref())?;
 
-        self.cm.mark_read(keyspace.id, key.as_ref().into());
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_read(keyspace.id, key.as_ref().into());
 
         Ok(contains)
     }
@@ -101,7 +105,11 @@ impl Readable for WriteTransaction {
     }
 
     fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
-        self.cm.mark_range(keyspace.as_ref().id, RangeFull);
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_range(keyspace.as_ref().id, RangeFull);
+
         self.inner.iter(keyspace)
     }
 
@@ -113,7 +121,10 @@ impl Readable for WriteTransaction {
         let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
         let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
 
-        self.cm.mark_range(keyspace.as_ref().id, (start, end));
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_range(keyspace.as_ref().id, (start, end));
 
         self.inner.range(keyspace, range)
     }
@@ -127,7 +138,7 @@ impl WriteTransaction {
     pub(crate) fn new(db: Database, nonce: SnapshotNonce, oracle: Arc<Oracle>) -> Self {
         Self {
             inner: BaseTransaction::new(db, nonce),
-            cm: ConflictManager::default(),
+            cm: Mutex::default(),
             oracle,
         }
     }
@@ -234,8 +245,9 @@ impl WriteTransaction {
 
         let updated = self.inner.update_fetch(keyspace, key.clone(), f)?;
 
-        self.cm.mark_read(keyspace.id, key.clone());
-        self.cm.mark_conflict(keyspace.id, key);
+        let mut cm = self.cm.lock().expect("lock is poisoned");
+        cm.mark_read(keyspace.id, key.clone());
+        cm.mark_conflict(keyspace.id, key);
 
         Ok(updated)
     }
@@ -301,8 +313,9 @@ impl WriteTransaction {
 
         let prev = self.inner.fetch_update(keyspace, key.clone(), f)?;
 
-        self.cm.mark_read(keyspace.id, key.clone());
-        self.cm.mark_conflict(keyspace.id, key);
+        let mut cm = self.cm.lock().expect("lock is poisoned");
+        cm.mark_read(keyspace.id, key.clone());
+        cm.mark_conflict(keyspace.id, key);
 
         Ok(prev)
     }
@@ -345,7 +358,11 @@ impl WriteTransaction {
         let key: UserKey = key.into();
 
         self.inner.insert(keyspace, key.clone(), value);
-        self.cm.mark_conflict(keyspace.id, key);
+
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_conflict(keyspace.id, key);
     }
 
     /// Removes an item from the keyspace.
@@ -383,7 +400,10 @@ impl WriteTransaction {
         let key: UserKey = key.into();
 
         self.inner.remove(keyspace, key.clone());
-        self.cm.mark_conflict(keyspace.id, key);
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_conflict(keyspace.id, key);
     }
 
     /// Removes an item from the keyspace, leaving behind a weak tombstone.
@@ -428,7 +448,10 @@ impl WriteTransaction {
         let key: UserKey = key.into();
 
         self.inner.remove_weak(keyspace, key.clone());
-        self.cm.mark_conflict(keyspace.id, key);
+        self.cm
+            .lock()
+            .expect("lock is poisoned")
+            .mark_conflict(keyspace.id, key);
     }
 
     /// Commits the transaction.
@@ -443,15 +466,20 @@ impl WriteTransaction {
             return Ok(Ok(()));
         }
 
-        let oracle = self.oracle.clone();
+        let instant = self.inner.nonce.instant;
+        let db = self.inner.db.clone();
+        let data = self.inner.into_batch().data;
 
-        match oracle.with_commit(self.inner.nonce.instant, self.cm, move || {
-            self.inner.commit()
-        })? {
-            CommitOutcome::Ok => Ok(Ok(())),
-            CommitOutcome::Aborted(e) => Err(e),
-            CommitOutcome::Conflicted => Ok(Err(Conflict)),
-        }
+        db.supervisor.write_pipeline.commit(Arc::new(
+            crate::write_pipeline::WriteRecord::new(
+                crate::write_pipeline::WriteRecordData::Multiple(data),
+            )
+            .with_occ(OptimisticConflictCheck::new(
+                self.oracle.clone(),
+                instant,
+                std::mem::take(&mut self.cm.lock().expect("lock is poisoned")),
+            )),
+        ))
     }
 
     /// More explicit alternative to dropping the transaction
@@ -806,6 +834,7 @@ mod tests {
         assert_eq!(old, None);
 
         t1.commit()??;
+
         assert!(matches!(t2.commit()?, Err(Conflict)));
 
         assert_eq!(env.tree.get("hello")?, Some("world".into()));
@@ -818,8 +847,11 @@ mod tests {
         let new = t2.update_fetch(env.tree.inner(), "hello2", |_| Some("world2".into()))?;
         assert_eq!(new, Some("world2".into()));
 
+        eprintln!("committing txn 1");
         t1.commit()??;
+        eprintln!("committing txn 2");
         t2.commit()??;
+        eprintln!("committed txn 2");
 
         assert_eq!(env.tree.get("hello")?, Some("world3".into()));
         assert_eq!(env.tree.get("hello2")?, Some("world2".into()));
