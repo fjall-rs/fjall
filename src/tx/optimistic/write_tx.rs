@@ -133,9 +133,14 @@ impl WriteTransaction {
     }
 
     /// Sets the durability level.
+    pub fn set_durability(&mut self, mode: Option<PersistMode>) {
+        self.inner.durability = mode;
+    }
+
+    /// Builder pattern method for setting the durability level.
     #[must_use]
     pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
-        self.inner = self.inner.durability(mode);
+        self.set_durability(mode);
         self
     }
 
