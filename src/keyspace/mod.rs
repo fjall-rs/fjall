@@ -761,8 +761,7 @@ impl Keyspace {
             // we never opened a snapshot, we need to pull the watermark up
             //
             // https://github.com/fjall-rs/fjall/discussions/85
-            self.supervisor.snapshot_tracker.pullup();
-            self.supervisor.snapshot_tracker.gc();
+            self.supervisor.snapshot_tracker.advance_gc_watermark();
 
             for keyspace in self
                 .supervisor

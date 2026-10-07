@@ -1,6 +1,63 @@
 use crate::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
+/// Flushing all keyspaces removes the covered journal and allows reopening without replay.
+#[test]
+fn flush_all_materializes_journal() -> crate::Result<()> {
+    use crate::AbstractTree;
+
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let first = db.keyspace("first", KeyspaceCreateOptions::default)?;
+        let second = db.keyspace("second", KeyspaceCreateOptions::default)?;
+
+        let mut batch = db.batch();
+        batch.insert(&first, "a", "1");
+        batch.insert(&second, "b", "2");
+        batch.commit()?;
+        first.rotate_memtable()?;
+        first.insert("c", "3")?;
+
+        let old_journal = db.supervisor.journal.path()?;
+        assert!(old_journal.metadata()?.len() > 0);
+
+        db.flush_all()?;
+
+        let active_journal = db.supervisor.journal.path()?;
+        assert_ne!(old_journal, active_journal);
+        assert!(!old_journal.exists());
+        assert_eq!(0, db.supervisor.journal.get_writer()?.pos()?);
+        assert!(first.tree.active_memtable().is_empty());
+        assert!(second.tree.active_memtable().is_empty());
+        assert_eq!(0, first.tree.sealed_memtable_count());
+        assert_eq!(0, second.tree.sealed_memtable_count());
+
+        first.insert("d", "4")?;
+        db.flush_all()?;
+    }
+
+    {
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let first = db.keyspace("first", KeyspaceCreateOptions::default)?;
+        let second = db.keyspace("second", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(Some(b"1".as_slice()), first.get("a")?.as_deref());
+        assert_eq!(Some(b"2".as_slice()), second.get("b")?.as_deref());
+        assert_eq!(Some(b"3".as_slice()), first.get("c")?.as_deref());
+        assert_eq!(Some(b"4".as_slice()), first.get("d")?.as_deref());
+        assert!(first.tree.active_memtable().is_empty());
+        assert!(second.tree.active_memtable().is_empty());
+    }
+
+    Ok(())
+}
+
 #[test_log::test]
 fn clear_recover_sealed() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
