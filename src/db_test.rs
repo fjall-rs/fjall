@@ -299,3 +299,31 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
 
     Ok(())
 }
+
+// Regression test for https://github.com/fjall-rs/fjall/issues/328
+#[test]
+fn delete_keyspace_1() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(folder.path()).open()?;
+        let _keep = db.keyspace("keep", KeyspaceCreateOptions::default)?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        a.insert("stale", "written to a")?;
+        db.delete_keyspace(a)?;
+    }
+
+    {
+        let db = Database::builder(folder.path()).open()?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+        assert!(b.is_empty()?, "keyspace b should be empty");
+    }
+
+    {
+        let db = Database::builder(folder.path()).open()?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+        assert!(b.is_empty()?, "keyspace b should still be empty");
+    }
+
+    Ok(())
+}

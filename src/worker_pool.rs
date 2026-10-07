@@ -220,6 +220,9 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                             keyspace.request_rotation();
                         }
                     }
+                } else {
+                    // https://github.com/fjall-rs/fjall/issues/329
+                    journal_writer.persist(crate::PersistMode::SyncAll)?;
                 }
             }
 
