@@ -167,8 +167,6 @@ impl<T> Drop for Queue<T> {
             let slot = &self.slots[idx];
 
             if slot.published.load(Ordering::Acquire) {
-                // TODO: we can easily test this by putting in some values that increment a global counter when dropped
-                // -> setting one to published=false should set the counter to |values| - 1
                 #[expect(unsafe_code)]
                 unsafe {
                     std::ptr::drop_in_place((*slot.data.get()).as_mut_ptr());

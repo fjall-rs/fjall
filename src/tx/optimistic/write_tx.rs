@@ -472,7 +472,7 @@ impl WriteTransaction {
 
         db.supervisor.write_pipeline.commit(Arc::new(
             crate::write_pipeline::WriteRecord::new(
-                crate::write_pipeline::WriteRecordData::Multiple(data),
+                crate::write_pipeline::WriteRecordPayload::Multiple(data),
             )
             .with_occ(OptimisticConflictCheck::new(
                 self.oracle.clone(),

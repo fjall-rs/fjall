@@ -33,8 +33,6 @@ impl Oracle {
         Ok(committed_txns
             .range((instant + 1)..)
             .any(|(_ts, other_conflict_checker)| {
-                eprintln!("{committed_txns:#?} <=> {other_conflict_checker:#?}");
-
                 conflict_checker.has_conflict(other_conflict_checker)
             }))
     }
@@ -49,11 +47,6 @@ impl Oracle {
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        eprintln!(
-            "CREATED NEW COMMITTED TXN {} => {:?}",
-            self.snapshot_tracker.get(),
-            conflict_checker,
-        );
         committed_txns.insert(seqno, conflict_checker);
 
         // TODO: This can be expensive and should probably be done in a background worker, or a after a memtable rotation
@@ -99,7 +92,6 @@ mod tests {
 
     #[expect(clippy::unwrap_used)]
     #[test]
-    #[ignore = "fix!"]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
 

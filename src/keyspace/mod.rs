@@ -10,7 +10,7 @@ mod write_delay;
 #[cfg(test)]
 mod test;
 
-use crate::write_pipeline::WriteRecordData as WritePipelineBatch;
+use crate::write_pipeline::WriteRecordPayload;
 use crate::{
     file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
@@ -924,7 +924,7 @@ impl Keyspace {
         let key = key.into();
         let value = value.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
+        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
         ))
         .persist_mode(PersistMode::with_manual_flag(
@@ -978,7 +978,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
+        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, false),
         ))
         .persist_mode(PersistMode::with_manual_flag(
@@ -1044,7 +1044,7 @@ impl Keyspace {
 
         let key = key.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Single(
+        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, true),
         ))
         .persist_mode(PersistMode::with_manual_flag(

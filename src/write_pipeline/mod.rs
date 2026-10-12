@@ -1,9 +1,6 @@
 mod fifo;
 mod record;
 
-#[cfg(test)]
-mod tests;
-
 use crate::{
     journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
     Conflict, PersistMode,

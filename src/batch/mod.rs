@@ -4,7 +4,7 @@
 
 pub mod item;
 
-use crate::write_pipeline::WriteRecordData as WritePipelineBatch;
+use crate::write_pipeline::WriteRecordPayload;
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
 use lsm_tree::{UserKey, UserValue, ValueType};
@@ -116,7 +116,7 @@ impl WriteBatch {
         }
 
         let write_record =
-            crate::write_pipeline::WriteRecord::new(WritePipelineBatch::Multiple(self.data))
+            crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(self.data))
                 .persist_mode(PersistMode::with_manual_flag(
                     self.durability,
                     self.db.config.manual_journal_persist,
