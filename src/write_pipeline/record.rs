@@ -52,7 +52,7 @@ pub enum Payload {
 pub struct WriteRecord {
     state: AtomicU8,
 
-    /// This write records's durability requirement
+    /// This write record's durability requirement
     pub(super) persist_mode: Option<PersistMode>,
 
     /// The actual user data to write

@@ -2,8 +2,8 @@ mod fifo;
 mod record;
 
 use crate::{
-    journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
-    Conflict, PersistMode,
+    journal::Journal, poison::PoisonSignal, snapshot_tracker::SnapshotTracker,
+    write_buffer_manager::WriteBufferManager, Conflict, PersistMode,
 };
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
@@ -35,6 +35,7 @@ pub struct WritePipeline {
     queue: Queue<Arc<WriteRecord>>,
     leader_lease: AtomicBool,
     abdication_lock: RwLock<()>,
+    poison_flag: PoisonSignal,
 }
 
 impl WritePipeline {
@@ -46,6 +47,7 @@ impl WritePipeline {
         seqno: SequenceNumberCounter,
         snapshot_tracker: SnapshotTracker,
         write_buffer_size: WriteBufferManager,
+        poison_flag: PoisonSignal,
     ) -> Self {
         Self {
             queue: Queue::with_capacity(WRITE_PIPELINE_QUEUE_CAPACITY),
@@ -55,6 +57,7 @@ impl WritePipeline {
             seqno,
             snapshot_tracker,
             write_buffer_size,
+            poison_flag,
         }
     }
 
@@ -93,15 +96,17 @@ impl WritePipeline {
 
                 log::trace!("got journal writer");
 
-                // TODO: Check the DB poisoned flag after getting journal mutex, otherwise TOCTOU
+                // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+                if self.poison_flag.is_poisoned() {
+                    return Err(crate::Error::Poisoned);
+                }
 
                 let mut highest_seqno_published = None;
                 let mut collected_persist: Option<PersistMode> = None;
+                let mut bytes_written = 0;
 
                 // Process records
-                for _ in 0..1_000 {
-                    // TODO: sum up batch sizes up until 1 MB or so...
-
+                for _ in 0..100_000 {
                     let Some(write_record) = self.queue.try_pop() else {
                         break;
                     };
@@ -124,24 +129,20 @@ impl WritePipeline {
                         }
                     }
 
-                    log::info!("OCC conflict done");
-
                     let batch_seqno = self.seqno.next();
 
-                    match &write_record.payload {
-                        WriteRecordPayload::Single(item) => {
-                            journal_writer.write_raw(
-                                item.keyspace.id(),
-                                &item.key,
-                                &item.value,
-                                item.value_type,
-                                batch_seqno,
-                            )?;
-                        }
+                    bytes_written += match &write_record.payload {
+                        WriteRecordPayload::Single(item) => journal_writer.write_raw(
+                            item.keyspace.id(),
+                            &item.key,
+                            &item.value,
+                            item.value_type,
+                            batch_seqno,
+                        )?,
                         WriteRecordPayload::Multiple(batch) => {
-                            journal_writer.write_batch(batch.iter(), batch.len(), batch_seqno)?;
+                            journal_writer.write_batch(batch.iter(), batch_seqno)?
                         }
-                    }
+                    };
 
                     let mut batch_size = 0;
 
@@ -231,11 +232,19 @@ impl WritePipeline {
                     self.write_buffer_size.allocate(batch_size);
 
                     // TODO: how to do write stalling etc: like this?...
+
                     // Check each affected keyspace for write stall/halt
                     for keyspace in &keyspaces_with_possible_stall {
                         let memtable_size = keyspace.tree.active_memtable().size();
                         keyspace.check_memtable_rotate(memtable_size);
                         keyspace.local_backpressure();
+                    }
+
+                    // Limit the bytes written per leader term to
+                    // avoid tail latencies growing too large for any
+                    // given writer
+                    if bytes_written >= 1_000_000 {
+                        break;
                     }
                 }
 
@@ -246,8 +255,6 @@ impl WritePipeline {
                 if let Some(seqno) = highest_seqno_published {
                     self.snapshot_tracker.publish(seqno);
                 }
-
-                // TODO: do remaining OCC GC work here...
 
                 drop(journal_writer);
 
@@ -272,7 +279,8 @@ impl WritePipeline {
                 return Ok(Ok(()));
             } else {
                 // Spin on record state and then on visible seqno
-
+                //
+                // We need to do this to catch leader abdications
                 loop {
                     match record.state() {
                         WRITE_RECORD_STATE_PUBLISHED => break,

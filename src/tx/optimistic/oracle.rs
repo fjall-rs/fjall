@@ -50,7 +50,7 @@ impl Oracle {
         committed_txns.insert(seqno, conflict_checker);
 
         // TODO: This can be expensive and should probably be done in a background worker, or a after a memtable rotation
-        // TODO: also only do this in write pipeline once
+        // TODO: also only do this in write pipeline once?
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
         committed_txns.retain(|ts, _| *ts > safe_to_gc);
 

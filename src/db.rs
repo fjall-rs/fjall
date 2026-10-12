@@ -11,7 +11,7 @@ use crate::{
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
     meta_keyspace::MetaKeyspace,
-    poison::{PoisonDart, PoisonSignal},
+    poison::{self, PoisonDart, PoisonSignal},
     recovery::{recover_keyspaces, recover_sealed_memtables},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
@@ -639,14 +639,15 @@ impl Database {
         );
 
         let snapshot_tracker = SnapshotTracker::new(visible_seqno);
-
         let write_buffer_size = WriteBufferManager::default();
+        let poison_signal = PoisonSignal::default();
 
         let write_pipeline = WritePipeline::new(
             active_journal.clone(),
             seqno.clone(),
             snapshot_tracker.clone(),
             write_buffer_size.clone(),
+            poison_signal.clone(),
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
@@ -674,7 +675,7 @@ impl Database {
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned: PoisonSignal::default(),
+            is_poisoned: poison_signal,
             stats,
             lock_file,
         };
@@ -913,14 +914,15 @@ impl Database {
         );
 
         let snapshot_tracker = SnapshotTracker::new(visible_seqno);
-
         let write_buffer_size = WriteBufferManager::default();
+        let poison_signal = PoisonSignal::default();
 
         let write_pipeline = WritePipeline::new(
             journal.clone(),
             seqno.clone(),
             snapshot_tracker.clone(),
             write_buffer_size.clone(),
+            poison_signal.clone(),
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
@@ -947,7 +949,7 @@ impl Database {
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
-            is_poisoned: PoisonSignal::default(),
+            is_poisoned: poison_signal,
             stats,
             lock_file,
         };
