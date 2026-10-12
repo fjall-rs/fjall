@@ -1,102 +1,30 @@
 mod fifo;
+mod record;
+
+#[cfg(test)]
+mod tests;
 
 use crate::{
-    journal::Journal, snapshot_tracker::SnapshotTracker, tx::optimistic::Oracle,
-    write_buffer_manager::WriteBufferManager, Conflict, PersistMode,
+    journal::Journal, snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
+    Conflict, PersistMode,
 };
 use fifo::Queue;
-use lsm_tree::{AbstractTree, SeqNo, SequenceNumberCounter, ValueType};
+use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
+use record::{
+    WRITE_RECORD_STATE_CONFLICTED, WRITE_RECORD_STATE_PUBLISHED,
+    WRITE_RECORD_STATE_PUBLISHED_AND_LEADER_ABDICATED,
+};
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering::Acquire},
-        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, Ordering::Acquire},
+        Arc, RwLock,
     },
 };
 
-type BatchEntry = crate::batch::item::Item;
+pub use record::{OptimisticConflictCheck, Payload as WriteRecordPayload, WriteRecord};
 
-pub enum WriteRecordData {
-    /// A single item to avoid the Vec's heap allocation
-    /// for single item writes (e.g. `Keyspace::insert`)
-    Single(BatchEntry),
-
-    /// An atomic write batch
-    Multiple(Vec<BatchEntry>),
-}
-
-pub struct OptimisticConflictCheck {
-    oracle: Arc<Oracle>,
-    instant: SeqNo,
-    conflict_manager: Mutex<Option<crate::tx::optimistic::ConflictManager>>,
-}
-
-impl OptimisticConflictCheck {
-    pub fn new(
-        oracle: Arc<Oracle>,
-        instant: SeqNo,
-        conflict_manager: crate::tx::optimistic::ConflictManager,
-    ) -> Self {
-        Self {
-            oracle,
-            instant,
-            conflict_manager: Mutex::new(Some(conflict_manager)),
-        }
-    }
-}
-
-pub struct WriteRecord {
-    // TODO: can we use an atomic u8 enum?
-    /// Record state (0 = unfinished, 1 = published, 2 = published & master stepped down, 3 = conflicted (OCC))
-    state: AtomicU8,
-
-    /// This write records's durability requirement
-    persist_mode: Option<PersistMode>,
-
-    /// The actual user data to write
-    data: WriteRecordData,
-
-    /// The record's seqno
-    ///
-    /// This is initially 0, and is assigned by the master while processing
-    /// the write records.
-    ///
-    /// As long as state is 0, this value is invalid.
-    assigned_seqno: AtomicU64,
-
-    // TODO: need to pass instant and CM as well
-    occ: Option<OptimisticConflictCheck>,
-}
-
-impl WriteRecord {
-    /// Creates a new write record.
-    pub fn new(data: WriteRecordData) -> Self {
-        WriteRecord {
-            state: AtomicU8::default(),
-            persist_mode: None,
-            data,
-            assigned_seqno: AtomicU64::default(),
-            occ: None,
-        }
-    }
-
-    /// Sets the write record's persist mode.
-    ///
-    /// All records combined by the master will use the highest durability
-    /// level that was encountered.
-    /// If buffer/fsync/fsyncdata, only a single syscall will be issued for all
-    /// batches.
-    pub fn persist_mode(mut self, mode: Option<PersistMode>) -> Self {
-        self.persist_mode = mode;
-        self
-    }
-
-    /// Enables optimistic conflict checking for this write record.
-    pub fn with_occ(mut self, occ: OptimisticConflictCheck) -> Self {
-        self.occ = Some(occ);
-        self
-    }
-}
+const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
 
 /// A write pipeline using flat combining to allow grouped commits
 /// and better concurrent throughput
@@ -108,8 +36,8 @@ pub struct WritePipeline {
     snapshot_tracker: SnapshotTracker,
     journal: Arc<Journal>,
     queue: Queue<Arc<WriteRecord>>,
-    master_lease: AtomicBool,
-    lock: RwLock<()>,
+    leader_lease: AtomicBool,
+    abdication_lock: RwLock<()>,
 }
 
 impl WritePipeline {
@@ -123,9 +51,9 @@ impl WritePipeline {
         write_buffer_size: WriteBufferManager,
     ) -> Self {
         Self {
-            queue: Queue::with_capacity(1_024), // todo: is 1024 enough?
-            master_lease: AtomicBool::new(true),
-            lock: RwLock::default(),
+            queue: Queue::with_capacity(WRITE_PIPELINE_QUEUE_CAPACITY),
+            leader_lease: AtomicBool::new(true),
+            abdication_lock: RwLock::default(),
             journal,
             seqno,
             snapshot_tracker,
@@ -133,19 +61,20 @@ impl WritePipeline {
         }
     }
 
-    // TODO: maybe use CommitOutcome instead of double-Result
-
     /// Appends the write record to the write pipeline.
     ///
     /// When returning, the write record is guaranteed to be persisted matching
     /// the record's durability parameter (or stronger).
     pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
-        let lock = self.lock.read().map_err(|_| crate::Error::Poisoned)?;
+        let lock = self
+            .abdication_lock
+            .read()
+            .map_err(|_| crate::Error::Poisoned)?;
 
         while self.queue.try_push(record.clone()).is_none() {}
 
-        let mut is_master = self
-            .master_lease
+        let mut is_leader = self
+            .leader_lease
             .compare_exchange(
                 true,
                 false,
@@ -157,7 +86,7 @@ impl WritePipeline {
         drop(lock);
 
         'start: loop {
-            if is_master {
+            if is_leader {
                 log::trace!("getting journal writer");
 
                 let mut journal_writer = self
@@ -167,7 +96,7 @@ impl WritePipeline {
 
                 log::trace!("got journal writer");
 
-                // TODO: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
+                // TODO: Check the DB poisoned flag after getting journal mutex, otherwise TOCTOU
 
                 let mut highest_seqno_published = None;
                 let mut collected_persist: Option<PersistMode> = None;
@@ -179,8 +108,6 @@ impl WritePipeline {
                     let Some(write_record) = self.queue.try_pop() else {
                         break;
                     };
-
-                    // TODO: clean up OCC stuff to only take locks once if possible
 
                     if let Some(occ) = &write_record.occ {
                         log::warn!("OCC conflict");
@@ -194,9 +121,7 @@ impl WritePipeline {
                                 .expect("conflict manager should exist"),
                         )? {
                             // Mark as conflicted
-                            write_record
-                                .state
-                                .store(3, std::sync::atomic::Ordering::Release);
+                            write_record.set_conflicted();
 
                             continue;
                         }
@@ -206,8 +131,8 @@ impl WritePipeline {
 
                     let batch_seqno = self.seqno.next();
 
-                    match &write_record.data {
-                        WriteRecordData::Single(item) => {
+                    match &write_record.payload {
+                        WriteRecordPayload::Single(item) => {
                             journal_writer.write_raw(
                                 item.keyspace.id(),
                                 &item.key,
@@ -216,7 +141,7 @@ impl WritePipeline {
                                 batch_seqno,
                             )?;
                         }
-                        WriteRecordData::Multiple(batch) => {
+                        WriteRecordPayload::Multiple(batch) => {
                             journal_writer.write_batch(batch.iter(), batch.len(), batch_seqno)?;
                         }
                     }
@@ -226,8 +151,8 @@ impl WritePipeline {
                     // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
                     let mut keyspaces_with_possible_stall = HashSet::new();
 
-                    match &write_record.data {
-                        WriteRecordData::Single(item) => {
+                    match &write_record.payload {
+                        WriteRecordPayload::Single(item) => {
                             // TODO: std::mem::take item instead...?
                             let item = item.clone();
 
@@ -251,7 +176,7 @@ impl WritePipeline {
                             item.keyspace.check_memtable_rotate(memtable_size);
                             item.keyspace.local_backpressure();
                         }
-                        WriteRecordData::Multiple(items) => {
+                        WriteRecordPayload::Multiple(items) => {
                             // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do?
                             for item in items {
                                 let item = item.clone();
@@ -278,9 +203,7 @@ impl WritePipeline {
                         }
                     }
 
-                    write_record
-                        .state
-                        .store(1, std::sync::atomic::Ordering::Release);
+                    write_record.set_published();
 
                     write_record
                         .assigned_seqno
@@ -332,17 +255,20 @@ impl WritePipeline {
                 drop(journal_writer);
 
                 {
-                    let _lock = self.lock.write().map_err(|_| crate::Error::Poisoned)?;
+                    let _lock = self
+                        .abdication_lock
+                        .write()
+                        .map_err(|_| crate::Error::Poisoned)?;
 
                     if let Some(head) = self.queue.peek() {
-                        head.state.store(2, std::sync::atomic::Ordering::Release);
+                        head.set_published_and_abdicated();
                     } else {
-                        self.master_lease
+                        self.leader_lease
                             .store(true, std::sync::atomic::Ordering::Release);
                     }
                 }
 
-                if record.state.load(std::sync::atomic::Ordering::Acquire) == 3 {
+                if record.state() == WRITE_RECORD_STATE_CONFLICTED {
                     return Ok(Err(Conflict));
                 }
 
@@ -351,15 +277,13 @@ impl WritePipeline {
                 // Spin on record state and then on visible seqno
 
                 loop {
-                    let state = record.state.load(std::sync::atomic::Ordering::Relaxed);
-
-                    match state {
-                        1 => break,
-                        2 => {
-                            is_master = true;
+                    match record.state() {
+                        WRITE_RECORD_STATE_PUBLISHED => break,
+                        WRITE_RECORD_STATE_PUBLISHED_AND_LEADER_ABDICATED => {
+                            is_leader = true;
                             continue 'start;
                         }
-                        3 => return Ok(Err(Conflict)),
+                        WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
                         _ => {}
                     }
                 }
