@@ -224,10 +224,15 @@ impl MetaKeyspace {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Database, Guard, KeyspaceCreateOptions, Readable, SingleWriterTxDatabase};
+    use crate::{
+        AbstractTree, Database, Guard, KeyspaceCreateOptions, Readable, SingleWriterTxDatabase,
+    };
     use test_log::test;
 
     const ITEM_COUNT: usize = 10;
+
+    /// Keyspace creations and deletions in `meta_keyspace_gc_after_keyspace_churn`
+    const CHURN_ROUNDS: usize = 300;
 
     #[test]
     fn meta_keyspace_smoke_test() -> crate::Result<()> {
@@ -477,6 +482,59 @@ mod tests {
             .keyspace("default", KeyspaceCreateOptions::default)
             .is_ok());
         assert!(keyspace_exists(2)?);
+
+        Ok(())
+    }
+
+    /// Creating and deleting keyspaces must not leave the meta keyspace growing: the
+    /// tombstones and superseded versions of their entries have to be dropped by its
+    /// maintenance compaction, and its version history has to be pruned.
+    #[test]
+    fn meta_keyspace_gc_after_keyspace_churn() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let db = Database::builder(&folder).open()?;
+
+            let keep = db.keyspace("keep", KeyspaceCreateOptions::default)?;
+            keep.insert("a", "a")?;
+
+            for _ in 0..CHURN_ROUNDS {
+                let ks = db.keyspace("churn", KeyspaceCreateOptions::default)?;
+                ks.insert("a", "a")?;
+                db.delete_keyspace(ks)?;
+            }
+
+            let meta_tree = &db.meta_keyspace.inner;
+            let versions = meta_tree.get_version_history_lock().len();
+
+            assert_eq!(
+                db.meta_keyspace.len()?,
+                keep.config.encode_kvs(keep.id).len() + 1,
+                "only the surviving keyspace's entries are visible",
+            );
+            assert!(
+                meta_tree.tombstone_count() < 100,
+                "{} tombstones kept",
+                meta_tree.tombstone_count(),
+            );
+            assert!(
+                meta_tree.disk_space() < 100_000,
+                "{} bytes kept on disk",
+                meta_tree.disk_space(),
+            );
+            assert!(versions < 50, "{versions} versions kept in memory");
+        }
+
+        {
+            let db = Database::builder(&folder).open()?;
+
+            assert!(db.meta_keyspace.keyspace_exists("keep"));
+            assert!(!db.meta_keyspace.keyspace_exists("churn"));
+
+            let keep = db.keyspace("keep", KeyspaceCreateOptions::default)?;
+            assert_eq!(Some(b"a".as_slice()), keep.get("a")?.as_deref());
+        }
 
         Ok(())
     }
