@@ -117,10 +117,7 @@ impl WriteBatch {
 
         let write_record =
             crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(self.data))
-                .persist_mode(PersistMode::with_manual_flag(
-                    self.durability,
-                    self.db.config.manual_journal_persist,
-                ));
+                .persist_mode(self.durability);
 
         self.db
             .supervisor

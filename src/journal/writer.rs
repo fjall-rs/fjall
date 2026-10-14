@@ -50,16 +50,6 @@ pub enum PersistMode {
     SyncAll = 2,
 }
 
-impl PersistMode {
-    pub(crate) fn with_manual_flag(mode: Option<PersistMode>, manual_flag: bool) -> Option<Self> {
-        if manual_flag {
-            None
-        } else {
-            mode
-        }
-    }
-}
-
 impl PartialOrd for PersistMode {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         (*self as u8).partial_cmp(&(*other as u8))

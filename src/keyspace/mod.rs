@@ -925,10 +925,11 @@ impl Keyspace {
         let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
         ))
-        .persist_mode(PersistMode::with_manual_flag(
-            Some(PersistMode::Buffer),
-            self.config.manual_journal_persist,
-        ));
+        .persist_mode(if self.config.manual_journal_persist {
+            None
+        } else {
+            Some(PersistMode::Buffer)
+        });
 
         self.supervisor
             .write_pipeline
@@ -979,10 +980,11 @@ impl Keyspace {
         let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, false),
         ))
-        .persist_mode(PersistMode::with_manual_flag(
-            Some(PersistMode::Buffer),
-            self.config.manual_journal_persist,
-        ));
+        .persist_mode(if self.config.manual_journal_persist {
+            None
+        } else {
+            Some(PersistMode::Buffer)
+        });
 
         self.supervisor
             .write_pipeline
@@ -1045,10 +1047,11 @@ impl Keyspace {
         let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, true),
         ))
-        .persist_mode(PersistMode::with_manual_flag(
-            Some(PersistMode::Buffer),
-            self.config.manual_journal_persist,
-        ));
+        .persist_mode(if self.config.manual_journal_persist {
+            None
+        } else {
+            Some(PersistMode::Buffer)
+        });
 
         self.supervisor
             .write_pipeline
