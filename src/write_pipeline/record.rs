@@ -13,7 +13,7 @@ pub const WRITE_RECORD_STATE_PENDING: u8 = 0;
 pub const WRITE_RECORD_STATE_PUBLISHED: u8 = 1;
 
 /// Write record is published & leader stepped down
-pub const WRITE_RECORD_STATE_PUBLISHED_AND_LEADER_ABDICATED: u8 = 2;
+pub const WRITE_RECORD_STATE_LEADER_ABDICATED: u8 = 2;
 
 /// Write record is conflicted by OCC
 pub const WRITE_RECORD_STATE_CONFLICTED: u8 = 3;
@@ -83,8 +83,8 @@ impl WriteRecord {
         self.set_state(WRITE_RECORD_STATE_PUBLISHED);
     }
 
-    pub fn set_published_and_abdicated(&self) {
-        self.set_state(WRITE_RECORD_STATE_PUBLISHED_AND_LEADER_ABDICATED);
+    pub fn set_abdicated(&self) {
+        self.set_state(WRITE_RECORD_STATE_LEADER_ABDICATED);
     }
 
     pub fn set_conflicted(&self) {
