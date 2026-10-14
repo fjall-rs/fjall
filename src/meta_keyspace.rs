@@ -86,6 +86,13 @@ impl MetaKeyspace {
     }
 
     fn maintenance(&self) -> crate::Result<()> {
+        // The meta keyspace is only ever read at `SeqNo::MAX`, so no version of its
+        // entries below the next seqno is needed any more: tombstones of deleted
+        // keyspaces and superseded entries are dropped, and the version history is
+        // pruned. With a watermark of 0, every keyspace created or deleted left its
+        // entries on disk and its version in memory for good.
+        let gc_watermark = self.seqno_generator.get();
+
         self.inner
             .compact(
                 Arc::new(
@@ -93,7 +100,7 @@ impl MetaKeyspace {
                         .with_l0_threshold(2)
                         .with_level_ratio_policy(vec![20.0]),
                 ),
-                0,
+                gc_watermark,
             )
             .map_err(Into::into)
     }
