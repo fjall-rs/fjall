@@ -402,6 +402,8 @@ impl Keyspace {
 
     /// Returns an iterator that scans through the entire keyspace.
     ///
+    /// # Caution
+    ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
     /// # Examples
@@ -429,6 +431,8 @@ impl Keyspace {
 
     /// Returns an iterator over a range of items.
     ///
+    /// # Caution
+    ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     ///
     /// # Examples
@@ -453,6 +457,8 @@ impl Keyspace {
     }
 
     /// Returns an iterator over a prefixed set of items.
+    ///
+    /// # Caution
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     ///
@@ -518,7 +524,8 @@ impl Keyspace {
     /// Never, under any circumstances, use .`len()` == 0 to check
     /// if the keyspace is empty, use [`Keyspace::is_empty`] instead.
     ///
-    /// If you want an estimate, use [`Keyspace::approximate_len`] instead.
+    /// If you want an estimate, use [`Keyspace::approximate_len`] instead,
+    /// which is a O(1) operation.
     ///
     /// # Examples
     ///

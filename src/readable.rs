@@ -182,6 +182,8 @@ pub trait Readable {
 
     /// Iterates over the snapshot.
     ///
+    /// # Caution
+    ///
     /// Avoid using this function, or limit it as otherwise it may scan a lot of items.
     ///
     /// # Examples
@@ -253,6 +255,8 @@ pub trait Readable {
 
     /// Iterates over a range of the snapshot.
     ///
+    /// # Caution
+    ///
     /// Avoid using full or unbounded ranges as they may scan a lot of items (unless limited).
     ///
     /// # Examples
@@ -278,6 +282,8 @@ pub trait Readable {
     ) -> Iter;
 
     /// Iterates over a prefixed set of the snapshot.
+    ///
+    /// # Caution
     ///
     /// Avoid using an empty prefix as it may scan a lot of items (unless limited).
     ///
