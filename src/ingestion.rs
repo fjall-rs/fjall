@@ -55,6 +55,11 @@ impl<'a> Ingestion<'a> {
             .finish()
             .inspect(|()| {
                 self.keyspace
+                    .supervisor
+                    .snapshot_tracker
+                    .publish_version_upgrades(&self.keyspace.supervisor.seqno);
+
+                self.keyspace
                     .worker_messager
                     .try_send(WorkerMessage::Compact(self.keyspace.clone()))
                     .ok();

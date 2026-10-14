@@ -266,7 +266,10 @@ impl Keyspace {
             self.is_poisoned.poison();
         })?;
 
-        self.supervisor.snapshot_tracker.publish(seqno);
+        // The cleared version took a seqno of its own, above `seqno`
+        self.supervisor
+            .snapshot_tracker
+            .publish_version_upgrades(&self.supervisor.seqno);
 
         drop(journal_writer);
 
@@ -344,7 +347,15 @@ impl Keyspace {
         let base_config = lsm_tree::Config::new(
             base_folder,
             db.supervisor.seqno.clone(),
-            db.supervisor.snapshot_tracker.get_ref(),
+            // Not the snapshot tracker's counter: lsm-tree publishes every version
+            // upgrade (a memtable flush, a compaction, an ingestion) as `seqno.next() + 1`
+            // into this counter from the worker threads, without the journal lock.
+            // Published into the snapshot tracker, a batch that is being inserted at
+            // that moment would become visible to snapshots before all of its items
+            // are in. A new version becomes visible to snapshots with the next batch
+            // published after it instead; until then they read the previous version,
+            // which holds the same data (the flushed memtable is still part of it).
+            lsm_tree::SequenceNumberCounter::default(),
         )
         .use_descriptor_table(db.config.descriptor_table.clone())
         .use_cache(db.config.cache.clone());

@@ -88,7 +88,8 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
         let base_config = lsm_tree::Config::new(
             path,
             db.supervisor.seqno.clone(),
-            db.supervisor.snapshot_tracker.get_ref(),
+            // A counter of the tree's own, see `Keyspace::create_new`.
+            lsm_tree::SequenceNumberCounter::default(),
         )
         .use_descriptor_table(db.config.descriptor_table.clone())
         .use_cache(db.config.cache.clone());

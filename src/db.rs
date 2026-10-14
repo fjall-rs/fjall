@@ -605,10 +605,17 @@ impl Database {
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
+        // The meta keyspace publishes its version upgrades (a keyspace created or
+        // deleted, its maintenance compaction) into a counter of its own: it is only
+        // ever read at `SeqNo::MAX`, and published into the snapshot tracker's counter,
+        // outside the journal lock, they would make a batch that is being inserted at
+        // that moment visible to snapshots before all of its items are in.
+        let meta_visible_seqno = SequenceNumberCounter::default();
+
         let meta_tree = lsm_tree::Config::new(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
-            visible_seqno.clone(),
+            meta_visible_seqno.clone(),
         )
         .use_cache(config.cache.clone())
         .use_descriptor_table(config.descriptor_table.clone())
@@ -634,7 +641,7 @@ impl Database {
             meta_tree,
             keyspaces.clone(),
             seqno.clone(),
-            visible_seqno.clone(),
+            meta_visible_seqno,
         );
 
         let supervisor = Supervisor::new(SupervisorInner {
@@ -867,10 +874,17 @@ impl Database {
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
+        // The meta keyspace publishes its version upgrades (a keyspace created or
+        // deleted, its maintenance compaction) into a counter of its own: it is only
+        // ever read at `SeqNo::MAX`, and published into the snapshot tracker's counter,
+        // outside the journal lock, they would make a batch that is being inserted at
+        // that moment visible to snapshots before all of its items are in.
+        let meta_visible_seqno = SequenceNumberCounter::default();
+
         let meta_tree = lsm_tree::Config::new(
             config.path.join(KEYSPACES_FOLDER).join("0"),
             seqno.clone(),
-            visible_seqno.clone(),
+            meta_visible_seqno.clone(),
         )
         .use_cache(config.cache.clone())
         .use_descriptor_table(config.descriptor_table.clone())
@@ -896,7 +910,7 @@ impl Database {
             meta_tree,
             keyspaces.clone(),
             seqno.clone(),
-            visible_seqno.clone(),
+            meta_visible_seqno,
         );
 
         let supervisor = Supervisor::new(SupervisorInner {

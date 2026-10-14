@@ -126,6 +126,19 @@ impl SnapshotTracker {
         self.seqno.fetch_max(batch_seqno + 1);
     }
 
+    /// Makes the versions the trees have upgraded to so far visible to snapshots
+    /// opened from now on.
+    ///
+    /// A version upgrade takes its seqno from the shared counter, but publishes it
+    /// into a counter of the tree's own (see `Keyspace::create_new`). An upgrade that
+    /// carries new data (an ingestion, a `clear`) is published here by its caller.
+    ///
+    /// The caller must hold the journal lock: no write is between taking its seqno
+    /// and publishing it then, so every seqno handed out so far may be seen.
+    pub fn publish_version_upgrades(&self, seqno: &SequenceNumberCounter) {
+        self.seqno.fetch_max(seqno.get());
+    }
+
     // TODO: after recovery, we may need to set the GC watermark once to current_seqno - 1
     // so there cannot be compactions scheduled immediately with gc_watermark=0
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
