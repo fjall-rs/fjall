@@ -53,6 +53,37 @@ impl TxDatabase {
         &self.inner
     }
 
+    /// Convenience method for running a write transaction.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use fjall::{Readable, PersistMode, SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # let folder = tempfile::tempdir()?;
+    /// let db = SingleWriterTxDatabase::builder(folder).open()?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
+    ///
+    /// db.transact(|tx| {
+    ///     tx.set_durability(Some(PersistMode::SyncAll));
+    ///
+    ///     if !tx.contains_key(&items, "hello")? {
+    ///         tx.insert(&items, "hello", "world");
+    ///     }
+    ///     Ok(())
+    /// })?;
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    pub fn transact(
+        &self,
+        f: impl FnOnce(&mut WriteTransaction<'_>) -> crate::Result<()>,
+    ) -> crate::Result<()> {
+        let mut wtx = self.write_tx();
+        f(&mut wtx)?;
+        wtx.commit()?;
+        Ok(())
+    }
+
     /// Starts a new writeable transaction.
     #[must_use]
     #[expect(clippy::missing_panics_doc)]
