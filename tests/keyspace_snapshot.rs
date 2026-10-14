@@ -65,6 +65,10 @@ fn keyspace_visible_seqno() -> fjall::Result<()> {
 
     let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
+    // The keyspace creation took a seqno for the meta keyspace's new version;
+    // the visible seqno only moves with writes
+    tree.insert("a#0", "a")?;
+
     let initial_seqno = db.snapshot().seqno();
 
     tree.insert("a#1", "a")?;
@@ -103,6 +107,32 @@ fn keyspace_torn_read() -> fjall::Result<()> {
 
     let snapshot = db.snapshot();
     assert_eq!(initial_seqno + 1, snapshot.seqno());
+
+    Ok(())
+}
+
+#[test]
+fn keyspace_snapshot_sees_ingestion() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let db = Database::builder(&folder).open()?;
+
+    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+    let before = db.snapshot();
+
+    let mut ingestion = tree.start_ingestion()?;
+    ingestion.write("a", "a")?;
+    ingestion.write("b", "b")?;
+    ingestion.finish()?;
+
+    assert!(!before.contains_key(&tree, "a")?);
+    assert!(!before.contains_key(&tree, "b")?);
+
+    let after = db.snapshot();
+    assert!(after.contains_key(&tree, "a")?);
+    assert!(after.contains_key(&tree, "b")?);
+    assert_eq!(2, after.iter(&tree).count());
 
     Ok(())
 }
