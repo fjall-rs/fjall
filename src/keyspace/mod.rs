@@ -268,8 +268,6 @@ impl Keyspace {
 
         self.supervisor.snapshot_tracker.publish(seqno);
 
-        drop(journal_writer);
-
         Ok(())
     }
 
