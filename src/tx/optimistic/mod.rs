@@ -116,6 +116,32 @@ impl OptimisticTxDatabase {
         self.inner.persist(mode)
     }
 
+    /// Synchronously flushes all keyspaces into LSM-tree tables and starts a new journal.
+    ///
+    /// See [`Database::flush_all`] for details.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{KeyspaceCreateOptions, OptimisticTxDatabase};
+    /// # let folder = tempfile::tempdir()?;
+    /// let db = OptimisticTxDatabase::builder(folder).open()?;
+    /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
+    ///
+    /// items.insert("a", "hello")?;
+    /// db.flush_all()?;
+    /// # assert_eq!(1, items.inner().table_count());
+    /// #
+    /// # Ok::<_, fjall::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing fails.
+    pub fn flush_all(&self) -> crate::Result<()> {
+        self.inner.flush_all()
+    }
+
     /// Creates or opens a keyspace.
     ///
     /// If the keyspace does not yet exist, it will be created configured with `create_options`.
