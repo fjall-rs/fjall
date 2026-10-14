@@ -3,7 +3,8 @@ mod record;
 
 use crate::{
     journal::Journal, poison::PoisonSignal, snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager, Conflict, PersistMode,
+    write_buffer_manager::WriteBufferManager, write_pipeline::record::WRITE_RECORD_STATE_PENDING,
+    Conflict, PersistMode,
 };
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
@@ -279,23 +280,29 @@ impl WritePipeline {
 
                 return Ok(Ok(()));
             } else {
-                // Spin on record state and then on visible seqno
+                // Spin on record state until it is processed
                 //
                 // We need to do this to catch leader abdications
                 loop {
                     match record.state() {
+                        WRITE_RECORD_STATE_PENDING => {}
                         WRITE_RECORD_STATE_PUBLISHED => break,
                         WRITE_RECORD_STATE_PUBLISHED_AND_LEADER_ABDICATED => {
                             is_leader = true;
                             continue 'start;
                         }
                         WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
-                        _ => {}
+                        _ => unreachable!(),
                     }
                 }
 
+                // NOTE: Even if we had persist_mode=None, we still need to wait for the
+                // record contents to be visible, otherwise our writes may not be visible
+                // by a reader immediately following this commit
+
                 let assigned_seqno = record.assigned_seqno.load(Acquire);
 
+                // Spin on the visible seqno until our record is visible
                 loop {
                     let visible_seqno = self.snapshot_tracker.get();
 
