@@ -232,6 +232,7 @@ impl WritePipeline {
                     self.write_buffer_size.allocate(batch_size);
 
                     // TODO: how to do write stalling etc: like this?...
+                    // TODO: maybe we can create a "global" function and pass in the keyspaces instead
 
                     // Check each affected keyspace for write stall/halt
                     for keyspace in &keyspaces_with_possible_stall {
