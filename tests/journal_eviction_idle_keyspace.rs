@@ -59,6 +59,11 @@ fn journal_eviction_after_clear() -> fjall::Result<()> {
     run_journal_maintenance(&heavy)?;
     assert_eq!(1, db.journal_count());
 
+    drop((cleared, heavy, db));
+    let db = open(&folder)?;
+    let cleared = db.keyspace("cleared", KeyspaceCreateOptions::default)?;
+    assert!(!cleared.contains_key("a")?);
+
     Ok(())
 }
 
@@ -84,6 +89,13 @@ fn journal_eviction_after_compaction_drops_every_table() -> fjall::Result<()> {
 
     run_journal_maintenance(&heavy)?;
     assert_eq!(1, db.journal_count());
+
+    drop((compacted, slow, heavy, db));
+    let db = open(&folder)?;
+    let compacted = db.keyspace("compacted", KeyspaceCreateOptions::default)?;
+    let slow = db.keyspace("slow", KeyspaceCreateOptions::default)?;
+    assert!(!compacted.contains_key("a")?);
+    assert!(slow.contains_key("a")?);
 
     Ok(())
 }
@@ -114,6 +126,12 @@ fn journal_eviction_after_compaction_drops_newest_entries() -> fjall::Result<()>
 
     run_journal_maintenance(&heavy)?;
     assert_eq!(1, db.journal_count());
+
+    drop((compacted, slow, heavy, db));
+    let db = open(&folder)?;
+    let compacted = db.keyspace("compacted", KeyspaceCreateOptions::default)?;
+    assert!(compacted.contains_key("kept")?);
+    assert!(!compacted.contains_key("a")?);
 
     Ok(())
 }
