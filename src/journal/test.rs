@@ -109,7 +109,8 @@ fn journal_recovery_active() -> crate::Result<()> {
     assert!(next_path.try_exists()?);
     assert!(next_next_path.try_exists()?);
 
-    let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
+    let journal_recovered =
+        Journal::recover(dir2, CompressionType::None, 0, RecoveryMode::default())?;
     assert_eq!(journal_recovered.active.path()?, next_next_path);
     assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
@@ -172,7 +173,8 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
     assert!(next_path.try_exists()?);
     assert!(next_next_path.try_exists()?);
 
-    let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
+    let journal_recovered =
+        Journal::recover(dir2, CompressionType::None, 0, RecoveryMode::default())?;
     assert_eq!(journal_recovered.active.path()?, next_next_path);
     assert_eq!(journal_recovered.sealed, &[(0, path), (1, next_path)]);
 
@@ -216,7 +218,8 @@ fn journal_recovery_no_active() -> crate::Result<()> {
     assert!(path.try_exists()?);
     assert!(!next_path.try_exists()?);
 
-    let journal_recovered = Journal::recover(dir2, CompressionType::None, 0)?;
+    let journal_recovered =
+        Journal::recover(dir2, CompressionType::None, 0, RecoveryMode::default())?;
     assert_eq!(journal_recovered.active.path()?, path);
     assert_eq!(journal_recovered.sealed, &[]);
 
@@ -483,6 +486,133 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let collected = reader.flatten().collect::<Vec<_>>();
         assert_eq!(values.to_vec(), collected.first().unwrap().items);
     }
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_mid_journal_corruption_recovery_modes() -> crate::Result<()> {
+    let keyspace_dir = tempdir()?;
+    let db = crate::Database::builder(&keyspace_dir).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let items = [BatchItem::new(
+        keyspace.clone(),
+        *b"abc",
+        *b"def",
+        ValueType::Value,
+    )];
+
+    // One intact batch, then garbage where a batch header belongs, then another
+    // intact batch: the corruption is not at the tail, so recovering quietly would
+    // drop the second batch.
+    let build = |dir: &tempfile::TempDir| -> crate::Result<(std::path::PathBuf, u64)> {
+        let path = dir.path().join("0.jnl");
+
+        {
+            let journal = Journal::create_new(&path)?;
+            journal
+                .get_writer()?
+                .write_batch(items.iter(), items.len(), 0)?;
+        }
+
+        let intact_len = std::fs::metadata(&path)?.len();
+
+        {
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+            file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
+            file.sync_all()?;
+        }
+
+        {
+            let journal = Journal::from_file(&path)?;
+            journal
+                .get_writer()?
+                .write_batch(items.iter(), items.len(), 1)?;
+        }
+
+        Ok((path, intact_len))
+    };
+
+    // Strict: a completed batch follows the unreadable region, so it is reported and
+    // the file is left untouched
+    {
+        let dir = tempdir()?;
+        let (path, _) = build(&dir)?;
+        let len_before = std::fs::metadata(&path)?.len();
+
+        let journal = Journal::from_file(&path)?.with_recovery_mode(RecoveryMode::Strict);
+        let collected = journal.get_reader()?.collect::<Vec<_>>();
+
+        assert_eq!(2, collected.len());
+        assert!(matches!(
+            collected.last(),
+            Some(Err(crate::Error::JournalRecovery(
+                crate::JournalRecoveryError::MidJournalCorruption
+            )))
+        ));
+        assert_eq!(
+            len_before,
+            std::fs::metadata(&path)?.len(),
+            "strict recovery must not truncate the journal"
+        );
+    }
+
+    // Default: the same file is truncated down to the last intact batch, as before
+    {
+        let dir = tempdir()?;
+        let (path, len_before) = build(&dir)?;
+
+        let journal = Journal::from_file(&path)?;
+        let collected = journal.get_reader()?.collect::<Vec<_>>();
+
+        assert_eq!(1, collected.len());
+        assert!(collected.first().unwrap().is_ok());
+        assert!(
+            std::fs::metadata(&path)?.len() < len_before,
+            "default recovery truncates the journal to the last intact batch"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_strict_recovery_tolerates_a_corrupt_tail() -> crate::Result<()> {
+    let keyspace_dir = tempdir()?;
+    let db = crate::Database::builder(&keyspace_dir).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir = tempdir()?;
+    let path = dir.path().join("0.jnl");
+
+    let items = [BatchItem::new(
+        keyspace.clone(),
+        *b"abc",
+        *b"def",
+        ValueType::Value,
+    )];
+
+    {
+        let journal = Journal::create_new(&path)?;
+        journal
+            .get_writer()?
+            .write_batch(items.iter(), items.len(), 0)?;
+    }
+
+    // Nothing after the garbage: a torn tail, which strict mode still discards
+    {
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+        file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
+        file.sync_all()?;
+    }
+
+    let journal = Journal::from_file(&path)?.with_recovery_mode(RecoveryMode::Strict);
+    let collected = journal.get_reader()?.collect::<crate::Result<Vec<_>>>()?;
+
+    assert_eq!(1, collected.len());
 
     Ok(())
 }

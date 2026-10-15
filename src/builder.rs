@@ -2,6 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use crate::journal::error::RecoveryMode;
 use crate::{db_config::CompactionFilterAssigner, Config};
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{marker::PhantomData, path::Path, sync::Arc};
@@ -54,6 +55,15 @@ impl<O: Openable> Builder<O> {
     #[must_use]
     pub fn journal_compression(mut self, comp: CompressionType) -> Self {
         self.inner.journal_compression_type = comp;
+        self
+    }
+
+    /// Sets the recovery mode used when the database is opened.
+    ///
+    /// Default = [`RecoveryMode::TolerateCorruptTail`]
+    #[must_use]
+    pub fn journal_recovery_mode(mut self, mode: RecoveryMode) -> Self {
+        self.inner.journal_recovery_mode = mode;
         self
     }
 

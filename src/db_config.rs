@@ -2,6 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use crate::journal::error::RecoveryMode;
 use crate::path::absolute_path;
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{
@@ -45,8 +46,7 @@ pub struct Config {
 
     pub(crate) journal_compression_threshold: usize,
 
-    // pub(crate) journal_recovery_mode: RecoveryMode,
-    //
+    pub(crate) journal_recovery_mode: RecoveryMode,
     pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
 }
 
@@ -76,7 +76,7 @@ impl Config {
             max_write_buffer_size_in_bytes: None,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_threads,
-            // journal_recovery_mode: RecoveryMode::default(),
+            journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 
             #[cfg(not(feature = "lz4"))]
