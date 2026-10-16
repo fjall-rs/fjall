@@ -1,4 +1,5 @@
 use lsm_tree::SeqNo;
+use take_once::TakeOnce;
 
 use crate::{tx::optimistic::Oracle, PersistMode};
 use std::sync::{
@@ -56,7 +57,7 @@ pub struct WriteRecord {
     pub(super) persist_mode: Option<PersistMode>,
 
     /// The actual user data to write
-    pub(super) payload: Payload,
+    pub(super) payload: TakeOnce<Payload>,
 
     /// The record's seqno
     ///
@@ -96,7 +97,7 @@ impl WriteRecord {
         WriteRecord {
             state: AtomicU8::new(WRITE_RECORD_STATE_PENDING),
             persist_mode: None,
-            payload,
+            payload: TakeOnce::new_with(payload),
             assigned_seqno: AtomicU64::default(),
             occ: None,
         }

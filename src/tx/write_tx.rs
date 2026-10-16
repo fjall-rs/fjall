@@ -346,9 +346,6 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        // TODO: instead of using batch, write batch::commit as a generic function that takes
-        // a impl Iterator<BatchItem>
-        // that way, we don't have to move the memtable(s) into the batch first to commit?
         self.into_batch().commit()?;
 
         Ok(())

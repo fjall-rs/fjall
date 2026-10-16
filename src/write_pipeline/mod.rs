@@ -16,7 +16,7 @@ use std::{
     collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering::Acquire},
-        Arc, RwLock,
+        Arc,
     },
 };
 
@@ -104,7 +104,16 @@ impl WritePipeline {
 
             let batch_seqno = self.seqno.next();
 
-            bytes_written += match &write_record.payload {
+            #[expect(
+                clippy::expect_used,
+                reason = "write record can only be initialized with payload, and only the leader consumes write records (exactly once)"
+            )]
+            let payload = write_record
+                .payload
+                .take()
+                .expect("should get write record payload");
+
+            bytes_written += match &payload {
                 WriteRecordPayload::Single(item) => journal_writer.write_raw(
                     item.keyspace.id(),
                     &item.key,
@@ -125,12 +134,9 @@ impl WritePipeline {
             // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
             let mut keyspaces_with_possible_stall = HashSet::new();
 
-            match &write_record.payload {
+            match payload {
                 WriteRecordPayload::Single(item) => {
-                    // TODO: std::mem::take item instead...?
-                    let item = item.clone();
-
-                    // TODO: need a better, generic write op
+                    // TODO: need a better, generic write op in lsm-tree?
                     let (item_size, _) = match item.value_type {
                         ValueType::Value => {
                             item.keyspace.tree.insert(item.key, item.value, batch_seqno)
@@ -143,16 +149,9 @@ impl WritePipeline {
                     };
 
                     batch_size += item_size;
-
-                    let memtable_size = item.keyspace.tree.active_memtable().size();
-                    item.keyspace.check_memtable_rotate(memtable_size);
-                    item.keyspace.local_backpressure();
                 }
                 WriteRecordPayload::Multiple(items) => {
-                    // TODO: std::mem::take batch instead... we don't own the batch because Arc... but really we do?
                     for item in items {
-                        let item = item.clone();
-
                         // TODO: need a better, generic write op
                         let (item_size, _) = match item.value_type {
                             ValueType::Value => {
@@ -304,13 +303,13 @@ impl WritePipeline {
                             // We need to do this to catch leader abdications
                             //
                             // Imagine this TOCTOU scenario:
-                            //   Leader sees no queue head
+                            //   Existing leader sees no queue head
                             //     -> We now push a write record & become follower
                             //       -> Leader frees leader lease
                             //         -> We spin on record state forever
                             if i % 1_000 == 0 {
                                 if self.try_acquire_leader_lease() {
-                                    // Crown ourselves leader
+                                    // Crown ourselves as leader
                                     is_leader = true;
                                     continue 'start;
                                 }
