@@ -148,8 +148,12 @@ impl JournalBatchReader {
     }
 
     fn hash_entry(&mut self, start: u64, end: u64) -> crate::Result<()> {
-        self.reader.reader.seek(SeekFrom::Start(start))?;
         let mut remaining = end - start;
+        // JournalReader::next leaves the cursor at `end`. Seek within the
+        // buffered bytes when possible instead of discarding them twice per
+        // entry while replaying a large journal.
+        let back = i64::try_from(remaining).map_err(|_| crate::Error::Unrecoverable)?;
+        self.reader.reader.seek_relative(-back)?;
         let mut buffer = [0_u8; 8192];
         while remaining > 0 {
             let len = usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
@@ -158,7 +162,6 @@ impl JournalBatchReader {
             self.checksum_builder.update(chunk);
             remaining -= len as u64;
         }
-        self.reader.reader.seek(SeekFrom::Start(end))?;
         Ok(())
     }
 
