@@ -555,7 +555,7 @@ mod tests {
                 if let Some(status) = child.try_wait()? {
                     assert!(
                         status.success(),
-                        "halted writer did not request compaction: {status}"
+                        "halted writer did not request compaction twice: {status}"
                     );
                     return Ok(());
                 }
@@ -590,16 +590,23 @@ mod tests {
             db.supervisor.flush_manager.clear();
         }
         assert!(ks.tree.l0_run_count() >= 30);
+        db.supervisor.compaction_manager.clear();
         let writer = ks.clone();
         std::thread::spawn(move || writer.local_backpressure());
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while std::time::Instant::now() < deadline {
-            if db.supervisor.compaction_manager.dequeue().is_some() {
-                std::process::exit(0);
+        for request in 0..2 {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            loop {
+                assert!(ks.tree.l0_run_count() >= 30);
+                if db.supervisor.compaction_manager.dequeue().is_some() {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    std::process::exit(2 + request);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        std::process::exit(2);
+        std::process::exit(0);
     }
 
     /// Concurrent writes across keyspaces exercise rotations and flushes with
