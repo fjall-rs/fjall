@@ -793,27 +793,41 @@ impl Keyspace {
         Ok(true)
     }
 
-    fn check_write_halt(&self) {
+    fn check_background_write_state(&self) -> crate::Result<()> {
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+        Ok(())
+    }
+
+    fn check_write_halt(&self) -> crate::Result<()> {
         while self.tree.l0_run_count() >= 30 {
+            self.check_background_write_state()?;
             // Another level may have won compaction selection, leaving L0
             // unchanged. The halted writer must keep maintenance discoverable.
             self.supervisor.request_compaction(self);
             std::thread::sleep(Duration::from_millis(10));
         }
+        self.check_background_write_state()
     }
 
-    pub(crate) fn local_backpressure(&self) -> bool {
+    pub(crate) fn local_backpressure(&self) -> crate::Result<bool> {
+        self.check_background_write_state()?;
         let mut throttled = false;
 
         let l0_run_count = self.tree.l0_run_count();
 
         if l0_run_count >= 20 {
             perform_write_stall(l0_run_count);
-            self.check_write_halt();
+            self.check_write_halt()?;
             throttled = true;
         }
 
         while self.tree.sealed_memtable_count() >= 4 {
+            self.check_background_write_state()?;
             log::debug!(
                 "Halting writes because we have 4+ sealed memtables in {:?} queued up",
                 self.name,
@@ -822,7 +836,8 @@ impl Keyspace {
             throttled = true;
         }
 
-        throttled
+        self.check_background_write_state()?;
+        Ok(throttled)
     }
 
     pub(crate) fn request_rotation(&self) {
@@ -830,12 +845,7 @@ impl Keyspace {
         let latest_version = lock.latest_version();
         let active_memtable = &latest_version.active_memtable;
 
-        self.worker_messager
-            .try_send(WorkerMessage::RotateMemtable(
-                self.clone(),
-                active_memtable.id(),
-            ))
-            .ok();
+        self.supervisor.request_rotation(self, active_memtable.id());
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
@@ -844,9 +854,10 @@ impl Keyspace {
         }
     }
 
-    fn maintenance(&self, memtable_size: u64) {
+    fn maintenance(&self, memtable_size: u64) -> crate::Result<()> {
         self.check_memtable_rotate(memtable_size);
-        self.local_backpressure();
+        self.local_backpressure()?;
+        Ok(())
     }
 
     #[doc(hidden)]
@@ -957,7 +968,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
@@ -1031,7 +1042,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
@@ -1125,7 +1136,7 @@ impl Keyspace {
         drop(journal_writer);
 
         self.supervisor.write_buffer_size.allocate(item_size);
-        self.maintenance(memtable_size);
+        self.maintenance(memtable_size)?;
 
         Ok(())
     }
