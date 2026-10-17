@@ -45,6 +45,9 @@ pub struct Config {
 
     pub(crate) journal_compression_threshold: usize,
 
+    /// Optional limit on values accepted in the journal and during recovery.
+    pub(crate) max_journal_value_bytes: Option<usize>,
+
     // pub(crate) journal_recovery_mode: RecoveryMode,
     //
     pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
@@ -86,6 +89,7 @@ impl Config {
             journal_compression_type: CompressionType::Lz4,
 
             journal_compression_threshold: 4_096,
+            max_journal_value_bytes: None,
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
 

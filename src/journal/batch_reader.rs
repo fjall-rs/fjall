@@ -3,9 +3,19 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
+use crate::{
+    file::MAGIC_BYTES, journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError,
+};
+use byteorder::{LittleEndian, ReadBytesExt};
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
-use std::{fs::OpenOptions, hash::Hasher};
+use std::{
+    collections::HashSet,
+    fs::{File, OpenOptions},
+    hash::Hasher,
+    io::{BufReader, Read, Seek, SeekFrom},
+};
+
+const MAX_IN_MEMORY_BATCH_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct ReadBatchItem {
@@ -18,15 +28,75 @@ pub struct ReadBatchItem {
 #[derive(Debug)]
 pub struct Batch {
     pub(crate) seqno: SeqNo,
-    pub(crate) items: Vec<ReadBatchItem>,
+    pub(crate) items: BatchItems,
     pub(crate) cleared_keyspaces: Vec<InternalKeyspaceId>,
+}
+
+#[derive(Debug)]
+pub enum BatchItems {
+    InMemory(std::vec::IntoIter<ReadBatchItem>),
+    Journal {
+        reader: BufReader<File>,
+        remaining: u32,
+        max_value_bytes: Option<usize>,
+    },
+}
+
+impl BatchItems {
+    pub fn is_streaming(&self) -> bool {
+        matches!(self, Self::Journal { .. })
+    }
+}
+
+impl Iterator for BatchItems {
+    type Item = crate::Result<ReadBatchItem>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::InMemory(items) => items.next().map(Ok),
+            Self::Journal {
+                reader,
+                remaining,
+                max_value_bytes,
+            } => loop {
+                if *remaining == 0 {
+                    return None;
+                }
+                *remaining -= 1;
+                match Entry::decode_from_with_value_limit(reader, *max_value_bytes) {
+                    Ok(Entry::Item {
+                        keyspace_id,
+                        key,
+                        value,
+                        value_type,
+                        ..
+                    }) => {
+                        return Some(Ok(ReadBatchItem {
+                            keyspace_id,
+                            key,
+                            value,
+                            value_type,
+                        }))
+                    }
+                    Ok(Entry::Clear { .. }) => continue,
+                    Ok(_) => return Some(Err(crate::Error::Unrecoverable)),
+                    Err(error) => return Some(Err(error)),
+                }
+            },
+        }
+    }
 }
 
 #[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
     items: Vec<ReadBatchItem>,
+    item_bytes: usize,
+    journal_batch_start: u64,
+    journal_batch_count: u32,
+    journal_items: bool,
     cleared_keyspaces: Vec<InternalKeyspaceId>,
+    cleared_keyspace_ids: HashSet<InternalKeyspaceId>,
     is_in_batch: bool,
     batch_counter: u32,
     batch_seqno: SeqNo,
@@ -39,7 +109,12 @@ impl JournalBatchReader {
         Self {
             reader,
             items: Vec::with_capacity(10),
+            item_bytes: 0,
+            journal_batch_start: 0,
+            journal_batch_count: 0,
+            journal_items: false,
             cleared_keyspaces: Vec::new(),
+            cleared_keyspace_ids: HashSet::new(),
             checksum_builder: xxhash_rust::xxh3::Xxh3::new(),
             is_in_batch: false,
             batch_seqno: 0,
@@ -71,6 +146,113 @@ impl JournalBatchReader {
 
         Ok(())
     }
+
+    fn hash_entry(&mut self, start: u64, end: u64) -> crate::Result<()> {
+        let mut remaining = end - start;
+        // JournalReader::next leaves the cursor at `end`. Seek within the
+        // buffered bytes when possible instead of discarding them twice per
+        // entry while replaying a large journal.
+        let back = i64::try_from(remaining).map_err(|_| crate::Error::Unrecoverable)?;
+        self.reader.reader.seek_relative(-back)?;
+        let mut buffer = [0_u8; 8192];
+        while remaining > 0 {
+            let len = usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
+            let chunk = buffer.get_mut(..len).ok_or(crate::Error::Unrecoverable)?;
+            self.reader.reader.read_exact(chunk)?;
+            self.checksum_builder.update(chunk);
+            remaining -= len as u64;
+        }
+        Ok(())
+    }
+
+    fn push_item(&mut self, item: ReadBatchItem) {
+        if self.journal_items {
+            return;
+        }
+
+        // Vec capacity can be almost twice its length. Charge for that spare
+        // capacity as well as the key and value allocations, so tiny items
+        // cannot grow the pending batch without crossing the streaming threshold.
+        self.item_bytes = self
+            .item_bytes
+            .saturating_add(item.key.len())
+            .saturating_add(item.value.len())
+            .saturating_add(2 * std::mem::size_of::<ReadBatchItem>());
+        if self.item_bytes > MAX_IN_MEMORY_BATCH_BYTES {
+            self.items = Vec::new();
+            self.journal_items = true;
+            self.item_bytes = 0;
+        } else {
+            self.items.push(item);
+        }
+    }
+
+    // A value limit is checked before its payload is allocated. If the item
+    // belongs to a torn final batch, however, the old recovery behavior is to
+    // discard that batch. Verify its framing and checksum with fixed-size
+    // buffers before deciding whether the oversized value was committed.
+    fn oversized_batch_is_committed(&self) -> crate::Result<bool> {
+        let file = File::open(&self.reader.path)?;
+        let file_len = file.metadata()?.len();
+        let mut reader = BufReader::new(file);
+        reader.seek(SeekFrom::Start(self.journal_batch_start))?;
+        let mut checksum = xxhash_rust::xxh3::Xxh3::new();
+        let mut buffer = [0_u8; 8192];
+
+        for _ in 0..self.journal_batch_count {
+            let start = reader.stream_position()?;
+            let Ok(tag) = reader.read_u8() else {
+                return Ok(false);
+            };
+            let payload_len = match tag {
+                2 => {
+                    let mut header = [0_u8; 20];
+                    if reader.read_exact(&mut header).is_err() {
+                        return Ok(false);
+                    }
+                    let key_len = u16::from_le_bytes([header[10], header[11]]) as u64;
+                    let value_len =
+                        u32::from_le_bytes([header[16], header[17], header[18], header[19]]) as u64;
+                    key_len + value_len
+                }
+                4 => 8,
+                _ => return Ok(false),
+            };
+            let Some(end) = reader.stream_position()?.checked_add(payload_len) else {
+                return Ok(false);
+            };
+            if end > file_len {
+                return Ok(false);
+            }
+            reader.seek(SeekFrom::Start(start))?;
+            let mut remaining = end - start;
+            while remaining > 0 {
+                let len = usize::try_from(remaining.min(buffer.len() as u64))
+                    .map_err(|_| crate::Error::Unrecoverable)?;
+                let chunk = buffer.get_mut(..len).ok_or(crate::Error::Unrecoverable)?;
+                reader.read_exact(chunk)?;
+                checksum.update(chunk);
+                remaining -= u64::try_from(len).map_err(|_| crate::Error::Unrecoverable)?;
+            }
+        }
+
+        if reader.read_u8().ok() != Some(3) {
+            return Ok(false);
+        }
+        let Ok(expected_checksum) = reader.read_u64::<LittleEndian>() else {
+            return Ok(false);
+        };
+        let mut magic = [0_u8; 4];
+        if reader.read_exact(&mut magic).is_err() || magic != MAGIC_BYTES {
+            return Ok(false);
+        }
+        if checksum.finish() != expected_checksum {
+            return Err(crate::Error::JournalRecovery(
+                JournalRecoveryError::ChecksumMismatch,
+            ));
+        }
+        Ok(true)
+    }
 }
 
 impl Iterator for JournalBatchReader {
@@ -81,11 +263,25 @@ impl Iterator for JournalBatchReader {
         use crate::Error::JournalRecovery;
 
         loop {
+            let entry_start = self.reader.last_valid_pos;
             let Some(item) = self.reader.next() else {
                 fail_iter!(self.on_close());
                 return None;
             };
-            let item = fail_iter!(item);
+            let item = match item {
+                Ok(item) => item,
+                Err(error @ crate::Error::ValueTooLarge { .. }) if self.is_in_batch => {
+                    match self.oversized_batch_is_committed() {
+                        Ok(true) => return Some(Err(error)),
+                        Ok(false) => {
+                            fail_iter!(self.truncate_to(self.last_valid_pos));
+                            return None;
+                        }
+                        Err(error) => return Some(Err(error)),
+                    }
+                }
+                Err(error) => return Some(Err(error)),
+            };
 
             let journal_file_pos = self.reader.last_valid_pos;
 
@@ -103,6 +299,8 @@ impl Iterator for JournalBatchReader {
                     self.is_in_batch = true;
                     self.batch_counter = item_count;
                     self.batch_seqno = seqno;
+                    self.journal_batch_start = journal_file_pos;
+                    self.journal_batch_count = item_count;
                 }
                 Entry::End(expected_checksum) => {
                     if self.batch_counter > 0 {
@@ -135,8 +333,21 @@ impl Iterator for JournalBatchReader {
 
                     self.last_valid_pos = journal_file_pos;
 
-                    let items = std::mem::take(&mut self.items);
+                    let items = if std::mem::take(&mut self.journal_items) {
+                        let file = fail_iter!(File::open(&self.reader.path));
+                        let mut reader = BufReader::new(file);
+                        fail_iter!(reader.seek(SeekFrom::Start(self.journal_batch_start)));
+                        BatchItems::Journal {
+                            reader,
+                            remaining: self.journal_batch_count,
+                            max_value_bytes: self.reader.max_value_bytes,
+                        }
+                    } else {
+                        BatchItems::InMemory(std::mem::take(&mut self.items).into_iter())
+                    };
+                    self.item_bytes = 0;
                     let cleared_keyspaces = std::mem::take(&mut self.cleared_keyspaces);
+                    self.cleared_keyspace_ids = HashSet::new();
                     return Some(Ok(Batch {
                         seqno: self.batch_seqno,
                         items,
@@ -148,19 +359,9 @@ impl Iterator for JournalBatchReader {
                     key,
                     value,
                     value_type,
-                    compression,
+                    compression: _,
                 } => {
-                    let item = Entry::Item {
-                        keyspace_id,
-                        key: key.clone(),
-                        value: value.clone(),
-                        value_type,
-                        compression,
-                    };
-                    let mut bytes = Vec::with_capacity(100);
-                    fail_iter!(item.encode_into(&mut bytes));
-
-                    self.checksum_builder.update(&bytes);
+                    fail_iter!(self.hash_entry(entry_start, journal_file_pos));
 
                     if !self.is_in_batch {
                         log::debug!("Invalid batch: found end marker without start marker");
@@ -178,7 +379,7 @@ impl Iterator for JournalBatchReader {
 
                     self.batch_counter -= 1;
 
-                    self.items.push(ReadBatchItem {
+                    self.push_item(ReadBatchItem {
                         keyspace_id,
                         key,
                         value,
@@ -186,11 +387,7 @@ impl Iterator for JournalBatchReader {
                     });
                 }
                 Entry::Clear { keyspace_id } => {
-                    let entry = Entry::Clear { keyspace_id };
-                    let mut bytes = Vec::with_capacity(16);
-                    fail_iter!(entry.encode_into(&mut bytes));
-
-                    self.checksum_builder.update(&bytes);
+                    fail_iter!(self.hash_entry(entry_start, journal_file_pos));
 
                     if !self.is_in_batch {
                         log::debug!("Invalid batch: found clear marker without start marker");
@@ -208,9 +405,44 @@ impl Iterator for JournalBatchReader {
 
                     self.batch_counter -= 1;
 
-                    self.cleared_keyspaces.push(keyspace_id);
+                    if self.cleared_keyspace_ids.insert(keyspace_id) {
+                        self.cleared_keyspaces.push(keyspace_id);
+                    }
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod value_limit_tests {
+    use super::*;
+    use byteorder::WriteBytesExt;
+    use std::io::Write;
+
+    #[test]
+    fn oversized_header_in_preallocated_crash_tail_is_discarded() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let path = folder.path().join("0.jnl");
+        let mut file = File::create(&path)?;
+        file.set_len(64 * 1024 * 1024)?;
+        Entry::Start {
+            item_count: 1,
+            seqno: 1,
+        }
+        .encode_into(&mut file)?;
+        file.write_u8(2)?; // Item marker
+        file.write_u8(0)?; // Value type
+        file.write_u8(0)?; // No compression
+        file.write_u64::<LittleEndian>(1)?;
+        file.write_u16::<LittleEndian>(1)?;
+        file.write_u32::<LittleEndian>(2048)?;
+        file.write_u32::<LittleEndian>(2048)?;
+        file.flush()?;
+
+        let reader = JournalReader::new_with_value_limit(&path, Some(1024))?;
+        assert!(JournalBatchReader::new(reader).next().is_none());
+        assert_eq!(path.metadata()?.len(), 0);
+        Ok(())
     }
 }

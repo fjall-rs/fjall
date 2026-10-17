@@ -57,6 +57,15 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Limits the uncompressed size of each journal value, on write and recovery.
+    /// Existing journals with larger values will fail to open with `ValueTooLarge`.
+    /// The default is no additional limit.
+    #[must_use]
+    pub fn max_journal_value_bytes(mut self, bytes: Option<usize>) -> Self {
+        self.inner.max_journal_value_bytes = bytes;
+        self
+    }
+
     /// If `false`, write batches or transactions automatically flush data to the operating system.
     ///
     /// Default = false

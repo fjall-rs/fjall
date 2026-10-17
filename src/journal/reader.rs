@@ -19,16 +19,25 @@ pub struct JournalReader {
     pub(crate) path: PathBuf,
     pub(crate) reader: BufReader<File>,
     pub(crate) last_valid_pos: u64,
+    pub(crate) max_value_bytes: Option<usize>,
 }
 
 impl JournalReader {
     pub fn new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+        Self::new_with_value_limit(path, None)
+    }
+
+    pub fn new_with_value_limit<P: AsRef<Path>>(
+        path: P,
+        max_value_bytes: Option<usize>,
+    ) -> crate::Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(&path)?;
 
         Ok(Self {
             path: path.as_ref().into(),
             reader: BufReader::new(file),
             last_valid_pos: 0,
+            max_value_bytes,
         })
     }
 
@@ -54,12 +63,15 @@ impl Iterator for JournalReader {
     type Item = crate::Result<Entry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match Entry::decode_from(&mut self.reader) {
+        match Entry::decode_from_with_value_limit(&mut self.reader, self.max_value_bytes) {
             Ok(item) => {
                 self.last_valid_pos = fail_iter!(self.reader.stream_position());
                 Some(Ok(item))
             }
             Err(e) => {
+                if matches!(e, crate::Error::ValueTooLarge { .. }) {
+                    return Some(Err(e));
+                }
                 if let crate::Error::Io(e) = e {
                     match e.kind() {
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::Other => {

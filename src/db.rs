@@ -13,11 +13,11 @@ use crate::{
     locked_file::LockedFileGuard,
     meta_keyspace::MetaKeyspace,
     poison::{PoisonDart, PoisonSignal},
-    recovery::{recover_keyspaces, recover_sealed_memtables},
+    recovery::{recover_keyspaces, recover_sealed_memtables, RecoveryBudget},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
-    supervisor::{Supervisor, SupervisorInner},
+    supervisor::{CompactionManager, RotationManager, Supervisor, SupervisorInner},
     version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
@@ -68,20 +68,15 @@ impl Drop for DatabaseInner {
 
         let _ = self.worker_pool.rx.drain().count();
 
-        while self
-            .active_thread_counter
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0
-        {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
-        }
+        wait_for_workers(&self.worker_pool.sender, &self.active_thread_counter);
 
         // Drain again after threads are closed
         let _ = self.worker_pool.rx.drain().count();
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+        self.supervisor.compaction_manager.clear();
+        self.supervisor.rotation_manager.clear();
         self.supervisor
             .keyspaces
             .write()
@@ -109,6 +104,42 @@ impl Drop for DatabaseInner {
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
+    }
+}
+
+fn wait_for_workers(sender: &flume::Sender<WorkerMessage>, active: &AtomicUsize) {
+    while active.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        // A worker can exit after the count check. A blocking send to a
+        // newly full channel would then wait forever with no receiver.
+        let _ = sender.try_send(WorkerMessage::Close);
+        std::thread::sleep(std::time::Duration::from_micros(10));
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn full_channel_and_exited_worker_do_not_hang_shutdown() {
+        let (sender, _receiver) = flume::bounded(1);
+        sender.try_send(WorkerMessage::Flush).unwrap();
+        let active = Arc::new(AtomicUsize::new(1));
+        let exiting_worker = active.clone();
+        let exit = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            exiting_worker.store(0, std::sync::atomic::Ordering::Relaxed);
+        });
+        let (done, finished) = std::sync::mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            wait_for_workers(&sender, &active);
+            done.send(()).unwrap();
+        });
+        finished
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("shutdown stayed blocked on the full channel after the worker exited");
+        waiter.join().unwrap();
+        exit.join().unwrap();
     }
 }
 
@@ -416,15 +447,13 @@ impl Database {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    ///
+    /// Returns [`Error::KeyspaceDeleted`](crate::Error::KeyspaceDeleted) if the
+    /// handle is no longer registered in this database, including when it was
+    /// deleted and recreated under the same name.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        self.meta_keyspace.remove_keyspace(&handle.name)?;
-
-        handle
-            .is_deleted
-            .store(true, std::sync::atomic::Ordering::Release);
-
-        Ok(())
+        self.meta_keyspace.remove_keyspace(&handle)
     }
 
     fn allocate_keyspace_id(&self) -> crate::Result<u64> {
@@ -588,10 +617,11 @@ impl Database {
         // let recovery_mode = config.journal_recovery_mode;
 
         // Reload active journal
-        let journal_recovery = Journal::recover(
+        let journal_recovery = Journal::recover_with_value_limit(
             &config.path,
             config.journal_compression_type,
             config.journal_compression_threshold,
+            config.max_journal_value_bytes,
         )?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
@@ -641,6 +671,8 @@ impl Database {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
+            compaction_manager: CompactionManager::new(),
+            rotation_manager: RotationManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal: active_journal,
@@ -701,11 +733,17 @@ impl Database {
                 log::trace!("Replaying active journal");
 
                 let reader = db.supervisor.journal.get_reader()?;
+                let mut touched_keyspaces = Vec::new();
+                let mut recovery_budget = RecoveryBudget::default();
 
                 for batch in reader {
                     let batch = batch?;
+                    db.supervisor.seqno.fetch_max(batch.seqno + 1);
+                    touched_keyspaces.clear();
+                    let streaming = batch.items.is_streaming();
 
                     for item in batch.items {
+                        let item = item?;
                         highest_encountered_keyspace_id =
                             highest_encountered_keyspace_id.max(item.keyspace_id);
 
@@ -734,6 +772,20 @@ impl Database {
                                 unreachable!()
                             }
                         }
+
+                        if !touched_keyspaces
+                            .iter()
+                            .any(|touched: &&Keyspace| touched.id() == keyspace.id())
+                        {
+                            touched_keyspaces.push(keyspace);
+                        }
+                        if streaming {
+                            recovery_budget.after_batch(
+                                &db,
+                                std::iter::once(keyspace),
+                                keyspaces.values(),
+                            )?;
+                        }
                     }
 
                     for keyspace_id in &batch.cleared_keyspaces {
@@ -745,8 +797,23 @@ impl Database {
                             continue;
                         };
 
-                        keyspace.tree.clear().ok();
+                        keyspace.tree.clear()?;
+                        if !touched_keyspaces
+                            .iter()
+                            .any(|touched: &&Keyspace| touched.id() == keyspace.id())
+                        {
+                            touched_keyspaces.push(keyspace);
+                        }
                     }
+
+                    // Small batches stay atomic in memory. For streamed
+                    // batches, an interrupted partial flush is replayed from
+                    // the source journal on the next open.
+                    recovery_budget.after_batch(
+                        &db,
+                        touched_keyspaces.drain(..),
+                        keyspaces.values(),
+                    )?;
                 }
 
                 for keyspace in keyspaces.values() {
@@ -788,40 +855,8 @@ impl Database {
 
         db.supervisor.snapshot_tracker.gc();
 
-        for keyspace in db
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .values()
-        {
-            if keyspace.tree.sealed_memtable_count() > 0 {
-                log::debug!(
-                    "Queuing keyspace {:?} to get flushed because sealed memtables > 0",
-                    keyspace.name(),
-                );
-
-                // IMPORTANT: Add task to flush manager, so it can be flushed
-                db.supervisor
-                    .flush_manager
-                    .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: keyspace.clone(),
-                    }));
-
-                keyspace.worker_messager.send(WorkerMessage::Flush).ok();
-            } else if keyspace.tree.l0_run_count() > 0 {
-                log::debug!(
-                    "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
-                    keyspace.name(),
-                );
-
-                keyspace
-                    .worker_messager
-                    .send(WorkerMessage::Compact(keyspace.clone()))
-                    .ok();
-            }
-        }
-
+        // Workers must already be consuming messages before recovery can
+        // schedule maintenance for more keyspaces than the bounded queue fits.
         db.worker_pool.start(
             db.config.worker_threads,
             &db.supervisor,
@@ -829,6 +864,49 @@ impl Database {
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
         )?;
+
+        // Release the keyspace registry lock before sending maintenance
+        // messages. Workers may need its write side while flushing; holding
+        // the read side across a full worker queue would deadlock recovery.
+        #[expect(clippy::expect_used)]
+        let recovering_keyspaces: Vec<_> = db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .values()
+            .cloned()
+            .collect();
+
+        for keyspace in recovering_keyspaces {
+            if keyspace.tree.sealed_memtable_count() > 0 {
+                log::debug!(
+                    "Queuing keyspace {:?} to get flushed because sealed memtables > 0",
+                    keyspace.name(),
+                );
+
+                // IMPORTANT: Add task to flush manager, so it can be flushed
+                if db
+                    .supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: keyspace.clone(),
+                    }))
+                {
+                    keyspace.worker_messager.try_send(WorkerMessage::Flush).ok();
+                }
+            } else if keyspace.tree.l0_run_count() > 0 {
+                log::debug!(
+                    "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
+                    keyspace.name(),
+                );
+
+                db.supervisor.request_compaction(&keyspace);
+            }
+            // Active-journal replay can restore a memtable over budget. No
+            // future write is required to make that rotation discoverable.
+            keyspace.check_memtable_rotate(keyspace.tree.active_memtable().size());
+        }
 
         log::trace!("Database recovery successful");
 
@@ -849,10 +927,12 @@ impl Database {
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
         let active_journal_path = journal_folder_path.join("0.jnl");
-        let journal = Journal::create_new(&active_journal_path)?.with_compression(
-            config.journal_compression_type,
-            config.journal_compression_threshold,
-        );
+        let journal = Journal::create_new(&active_journal_path)?
+            .with_compression(
+                config.journal_compression_type,
+                config.journal_compression_threshold,
+            )
+            .with_value_limit(config.max_journal_value_bytes);
         let journal = Arc::new(journal);
 
         // NOTE: Lastly, fsync version marker, which contains the version
@@ -903,6 +983,8 @@ impl Database {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
+            compaction_manager: CompactionManager::new(),
+            rotation_manager: RotationManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal,

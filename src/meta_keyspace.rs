@@ -147,12 +147,16 @@ impl MetaKeyspace {
         Ok(())
     }
 
-    pub(crate) fn remove_keyspace(&self, name: &str) -> crate::Result<()> {
+    pub(crate) fn remove_keyspace(&self, handle: &Keyspace) -> crate::Result<()> {
+        let name = &handle.name;
         let mut lock = self.keyspaces.write().expect("lock is poisoned");
 
         let Some(keyspace) = lock.get(name) else {
-            return Ok(());
+            return Err(crate::Error::KeyspaceDeleted);
         };
+        if !Arc::ptr_eq(&keyspace.0, &handle.0) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
 
         let seqno = self.seqno_generator.next();
 
@@ -185,6 +189,9 @@ impl MetaKeyspace {
         self.visible_seqno.fetch_max(seqno + 1);
 
         lock.remove(name);
+        handle
+            .is_deleted
+            .store(true, std::sync::atomic::Ordering::Release);
 
         self.maintenance()
             .inspect_err(|e| {

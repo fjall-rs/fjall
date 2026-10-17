@@ -4,11 +4,12 @@
 
 use crate::{
     compaction::worker::run as run_compaction, flush::worker::run as run_flush, poison::PoisonDart,
-    stats::Stats, supervisor::Supervisor, Keyspace,
+    stats::Stats, supervisor::Supervisor, AbstractTree, Keyspace,
 };
 use lsm_tree::MemtableId;
 use std::{
     borrow::Cow,
+    cell::Cell,
     sync::{
         atomic::{AtomicUsize, Ordering::Relaxed},
         Arc, Mutex,
@@ -20,7 +21,7 @@ pub enum WorkerMessage {
     Flush,
     Compact(Keyspace),
     Close,
-    RotateMemtable(Keyspace, MemtableId),
+    RotateMemtable,
 }
 
 impl std::fmt::Debug for WorkerMessage {
@@ -32,8 +33,7 @@ impl std::fmt::Debug for WorkerMessage {
                 Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
                 Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
                 Self::Close => Cow::Borrowed("WorkerMessage:Close"),
-                Self::RotateMemtable(k, memtable_id) =>
-                    Cow::Owned(format!("WorkerMessage:Rotate({:?}, {memtable_id})", k.name)),
+                Self::RotateMemtable => Cow::Borrowed("WorkerMessage:Rotate"),
             }
         )
     }
@@ -75,12 +75,11 @@ impl WorkerPool {
                     log::trace!("Starting fjall worker thread #{i}");
 
                     let worker_state = WorkerState {
-                        pool_size,
                         worker_id: i,
                         rx: self.rx.clone(),
                         supervisor: supervisor.clone(),
                         stats: stats.clone(),
-                        sender: self.sender.clone(),
+                        next_slot: Cell::new(0),
                     };
 
                     let thread_counter = thread_counter.clone();
@@ -158,109 +157,165 @@ impl Drop for ActiveThreadGuard {
 }
 
 struct WorkerState {
-    pool_size: usize,
     worker_id: usize,
     supervisor: Supervisor,
     rx: flume::Receiver<WorkerMessage>,
-    sender: flume::Sender<WorkerMessage>,
     stats: Arc<Stats>,
+    next_slot: Cell<u8>,
+}
+
+enum SelectedWork {
+    Message(WorkerMessage),
+    Flush(Arc<crate::flush::Task>),
+    Compact(Keyspace),
+    Rotate(Keyspace, MemtableId),
+}
+
+fn select_work(ctx: &WorkerState) -> Option<SelectedWork> {
+    // Rotate among the message queue and both durable work queues. A steady
+    // supply of flushes cannot starve rotations, compaction, or Close.
+    let start = ctx.next_slot.get();
+    for offset in 0..4 {
+        let slot = (start + offset) % 4;
+        let selected = match slot {
+            0 => ctx.rx.try_recv().ok().map(SelectedWork::Message),
+            1 => ctx
+                .supervisor
+                .flush_manager
+                .dequeue()
+                .map(SelectedWork::Flush),
+            2 => ctx
+                .supervisor
+                .compaction_manager
+                .dequeue()
+                .map(SelectedWork::Compact),
+            _ => ctx
+                .supervisor
+                .rotation_manager
+                .dequeue()
+                .map(|(keyspace, memtable_id)| SelectedWork::Rotate(keyspace, memtable_id)),
+        };
+        if selected.is_some() {
+            ctx.next_slot.set((slot + 1) % 4);
+            return selected;
+        }
+    }
+    None
 }
 
 fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
-    let Ok(item) = ctx.rx.recv() else {
-        return Ok(true);
+    let selected = if let Some(selected) = select_work(ctx) {
+        selected
+    } else {
+        let Ok(message) = ctx.rx.recv() else {
+            return Ok(true);
+        };
+        ctx.next_slot.set(1);
+        SelectedWork::Message(message)
     };
 
-    log::trace!("Worker #{} got message: {item:?}", ctx.worker_id);
+    log::trace!("Worker #{} selected work", ctx.worker_id);
 
-    match item {
-        WorkerMessage::Close => {
-            return Ok(true);
-        }
-        WorkerMessage::RotateMemtable(keyspace, memtable_id) => {
-            log::trace!("acquiring journal lock");
-            let journal_writer = keyspace.supervisor.journal.get_writer()?;
-            keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
-        }
-        WorkerMessage::Flush => {
-            let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
-                return Ok(false);
-            };
-
-            {
-                log::trace!("acquiring journal lock to maybe rotate journal");
-                let mut journal_writer = ctx.supervisor.journal.get_writer()?;
-
-                if journal_writer.pos()? > 64_000_000 {
-                    #[expect(clippy::expect_used)]
-                    let mut journal_manager = ctx
-                        .supervisor
-                        .journal_manager
-                        .write()
-                        .expect("lock is poisoned");
-
-                    let seqno_map = {
-                        #[expect(clippy::expect_used)]
-                        let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
-
-                        ctx.supervisor.build_seqno_map(&keyspaces)
-                    };
-
-                    journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
-
-                    if journal_manager.disk_space_used()
-                        >= ctx.supervisor.db_config.max_journaling_size_in_bytes
-                    {
-                        let stragglers =
-                            journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
-
-                        for keyspace in stragglers {
-                            log::info!(
-                                "Rotating {:?} to try to reduce journal size",
-                                keyspace.name,
-                            );
-                            keyspace.request_rotation();
-                        }
-                    }
-                } else {
-                    // https://github.com/fjall-rs/fjall/issues/329
-                    journal_writer.persist(crate::PersistMode::SyncAll)?;
-                }
+    match selected {
+        SelectedWork::Message(WorkerMessage::Close) => return Ok(true),
+        SelectedWork::Message(WorkerMessage::RotateMemtable) => {
+            if let Some((keyspace, memtable_id)) = ctx.supervisor.rotation_manager.dequeue() {
+                rotate_work(&keyspace, memtable_id)?;
             }
-
-            run_flush(
-                &task,
-                &ctx.supervisor.write_buffer_size,
-                &ctx.supervisor.snapshot_tracker,
-                &ctx.stats,
-            )?;
-
-            for _ in 0..ctx.pool_size {
-                ctx.sender
-                    .try_send(WorkerMessage::Compact(task.keyspace.clone()))
-                    .ok();
-            }
-
-            ctx.supervisor
-                .journal_manager
-                .write()
-                .expect("lock is poisoned")
-                .maintenance()?;
         }
-        WorkerMessage::Compact(keyspace) => {
-            // NOTE: Let one worker prioritize flushing if there are pending flushes
-            //
-            // Disable when only 1 worker exists to avoid deadlock
-            if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
-                return Ok(false);
+        SelectedWork::Rotate(keyspace, memtable_id) => rotate_work(&keyspace, memtable_id)?,
+        SelectedWork::Flush(task) => flush_work(ctx, &task)?,
+        SelectedWork::Message(WorkerMessage::Flush) => {
+            if let Some(task) = ctx.supervisor.flush_manager.dequeue() {
+                flush_work(ctx, &task)?;
             }
-
-            run_compaction(&keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
+        }
+        SelectedWork::Compact(keyspace) => handle_compaction(ctx, &keyspace)?,
+        SelectedWork::Message(WorkerMessage::Compact(_)) => {
+            if let Some(keyspace) = ctx.supervisor.compaction_manager.dequeue() {
+                handle_compaction(ctx, &keyspace)?;
+            }
         }
     }
 
     Ok(false)
+}
+
+fn rotate_work(keyspace: &Keyspace, memtable_id: MemtableId) -> crate::Result<()> {
+    log::trace!("acquiring journal lock");
+    let journal_writer = keyspace.supervisor.journal.get_writer()?;
+    keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
+    Ok(())
+}
+
+fn flush_work(ctx: &WorkerState, task: &crate::flush::Task) -> crate::Result<()> {
+    {
+        let mut journal_writer = ctx.supervisor.journal.get_writer()?;
+        if journal_writer.pos()? > 64_000_000 {
+            #[expect(clippy::expect_used)]
+            let mut journal_manager = ctx
+                .supervisor
+                .journal_manager
+                .write()
+                .expect("lock is poisoned");
+            let seqno_map = {
+                #[expect(clippy::expect_used)]
+                let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
+                ctx.supervisor.build_seqno_map(&keyspaces)
+            };
+            journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
+            if journal_manager.disk_space_used()
+                >= ctx.supervisor.db_config.max_journaling_size_in_bytes
+            {
+                for keyspace in journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction()
+                {
+                    keyspace.request_rotation();
+                }
+            }
+        } else {
+            // https://github.com/fjall-rs/fjall/issues/329
+            journal_writer.persist(crate::PersistMode::SyncAll)?;
+        }
+    }
+    run_flush(
+        task,
+        &ctx.supervisor.write_buffer_size,
+        &ctx.supervisor.snapshot_tracker,
+        &ctx.stats,
+    )?;
+    if task.keyspace.tree.sealed_memtable_count() > 0
+        && ctx
+            .supervisor
+            .flush_manager
+            .enqueue(Arc::new(crate::flush::Task {
+                keyspace: task.keyspace.clone(),
+            }))
+    {
+        task.keyspace
+            .worker_messager
+            .try_send(WorkerMessage::Flush)
+            .ok();
+    }
+    ctx.supervisor.request_compaction(&task.keyspace);
+    #[expect(clippy::expect_used)]
+    ctx.supervisor
+        .journal_manager
+        .write()
+        .expect("lock is poisoned")
+        .maintenance()?;
+    Ok(())
+}
+
+fn handle_compaction(ctx: &WorkerState, keyspace: &Keyspace) -> crate::Result<()> {
+    let before = keyspace.tree.l0_run_count();
+    run_compaction(keyspace, &ctx.supervisor.snapshot_tracker, &ctx.stats)?;
+    let after = keyspace.tree.l0_run_count();
+    // Continue draining an L0 backlog only while this worker makes progress.
+    // A strategy with no eligible task must not spin forever on one keyspace.
+    if after >= 20 && after < before {
+        ctx.supervisor.request_compaction(keyspace);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -268,6 +323,1004 @@ mod tests {
     use super::*;
     use crate::{AbstractTree, Database, KeyspaceCreateOptions};
     use test_log::test;
+
+    /// Fill the queue before rotation: no probabilistic producer race is needed.
+    /// The child keeps a deadlocked database from hanging the whole test suite.
+    #[test]
+    fn rotation_does_not_wait_for_worker_queue_capacity() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_SATURATED_ROTATION_CHILD").is_none() {
+            let executable = std::env::current_exe()?;
+            let mut child = std::process::Command::new(executable)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::rotation_does_not_wait_for_worker_queue_capacity",
+                ])
+                .env("FJALL_SATURATED_ROTATION_CHILD", "1")
+                .env("FJALL_SATURATED_ROTATION_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "saturated rotation child failed: {status}"
+                    );
+                    let reopened = Database::builder(folder.path()).worker_threads(1).open()?;
+                    let recovered =
+                        reopened.keyspace("saturated", KeyspaceCreateOptions::default)?;
+                    let Some(value) = recovered.get("key")? else {
+                        panic!("committed key missing after reopening");
+                    };
+                    assert_eq!(&*value, b"value");
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("rotation blocked on its own full worker queue");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_SATURATED_ROTATION_DIR") else {
+            panic!("saturated rotation child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("saturated", KeyspaceCreateOptions::default)?;
+        ks.insert("key", "value")?;
+        for _ in 0..1_000 {
+            assert!(db
+                .worker_pool
+                .sender
+                .try_send(WorkerMessage::RotateMemtable)
+                .is_ok());
+        }
+        assert!(ks.rotate_memtable()?);
+        assert_eq!(ks.tree.sealed_memtable_count(), 1);
+
+        // The flush notification could not be queued. Existing messages must
+        // still lead workers to discover and execute the pending flush task.
+        let ctx = WorkerState {
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            stats: db.stats.clone(),
+            next_slot: Cell::new(1),
+        };
+        worker_tick(&ctx)?;
+        assert_eq!(ks.tree.sealed_memtable_count(), 0);
+        let Some(value) = ks.get("key")? else {
+            panic!("key missing after flushing");
+        };
+        assert_eq!(&*value, b"value");
+
+        // Repeated requests for one keyspace occupy only one pending slot.
+        let task = Arc::new(crate::flush::Task {
+            keyspace: ks.clone(),
+        });
+        for _ in 0..1_001 {
+            db.supervisor.flush_manager.enqueue(task.clone());
+        }
+        assert_eq!(db.supervisor.flush_manager.len(), 1);
+        db.supervisor.flush_manager.clear();
+
+        // A full message queue cannot discard the compaction request.
+        assert_eq!(db.worker_pool.sender.len(), 1_000);
+        db.supervisor.request_compaction(&ks);
+        ctx.next_slot.set(2);
+        assert!(!worker_tick(&ctx)?);
+        assert!(db.supervisor.compaction_manager.dequeue().is_none());
+        db.persist(crate::PersistMode::SyncAll)?;
+        // The zero-worker test database has messages retaining keyspace Arcs;
+        // exit directly rather than invoking its destructor in this child.
+        std::process::exit(0);
+    }
+
+    /// A full hint channel must not discard the only rotation request for a
+    /// memtable when its writer stops after the over-budget write.
+    #[test]
+    fn full_message_queue_does_not_lose_rotation() -> crate::Result<()> {
+        for free_slots in [0, 1] {
+            let folder = tempfile::tempdir()?;
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
+            let ks = db.keyspace("rotate", || {
+                KeyspaceCreateOptions::default().max_memtable_size(1_024)
+            })?;
+            for _ in 0..(1_000 - free_slots) {
+                assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+            }
+            let original_id = ks.tree.active_memtable().id();
+            ks.insert(b"large", vec![b'x'; 2_048])?;
+            assert_eq!(ks.tree.active_memtable().id(), original_id);
+
+            let ctx = WorkerState {
+                worker_id: 0,
+                supervisor: db.supervisor.clone(),
+                rx: db.worker_pool.rx.clone(),
+                stats: db.stats.clone(),
+                next_slot: Cell::new(0),
+            };
+            assert!(!worker_tick(&ctx)?);
+            // A producer takes the slot just freed by the worker. Required
+            // rotation work remains available outside the hint channel.
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+            for _ in 1..1_000 {
+                assert!(!worker_tick(&ctx)?);
+            }
+            assert_ne!(
+                ks.tree.active_memtable().id(),
+                original_id,
+                "over-budget active memtable was never rotated with {free_slots} free slots"
+            );
+        }
+        Ok(())
+    }
+
+    /// Replay can restore an active memtable above its configured budget; it
+    /// must rotate even if the application performs no new writes after boot.
+    #[test]
+    fn recovered_over_budget_active_memtable_is_rotated() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let options = || KeyspaceCreateOptions::default().max_memtable_size(1_024);
+        {
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
+            let ks = db.keyspace("recovered", options)?;
+            ks.insert(b"large", vec![b'x'; 2_048])?;
+            db.persist(crate::PersistMode::SyncAll)?;
+        }
+        let db = Database::builder(&folder).worker_threads(1).open()?;
+        let ks = db.keyspace("recovered", options)?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while ks.tree.active_memtable().size() > 1_024 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            ks.tree.active_memtable().size() <= 1_024,
+            "recovery left an active memtable over budget without another write"
+        );
+        assert_eq!(
+            ks.get(b"large")?.as_deref(),
+            Some(vec![b'x'; 2_048].as_slice())
+        );
+        Ok(())
+    }
+
+    /// Close must finish even with a saturated hint channel and all three
+    /// maintenance queues populated when the worker starts.
+    #[test]
+    fn shutdown_with_pending_maintenance_is_bounded() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_PENDING_SHUTDOWN_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::shutdown_with_pending_maintenance_is_bounded",
+                ])
+                .env("FJALL_PENDING_SHUTDOWN_CHILD", "1")
+                .env("FJALL_PENDING_SHUTDOWN_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(status.success(), "shutdown child failed: {status}");
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("shutdown blocked with pending maintenance");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_PENDING_SHUTDOWN_DIR") else {
+            panic!("pending-shutdown child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("pending", || {
+            KeyspaceCreateOptions::default().max_memtable_size(1_024)
+        })?;
+        ks.insert(b"large", vec![b'x'; 2_048])?;
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.supervisor
+            .flush_manager
+            .enqueue(Arc::new(crate::flush::Task {
+                keyspace: ks.clone(),
+            }));
+        db.supervisor.request_compaction(&ks);
+        db.worker_pool.start(
+            1,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+        drop(ks);
+        drop(db);
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn pending_maintenance_cannot_starve_close() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("fair", KeyspaceCreateOptions::default)?;
+        let ctx = WorkerState {
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            stats: db.stats.clone(),
+            next_slot: Cell::new(1),
+        };
+        assert!(db.worker_pool.sender.send(WorkerMessage::Close).is_ok());
+        db.supervisor
+            .flush_manager
+            .enqueue(Arc::new(crate::flush::Task {
+                keyspace: ks.clone(),
+            }));
+        db.supervisor.request_compaction(&ks);
+        db.supervisor
+            .rotation_manager
+            .enqueue(ks.clone(), ks.tree.active_memtable().id());
+        assert!(!worker_tick(&ctx)?);
+        assert!(!worker_tick(&ctx)?);
+        assert!(!worker_tick(&ctx)?);
+        assert!(
+            worker_tick(&ctx)?,
+            "Close should be served in one scheduling cycle"
+        );
+        // The zero-worker database still has hints holding keyspace Arcs.
+        db.supervisor.flush_manager.clear();
+        db.supervisor.compaction_manager.clear();
+        db.supervisor.rotation_manager.clear();
+        while db.worker_pool.rx.try_recv().is_ok() {}
+        Ok(())
+    }
+
+    #[test]
+    fn stale_rotation_and_empty_hints_do_not_requeue_work() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("stale", KeyspaceCreateOptions::default)?;
+        ks.insert("key", "value")?;
+        let stale_id = ks.tree.active_memtable().id();
+        assert!(ks.rotate_memtable()?);
+        let active_id = ks.tree.active_memtable().id();
+        assert_ne!(active_id, stale_id);
+        db.supervisor.flush_manager.clear();
+        while db.worker_pool.rx.try_recv().is_ok() {}
+
+        assert!(db.supervisor.rotation_manager.enqueue(ks.clone(), stale_id));
+        let ctx = WorkerState {
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            stats: db.stats.clone(),
+            next_slot: Cell::new(3),
+        };
+        assert!(!worker_tick(&ctx)?);
+        assert_eq!(ks.tree.active_memtable().id(), active_id);
+        assert!(db.supervisor.rotation_manager.dequeue().is_none());
+        assert!(db.supervisor.flush_manager.dequeue().is_none());
+
+        for hint in [WorkerMessage::Flush, WorkerMessage::RotateMemtable] {
+            db.worker_pool
+                .sender
+                .try_send(hint)
+                .map_err(|_| crate::Error::Unrecoverable)?;
+            assert!(!worker_tick(&ctx)?);
+        }
+        assert!(db.supervisor.rotation_manager.dequeue().is_none());
+        assert!(db.supervisor.flush_manager.dequeue().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn shutdown_with_full_queue_and_pending_maintenance_is_bounded() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_PENDING_CLOSE_CHILD").is_none() {
+            let executable = std::env::current_exe()?;
+            let mut child = std::process::Command::new(executable)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::shutdown_with_full_queue_and_pending_maintenance_is_bounded",
+                ])
+                .env("FJALL_PENDING_CLOSE_CHILD", "1")
+                .env("FJALL_PENDING_CLOSE_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(status.success(), "pending-close child failed: {status}");
+                    let db = Database::builder(folder.path()).worker_threads(1).open()?;
+                    let ks = db.keyspace("pending", KeyspaceCreateOptions::default)?;
+                    assert_eq!(ks.get("key")?.as_deref(), Some(b"value".as_slice()));
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("database shutdown blocked with pending maintenance");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_PENDING_CLOSE_DIR") else {
+            panic!("pending-close child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("pending", KeyspaceCreateOptions::default)?;
+        ks.insert("key", "value")?;
+        db.persist(crate::PersistMode::SyncAll)?;
+        assert!(ks.rotate_memtable()?);
+        db.supervisor.request_compaction(&ks);
+        db.supervisor
+            .rotation_manager
+            .enqueue(ks.clone(), ks.tree.active_memtable().id());
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.worker_pool.start(
+            1,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+        drop(ks);
+        drop(db);
+        Ok(())
+    }
+
+    #[test]
+    fn two_workers_drain_saturated_rotation_and_compaction() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_TWO_WORKER_SATURATION_CHILD").is_none() {
+            let executable = std::env::current_exe()?;
+            let mut child = std::process::Command::new(executable)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::two_workers_drain_saturated_rotation_and_compaction",
+                ])
+                .env("FJALL_TWO_WORKER_SATURATION_CHILD", "1")
+                .env("FJALL_TWO_WORKER_SATURATION_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "two-worker saturation child failed: {status}"
+                    );
+                    let db = Database::builder(folder.path()).worker_threads(2).open()?;
+                    let compact = db.keyspace("compact", KeyspaceCreateOptions::default)?;
+                    let rotate = db.keyspace("rotate", KeyspaceCreateOptions::default)?;
+                    assert_eq!(compact.get("key")?.as_deref(), Some(b"value".as_slice()));
+                    assert_eq!(
+                        rotate.get("large")?.as_deref(),
+                        Some(vec![b'x'; 2_048].as_slice())
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("two workers stopped making progress under a full hint queue");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_TWO_WORKER_SATURATION_DIR") else {
+            panic!("two-worker saturation child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let compact = db.keyspace("compact", KeyspaceCreateOptions::default)?;
+        for _ in 0..26 {
+            compact.insert("key", "value")?;
+            db.persist(crate::PersistMode::SyncAll)?;
+            assert!(compact.rotate_memtable()?);
+            run_flush(
+                &crate::flush::Task {
+                    keyspace: compact.clone(),
+                },
+                &db.supervisor.write_buffer_size,
+                &db.supervisor.snapshot_tracker,
+                &db.stats,
+            )?;
+            db.supervisor.flush_manager.clear();
+        }
+        let before = compact.tree.l0_run_count();
+        assert!(
+            before >= 20 && before < 30,
+            "expected a bounded L0 backlog: {before}"
+        );
+        let rotate = db.keyspace("rotate", || {
+            KeyspaceCreateOptions::default().max_memtable_size(1_024)
+        })?;
+        rotate.insert("large", vec![b'x'; 2_048])?;
+        let active_id = rotate.tree.active_memtable().id();
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.supervisor.request_compaction(&compact);
+        db.worker_pool.start(
+            2,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while (compact.tree.l0_run_count() >= 20
+            || rotate.tree.active_memtable().id() == active_id
+            || rotate.tree.sealed_memtable_count() > 0)
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(compact.tree.l0_run_count() < 20, "L0 compaction stalled");
+        assert_ne!(
+            rotate.tree.active_memtable().id(),
+            active_id,
+            "rotation stalled"
+        );
+        assert_eq!(rotate.tree.sealed_memtable_count(), 0, "flush stalled");
+        db.persist(crate::PersistMode::SyncAll)?;
+        // The parent verifies durable values after this abrupt child exit.
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn recreated_keyspace_keeps_distinct_pending_work() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let old = db.keyspace("reused", KeyspaceCreateOptions::default)?;
+        db.delete_keyspace(old.clone())?;
+        let new = db.keyspace("reused", KeyspaceCreateOptions::default)?;
+        assert_ne!(old.id(), new.id());
+
+        for keyspace in [&old, &new] {
+            assert!(db
+                .supervisor
+                .flush_manager
+                .enqueue(Arc::new(crate::flush::Task {
+                    keyspace: keyspace.clone(),
+                })));
+            assert!(db.supervisor.compaction_manager.enqueue(keyspace.clone()));
+            assert!(db.supervisor.rotation_manager.enqueue(keyspace.clone(), 7));
+            assert!(!db.supervisor.rotation_manager.enqueue(keyspace.clone(), 7));
+        }
+        assert!(db.supervisor.rotation_manager.enqueue(new.clone(), 8));
+        assert_eq!(db.supervisor.flush_manager.len(), 2);
+        assert_eq!(
+            db.supervisor
+                .flush_manager
+                .dequeue()
+                .map(|task| task.keyspace.id()),
+            Some(old.id())
+        );
+        assert_eq!(
+            db.supervisor
+                .flush_manager
+                .dequeue()
+                .map(|task| task.keyspace.id()),
+            Some(new.id())
+        );
+        assert_eq!(
+            db.supervisor
+                .compaction_manager
+                .dequeue()
+                .map(|keyspace| keyspace.id()),
+            Some(old.id())
+        );
+        assert_eq!(
+            db.supervisor
+                .compaction_manager
+                .dequeue()
+                .map(|keyspace| keyspace.id()),
+            Some(new.id())
+        );
+        assert_eq!(
+            db.supervisor
+                .rotation_manager
+                .dequeue()
+                .map(|task| (task.0.id(), task.1)),
+            Some((old.id(), 7))
+        );
+        assert_eq!(
+            db.supervisor
+                .rotation_manager
+                .dequeue()
+                .map(|task| (task.0.id(), task.1)),
+            Some((new.id(), 7))
+        );
+        assert_eq!(
+            db.supervisor
+                .rotation_manager
+                .dequeue()
+                .map(|task| (task.0.id(), task.1)),
+            Some((new.id(), 8))
+        );
+        while db.worker_pool.rx.try_recv().is_ok() {}
+        Ok(())
+    }
+
+    #[test]
+    fn full_message_queue_does_not_lose_l0_compaction() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("compact", KeyspaceCreateOptions::default)?;
+        for row in 0..6 {
+            ks.insert(b"key", format!("value-{row}").as_bytes())?;
+            db.persist(crate::PersistMode::SyncAll)?;
+            assert!(ks.rotate_memtable()?);
+            run_flush(
+                &crate::flush::Task {
+                    keyspace: ks.clone(),
+                },
+                &db.supervisor.write_buffer_size,
+                &db.supervisor.snapshot_tracker,
+                &db.stats,
+            )?;
+            db.supervisor.flush_manager.clear();
+        }
+        let before = ks.tree.l0_run_count();
+        assert!(before >= 4, "expected four L0 runs, found {before}");
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.supervisor.request_compaction(&ks);
+        let ctx = WorkerState {
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            stats: db.stats.clone(),
+            next_slot: Cell::new(2),
+        };
+        assert!(!worker_tick(&ctx)?);
+        assert!(ks.tree.l0_run_count() < before);
+        assert!(db.supervisor.compaction_manager.dequeue().is_none());
+        while db.worker_pool.rx.try_recv().is_ok() {}
+        Ok(())
+    }
+
+    /// A write stalled at 30 L0 runs must request work even when an earlier
+    /// compaction chose another level and left the L0 count unchanged.
+    #[test]
+    fn halted_writer_requests_compaction_again() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_HALTED_WRITER_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::halted_writer_requests_compaction_again",
+                ])
+                .env("FJALL_HALTED_WRITER_CHILD", "1")
+                .env("FJALL_HALTED_WRITER_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "halted writer did not request compaction twice: {status}"
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("halted writer did not request compaction before deadline");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_HALTED_WRITER_DIR") else {
+            panic!("halted writer child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("halted", KeyspaceCreateOptions::default)?;
+        for row in 0..30 {
+            ks.insert(b"key", format!("value-{row}").as_bytes())?;
+            db.persist(crate::PersistMode::SyncAll)?;
+            assert!(ks.rotate_memtable()?);
+            run_flush(
+                &crate::flush::Task {
+                    keyspace: ks.clone(),
+                },
+                &db.supervisor.write_buffer_size,
+                &db.supervisor.snapshot_tracker,
+                &db.stats,
+            )?;
+            db.supervisor.flush_manager.clear();
+        }
+        assert!(ks.tree.l0_run_count() >= 30);
+        db.supervisor.compaction_manager.clear();
+        let writer = ks.clone();
+        std::thread::spawn(move || writer.local_backpressure());
+        for request in 0..2 {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            loop {
+                assert!(ks.tree.l0_run_count() >= 30);
+                if db.supervisor.compaction_manager.dequeue().is_some() {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    std::process::exit(2 + request);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        std::process::exit(0);
+    }
+
+    /// A worker failure must release writers waiting for its maintenance work
+    /// so they can report the poisoned database instead of waiting forever.
+    #[test]
+    fn poisoned_database_releases_halted_writer() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_POISONED_WRITER_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::poisoned_database_releases_halted_writer",
+                ])
+                .env("FJALL_POISONED_WRITER_CHILD", "1")
+                .env("FJALL_POISONED_WRITER_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(status.success(), "poisoned writer child failed: {status}");
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("poisoned writer remained blocked");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_POISONED_WRITER_DIR") else {
+            panic!("poisoned-writer child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("poisoned", KeyspaceCreateOptions::default)?;
+        for row in 0..4 {
+            ks.insert(format!("key-{row}"), "value")?;
+            assert!(ks.rotate_memtable()?);
+        }
+        assert_eq!(ks.tree.sealed_memtable_count(), 4);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let writer = ks.clone();
+        std::thread::spawn(move || {
+            let _ = sender.send(writer.local_backpressure());
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        db.is_poisoned.poison();
+        match receiver.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(Err(crate::Error::Poisoned)) => std::process::exit(0),
+            _ => std::process::exit(2),
+        }
+    }
+
+    #[test]
+    fn deleted_keyspace_releases_halted_writer() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_DELETED_WRITER_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::deleted_keyspace_releases_halted_writer",
+                ])
+                .env("FJALL_DELETED_WRITER_CHILD", "1")
+                .env("FJALL_DELETED_WRITER_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(status.success(), "deleted writer child failed: {status}");
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("deleted keyspace writer remained blocked");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_DELETED_WRITER_DIR") else {
+            panic!("deleted-writer child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("deleted", KeyspaceCreateOptions::default)?;
+        for row in 0..4 {
+            ks.insert(format!("key-{row}"), "value")?;
+            assert!(ks.rotate_memtable()?);
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let writer = ks.clone();
+        std::thread::spawn(move || {
+            let _ = sender.send(writer.local_backpressure());
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        db.delete_keyspace(ks)?;
+        match receiver.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(Err(crate::Error::KeyspaceDeleted)) => std::process::exit(0),
+            _ => std::process::exit(2),
+        }
+    }
+
+    /// Deletion wakes a post-commit halt, but must not turn a write already
+    /// present in the memtable into an apparent failed commit.
+    #[test]
+    fn deleted_keyspace_after_commit_does_not_report_write_failure() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_POST_COMMIT_DELETE_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::deleted_keyspace_after_commit_does_not_report_write_failure",
+                ])
+                .env("FJALL_POST_COMMIT_DELETE_CHILD", "1")
+                .env("FJALL_POST_COMMIT_DELETE_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "post-commit deletion child failed: {status}"
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("post-commit deletion left a writer blocked");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let path = std::env::var("FJALL_POST_COMMIT_DELETE_DIR")
+            .expect("post-commit deletion child is missing its directory");
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        for use_batch in [false, true] {
+            let name = if use_batch { "batched" } else { "single" };
+            let ks = db.keyspace(name, KeyspaceCreateOptions::default)?;
+            for row in 0..4 {
+                ks.insert(format!("key-{row}"), "value")?;
+                assert!(ks.rotate_memtable()?);
+            }
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let writer = ks.clone();
+            let batch_db = db.clone();
+            std::thread::spawn(move || {
+                let result = if use_batch {
+                    let mut batch = batch_db.batch();
+                    batch.insert(&writer, "committed", "value");
+                    batch.commit()
+                } else {
+                    writer.insert("committed", "value")
+                };
+                let _ = sender.send(result);
+            });
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while ks.get("committed")?.is_none() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(
+                ks.get("committed")?.is_some(),
+                "write was not applied before deletion"
+            );
+            db.delete_keyspace(ks)?;
+            assert!(matches!(
+                receiver.recv_timeout(std::time::Duration::from_secs(2)),
+                Ok(Ok(()))
+            ));
+        }
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn deleted_or_foreign_keyspace_is_rejected_before_journaling() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let other_folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+        let other_db = Database::builder(&other_folder).open()?;
+        let stale = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        let foreign = other_db.keyspace("data", KeyspaceCreateOptions::default)?;
+
+        let mut deleted_batch = db.batch();
+        deleted_batch.insert(&stale, "lost", "value");
+        let mut deleted_ingestion = stale.start_ingestion()?;
+        deleted_ingestion.write("lost", "value")?;
+        db.delete_keyspace(stale.clone())?;
+        let current = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        assert!(matches!(
+            db.delete_keyspace(stale.clone()),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(
+            db.delete_keyspace(foreign.clone()),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(db.keyspace_exists("data"));
+        assert!(other_db.keyspace_exists("data"));
+        assert!(matches!(
+            deleted_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(
+            stale.insert("lost", "value"),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(stale.clear(), Err(crate::Error::KeyspaceDeleted)));
+        assert!(matches!(
+            deleted_ingestion.finish(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+
+        let mut mixed_batch = db.batch();
+        mixed_batch.insert(&current, "valid", "value");
+        mixed_batch.insert(&stale, "lost", "value");
+        assert!(matches!(
+            mixed_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(current.get("valid")?.is_none());
+
+        let mut foreign_batch = db.batch();
+        foreign_batch.insert(&foreign, "foreign", "value");
+        assert!(matches!(
+            foreign_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(foreign.get("foreign")?.is_none());
+
+        current.insert("valid", "value")?;
+        assert!(current.get("valid")?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn deleting_while_writer_waits_for_journal_rejects_write() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+        let keyspace = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        let journal_writer = db.supervisor.journal.get_writer()?;
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let writer = keyspace.clone();
+        std::thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = result_tx.send(writer.insert("lost", "value"));
+        });
+        started_rx.recv().expect("writer did not start");
+        db.delete_keyspace(keyspace)?;
+        drop(journal_writer);
+        assert!(matches!(
+            result_rx.recv_timeout(std::time::Duration::from_secs(2)),
+            Ok(Err(crate::Error::KeyspaceDeleted))
+        ));
+        Ok(())
+    }
+
+    /// Concurrent writes across keyspaces exercise rotations and flushes with
+    /// the pool sizes that previously differed in the field investigation.
+    #[test]
+    fn concurrent_rotations_preserve_values_and_deletions() -> crate::Result<()> {
+        for worker_count in [1, 2, 4] {
+            let folder = tempfile::tempdir()?;
+            let options = || KeyspaceCreateOptions::default().max_memtable_size(2_048);
+            {
+                let db = Database::builder(&folder)
+                    .worker_threads(worker_count)
+                    .open()?;
+                let left = db.keyspace("left", options)?;
+                let right = db.keyspace("right", options)?;
+                let handles: Vec<_> = (0..4)
+                    .map(|writer| {
+                        let left = left.clone();
+                        let right = right.clone();
+                        std::thread::spawn(move || -> crate::Result<()> {
+                            for row in 0..500 {
+                                let key = format!("key-{writer}-{row}");
+                                let value = format!("value-{writer}-{row}");
+                                let target = if row % 2 == 0 { &left } else { &right };
+                                target.insert(key.as_bytes(), value.as_bytes())?;
+                                if row % 7 == 0 {
+                                    target.remove(key.as_bytes())?;
+                                }
+                            }
+                            Ok(())
+                        })
+                    })
+                    .collect();
+                for handle in handles {
+                    let Ok(result) = handle.join() else {
+                        panic!("writer thread panicked");
+                    };
+                    result?;
+                }
+                db.persist(crate::PersistMode::SyncAll)?;
+                left.rotate_memtable_and_wait()?;
+                right.rotate_memtable_and_wait()?;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+                while left.tree.sealed_memtable_count() > 0
+                    || right.tree.sealed_memtable_count() > 0
+                {
+                    assert!(std::time::Instant::now() < deadline, "flush did not finish");
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                assert_eq!(left.tree.sealed_memtable_count(), 0);
+                assert_eq!(right.tree.sealed_memtable_count(), 0);
+            }
+
+            let db = Database::builder(&folder)
+                .worker_threads(worker_count)
+                .open()?;
+            let left = db.keyspace("left", options)?;
+            let right = db.keyspace("right", options)?;
+            for writer in 0..4 {
+                for row in 0..500 {
+                    let key = format!("key-{writer}-{row}");
+                    let target = if row % 2 == 0 { &left } else { &right };
+                    let found = target.get(key.as_bytes())?;
+                    if row % 7 == 0 {
+                        assert!(found.is_none(), "deleted key survived reopen: {key}");
+                    } else {
+                        let Some(value) = found else {
+                            panic!("key missing after reopen: {key}");
+                        };
+                        assert_eq!(&*value, format!("value-{writer}-{row}").as_bytes());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 
     // https://github.com/fjall-rs/fjall/pull/303
     #[test]

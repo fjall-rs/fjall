@@ -19,6 +19,7 @@ pub fn recover_journals<P: AsRef<Path>>(
     path: P,
     compression: CompressionType,
     compression_threshold: usize,
+    max_value_bytes: Option<usize>,
 ) -> crate::Result<RecoveryResult> {
     let path = path.as_ref();
 
@@ -73,7 +74,8 @@ pub fn recover_journals<P: AsRef<Path>>(
     Ok(match journal_fragments.pop() {
         Some((_, active)) => RecoveryResult {
             active: Journal::from_file(active)?
-                .with_compression(compression, compression_threshold),
+                .with_compression(compression, compression_threshold)
+                .with_value_limit(max_value_bytes),
             sealed: journal_fragments,
             was_active_created: false,
         },
@@ -83,6 +85,7 @@ pub fn recover_journals<P: AsRef<Path>>(
 
                 Journal::create_new(path.join(format!("{id}.jnl")))?
                     .with_compression(compression, compression_threshold)
+                    .with_value_limit(max_value_bytes)
             },
             sealed: vec![],
             was_active_created: true,
