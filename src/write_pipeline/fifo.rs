@@ -119,6 +119,8 @@ impl<T> Queue<T> {
                 Ok(_) => {
                     // We got the slot
                     let idx = self.get_index(tail);
+
+                    #[expect(clippy::indexing_slicing)]
                     let slot = &self.slots[idx];
 
                     // SAFETY: We won the CAS, and are setting a value
@@ -146,6 +148,8 @@ impl<T> Queue<T> {
         let head = self.head.load(Ordering::Acquire);
 
         let idx = self.get_index(head);
+
+        #[expect(clippy::indexing_slicing)]
         let slot = &self.slots[idx];
 
         if !slot.published.load(Ordering::Acquire) {
@@ -155,6 +159,7 @@ impl<T> Queue<T> {
         // SAFETY: We set published=true after pushing a value
         // We set published=false after popping a value
         #[expect(unsafe_code)]
+        #[expect(clippy::indexing_slicing)]
         let value = unsafe { self.slots[idx].data.with(|d| d).read().assume_init() };
 
         slot.published.store(false, Ordering::Release);
@@ -169,6 +174,8 @@ impl<T> Queue<T> {
         let head = self.head.load(Ordering::Acquire);
 
         let idx = self.get_index(head);
+
+        #[expect(clippy::indexing_slicing)]
         let slot = &self.slots[idx];
 
         if !slot.published.load(Ordering::Acquire) {
@@ -179,7 +186,7 @@ impl<T> Queue<T> {
         #[expect(unsafe_code)]
         let ptr = {
             let ptr = slot.data.with(|d| d).cast();
-            unsafe { &*(ptr as *const T) }
+            unsafe { &*ptr }
         };
 
         Some(ptr)
