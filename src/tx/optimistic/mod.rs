@@ -19,6 +19,9 @@ use std::{
 pub use keyspace::OptimisticTxKeyspace;
 pub use write_tx::{Conflict, WriteTransaction};
 
+/// A builder for a transactional database with optimistic concurrency control.
+pub type OptimisticTxDatabaseBuilder = crate::DatabaseBuilder<OptimisticTxDatabase>;
+
 /// Transactional database
 #[derive(Clone)]
 pub struct OptimisticTxDatabase {
@@ -46,7 +49,7 @@ impl Openable for OptimisticTxDatabase {
 
 impl OptimisticTxDatabase {
     /// Creates a new database builder to create or open a database at `path`.
-    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder<Self> {
+    pub fn builder(path: impl AsRef<Path>) -> OptimisticTxDatabaseBuilder {
         crate::DatabaseBuilder::new(path.as_ref())
     }
 
