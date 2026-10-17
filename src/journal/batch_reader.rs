@@ -3,7 +3,10 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
+use crate::{
+    file::MAGIC_BYTES, journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError,
+};
+use byteorder::{LittleEndian, ReadBytesExt};
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
 use std::{
     collections::HashSet,
@@ -35,6 +38,7 @@ pub enum BatchItems {
     Journal {
         reader: BufReader<File>,
         remaining: u32,
+        max_value_bytes: Option<usize>,
     },
 }
 
@@ -50,12 +54,16 @@ impl Iterator for BatchItems {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::InMemory(items) => items.next().map(Ok),
-            Self::Journal { reader, remaining } => loop {
+            Self::Journal {
+                reader,
+                remaining,
+                max_value_bytes,
+            } => loop {
                 if *remaining == 0 {
                     return None;
                 }
                 *remaining -= 1;
-                match Entry::decode_from(reader) {
+                match Entry::decode_from_with_value_limit(reader, *max_value_bytes) {
                     Ok(Entry::Item {
                         keyspace_id,
                         key,
@@ -175,6 +183,73 @@ impl JournalBatchReader {
             self.items.push(item);
         }
     }
+
+    // A value limit is checked before its payload is allocated. If the item
+    // belongs to a torn final batch, however, the old recovery behavior is to
+    // discard that batch. Verify its framing and checksum with fixed-size
+    // buffers before deciding whether the oversized value was committed.
+    fn oversized_batch_is_committed(&self) -> crate::Result<bool> {
+        let file = File::open(&self.reader.path)?;
+        let file_len = file.metadata()?.len();
+        let mut reader = BufReader::new(file);
+        reader.seek(SeekFrom::Start(self.journal_batch_start))?;
+        let mut checksum = xxhash_rust::xxh3::Xxh3::new();
+        let mut buffer = [0_u8; 8192];
+
+        for _ in 0..self.journal_batch_count {
+            let start = reader.stream_position()?;
+            let Ok(tag) = reader.read_u8() else {
+                return Ok(false);
+            };
+            let payload_len = match tag {
+                2 => {
+                    let mut header = [0_u8; 20];
+                    if reader.read_exact(&mut header).is_err() {
+                        return Ok(false);
+                    }
+                    let key_len = u16::from_le_bytes([header[10], header[11]]) as u64;
+                    let value_len =
+                        u32::from_le_bytes([header[16], header[17], header[18], header[19]]) as u64;
+                    key_len + value_len
+                }
+                4 => 8,
+                _ => return Ok(false),
+            };
+            let Some(end) = reader.stream_position()?.checked_add(payload_len) else {
+                return Ok(false);
+            };
+            if end > file_len {
+                return Ok(false);
+            }
+            reader.seek(SeekFrom::Start(start))?;
+            let mut remaining = end - start;
+            while remaining > 0 {
+                let len = usize::try_from(remaining.min(buffer.len() as u64))
+                    .map_err(|_| crate::Error::Unrecoverable)?;
+                let chunk = buffer.get_mut(..len).ok_or(crate::Error::Unrecoverable)?;
+                reader.read_exact(chunk)?;
+                checksum.update(chunk);
+                remaining -= u64::try_from(len).map_err(|_| crate::Error::Unrecoverable)?;
+            }
+        }
+
+        if reader.read_u8().ok() != Some(3) {
+            return Ok(false);
+        }
+        let Ok(expected_checksum) = reader.read_u64::<LittleEndian>() else {
+            return Ok(false);
+        };
+        let mut magic = [0_u8; 4];
+        if reader.read_exact(&mut magic).is_err() || magic != MAGIC_BYTES {
+            return Ok(false);
+        }
+        if checksum.finish() != expected_checksum {
+            return Err(crate::Error::JournalRecovery(
+                JournalRecoveryError::ChecksumMismatch,
+            ));
+        }
+        Ok(true)
+    }
 }
 
 impl Iterator for JournalBatchReader {
@@ -190,7 +265,20 @@ impl Iterator for JournalBatchReader {
                 fail_iter!(self.on_close());
                 return None;
             };
-            let item = fail_iter!(item);
+            let item = match item {
+                Ok(item) => item,
+                Err(error @ crate::Error::ValueTooLarge { .. }) if self.is_in_batch => {
+                    match self.oversized_batch_is_committed() {
+                        Ok(true) => return Some(Err(error)),
+                        Ok(false) => {
+                            fail_iter!(self.truncate_to(self.last_valid_pos));
+                            return None;
+                        }
+                        Err(error) => return Some(Err(error)),
+                    }
+                }
+                Err(error) => return Some(Err(error)),
+            };
 
             let journal_file_pos = self.reader.last_valid_pos;
 
@@ -249,6 +337,7 @@ impl Iterator for JournalBatchReader {
                         BatchItems::Journal {
                             reader,
                             remaining: self.journal_batch_count,
+                            max_value_bytes: self.reader.max_value_bytes,
                         }
                     } else {
                         BatchItems::InMemory(std::mem::take(&mut self.items).into_iter())
@@ -319,5 +408,38 @@ impl Iterator for JournalBatchReader {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod value_limit_tests {
+    use super::*;
+    use byteorder::WriteBytesExt;
+    use std::io::Write;
+
+    #[test]
+    fn oversized_header_in_preallocated_crash_tail_is_discarded() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let path = folder.path().join("0.jnl");
+        let mut file = File::create(&path)?;
+        file.set_len(64 * 1024 * 1024)?;
+        Entry::Start {
+            item_count: 1,
+            seqno: 1,
+        }
+        .encode_into(&mut file)?;
+        file.write_u8(2)?; // Item marker
+        file.write_u8(0)?; // Value type
+        file.write_u8(0)?; // No compression
+        file.write_u64::<LittleEndian>(1)?;
+        file.write_u16::<LittleEndian>(1)?;
+        file.write_u32::<LittleEndian>(2048)?;
+        file.write_u32::<LittleEndian>(2048)?;
+        file.flush()?;
+
+        let reader = JournalReader::new_with_value_limit(&path, Some(1024))?;
+        assert!(JournalBatchReader::new(reader).next().is_none());
+        assert_eq!(path.metadata()?.len(), 0);
+        Ok(())
     }
 }

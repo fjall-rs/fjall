@@ -157,6 +157,13 @@ impl Entry {
     }
 
     pub(crate) fn decode_from<R: Read>(reader: &mut R) -> Result<Self, crate::Error> {
+        Self::decode_from_with_value_limit(reader, None)
+    }
+
+    pub(crate) fn decode_from_with_value_limit<R: Read>(
+        reader: &mut R,
+        max_value_bytes: Option<usize>,
+    ) -> Result<Self, crate::Error> {
         match reader.read_u8()?.try_into()? {
             Tag::Start => {
                 let item_count = reader.read_u32::<LittleEndian>()?;
@@ -182,6 +189,33 @@ impl Entry {
 
                 // Read on-disk value size
                 let on_disk_value_len = reader.read_u32::<LittleEndian>()?;
+
+                if let Some(limit) = max_value_bytes {
+                    let decoded_size = value_len as usize;
+                    if decoded_size > limit {
+                        return Err(crate::Error::ValueTooLarge {
+                            size: decoded_size,
+                            limit,
+                        });
+                    }
+                    // LZ4 can expand incompressible input slightly. Keep the
+                    // encoded allocation bounded while allowing every value
+                    // accepted at the uncompressed write limit to reopen.
+                    let encoded_limit = match compression {
+                        CompressionType::None => limit,
+                        #[cfg(feature = "lz4")]
+                        CompressionType::Lz4 => {
+                            limit.saturating_add(limit / 255).saturating_add(16)
+                        }
+                    };
+                    let encoded_size = on_disk_value_len as usize;
+                    if encoded_size > encoded_limit {
+                        return Err(crate::Error::ValueTooLarge {
+                            size: encoded_size,
+                            limit: encoded_limit,
+                        });
+                    }
+                }
 
                 let key = Slice::from_reader(reader, usize::from(key_len))?;
 
@@ -247,6 +281,31 @@ impl Entry {
 mod tests {
     use super::*;
     use test_log::test;
+
+    #[test]
+    fn value_limit_rejects_length_before_allocating_payload() -> crate::Result<()> {
+        for compression in [
+            CompressionType::None,
+            #[cfg(feature = "lz4")]
+            CompressionType::Lz4,
+        ] {
+            let mut bytes = Vec::new();
+            bytes.write_u8(Tag::Item.into())?;
+            bytes.write_u8(ValueType::Value.into())?;
+            compression.encode_into(&mut bytes)?;
+            bytes.write_u64::<LittleEndian>(1)?;
+            bytes.write_u16::<LittleEndian>(1)?;
+            bytes.write_u32::<LittleEndian>(u32::MAX)?;
+            bytes.write_u32::<LittleEndian>(1)?;
+            // The payload is absent. The configured limit must reject the
+            // claimed decoded size before any payload read or allocation.
+            assert!(matches!(
+                Entry::decode_from_with_value_limit(&mut bytes.as_slice(), Some(1024)),
+                Err(crate::Error::ValueTooLarge { .. })
+            ));
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_serialize_and_deserialize_success() -> crate::Result<()> {

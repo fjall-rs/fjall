@@ -27,6 +27,7 @@ use writer::Writer;
 
 pub struct Journal {
     writer: Mutex<Writer>,
+    max_value_bytes: Option<usize>,
 }
 
 impl std::fmt::Debug for Journal {
@@ -60,6 +61,11 @@ impl Drop for Journal {
 }
 
 impl Journal {
+    pub fn with_value_limit(mut self, max_value_bytes: Option<usize>) -> Self {
+        self.max_value_bytes = max_value_bytes;
+        self
+    }
+
     pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
         {
             let mut writer = self.writer.lock().expect("lock is poisoned");
@@ -71,6 +77,7 @@ impl Journal {
     fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
             writer: Mutex::new(Writer::from_file(path)?),
+            max_value_bytes: None,
         })
     }
 
@@ -97,6 +104,7 @@ impl Journal {
 
         Ok(Self {
             writer: Mutex::new(writer),
+            max_value_bytes: None,
         })
     }
 
@@ -114,7 +122,7 @@ impl Journal {
     }
 
     pub fn get_reader(&self) -> crate::Result<JournalBatchReader> {
-        let raw_reader = JournalReader::new(self.path()?)?;
+        let raw_reader = JournalReader::new_with_value_limit(self.path()?, self.max_value_bytes)?;
         Ok(JournalBatchReader::new(raw_reader))
     }
 
@@ -129,6 +137,15 @@ impl Journal {
         compression: CompressionType,
         compression_threshold: usize,
     ) -> crate::Result<RecoveryResult> {
-        recover_journals(path, compression, compression_threshold)
+        recover_journals(path, compression, compression_threshold, None)
+    }
+
+    pub(crate) fn recover_with_value_limit<P: AsRef<Path>>(
+        path: P,
+        compression: CompressionType,
+        compression_threshold: usize,
+        max_value_bytes: Option<usize>,
+    ) -> crate::Result<RecoveryResult> {
+        recover_journals(path, compression, compression_threshold, max_value_bytes)
     }
 }

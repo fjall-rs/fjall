@@ -1,6 +1,99 @@
 use fjall::{Database, KeyspaceCreateOptions};
 
 #[test]
+fn journal_value_limit_rejects_write_without_poisoning_database() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let db = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .max_journal_value_bytes(Some(1024))
+        .open()?;
+    let keyspace = db.keyspace("limited", KeyspaceCreateOptions::default)?;
+    assert!(matches!(
+        keyspace.insert("too-large", vec![b'x'; 2048]),
+        Err(fjall::Error::ValueTooLarge { .. })
+    ));
+    let mut batch = db.batch();
+    batch.insert(&keyspace, "small-in-batch", "okay");
+    batch.insert(&keyspace, "large-in-batch", vec![b'x'; 2048]);
+    assert!(matches!(
+        batch.commit(),
+        Err(fjall::Error::ValueTooLarge { .. })
+    ));
+    keyspace.insert("survives", "yes")?;
+    drop(keyspace);
+    drop(db);
+
+    let reopened = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .max_journal_value_bytes(Some(1024))
+        .open()?;
+    let keyspace = reopened.keyspace("limited", KeyspaceCreateOptions::default)?;
+    assert_eq!(
+        keyspace.get("survives")?.as_deref(),
+        Some(b"yes".as_slice())
+    );
+    assert!(keyspace.get("small-in-batch")?.is_none());
+    Ok(())
+}
+
+#[test]
+fn recovery_value_limit_preserves_oversized_journal_for_larger_instance() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let value = vec![b'v'; 2048];
+    {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("existing", KeyspaceCreateOptions::default)?;
+        keyspace.insert("large", value.clone())?;
+    }
+
+    let limited = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .max_journal_value_bytes(Some(1024))
+        .open();
+    assert!(matches!(limited, Err(fjall::Error::ValueTooLarge { .. })));
+
+    let reopened = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .open()?;
+    let keyspace = reopened.keyspace("existing", KeyspaceCreateOptions::default)?;
+    assert_eq!(keyspace.get("large")?.as_deref(), Some(value.as_slice()));
+    Ok(())
+}
+
+#[cfg(feature = "lz4")]
+#[test]
+fn value_at_limit_remains_recoverable_after_lz4_expansion() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let mut state = 0x45a8_7c31_d965_2b13_u64;
+    let value: Vec<u8> = (0..8192)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state as u8
+        })
+        .collect();
+    {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .max_journal_value_bytes(Some(value.len()))
+            .journal_compression(fjall::CompressionType::Lz4)
+            .open()?;
+        let keyspace = db.keyspace("compressed", KeyspaceCreateOptions::default)?;
+        keyspace.insert("at-limit", value.clone())?;
+    }
+    let db = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .max_journal_value_bytes(Some(value.len()))
+        .open()?;
+    let keyspace = db.keyspace("compressed", KeyspaceCreateOptions::default)?;
+    assert_eq!(keyspace.get("at-limit")?.as_deref(), Some(value.as_slice()));
+    Ok(())
+}
+
+#[test]
 fn oversized_active_journal_recovers_with_bounded_write_buffer() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
     const MEMTABLE_BUDGET: u64 = 64 * 1024;

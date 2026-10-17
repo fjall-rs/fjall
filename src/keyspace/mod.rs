@@ -970,6 +970,15 @@ impl Keyspace {
         }
         let keyspaces = self.live_registration()?;
 
+        if let Some(limit) = self.supervisor.db_config.max_journal_value_bytes {
+            if value.len() > limit {
+                return Err(crate::Error::ValueTooLarge {
+                    size: value.len(),
+                    limit,
+                });
+            }
+        }
+
         let seqno = self.supervisor.seqno.next();
 
         journal_writer

@@ -234,7 +234,8 @@ pub fn recover_sealed_memtables(
 
         log::debug!("Replaying sealed journal at {}", journal_path.display());
 
-        let raw_reader = JournalReader::new(journal_path)?;
+        let raw_reader =
+            JournalReader::new_with_value_limit(journal_path, db.config.max_journal_value_bytes)?;
         let reader = JournalBatchReader::new(raw_reader);
 
         let mut watermarks: HashMap<_, EvictionWatermark> = HashMap::default();

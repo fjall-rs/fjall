@@ -127,6 +127,14 @@ impl WriteBatch {
             {
                 return Err(crate::Error::KeyspaceDeleted);
             }
+            if let Some(limit) = self.db.config.max_journal_value_bytes {
+                if item.value.len() > limit {
+                    return Err(crate::Error::ValueTooLarge {
+                        size: item.value.len(),
+                        limit,
+                    });
+                }
+            }
         }
 
         let batch_seqno = self.db.supervisor.seqno.next();

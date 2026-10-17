@@ -19,6 +19,14 @@ pub enum Error {
     /// Error during journal recovery
     JournalRecovery(JournalRecoveryError),
 
+    /// A journal value exceeds the configured write and recovery limit.
+    ValueTooLarge {
+        /// Value size reported by the journal entry or attempted write.
+        size: usize,
+        /// Configured maximum value size.
+        limit: usize,
+    },
+
     /// Invalid or unparsable data format version
     InvalidVersion(Option<FormatVersion>),
 

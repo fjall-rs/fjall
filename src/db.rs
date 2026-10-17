@@ -617,10 +617,11 @@ impl Database {
         // let recovery_mode = config.journal_recovery_mode;
 
         // Reload active journal
-        let journal_recovery = Journal::recover(
+        let journal_recovery = Journal::recover_with_value_limit(
             &config.path,
             config.journal_compression_type,
             config.journal_compression_threshold,
+            config.max_journal_value_bytes,
         )?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
@@ -926,10 +927,12 @@ impl Database {
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
         let active_journal_path = journal_folder_path.join("0.jnl");
-        let journal = Journal::create_new(&active_journal_path)?.with_compression(
-            config.journal_compression_type,
-            config.journal_compression_threshold,
-        );
+        let journal = Journal::create_new(&active_journal_path)?
+            .with_compression(
+                config.journal_compression_type,
+                config.journal_compression_threshold,
+            )
+            .with_value_limit(config.max_journal_value_bytes);
         let journal = Arc::new(journal);
 
         // NOTE: Lastly, fsync version marker, which contains the version
