@@ -449,13 +449,7 @@ impl Database {
     /// Will return `Err` if an IO error occurs.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        self.meta_keyspace.remove_keyspace(&handle.name)?;
-
-        handle
-            .is_deleted
-            .store(true, std::sync::atomic::Ordering::Release);
-
-        Ok(())
+        self.meta_keyspace.remove_keyspace(&handle)
     }
 
     fn allocate_keyspace_id(&self) -> crate::Result<u64> {

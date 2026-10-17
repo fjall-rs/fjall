@@ -7,7 +7,7 @@ pub mod item;
 use crate::{Database, Keyspace, PersistMode};
 use item::Item;
 use lsm_tree::{AbstractTree, UserKey, UserValue, ValueType};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// An atomic write batch
 ///
@@ -110,6 +110,25 @@ impl WriteBatch {
             return Err(crate::Error::Poisoned);
         }
 
+        // Hold the registry read lock until the journal and memtables are
+        // updated. Deletion takes its write lock, so it cannot invalidate a
+        // keyspace between validation and applying a committed batch.
+        #[expect(clippy::expect_used)]
+        let keyspaces = self
+            .db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned");
+        for item in &self.data {
+            if !keyspaces
+                .get(&item.keyspace.name)
+                .is_some_and(|current| std::sync::Arc::ptr_eq(&current.0, &item.keyspace.0))
+            {
+                return Err(crate::Error::KeyspaceDeleted);
+            }
+        }
+
         let batch_seqno = self.db.supervisor.seqno.next();
 
         journal_writer
@@ -130,17 +149,7 @@ impl WriteBatch {
             })?;
         }
 
-        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-        #[expect(clippy::mutable_key_type)]
-        let mut keyspaces_with_possible_stall = HashSet::new();
-
-        #[expect(clippy::expect_used)]
-        let keyspaces = self
-            .db
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned");
+        let mut keyspaces_with_possible_stall = HashMap::new();
 
         let mut batch_size = 0u64;
 
@@ -158,7 +167,7 @@ impl WriteBatch {
             batch_size += item_size;
 
             // IMPORTANT: Clone the handle, because we don't want to keep the keyspaces lock open
-            keyspaces_with_possible_stall.insert(item.keyspace.clone());
+            keyspaces_with_possible_stall.insert(item.keyspace.id(), item.keyspace.clone());
         }
 
         self.db.supervisor.snapshot_tracker.publish(batch_seqno);
@@ -173,13 +182,24 @@ impl WriteBatch {
         // Otherwise write buffer growth is unbounded when using batches
         self.db.supervisor.write_buffer_size.allocate(batch_size);
 
-        // Check each affected keyspace for write stall/halt
-        for keyspace in &keyspaces_with_possible_stall {
+        // Check each affected keyspace for write stall/halt. The batch is
+        // already journaled and applied, so a concurrent deletion cannot
+        // retroactively make the commit fail. Still check every keyspace and
+        // report a fatal database error after the checks are done.
+        let mut post_commit_error = None;
+        for keyspace in keyspaces_with_possible_stall.values() {
             let memtable_size = keyspace.tree.active_memtable().size();
             keyspace.check_memtable_rotate(memtable_size);
-            keyspace.local_backpressure()?;
+            match keyspace.local_backpressure() {
+                Ok(_) | Err(crate::Error::KeyspaceDeleted) => {}
+                Err(error) => {
+                    if post_commit_error.is_none() {
+                        post_commit_error = Some(error);
+                    }
+                }
+            }
         }
 
-        Ok(())
+        post_commit_error.map_or(Ok(()), Err)
     }
 }
