@@ -164,6 +164,46 @@ fn recovery_bounds_total_active_bytes_across_keyspaces() -> fjall::Result<()> {
 }
 
 #[test]
+fn spilled_batch_replays_later_duplicate_key_after_chunk_flush() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let value = [b'b'; 1024];
+    {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("spilled", || {
+            KeyspaceCreateOptions::default().max_memtable_size(64 * 1024 * 1024)
+        })?;
+        let mut batch = db.batch();
+        batch.insert(&keyspace, "duplicate", "old");
+        for i in 0_u64..9_000 {
+            batch.insert(&keyspace, i.to_be_bytes(), value);
+        }
+        batch.insert(&keyspace, "duplicate", "new");
+        batch.commit()?;
+    }
+
+    for _ in 0..2 {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("spilled", KeyspaceCreateOptions::default)?;
+        assert_eq!(
+            keyspace.get("duplicate")?.as_deref(),
+            Some(b"new".as_slice())
+        );
+        for i in [0_u64, 4_500, 8_999] {
+            assert_eq!(
+                keyspace.get(i.to_be_bytes())?.as_deref(),
+                Some(value.as_slice())
+            );
+        }
+        assert!(db.write_buffer_size() <= 8 * 1024 * 1024);
+    }
+    Ok(())
+}
+
+#[test]
 #[ignore = "manual crash-recovery stress test"]
 fn interrupted_replay_keeps_the_original_journal() -> fjall::Result<()> {
     if let Some(path) = std::env::var_os("FJALL_RECOVERY_INTERRUPT_CHILD") {

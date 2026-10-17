@@ -23,7 +23,9 @@ const MAX_RECOVERY_MEMTABLE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_RECOVERY_ACTIVE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Tracks active replay buffers without scanning every keyspace after every
-/// journal batch. A batch is applied in full before any of its data is flushed.
+/// journal batch. Small batches are applied in full before flushing. Large
+/// verified batches may flush while their entries are replayed; the source
+/// journal remains available for a complete replay after interruption.
 #[derive(Default)]
 pub struct RecoveryBudget {
     active_sizes: HashMap<InternalKeyspaceId, u64>,
@@ -243,8 +245,10 @@ pub fn recover_sealed_memtables(
             let batch = batch?;
             db.supervisor.seqno.fetch_max(batch.seqno + 1);
             touched_keyspaces.clear();
+            let streaming = batch.items.is_streaming();
 
             for item in batch.items {
+                let item = item?;
                 highest_encountered_keyspace_id =
                     highest_encountered_keyspace_id.max(item.keyspace_id);
 
@@ -288,6 +292,13 @@ pub fn recover_sealed_memtables(
                     .any(|touched: &&Keyspace| touched.id() == handle.id())
                 {
                     touched_keyspaces.push(handle);
+                }
+                if streaming {
+                    recovery_budget.after_batch(
+                        db,
+                        std::iter::once(handle),
+                        keyspaces_lock.values(),
+                    )?;
                 }
             }
 
@@ -467,6 +478,78 @@ mod tests {
         let keyspace = db.keyspace("batch", KeyspaceCreateOptions::default)?;
         assert_eq!(keyspace.get("first")?.as_deref(), Some(b"one".as_slice()));
         assert_eq!(keyspace.get("second")?.as_deref(), Some(b"two".as_slice()));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "manual crash-recovery stress test for a spilled sealed batch"]
+    fn interrupted_spilled_sealed_batch_replays_every_item() -> crate::Result<()> {
+        if let Some(path) = std::env::var_os("FJALL_SPILLED_INTERRUPT_CHILD") {
+            let _db = Database::builder(path).worker_threads_unchecked(0).open()?;
+            return Ok(());
+        }
+
+        let folder = tempfile::tempdir()?;
+        let value = [b'i'; 256];
+        const ROWS: u64 = 200_000;
+        {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("spilled", KeyspaceCreateOptions::default)?;
+            let mut batch = db.batch();
+            batch.insert(&keyspace, "duplicate", "old");
+            for i in 0..ROWS {
+                batch.insert(&keyspace, i.to_be_bytes(), value);
+            }
+            batch.insert(&keyspace, "duplicate", "new");
+            batch.commit()?;
+            db.supervisor.journal.get_writer()?.rotate()?;
+        }
+
+        let mut child = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "recovery::tests::interrupted_spilled_sealed_batch_replays_every_item",
+                "--ignored",
+            ])
+            .env("FJALL_SPILLED_INTERRUPT_CHILD", folder.path())
+            .spawn()?;
+        let tables = folder.path().join("keyspaces/1/tables");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            if std::fs::read_dir(&tables)?.count() >= 2 {
+                child.kill()?;
+                child.wait()?;
+                break;
+            }
+            if let Some(status) = child.try_wait()? {
+                panic!("recovery child exited before interruption: {status}");
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill()?;
+                child.wait()?;
+                panic!("recovery did not flush two chunks before deadline");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        for _ in 0..2 {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("spilled", KeyspaceCreateOptions::default)?;
+            assert_eq!(
+                keyspace.get("duplicate")?.as_deref(),
+                Some(b"new".as_slice())
+            );
+            for i in [0, ROWS / 2, ROWS - 1] {
+                assert_eq!(
+                    keyspace.get(i.to_be_bytes())?.as_deref(),
+                    Some(value.as_slice())
+                );
+            }
+        }
         Ok(())
     }
 

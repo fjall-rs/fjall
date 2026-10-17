@@ -739,8 +739,10 @@ impl Database {
                     let batch = batch?;
                     db.supervisor.seqno.fetch_max(batch.seqno + 1);
                     touched_keyspaces.clear();
+                    let streaming = batch.items.is_streaming();
 
                     for item in batch.items {
+                        let item = item?;
                         highest_encountered_keyspace_id =
                             highest_encountered_keyspace_id.max(item.keyspace_id);
 
@@ -776,6 +778,13 @@ impl Database {
                         {
                             touched_keyspaces.push(keyspace);
                         }
+                        if streaming {
+                            recovery_budget.after_batch(
+                                &db,
+                                std::iter::once(keyspace),
+                                keyspaces.values(),
+                            )?;
+                        }
                     }
 
                     for keyspace_id in &batch.cleared_keyspaces {
@@ -796,8 +805,9 @@ impl Database {
                         }
                     }
 
-                    // A journal batch is atomic. Do not persist a partial
-                    // batch to separate tables with the same sequence number.
+                    // Small batches stay atomic in memory. For streamed
+                    // batches, an interrupted partial flush is replayed from
+                    // the source journal on the next open.
                     recovery_budget.after_batch(
                         &db,
                         touched_keyspaces.drain(..),

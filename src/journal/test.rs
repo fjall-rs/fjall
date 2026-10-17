@@ -21,6 +21,138 @@ impl PartialEq<crate::journal::batch_reader::ReadBatchItem> for BatchItem {
     }
 }
 
+fn assert_batch_items(
+    expected: &[BatchItem],
+    mut collected: Vec<batch_reader::Batch>,
+) -> crate::Result<()> {
+    let batch = collected.remove(0);
+    let items = batch.items.collect::<crate::Result<Vec<_>>>()?;
+    assert_eq!(expected.to_vec(), items);
+    Ok(())
+}
+
+#[test]
+fn large_journal_batch_streams_after_checksum_verification() -> crate::Result<()> {
+    let dir = tempdir()?;
+    let db = crate::Database::builder(dir.path().join("db"))
+        .worker_threads_unchecked(0)
+        .open()?;
+    let keyspace = db.keyspace("spilled", Default::default)?;
+    let path = dir.path().join("batch.jnl");
+    let values: Vec<_> = (0_u64..9_000)
+        .map(|i| {
+            BatchItem::new(
+                keyspace.clone(),
+                i.to_be_bytes(),
+                vec![b's'; 1024],
+                ValueType::Value,
+            )
+        })
+        .collect();
+    let journal = Journal::create_new(&path)?;
+    #[cfg(feature = "lz4")]
+    journal
+        .get_writer()?
+        .set_compression(lsm_tree::CompressionType::Lz4, 1);
+    journal
+        .get_writer()?
+        .write_batch(values.iter(), values.len(), 7)?;
+    journal.get_writer()?.persist(PersistMode::Buffer)?;
+
+    let batch = journal
+        .get_reader()?
+        .next()
+        .ok_or(crate::Error::Unrecoverable)??;
+    assert!(batch.items.is_streaming());
+    let recovered = batch.items.collect::<crate::Result<Vec<_>>>()?;
+    assert_eq!(recovered.len(), values.len());
+    assert_eq!(
+        recovered.first().unwrap().key.as_ref(),
+        values.first().unwrap().key.as_ref()
+    );
+    assert_eq!(
+        recovered.last().unwrap().key.as_ref(),
+        values.last().unwrap().key.as_ref()
+    );
+    Ok(())
+}
+
+#[test]
+fn streaming_batch_rejects_bad_checksum() -> crate::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    let dir = tempdir()?;
+    let db = crate::Database::builder(dir.path().join("db"))
+        .worker_threads_unchecked(0)
+        .open()?;
+    let keyspace = db.keyspace("corrupt", Default::default)?;
+    let path = dir.path().join("batch.jnl");
+    let values: Vec<_> = (0_u64..9_000)
+        .map(|i| {
+            BatchItem::new(
+                keyspace.clone(),
+                i.to_be_bytes(),
+                vec![b'v'; 1024],
+                ValueType::Value,
+            )
+        })
+        .collect();
+    let journal = Journal::create_new(&path)?;
+    journal
+        .get_writer()?
+        .write_batch(values.iter(), values.len(), 1)?;
+    journal.get_writer()?.persist(PersistMode::Buffer)?;
+
+    let mut file = std::fs::OpenOptions::new().write(true).open(&path)?;
+    file.seek(SeekFrom::Start(40))?;
+    file.write_all(b"X")?;
+    assert!(matches!(
+        journal.get_reader()?.next(),
+        Some(Err(crate::Error::JournalRecovery(
+            crate::JournalRecoveryError::ChecksumMismatch
+        )))
+    ));
+    Ok(())
+}
+
+#[test]
+fn tiny_items_exceed_item_count_budget() -> crate::Result<()> {
+    let dir = tempdir()?;
+    let db = crate::Database::builder(dir.path().join("db"))
+        .worker_threads_unchecked(0)
+        .open()?;
+    let keyspace = db.keyspace("tiny", Default::default)?;
+    let path = dir.path().join("batch.jnl");
+    let values: Vec<_> = (0_u64..100_000)
+        .map(|i| BatchItem::new(keyspace.clone(), i.to_be_bytes(), [], ValueType::Value))
+        .collect();
+    let journal = Journal::create_new(&path)?;
+    journal
+        .get_writer()?
+        .write_batch(values.iter(), values.len(), 7)?;
+    journal.get_writer()?.persist(PersistMode::Buffer)?;
+
+    let batch = journal
+        .get_reader()?
+        .next()
+        .ok_or(crate::Error::Unrecoverable)??;
+    assert!(batch.items.is_streaming());
+    let mut items = batch.items;
+    assert_eq!(
+        items
+            .next()
+            .ok_or(crate::Error::Unrecoverable)??
+            .key
+            .as_ref(),
+        0_u64.to_be_bytes()
+    );
+    let remaining = items.try_fold(0_usize, |count, item| {
+        item?;
+        Ok::<_, crate::Error>(count + 1)
+    })?;
+    assert_eq!(remaining, values.len() - 1);
+    Ok(())
+}
+
 #[test]
 #[expect(clippy::redundant_clone)]
 fn journal_rotation() -> crate::Result<()> {
@@ -249,7 +381,7 @@ fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -263,7 +395,7 @@ fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -277,7 +409,7 @@ fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     Ok(())
@@ -309,7 +441,7 @@ fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -327,7 +459,7 @@ fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -345,7 +477,7 @@ fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     Ok(())
@@ -377,7 +509,7 @@ fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -391,7 +523,7 @@ fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -405,7 +537,7 @@ fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     Ok(())
@@ -437,7 +569,7 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -459,7 +591,7 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     // Mangle journal
@@ -481,7 +613,7 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
         let journal = Journal::from_file(&path)?;
         let reader = journal.get_reader()?;
         let collected = reader.flatten().collect::<Vec<_>>();
-        assert_eq!(values.to_vec(), collected.first().unwrap().items);
+        assert_batch_items(&values, collected)?;
     }
 
     Ok(())

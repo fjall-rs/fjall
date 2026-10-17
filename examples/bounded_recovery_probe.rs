@@ -5,7 +5,7 @@ use fjall::{Database, KeyspaceCreateOptions};
 
 fn main() -> fjall::Result<()> {
     let mut args = std::env::args().skip(1);
-    let phase = args.next().expect("phase: seed or reopen");
+    let phase = args.next().expect("phase: seed, seed-batch, or reopen");
     let path = args.next().expect("database path");
     let rows: u64 = args
         .next()
@@ -27,6 +27,25 @@ fn main() -> fjall::Result<()> {
             }
             println!("seeded rows={rows} write_buffer={}", db.write_buffer_size());
         }
+        "seed-batch" => {
+            let db = Database::builder(&path)
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("oversized", || {
+                KeyspaceCreateOptions::default().max_memtable_size(8 * 1024 * 1024)
+            })?;
+            let mut batch = db.batch();
+            batch.insert(&keyspace, "duplicate", "old");
+            for i in 0..rows {
+                batch.insert(&keyspace, i.to_be_bytes(), value);
+            }
+            batch.insert(&keyspace, "duplicate", "new");
+            batch.commit()?;
+            println!(
+                "seeded one batch rows={rows} write_buffer={}",
+                db.write_buffer_size()
+            );
+        }
         "reopen" => {
             eprintln!("opening database");
             let workers = std::env::var("FJALL_PROBE_WORKERS")
@@ -43,6 +62,12 @@ fn main() -> fjall::Result<()> {
                 assert_eq!(
                     keyspace.get(i.to_be_bytes())?.as_deref(),
                     Some(value.as_slice())
+                );
+            }
+            if keyspace.get("duplicate")?.is_some() {
+                assert_eq!(
+                    keyspace.get("duplicate")?.as_deref(),
+                    Some(b"new".as_slice())
                 );
             }
             let write_buffer = db.write_buffer_size();
@@ -67,7 +92,7 @@ fn main() -> fjall::Result<()> {
                 write_buffer,
             );
         }
-        _ => panic!("phase must be seed or reopen"),
+        _ => panic!("phase must be seed, seed-batch, or reopen"),
     }
     Ok(())
 }
