@@ -593,6 +593,207 @@ mod tests {
     }
 
     #[test]
+    fn stale_rotation_and_empty_hints_do_not_requeue_work() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("stale", KeyspaceCreateOptions::default)?;
+        ks.insert("key", "value")?;
+        let stale_id = ks.tree.active_memtable().id();
+        assert!(ks.rotate_memtable()?);
+        let active_id = ks.tree.active_memtable().id();
+        assert_ne!(active_id, stale_id);
+        db.supervisor.flush_manager.clear();
+        while db.worker_pool.rx.try_recv().is_ok() {}
+
+        assert!(db.supervisor.rotation_manager.enqueue(ks.clone(), stale_id));
+        let ctx = WorkerState {
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            stats: db.stats.clone(),
+            next_slot: Cell::new(3),
+        };
+        assert!(!worker_tick(&ctx)?);
+        assert_eq!(ks.tree.active_memtable().id(), active_id);
+        assert!(db.supervisor.rotation_manager.dequeue().is_none());
+        assert!(db.supervisor.flush_manager.dequeue().is_none());
+
+        for hint in [WorkerMessage::Flush, WorkerMessage::RotateMemtable] {
+            db.worker_pool
+                .sender
+                .try_send(hint)
+                .map_err(|_| crate::Error::Unrecoverable)?;
+            assert!(!worker_tick(&ctx)?);
+        }
+        assert!(db.supervisor.rotation_manager.dequeue().is_none());
+        assert!(db.supervisor.flush_manager.dequeue().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn shutdown_with_full_queue_and_pending_maintenance_is_bounded() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_PENDING_CLOSE_CHILD").is_none() {
+            let executable = std::env::current_exe()?;
+            let mut child = std::process::Command::new(executable)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::shutdown_with_full_queue_and_pending_maintenance_is_bounded",
+                ])
+                .env("FJALL_PENDING_CLOSE_CHILD", "1")
+                .env("FJALL_PENDING_CLOSE_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(status.success(), "pending-close child failed: {status}");
+                    let db = Database::builder(folder.path()).worker_threads(1).open()?;
+                    let ks = db.keyspace("pending", KeyspaceCreateOptions::default)?;
+                    assert_eq!(ks.get("key")?.as_deref(), Some(b"value".as_slice()));
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("database shutdown blocked with pending maintenance");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_PENDING_CLOSE_DIR") else {
+            panic!("pending-close child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("pending", KeyspaceCreateOptions::default)?;
+        ks.insert("key", "value")?;
+        db.persist(crate::PersistMode::SyncAll)?;
+        assert!(ks.rotate_memtable()?);
+        db.supervisor.request_compaction(&ks);
+        db.supervisor
+            .rotation_manager
+            .enqueue(ks.clone(), ks.tree.active_memtable().id());
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.worker_pool.start(
+            1,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+        drop(ks);
+        drop(db);
+        Ok(())
+    }
+
+    #[test]
+    fn two_workers_drain_saturated_rotation_and_compaction() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_TWO_WORKER_SATURATION_CHILD").is_none() {
+            let executable = std::env::current_exe()?;
+            let mut child = std::process::Command::new(executable)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::two_workers_drain_saturated_rotation_and_compaction",
+                ])
+                .env("FJALL_TWO_WORKER_SATURATION_CHILD", "1")
+                .env("FJALL_TWO_WORKER_SATURATION_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "two-worker saturation child failed: {status}"
+                    );
+                    let db = Database::builder(folder.path()).worker_threads(2).open()?;
+                    let compact = db.keyspace("compact", KeyspaceCreateOptions::default)?;
+                    let rotate = db.keyspace("rotate", KeyspaceCreateOptions::default)?;
+                    assert_eq!(compact.get("key")?.as_deref(), Some(b"value".as_slice()));
+                    assert_eq!(
+                        rotate.get("large")?.as_deref(),
+                        Some(vec![b'x'; 2_048].as_slice())
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("two workers stopped making progress under a full hint queue");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_TWO_WORKER_SATURATION_DIR") else {
+            panic!("two-worker saturation child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let compact = db.keyspace("compact", KeyspaceCreateOptions::default)?;
+        for _ in 0..26 {
+            compact.insert("key", "value")?;
+            db.persist(crate::PersistMode::SyncAll)?;
+            assert!(compact.rotate_memtable()?);
+            run_flush(
+                &crate::flush::Task {
+                    keyspace: compact.clone(),
+                },
+                &db.supervisor.write_buffer_size,
+                &db.supervisor.snapshot_tracker,
+                &db.stats,
+            )?;
+            db.supervisor.flush_manager.clear();
+        }
+        let before = compact.tree.l0_run_count();
+        assert!(
+            before >= 20 && before < 30,
+            "expected a bounded L0 backlog: {before}"
+        );
+        let rotate = db.keyspace("rotate", || {
+            KeyspaceCreateOptions::default().max_memtable_size(1_024)
+        })?;
+        rotate.insert("large", vec![b'x'; 2_048])?;
+        let active_id = rotate.tree.active_memtable().id();
+        while db.worker_pool.sender.len() < 1_000 {
+            assert!(db.worker_pool.sender.try_send(WorkerMessage::Flush).is_ok());
+        }
+        db.supervisor.request_compaction(&compact);
+        db.worker_pool.start(
+            2,
+            &db.supervisor,
+            &db.stats,
+            &PoisonDart::new(db.is_poisoned.clone()),
+            &db.active_thread_counter,
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while (compact.tree.l0_run_count() >= 20
+            || rotate.tree.active_memtable().id() == active_id
+            || rotate.tree.sealed_memtable_count() > 0)
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(compact.tree.l0_run_count() < 20, "L0 compaction stalled");
+        assert_ne!(
+            rotate.tree.active_memtable().id(),
+            active_id,
+            "rotation stalled"
+        );
+        assert_eq!(rotate.tree.sealed_memtable_count(), 0, "flush stalled");
+        db.persist(crate::PersistMode::SyncAll)?;
+        // The parent verifies durable values after this abrupt child exit.
+        std::process::exit(0);
+    }
+
+    #[test]
     fn recreated_keyspace_keeps_distinct_pending_work() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
         let db = Database::builder(&folder)
