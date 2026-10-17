@@ -11,7 +11,7 @@ use crate::{
     write_pipeline::OptimisticConflictCheck,
     Database, Guard, Iter, Keyspace, PersistMode, Readable,
 };
-use lsm_tree::{Slice, UserKey, UserValue};
+use lsm_tree::{UserKey, UserValue};
 use std::{
     fmt,
     ops::{Bound, RangeBounds, RangeFull},
@@ -118,8 +118,8 @@ impl Readable for WriteTransaction {
         keyspace: impl AsRef<Keyspace>,
         range: R,
     ) -> Iter {
-        let start: Bound<Slice> = range.start_bound().map(|k| k.as_ref().into());
-        let end: Bound<Slice> = range.end_bound().map(|k| k.as_ref().into());
+        let start: Bound<UserKey> = range.start_bound().map(|k| k.as_ref().into());
+        let end = range.end_bound().map(|k| k.as_ref().into());
 
         self.cm
             .lock()

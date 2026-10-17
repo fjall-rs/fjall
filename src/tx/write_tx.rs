@@ -324,11 +324,11 @@ impl BaseTransaction {
                 batch.data.push(Item::new(
                     keyspace.clone(),
                     item.key.user_key.clone(),
-                    item.value.clone(),
+                    item.value,
                     item.key.value_type,
                 ));
 
-                prev_key = Some(item.key.user_key.clone());
+                prev_key = Some(item.key.user_key);
             }
         }
 

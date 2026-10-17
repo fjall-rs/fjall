@@ -1,3 +1,7 @@
+// Copyright (c) 2026-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use std::mem::MaybeUninit;
 
 // Wrapper for loom-specific "with" API

@@ -8,12 +8,6 @@ use crate::SeqNo;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 
-pub enum CommitOutcome<E> {
-    Ok,
-    Aborted(E),
-    Conflicted,
-}
-
 pub struct Oracle {
     pub(super) write_serialize_lock: Mutex<BTreeMap<SeqNo, ConflictManager>>, // TODO: remove this lock, use Mutex<Oracle> instead
     pub(super) snapshot_tracker: SnapshotTracker,
