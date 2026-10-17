@@ -795,6 +795,9 @@ impl Keyspace {
 
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 30 {
+            // Another level may have won compaction selection, leaving L0
+            // unchanged. The halted writer must keep maintenance discoverable.
+            self.supervisor.request_compaction(self);
             std::thread::sleep(Duration::from_millis(10));
         }
     }

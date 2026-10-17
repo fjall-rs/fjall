@@ -536,6 +536,72 @@ mod tests {
         Ok(())
     }
 
+    /// A write stalled at 30 L0 runs must request work even when an earlier
+    /// compaction chose another level and left the L0 count unchanged.
+    #[test]
+    fn halted_writer_requests_compaction_again() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_HALTED_WRITER_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::halted_writer_requests_compaction_again",
+                ])
+                .env("FJALL_HALTED_WRITER_CHILD", "1")
+                .env("FJALL_HALTED_WRITER_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "halted writer did not request compaction: {status}"
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("halted writer did not request compaction before deadline");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let Ok(path) = std::env::var("FJALL_HALTED_WRITER_DIR") else {
+            panic!("halted writer child is missing its directory");
+        };
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        let ks = db.keyspace("halted", KeyspaceCreateOptions::default)?;
+        for row in 0..30 {
+            ks.insert(b"key", format!("value-{row}").as_bytes())?;
+            db.persist(crate::PersistMode::SyncAll)?;
+            assert!(ks.rotate_memtable()?);
+            run_flush(
+                &crate::flush::Task {
+                    keyspace: ks.clone(),
+                },
+                &db.supervisor.write_buffer_size,
+                &db.supervisor.snapshot_tracker,
+                &db.stats,
+            )?;
+            db.supervisor.flush_manager.clear();
+        }
+        assert!(ks.tree.l0_run_count() >= 30);
+        let writer = ks.clone();
+        std::thread::spawn(move || writer.local_backpressure());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if db.supervisor.compaction_manager.dequeue().is_some() {
+                std::process::exit(0);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        std::process::exit(2);
+    }
+
     /// Concurrent writes across keyspaces exercise rotations and flushes with
     /// the pool sizes that previously differed in the field investigation.
     #[test]
