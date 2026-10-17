@@ -2,9 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{db_config::CompactionFilterAssigner, tx::single_writer::Openable, Config};
+use crate::{db_config::CompactionFilterAssigner, Config};
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{marker::PhantomData, path::Path, sync::Arc};
+
+pub trait Openable {
+    fn open(config: Config) -> crate::Result<Self>
+    where
+        Self: Sized;
+}
 
 /// Database builder
 pub struct Builder<O: Openable> {

@@ -4,6 +4,7 @@
 
 use crate::{
     batch::WriteBatch,
+    builder::Openable,
     db_config::Config,
     file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
     flush::manager::FlushManager,
@@ -17,7 +18,6 @@ use crate::{
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
-    tx::single_writer::Openable,
     version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
