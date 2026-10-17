@@ -251,18 +251,18 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn with_capacity_zero_panics() {
+    fn mpsc_queue_with_capacity_zero_panics() {
         let _ = Queue::<u8>::with_capacity(0);
     }
 
     #[test]
     #[should_panic]
-    fn with_capacity_non_power_of_two_panics() {
+    fn mpsc_queue_with_capacity_non_power_of_two_panics() {
         let _ = Queue::<u8>::with_capacity(3);
     }
 
     #[test]
-    fn drops_elements_on_drop() {
+    fn mpsc_queue_drops_elements_on_drop() {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,

@@ -57,6 +57,33 @@ jobs:
             examples/unique-index -> target
       - name: Build & test examples
         run: node compile_examples.mjs
+  miri:
+    timeout-minutes: 3
+    strategy:
+      matrix:
+        rust_version:
+          - nightly
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust_version }}
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ runner.os }}-cargo
+          workspaces: >
+            . -> target
+      - name: Install Miri
+        run: rustup component add miri
+      - name: Run Miri
+        run: cargo miri test mpsc_queue_
   test:
     timeout-minutes: 20
     strategy:
