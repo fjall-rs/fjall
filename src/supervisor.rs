@@ -2,6 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use lsm_tree::MemtableId;
 use lsm_tree::SequenceNumberCounter;
 
 use crate::{
@@ -28,6 +29,49 @@ struct CompactionState {
 /// Keeps one pending compaction per keyspace even when the worker-message
 /// channel is full and its wakeup hint cannot be sent.
 pub struct CompactionManager(Mutex<CompactionState>);
+
+#[derive(Default)]
+struct RotationState {
+    queue: VecDeque<(Keyspace, MemtableId)>,
+    queued: HashSet<(InternalKeyspaceId, MemtableId)>,
+}
+
+/// Keeps required rotations discoverable even when the worker-message channel
+/// is full. A keyspace can have requests for different active memtable IDs.
+pub struct RotationManager(Mutex<RotationState>);
+
+impl RotationManager {
+    pub(crate) fn new() -> Self {
+        Self(Mutex::new(RotationState::default()))
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, RotationState> {
+        #[expect(clippy::expect_used)]
+        self.0.lock().expect("rotation queue lock is poisoned")
+    }
+
+    pub(crate) fn enqueue(&self, keyspace: Keyspace, memtable_id: MemtableId) -> bool {
+        let mut state = self.state();
+        if !state.queued.insert((keyspace.id(), memtable_id)) {
+            return false;
+        }
+        state.queue.push_back((keyspace, memtable_id));
+        true
+    }
+
+    pub(crate) fn dequeue(&self) -> Option<(Keyspace, MemtableId)> {
+        let mut state = self.state();
+        let task = state.queue.pop_front()?;
+        state.queued.remove(&(task.0.id(), task.1));
+        Some(task)
+    }
+
+    pub(crate) fn clear(&self) {
+        let mut state = self.state();
+        state.queue.clear();
+        state.queued.clear();
+    }
+}
 
 impl CompactionManager {
     pub(crate) fn new() -> Self {
@@ -72,6 +116,7 @@ pub struct SupervisorInner {
     pub(crate) write_buffer_size: WriteBufferManager,
     pub(crate) flush_manager: FlushManager,
     pub(crate) compaction_manager: CompactionManager,
+    pub(crate) rotation_manager: RotationManager,
 
     pub seqno: SequenceNumberCounter,
 
@@ -108,6 +153,16 @@ impl Supervisor {
             keyspace
                 .worker_messager
                 .try_send(WorkerMessage::Compact(keyspace.clone()))
+                .ok();
+        }
+    }
+
+    pub(crate) fn request_rotation(&self, keyspace: &Keyspace, memtable_id: MemtableId) {
+        if self.rotation_manager.enqueue(keyspace.clone(), memtable_id) {
+            // The task is already durable before trying the bounded hint queue.
+            keyspace
+                .worker_messager
+                .try_send(WorkerMessage::RotateMemtable)
                 .ok();
         }
     }

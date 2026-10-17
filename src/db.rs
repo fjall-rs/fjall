@@ -17,7 +17,7 @@ use crate::{
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
-    supervisor::{CompactionManager, Supervisor, SupervisorInner},
+    supervisor::{CompactionManager, RotationManager, Supervisor, SupervisorInner},
     version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
@@ -68,14 +68,7 @@ impl Drop for DatabaseInner {
 
         let _ = self.worker_pool.rx.drain().count();
 
-        while self
-            .active_thread_counter
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0
-        {
-            let _ = self.worker_pool.sender.send(WorkerMessage::Close);
-            std::thread::sleep(std::time::Duration::from_micros(10));
-        }
+        wait_for_workers(&self.worker_pool.sender, &self.active_thread_counter);
 
         // Drain again after threads are closed
         let _ = self.worker_pool.rx.drain().count();
@@ -83,6 +76,7 @@ impl Drop for DatabaseInner {
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
         self.supervisor.compaction_manager.clear();
+        self.supervisor.rotation_manager.clear();
         self.supervisor
             .keyspaces
             .write()
@@ -110,6 +104,42 @@ impl Drop for DatabaseInner {
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
+    }
+}
+
+fn wait_for_workers(sender: &flume::Sender<WorkerMessage>, active: &AtomicUsize) {
+    while active.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        // A worker can exit after the count check. A blocking send to a
+        // newly full channel would then wait forever with no receiver.
+        let _ = sender.try_send(WorkerMessage::Close);
+        std::thread::sleep(std::time::Duration::from_micros(10));
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn full_channel_and_exited_worker_do_not_hang_shutdown() {
+        let (sender, _receiver) = flume::bounded(1);
+        sender.try_send(WorkerMessage::Flush).unwrap();
+        let active = Arc::new(AtomicUsize::new(1));
+        let exiting_worker = active.clone();
+        let exit = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            exiting_worker.store(0, std::sync::atomic::Ordering::Relaxed);
+        });
+        let (done, finished) = std::sync::mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            wait_for_workers(&sender, &active);
+            done.send(()).unwrap();
+        });
+        finished
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("shutdown stayed blocked on the full channel after the worker exited");
+        waiter.join().unwrap();
+        exit.join().unwrap();
     }
 }
 
@@ -643,6 +673,7 @@ impl Database {
             keyspaces,
             flush_manager: FlushManager::new(),
             compaction_manager: CompactionManager::new(),
+            rotation_manager: RotationManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal: active_journal,
@@ -838,6 +869,9 @@ impl Database {
 
                 db.supervisor.request_compaction(&keyspace);
             }
+            // Active-journal replay can restore a memtable over budget. No
+            // future write is required to make that rotation discoverable.
+            keyspace.check_memtable_rotate(keyspace.tree.active_memtable().size());
         }
 
         log::trace!("Database recovery successful");
@@ -914,6 +948,7 @@ impl Database {
             keyspaces,
             flush_manager: FlushManager::new(),
             compaction_manager: CompactionManager::new(),
+            rotation_manager: RotationManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal,
