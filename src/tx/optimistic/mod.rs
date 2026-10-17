@@ -8,19 +8,22 @@ mod oracle;
 mod write_tx;
 
 use crate::{
-    keyspace::KeyspaceKey, tx::single_writer::Openable, Config, Database, KeyspaceCreateOptions,
-    PersistMode, Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode,
+    Snapshot,
 };
 use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
 
-pub(crate) use conflict_manager::ConflictManager;
-pub(crate) use oracle::Oracle;
+pub use conflict_manager::ConflictManager;
+pub use oracle::Oracle;
 
 pub use keyspace::OptimisticTxKeyspace;
 pub use write_tx::{Conflict, WriteTransaction};
+
+/// A builder for a transactional database with optimistic concurrency control.
+pub type OptimisticTxDatabaseBuilder = crate::DatabaseBuilder<OptimisticTxDatabase>;
 
 /// Transactional database
 #[derive(Clone)]
@@ -49,7 +52,7 @@ impl Openable for OptimisticTxDatabase {
 
 impl OptimisticTxDatabase {
     /// Creates a new database builder to create or open a database at `path`.
-    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder<Self> {
+    pub fn builder(path: impl AsRef<Path>) -> OptimisticTxDatabaseBuilder {
         crate::DatabaseBuilder::new(path.as_ref())
     }
 

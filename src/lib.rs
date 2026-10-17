@@ -160,12 +160,13 @@ pub use {
 };
 
 pub use tx::single_writer::{
-    SingleWriterTxKeyspace, TxDatabase as SingleWriterTxDatabase,
+    SingleWriterTxDatabase, SingleWriterTxDatabaseBuilder, SingleWriterTxKeyspace,
     WriteTransaction as SingleWriterWriteTx,
 };
 
 pub use tx::optimistic::{
-    Conflict, OptimisticTxDatabase, OptimisticTxKeyspace, WriteTransaction as OptimisticWriteTx,
+    Conflict, OptimisticTxDatabase, OptimisticTxDatabaseBuilder, OptimisticTxKeyspace,
+    WriteTransaction as OptimisticWriteTx,
 };
 
 #[doc(hidden)]
