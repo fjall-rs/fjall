@@ -748,11 +748,13 @@ impl Keyspace {
 
         drop(journal_writer);
 
-        self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
+        if self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
             keyspace: self.clone(),
-        }));
-
-        self.worker_messager.send(WorkerMessage::Flush).ok();
+        })) {
+            // Flush tasks are the source of truth. A full notification queue
+            // must never park a worker on the queue that it consumes.
+            self.worker_messager.try_send(WorkerMessage::Flush).ok();
+        }
 
         {
             // NOTE: If the difference between watermark is too large, and

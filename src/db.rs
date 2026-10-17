@@ -17,7 +17,7 @@ use crate::{
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
-    supervisor::{Supervisor, SupervisorInner},
+    supervisor::{CompactionManager, Supervisor, SupervisorInner},
     version::FormatVersion,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
@@ -82,6 +82,7 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+        self.supervisor.compaction_manager.clear();
         self.supervisor
             .keyspaces
             .write()
@@ -641,6 +642,7 @@ impl Database {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
+            compaction_manager: CompactionManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal: active_journal,
@@ -788,40 +790,8 @@ impl Database {
 
         db.supervisor.snapshot_tracker.gc();
 
-        for keyspace in db
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .values()
-        {
-            if keyspace.tree.sealed_memtable_count() > 0 {
-                log::debug!(
-                    "Queuing keyspace {:?} to get flushed because sealed memtables > 0",
-                    keyspace.name(),
-                );
-
-                // IMPORTANT: Add task to flush manager, so it can be flushed
-                db.supervisor
-                    .flush_manager
-                    .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: keyspace.clone(),
-                    }));
-
-                keyspace.worker_messager.send(WorkerMessage::Flush).ok();
-            } else if keyspace.tree.l0_run_count() > 0 {
-                log::debug!(
-                    "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
-                    keyspace.name(),
-                );
-
-                keyspace
-                    .worker_messager
-                    .send(WorkerMessage::Compact(keyspace.clone()))
-                    .ok();
-            }
-        }
-
+        // Workers must already be consuming messages before recovery can
+        // schedule maintenance for more keyspaces than the bounded queue fits.
         db.worker_pool.start(
             db.config.worker_threads,
             &db.supervisor,
@@ -829,6 +799,46 @@ impl Database {
             &PoisonDart::new(db.is_poisoned.clone()),
             &db.active_thread_counter,
         )?;
+
+        // Release the keyspace registry lock before sending maintenance
+        // messages. Workers may need its write side while flushing; holding
+        // the read side across a full worker queue would deadlock recovery.
+        #[expect(clippy::expect_used)]
+        let recovering_keyspaces: Vec<_> = db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .values()
+            .cloned()
+            .collect();
+
+        for keyspace in recovering_keyspaces {
+            if keyspace.tree.sealed_memtable_count() > 0 {
+                log::debug!(
+                    "Queuing keyspace {:?} to get flushed because sealed memtables > 0",
+                    keyspace.name(),
+                );
+
+                // IMPORTANT: Add task to flush manager, so it can be flushed
+                if db
+                    .supervisor
+                    .flush_manager
+                    .enqueue(Arc::new(crate::flush::Task {
+                        keyspace: keyspace.clone(),
+                    }))
+                {
+                    keyspace.worker_messager.try_send(WorkerMessage::Flush).ok();
+                }
+            } else if keyspace.tree.l0_run_count() > 0 {
+                log::debug!(
+                    "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
+                    keyspace.name(),
+                );
+
+                db.supervisor.request_compaction(&keyspace);
+            }
+        }
 
         log::trace!("Database recovery successful");
 
@@ -903,6 +913,7 @@ impl Database {
             db_config: config.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
+            compaction_manager: CompactionManager::new(),
             write_buffer_size: WriteBufferManager::default(),
             snapshot_tracker: SnapshotTracker::new(visible_seqno),
             journal,
