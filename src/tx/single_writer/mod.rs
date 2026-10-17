@@ -6,7 +6,8 @@ mod keyspace;
 mod write_tx;
 
 use crate::{
-    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode,
+    Snapshot,
 };
 use std::{
     path::Path,
@@ -15,12 +16,6 @@ use std::{
 
 pub use keyspace::SingleWriterTxKeyspace;
 pub use write_tx::WriteTransaction;
-
-pub trait Openable {
-    fn open(config: Config) -> crate::Result<Self>
-    where
-        Self: Sized;
-}
 
 /// Single-writer transactional database
 #[derive(Clone)]

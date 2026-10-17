@@ -8,9 +8,8 @@ mod oracle;
 mod write_tx;
 
 use crate::{
-    keyspace::KeyspaceKey,
-    tx::{optimistic::oracle::Oracle, single_writer::Openable},
-    Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, tx::optimistic::oracle::Oracle, Config, Database,
+    KeyspaceCreateOptions, PersistMode, Snapshot,
 };
 use std::{
     path::Path,
