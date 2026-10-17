@@ -1,6 +1,36 @@
 use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{cell::UnsafeCell, sync::atomic::AtomicUsize};
+
+// Wrapper for loom-specific "with" API
+#[cfg(not(feature = "__internal_loom"))]
+pub(crate) struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
+
+#[cfg(not(feature = "__internal_loom"))]
+impl<T> UnsafeCell<T> {
+    pub(crate) fn new(data: T) -> UnsafeCell<T> {
+        UnsafeCell(std::cell::UnsafeCell::new(data))
+    }
+
+    pub(crate) fn with<R>(&self, f: impl FnOnce(*const T) -> R) -> R {
+        f(self.0.get())
+    }
+
+    pub(crate) fn with_mut<R>(&self, f: impl FnOnce(*mut T) -> R) -> R {
+        f(self.0.get())
+    }
+}
+
+#[cfg(not(feature = "__internal_loom"))]
+use std::{
+    sync::atomic::AtomicUsize,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+#[cfg(feature = "__internal_loom")]
+use loom::{
+    cell::UnsafeCell,
+    sync::atomic::AtomicUsize,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 /// Slot in bounded queue
 struct Slot<T> {
@@ -94,7 +124,9 @@ impl<T> Queue<T> {
                     // SAFETY: We won the CAS, and are setting a value
                     #[expect(unsafe_code)]
                     unsafe {
-                        *slot.data.get() = MaybeUninit::new(item);
+                        slot.data.with_mut(|d| {
+                            *d = MaybeUninit::new(item);
+                        });
                     }
 
                     slot.published.store(true, Ordering::Release);
@@ -123,7 +155,7 @@ impl<T> Queue<T> {
         // SAFETY: We set published=true after pushing a value
         // We set published=false after popping a value
         #[expect(unsafe_code)]
-        let value = unsafe { self.slots[idx].data.get().read().assume_init() };
+        let value = unsafe { self.slots[idx].data.with(|d| d).read().assume_init() };
 
         slot.published.store(false, Ordering::Release);
 
@@ -146,7 +178,7 @@ impl<T> Queue<T> {
         // SAFETY: Uhhh
         #[expect(unsafe_code)]
         let ptr = {
-            let ptr = slot.data.get().cast();
+            let ptr = slot.data.with(|d| d).cast();
             unsafe { &*(ptr as *const T) }
         };
 
@@ -169,7 +201,7 @@ impl<T> Drop for Queue<T> {
             if slot.published.load(Ordering::Acquire) {
                 #[expect(unsafe_code)]
                 unsafe {
-                    std::ptr::drop_in_place((*slot.data.get()).as_mut_ptr());
+                    std::ptr::drop_in_place((*slot.data.with_mut(|d| d)).as_mut_ptr());
                 }
             }
 
