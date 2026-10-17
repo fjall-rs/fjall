@@ -86,8 +86,6 @@ impl WritePipeline {
             };
 
             if let Some(occ) = &write_record.occ {
-                log::warn!("OCC conflict");
-
                 if occ.oracle.has_conflict(
                     occ.instant,
                     occ.conflict_manager
@@ -183,8 +181,6 @@ impl WritePipeline {
             highest_seqno_published = Some(batch_seqno);
 
             if let Some(occ) = &write_record.occ {
-                log::info!("OCC finalize");
-
                 occ.oracle.finalize(
                     batch_seqno + 1,
                     occ.conflict_manager
