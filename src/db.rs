@@ -447,6 +447,10 @@ impl Database {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
+    ///
+    /// Returns [`Error::KeyspaceDeleted`](crate::Error::KeyspaceDeleted) if the
+    /// handle is no longer registered in this database, including when it was
+    /// deleted and recreated under the same name.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
         self.meta_keyspace.remove_keyspace(&handle)
