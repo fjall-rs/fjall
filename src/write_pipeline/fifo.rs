@@ -318,4 +318,48 @@ mod tests {
         }
         assert_eq!(3, dropped.load(Ordering::SeqCst));
     }
+
+    #[cfg(feature = "__internal_loom")]
+    #[test]
+    fn loom_two_producers_single_consumer() {
+        loom::model(|| {
+            use loom::{sync::Arc, thread};
+
+            let queue = Arc::new(Queue::with_capacity(1));
+
+            let producer_1 = {
+                let queue = Arc::clone(&queue);
+                thread::spawn(move || {
+                    while queue.try_push(1).is_none() {
+                        thread::yield_now();
+                    }
+                })
+            };
+            let producer_2 = {
+                let queue = Arc::clone(&queue);
+                thread::spawn(move || {
+                    while queue.try_push(2).is_none() {
+                        thread::yield_now();
+                    }
+                })
+            };
+
+            let mut received = Vec::new();
+
+            while received.len() < 2 {
+                if let Some(value) = queue.try_pop() {
+                    received.push(value);
+                } else {
+                    thread::yield_now();
+                }
+            }
+
+            producer_1.join().unwrap();
+            producer_2.join().unwrap();
+
+            received.sort_unstable();
+            assert_eq!(received, [1, 2]);
+            assert_eq!(queue.try_pop(), None);
+        });
+    }
 }
