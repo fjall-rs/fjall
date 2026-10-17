@@ -130,6 +130,7 @@ impl WritePipeline {
             let mut batch_size = 0;
 
             // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
+            #[expect(clippy::mutable_key_type)]
             let mut keyspaces_with_possible_stall = HashSet::new();
 
             match payload {
@@ -238,7 +239,7 @@ impl WritePipeline {
             return Ok(Err(Conflict));
         }
 
-        return Ok(Ok(()));
+        Ok(Ok(()))
     }
 
     /// Promotes the queue head, or frees the leader lease if the queue is empty.
