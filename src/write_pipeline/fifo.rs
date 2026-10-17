@@ -6,8 +6,8 @@ pub(crate) struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
 
 #[cfg(not(feature = "__internal_loom"))]
 impl<T> UnsafeCell<T> {
-    pub(crate) fn new(data: T) -> UnsafeCell<T> {
-        UnsafeCell(std::cell::UnsafeCell::new(data))
+    pub(crate) fn new(data: T) -> Self {
+        Self(std::cell::UnsafeCell::new(data))
     }
 
     pub(crate) fn with<R>(&self, f: impl FnOnce(*const T) -> R) -> R {
@@ -203,6 +203,8 @@ impl<T> Drop for Queue<T> {
 
         while ticket < tail {
             let idx = self.get_index(ticket);
+
+            #[expect(clippy::indexing_slicing)]
             let slot = &self.slots[idx];
 
             if slot.published.load(Ordering::Acquire) {
@@ -301,6 +303,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn mpsc_queue_drops_elements_on_drop() {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},

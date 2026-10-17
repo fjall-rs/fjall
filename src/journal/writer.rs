@@ -31,7 +31,7 @@ pub struct Writer {
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u8)]
 pub enum PersistMode {
     /// Flushes data to OS buffers. This allows the OS to write out data in case of an
@@ -48,12 +48,6 @@ pub enum PersistMode {
 
     /// Flushes data + metadata using `fsync`.
     SyncAll = 2,
-}
-
-impl PartialOrd for PersistMode {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (*self as u8).partial_cmp(&(*other as u8))
-    }
 }
 
 impl Writer {

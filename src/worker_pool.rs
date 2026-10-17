@@ -316,8 +316,7 @@ mod tests {
     fn claim_and_spawn_claims_one_slot_per_worker() {
         let counter = Arc::new(AtomicUsize::new(0));
 
-        let handles = claim_and_spawn(3, &counter, |i| Ok::<_, std::io::Error>(i))
-            .expect("all spawns succeed");
+        let handles = claim_and_spawn(3, &counter, Ok).expect("all spawns succeed");
 
         assert_eq!(handles, vec![0, 1, 2]);
         assert_eq!(counter.load(Relaxed), 3);

@@ -72,7 +72,7 @@ impl ConflictManager {
         self.push_read(keyspace_id, read);
     }
 
-    #[expect(clippy::too_many_lines, clippy::significant_drop_tightening)]
+    #[expect(clippy::too_many_lines)]
     pub fn has_conflict(&self, other: &Self) -> bool {
         let reads_lock = &self.reads;
         let conflict_keys_lock = &other.conflict_keys;
@@ -81,7 +81,7 @@ impl ConflictManager {
             return false;
         }
 
-        for (keyspace_name, keys) in &*reads_lock {
+        for (keyspace_name, keys) in reads_lock {
             if let Some(other_conflict_keys) = conflict_keys_lock.get(keyspace_name) {
                 for ro in keys {
                     match ro {

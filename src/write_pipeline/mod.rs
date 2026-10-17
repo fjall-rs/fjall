@@ -290,55 +290,55 @@ impl WritePipeline {
                     self.poison_flag.poison();
                     self.abdicate();
                 });
-            } else {
-                // Spin on record state until it is processed
-                for i in 0.. {
-                    match record.state() {
-                        WRITE_RECORD_STATE_PENDING => {
-                            std::hint::spin_loop();
+            }
 
-                            // We need to do this to catch leader abdications
-                            //
-                            // Imagine this TOCTOU scenario:
-                            //   Existing leader sees no queue head
-                            //     -> We now push a write record & become follower
-                            //       -> Leader frees leader lease
-                            //         -> We spin on record state forever
-                            if i % 1_000 == 0 {
-                                if self.try_acquire_leader_lease() {
-                                    // Crown ourselves as leader
-                                    is_leader = true;
-                                    continue 'start;
-                                }
+            // Spin on record state until it is processed
+            for i in 0.. {
+                match record.state() {
+                    WRITE_RECORD_STATE_PENDING => {
+                        std::hint::spin_loop();
+
+                        // We need to do this to catch leader abdications
+                        //
+                        // Imagine this TOCTOU scenario:
+                        //   Existing leader sees no queue head
+                        //     -> We now push a write record & become follower
+                        //       -> Leader frees leader lease
+                        //         -> We spin on record state forever
+                        if i % 1_000 == 0 {
+                            if self.try_acquire_leader_lease() {
+                                // Crown ourselves as leader
+                                is_leader = true;
+                                continue 'start;
                             }
                         }
-                        WRITE_RECORD_STATE_PUBLISHED => break,
-                        WRITE_RECORD_STATE_LEADER_ABDICATED => {
-                            is_leader = true;
-                            continue 'start;
-                        }
-                        WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
-                        _ => unreachable!(),
                     }
-                }
-
-                // NOTE: Even if we had persist_mode=None, we still need to wait for the
-                // record contents to be visible, otherwise our writes may not be visible
-                // by a reader immediately following this commit
-
-                let assigned_seqno = record.assigned_seqno.load(Acquire);
-
-                // Spin on the visible seqno until our record is visible
-                loop {
-                    let visible_seqno = self.snapshot_tracker.get();
-
-                    if visible_seqno > assigned_seqno {
-                        break;
+                    WRITE_RECORD_STATE_PUBLISHED => break,
+                    WRITE_RECORD_STATE_LEADER_ABDICATED => {
+                        is_leader = true;
+                        continue 'start;
                     }
+                    WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
+                    _ => unreachable!(),
                 }
-
-                return Ok(Ok(()));
             }
+
+            // NOTE: Even if we had persist_mode=None, we still need to wait for the
+            // record contents to be visible, otherwise our writes may not be visible
+            // by a reader immediately following this commit
+
+            let assigned_seqno = record.assigned_seqno.load(Acquire);
+
+            // Spin on the visible seqno until our record is visible
+            loop {
+                let visible_seqno = self.snapshot_tracker.get();
+
+                if visible_seqno > assigned_seqno {
+                    break;
+                }
+            }
+
+            return Ok(Ok(()));
         }
     }
 }
