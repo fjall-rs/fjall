@@ -338,8 +338,12 @@ pub fn recover_sealed_memtables(
 
             // IMPORTANT: Apply the sealed memtable only if it contains data newer than the
             // keyspace's persisted LSN.
+            // Equality cannot prove that every item of the final batch was
+            // flushed: recovery can be interrupted after persisting only one
+            // chunk at this sequence number. Replaying an equal-LSN journal
+            // is safe and preserves the items that were not flushed yet.
             let should_skip_sealed_memtable =
-                keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn >= wm.lsn);
+                keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn > wm.lsn);
 
             if should_skip_sealed_memtable {
                 log::trace!(
@@ -402,7 +406,69 @@ pub fn recover_sealed_memtables(
 
 #[cfg(test)]
 mod tests {
+    use super::flush_recovery_chunk;
     use crate::{Database, KeyspaceCreateOptions};
+    use lsm_tree::AbstractTree;
+
+    #[test]
+    fn equal_seqno_later_table_wins_after_recovery_flush() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("same-seqno", KeyspaceCreateOptions::default)?;
+            let seqno = db.supervisor.seqno.next();
+            keyspace.tree.insert("duplicate", "first", seqno);
+            flush_recovery_chunk(&db, &keyspace, true)?;
+            keyspace.tree.insert("duplicate", "last", seqno);
+            flush_recovery_chunk(&db, &keyspace, true)?;
+            assert_eq!(
+                keyspace.get("duplicate")?.as_deref(),
+                Some(b"last".as_slice())
+            );
+        }
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("same-seqno", KeyspaceCreateOptions::default)?;
+        assert_eq!(
+            keyspace.get("duplicate")?.as_deref(),
+            Some(b"last".as_slice())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn partial_batch_flush_must_not_skip_remaining_sealed_items() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("batch", KeyspaceCreateOptions::default)?;
+            let mut batch = db.batch();
+            batch.insert(&keyspace, "first", "one");
+            batch.insert(&keyspace, "second", "two");
+            batch.commit()?;
+            db.supervisor.journal.get_writer()?.rotate()?;
+
+            // Model a process killed after the first chunk of this batch was
+            // flushed. The journal still contains both committed items.
+            let batch_seqno = db.supervisor.seqno.get() - 1;
+            keyspace.tree.clear_active_memtable();
+            keyspace.tree.insert("first", "one", batch_seqno);
+            flush_recovery_chunk(&db, &keyspace, true)?;
+        }
+
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("batch", KeyspaceCreateOptions::default)?;
+        assert_eq!(keyspace.get("first")?.as_deref(), Some(b"one".as_slice()));
+        assert_eq!(keyspace.get("second")?.as_deref(), Some(b"two".as_slice()));
+        Ok(())
+    }
 
     #[test]
     fn oversized_sealed_journal_replays_in_chunks() -> crate::Result<()> {
