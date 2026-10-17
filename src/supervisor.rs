@@ -8,10 +8,59 @@ use crate::{
     db::Keyspaces,
     flush::manager::FlushManager,
     journal::{manager::JournalManager, Journal},
+    keyspace::InternalKeyspaceId,
     snapshot_tracker::SnapshotTracker,
+    worker_pool::WorkerMessage,
     write_buffer_manager::WriteBufferManager,
+    Keyspace,
 };
-use std::sync::{Arc, Mutex, RwLock};
+use std::{
+    collections::{HashSet, VecDeque},
+    sync::{Arc, Mutex, RwLock},
+};
+
+#[derive(Default)]
+struct CompactionState {
+    queue: VecDeque<Keyspace>,
+    queued: HashSet<InternalKeyspaceId>,
+}
+
+/// Keeps one pending compaction per keyspace even when the worker-message
+/// channel is full and its wakeup hint cannot be sent.
+pub struct CompactionManager(Mutex<CompactionState>);
+
+impl CompactionManager {
+    pub(crate) fn new() -> Self {
+        Self(Mutex::new(CompactionState::default()))
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, CompactionState> {
+        #[expect(clippy::expect_used)]
+        self.0.lock().expect("compaction queue lock is poisoned")
+    }
+
+    pub(crate) fn enqueue(&self, keyspace: Keyspace) -> bool {
+        let mut state = self.state();
+        if !state.queued.insert(keyspace.id()) {
+            return false;
+        }
+        state.queue.push_back(keyspace);
+        true
+    }
+
+    pub(crate) fn dequeue(&self) -> Option<Keyspace> {
+        let mut state = self.state();
+        let keyspace = state.queue.pop_front()?;
+        state.queued.remove(&keyspace.id());
+        Some(keyspace)
+    }
+
+    pub(crate) fn clear(&self) {
+        let mut state = self.state();
+        state.queue.clear();
+        state.queued.clear();
+    }
+}
 
 pub struct SupervisorInner {
     pub db_config: crate::Config,
@@ -22,6 +71,7 @@ pub struct SupervisorInner {
 
     pub(crate) write_buffer_size: WriteBufferManager,
     pub(crate) flush_manager: FlushManager,
+    pub(crate) compaction_manager: CompactionManager,
 
     pub seqno: SequenceNumberCounter,
 
@@ -49,6 +99,17 @@ impl std::ops::Deref for Supervisor {
 impl Supervisor {
     pub fn new(inner: SupervisorInner) -> Self {
         Self(Arc::new(inner))
+    }
+
+    pub(crate) fn request_compaction(&self, keyspace: &Keyspace) {
+        if self.compaction_manager.enqueue(keyspace.clone()) {
+            // A full queue only drops the hint; the pending work remains in
+            // the manager and is discovered by the worker's fair scheduler.
+            keyspace
+                .worker_messager
+                .try_send(WorkerMessage::Compact(keyspace.clone()))
+                .ok();
+        }
     }
 
     pub fn build_seqno_map(
