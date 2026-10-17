@@ -1120,7 +1120,7 @@ impl Keyspace {
                 })?;
         }
 
-        let (item_size, memtable_size) = self.tree.remove(key, seqno);
+        let (item_size, memtable_size) = self.tree.remove_weak(key, seqno);
 
         self.supervisor.snapshot_tracker.publish(seqno);
 

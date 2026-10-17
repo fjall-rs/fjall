@@ -6,7 +6,8 @@ mod keyspace;
 mod write_tx;
 
 use crate::{
-    keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode, Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode,
+    Snapshot,
 };
 use std::{
     path::Path,
@@ -16,20 +17,17 @@ use std::{
 pub use keyspace::SingleWriterTxKeyspace;
 pub use write_tx::WriteTransaction;
 
-pub trait Openable {
-    fn open(config: Config) -> crate::Result<Self>
-    where
-        Self: Sized;
-}
+/// A builder for a transactional, single-writer database.
+pub type SingleWriterTxDatabaseBuilder = crate::DatabaseBuilder<SingleWriterTxDatabase>;
 
 /// Single-writer transactional database
 #[derive(Clone)]
-pub struct TxDatabase {
+pub struct SingleWriterTxDatabase {
     pub(crate) inner: Database,
     single_writer_lock: Arc<Mutex<()>>,
 }
 
-impl Openable for TxDatabase {
+impl Openable for SingleWriterTxDatabase {
     fn open(config: Config) -> crate::Result<Self>
     where
         Self: Sized,
@@ -41,9 +39,9 @@ impl Openable for TxDatabase {
     }
 }
 
-impl TxDatabase {
+impl SingleWriterTxDatabase {
     /// Creates a new database builder to create or open a database at `path`.
-    pub fn builder(path: impl AsRef<Path>) -> crate::DatabaseBuilder<Self> {
+    pub fn builder(path: impl AsRef<Path>) -> SingleWriterTxDatabaseBuilder {
         crate::DatabaseBuilder::new(path.as_ref())
     }
 
