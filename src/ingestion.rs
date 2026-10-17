@@ -50,6 +50,7 @@ impl<'a> Ingestion<'a> {
         // |
         // insert seqno=1
         let _journal_lock = self.keyspace.supervisor.journal.get_writer()?;
+        let _registration = self.keyspace.live_registration()?;
 
         self.inner
             .finish()

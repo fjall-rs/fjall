@@ -187,6 +187,22 @@ impl std::hash::Hash for Keyspace {
 }
 
 impl Keyspace {
+    // Call only while holding the journal writer. Deletion holds the registry
+    // write lock, so this guard keeps the keyspace alive through WAL and apply.
+    #[expect(clippy::expect_used)]
+    pub(crate) fn live_registration(
+        &self,
+    ) -> crate::Result<std::sync::RwLockReadGuard<'_, crate::db::Keyspaces>> {
+        let keyspaces = self.supervisor.keyspaces.read().expect("lock is poisoned");
+        if !keyspaces
+            .get(&self.name)
+            .is_some_and(|current| Arc::ptr_eq(&current.0, &self.0))
+        {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+        Ok(keyspaces)
+    }
+
     #[doc(hidden)]
     #[must_use]
     pub fn id(&self) -> InternalKeyspaceId {
@@ -241,6 +257,7 @@ impl Keyspace {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
+        let keyspaces = self.live_registration()?;
 
         let seqno = self.supervisor.seqno.next();
 
@@ -267,6 +284,9 @@ impl Keyspace {
         })?;
 
         self.supervisor.snapshot_tracker.publish(seqno);
+
+        drop(journal_writer);
+        drop(keyspaces);
 
         Ok(())
     }
@@ -794,11 +814,11 @@ impl Keyspace {
     }
 
     fn check_background_write_state(&self) -> crate::Result<()> {
-        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            return Err(crate::Error::KeyspaceDeleted);
-        }
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
+        }
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
         }
         Ok(())
     }
@@ -856,8 +876,13 @@ impl Keyspace {
 
     fn maintenance(&self, memtable_size: u64) -> crate::Result<()> {
         self.check_memtable_rotate(memtable_size);
-        self.local_backpressure()?;
-        Ok(())
+        // The write has already been journaled and applied. A concurrent
+        // deletion must release the wait, but must not report that committed
+        // write as failed. A poisoned database remains a fatal error.
+        match self.local_backpressure() {
+            Ok(_) | Err(crate::Error::KeyspaceDeleted) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     #[doc(hidden)]
@@ -943,6 +968,7 @@ impl Keyspace {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
+        let keyspaces = self.live_registration()?;
 
         let seqno = self.supervisor.seqno.next();
 
@@ -966,6 +992,7 @@ impl Keyspace {
         self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
+        drop(keyspaces);
 
         self.supervisor.write_buffer_size.allocate(item_size);
         self.maintenance(memtable_size)?;
@@ -1017,6 +1044,7 @@ impl Keyspace {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
+        let keyspaces = self.live_registration()?;
 
         let seqno = self.supervisor.seqno.next();
 
@@ -1040,6 +1068,7 @@ impl Keyspace {
         self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
+        drop(keyspaces);
 
         self.supervisor.write_buffer_size.allocate(item_size);
         self.maintenance(memtable_size)?;
@@ -1103,6 +1132,7 @@ impl Keyspace {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
+        let keyspaces = self.live_registration()?;
 
         let seqno = self.supervisor.seqno.next();
 
@@ -1134,6 +1164,7 @@ impl Keyspace {
         self.supervisor.snapshot_tracker.publish(seqno);
 
         drop(journal_writer);
+        drop(keyspaces);
 
         self.supervisor.write_buffer_size.allocate(item_size);
         self.maintenance(memtable_size)?;

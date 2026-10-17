@@ -888,6 +888,164 @@ mod tests {
         }
     }
 
+    /// Deletion wakes a post-commit halt, but must not turn a write already
+    /// present in the memtable into an apparent failed commit.
+    #[test]
+    fn deleted_keyspace_after_commit_does_not_report_write_failure() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        if std::env::var_os("FJALL_POST_COMMIT_DELETE_CHILD").is_none() {
+            let mut child = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "worker_pool::tests::deleted_keyspace_after_commit_does_not_report_write_failure",
+                ])
+                .env("FJALL_POST_COMMIT_DELETE_CHILD", "1")
+                .env("FJALL_POST_COMMIT_DELETE_DIR", folder.path())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    assert!(
+                        status.success(),
+                        "post-commit deletion child failed: {status}"
+                    );
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill()?;
+                    child.wait()?;
+                    panic!("post-commit deletion left a writer blocked");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        let path = std::env::var("FJALL_POST_COMMIT_DELETE_DIR")
+            .expect("post-commit deletion child is missing its directory");
+        let db = Database::builder(&path)
+            .worker_threads_unchecked(0)
+            .open()?;
+        for use_batch in [false, true] {
+            let name = if use_batch { "batched" } else { "single" };
+            let ks = db.keyspace(name, KeyspaceCreateOptions::default)?;
+            for row in 0..4 {
+                ks.insert(format!("key-{row}"), "value")?;
+                assert!(ks.rotate_memtable()?);
+            }
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let writer = ks.clone();
+            let batch_db = db.clone();
+            std::thread::spawn(move || {
+                let result = if use_batch {
+                    let mut batch = batch_db.batch();
+                    batch.insert(&writer, "committed", "value");
+                    batch.commit()
+                } else {
+                    writer.insert("committed", "value")
+                };
+                let _ = sender.send(result);
+            });
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while ks.get("committed")?.is_none() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(
+                ks.get("committed")?.is_some(),
+                "write was not applied before deletion"
+            );
+            db.delete_keyspace(ks)?;
+            assert!(matches!(
+                receiver.recv_timeout(std::time::Duration::from_secs(2)),
+                Ok(Ok(()))
+            ));
+        }
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn deleted_or_foreign_keyspace_is_rejected_before_journaling() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let other_folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+        let other_db = Database::builder(&other_folder).open()?;
+        let stale = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        let foreign = other_db.keyspace("data", KeyspaceCreateOptions::default)?;
+
+        let mut deleted_batch = db.batch();
+        deleted_batch.insert(&stale, "lost", "value");
+        let mut deleted_ingestion = stale.start_ingestion()?;
+        deleted_ingestion.write("lost", "value")?;
+        db.delete_keyspace(stale.clone())?;
+        let current = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        assert!(matches!(
+            db.delete_keyspace(stale.clone()),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(
+            db.delete_keyspace(foreign.clone()),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(db.keyspace_exists("data"));
+        assert!(other_db.keyspace_exists("data"));
+        assert!(matches!(
+            deleted_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(
+            stale.insert("lost", "value"),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(matches!(stale.clear(), Err(crate::Error::KeyspaceDeleted)));
+        assert!(matches!(
+            deleted_ingestion.finish(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+
+        let mut mixed_batch = db.batch();
+        mixed_batch.insert(&current, "valid", "value");
+        mixed_batch.insert(&stale, "lost", "value");
+        assert!(matches!(
+            mixed_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(current.get("valid")?.is_none());
+
+        let mut foreign_batch = db.batch();
+        foreign_batch.insert(&foreign, "foreign", "value");
+        assert!(matches!(
+            foreign_batch.commit(),
+            Err(crate::Error::KeyspaceDeleted)
+        ));
+        assert!(foreign.get("foreign")?.is_none());
+
+        current.insert("valid", "value")?;
+        assert!(current.get("valid")?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn deleting_while_writer_waits_for_journal_rejects_write() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let db = Database::builder(&folder).open()?;
+        let keyspace = db.keyspace("data", KeyspaceCreateOptions::default)?;
+        let journal_writer = db.supervisor.journal.get_writer()?;
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let writer = keyspace.clone();
+        std::thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = result_tx.send(writer.insert("lost", "value"));
+        });
+        started_rx.recv().expect("writer did not start");
+        db.delete_keyspace(keyspace)?;
+        drop(journal_writer);
+        assert!(matches!(
+            result_rx.recv_timeout(std::time::Duration::from_secs(2)),
+            Ok(Err(crate::Error::KeyspaceDeleted))
+        ));
+        Ok(())
+    }
+
     /// Concurrent writes across keyspaces exercise rotations and flushes with
     /// the pool sizes that previously differed in the field investigation.
     #[test]
