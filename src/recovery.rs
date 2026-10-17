@@ -16,6 +16,93 @@ use crate::{
 use lsm_tree::AbstractTree;
 use std::path::PathBuf;
 
+// Recovery must not replay an old oversized journal into one giant memtable.
+// The per-keyspace setting may be much larger than a small instance can hold,
+// so cap each synchronous recovery flush independently of normal write tuning.
+const MAX_RECOVERY_MEMTABLE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_RECOVERY_ACTIVE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Tracks active replay buffers without scanning every keyspace after every
+/// journal batch. A batch is applied in full before any of its data is flushed.
+#[derive(Default)]
+pub struct RecoveryBudget {
+    active_sizes: HashMap<InternalKeyspaceId, u64>,
+    total_active_bytes: u64,
+}
+
+impl RecoveryBudget {
+    fn account(&mut self, keyspace: &Keyspace) {
+        let size = keyspace.tree.active_memtable().size();
+        let previous = self.active_sizes.insert(keyspace.id(), size).unwrap_or(0);
+        self.total_active_bytes = self
+            .total_active_bytes
+            .saturating_sub(previous)
+            .saturating_add(size);
+    }
+
+    pub fn after_batch<'a>(
+        &mut self,
+        db: &Database,
+        touched: impl IntoIterator<Item = &'a Keyspace>,
+        keyspaces: impl IntoIterator<Item = &'a Keyspace>,
+    ) -> crate::Result<()> {
+        for keyspace in touched {
+            flush_recovery_chunk(db, keyspace, false)?;
+            self.account(keyspace);
+        }
+
+        if self.total_active_bytes > MAX_RECOVERY_ACTIVE_BYTES {
+            for keyspace in keyspaces {
+                if keyspace.tree.active_memtable().size() > 0 {
+                    flush_recovery_chunk(db, keyspace, true)?;
+                    self.account(keyspace);
+                }
+                if self.total_active_bytes <= MAX_RECOVERY_ACTIVE_BYTES {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Flush a replayed chunk before its journal can be considered for eviction.
+/// The source journal stays on disk throughout recovery, so an interrupted
+/// replay can safely start again from the beginning on the next open.
+pub fn flush_recovery_chunk(db: &Database, keyspace: &Keyspace, force: bool) -> crate::Result<()> {
+    let budget = keyspace
+        .config
+        .max_memtable_size
+        .min(MAX_RECOVERY_MEMTABLE_BYTES);
+    if keyspace.tree.active_memtable().size() <= budget && !force {
+        return Ok(());
+    }
+
+    if let Some(sealed) = keyspace.tree.rotate_memtable() {
+        db.supervisor.write_buffer_size.allocate(sealed.size());
+    }
+
+    let flush_lock = keyspace.tree.get_flush_lock();
+    if let Some(flushed_bytes) = keyspace.tree.flush(&flush_lock, 0)? {
+        db.supervisor.write_buffer_size.free(flushed_bytes);
+    }
+    drop(flush_lock);
+
+    // Each flush adds a manifest version. During recovery there are no user
+    // snapshots, but the snapshot tracker otherwise stays at watermark zero
+    // until open returns. Zero disables version GC and retains every flushed
+    // memtable, defeating the memory bound.
+    db.supervisor
+        .snapshot_tracker
+        .set(db.supervisor.seqno.get());
+    db.supervisor.snapshot_tracker.pullup();
+    keyspace.tree.get_version_history_lock().maintenance(
+        keyspace.path(),
+        db.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
+    )?;
+    Ok(())
+}
+
 /// Recovers keyspaces
 pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::Result<()> {
     let keyspaces_folder = db.config.path.join(KEYSPACES_FOLDER);
@@ -149,9 +236,13 @@ pub fn recover_sealed_memtables(
         let reader = JournalBatchReader::new(raw_reader);
 
         let mut watermarks: HashMap<_, EvictionWatermark> = HashMap::default();
+        let mut touched_keyspaces = Vec::new();
+        let mut recovery_budget = RecoveryBudget::default();
 
         for batch in reader {
             let batch = batch?;
+            db.supervisor.seqno.fetch_max(batch.seqno + 1);
+            touched_keyspaces.clear();
 
             for item in batch.items {
                 highest_encountered_keyspace_id =
@@ -191,6 +282,13 @@ pub fn recover_sealed_memtables(
                         unreachable!()
                     }
                 }
+
+                if !touched_keyspaces
+                    .iter()
+                    .any(|touched: &&Keyspace| touched.id() == handle.id())
+                {
+                    touched_keyspaces.push(handle);
+                }
             }
 
             for keyspace_id in &batch.cleared_keyspaces {
@@ -215,7 +313,19 @@ pub fn recover_sealed_memtables(
                 handle.tree.clear().inspect_err(|e| {
                     log::error!("Keyspace clear failed during recovery: {e}");
                 })?;
+                if !touched_keyspaces
+                    .iter()
+                    .any(|touched: &&Keyspace| touched.id() == handle.id())
+                {
+                    touched_keyspaces.push(handle);
+                }
             }
+
+            recovery_budget.after_batch(
+                db,
+                touched_keyspaces.drain(..),
+                keyspaces_lock.values(),
+            )?;
         }
 
         log::debug!("Sealing recovered memtables");
@@ -258,7 +368,10 @@ pub fn recover_sealed_memtables(
                     .write_buffer_size
                     .allocate(sealed_memtable.size());
 
-                // TODO: unit test write buffer size after recovery
+                // The worker pool has not started yet. Keeping one sealed
+                // memtable per old journal would rebuild an unbounded write
+                // buffer before the workers can drain it.
+                flush_recovery_chunk(db, &wm.keyspace, true)?;
 
                 recovered_count += 1;
             }
@@ -285,4 +398,82 @@ pub fn recover_sealed_memtables(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Database, KeyspaceCreateOptions};
+
+    #[test]
+    fn oversized_sealed_journal_replays_in_chunks() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let value = [b's'; 256];
+        {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("sealed", || {
+                KeyspaceCreateOptions::default().max_memtable_size(64 * 1024)
+            })?;
+            for i in 0_u64..8_000 {
+                keyspace.insert(i.to_be_bytes(), value)?;
+            }
+            db.supervisor.journal.get_writer()?.rotate()?;
+            keyspace.insert(0_u64.to_be_bytes(), b"new")?;
+            keyspace.remove(4_000_u64.to_be_bytes())?;
+        }
+
+        for _ in 0..2 {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("sealed", KeyspaceCreateOptions::default)?;
+            assert!(db.write_buffer_size() <= 128 * 1024);
+            for i in [1_u64, 7_999] {
+                assert_eq!(
+                    keyspace.get(i.to_be_bytes())?.as_deref(),
+                    Some(value.as_slice())
+                );
+            }
+            assert_eq!(
+                keyspace.get(0_u64.to_be_bytes())?.as_deref(),
+                Some(b"new".as_slice())
+            );
+            assert!(keyspace.get(4_000_u64.to_be_bytes())?.is_none());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn many_sealed_journals_do_not_accumulate_memtables() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let value = [b'j'; 256];
+        {
+            let db = Database::builder(folder.path())
+                .worker_threads_unchecked(0)
+                .open()?;
+            let keyspace = db.keyspace("sealed", || {
+                KeyspaceCreateOptions::default().max_memtable_size(64 * 1024 * 1024)
+            })?;
+            for journal in 0_u64..3 {
+                for i in 0_u64..20_000 {
+                    keyspace.insert((journal * 20_000 + i).to_be_bytes(), value)?;
+                }
+                db.supervisor.journal.get_writer()?.rotate()?;
+            }
+        }
+
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let keyspace = db.keyspace("sealed", KeyspaceCreateOptions::default)?;
+        assert!(db.write_buffer_size() <= 1024);
+        for i in [0_u64, 20_000, 59_999] {
+            assert_eq!(
+                keyspace.get(i.to_be_bytes())?.as_deref(),
+                Some(value.as_slice())
+            );
+        }
+        Ok(())
+    }
 }

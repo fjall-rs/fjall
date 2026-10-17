@@ -13,7 +13,7 @@ use crate::{
     locked_file::LockedFileGuard,
     meta_keyspace::MetaKeyspace,
     poison::{PoisonDart, PoisonSignal},
-    recovery::{recover_keyspaces, recover_sealed_memtables},
+    recovery::{recover_keyspaces, recover_sealed_memtables, RecoveryBudget},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
@@ -732,9 +732,13 @@ impl Database {
                 log::trace!("Replaying active journal");
 
                 let reader = db.supervisor.journal.get_reader()?;
+                let mut touched_keyspaces = Vec::new();
+                let mut recovery_budget = RecoveryBudget::default();
 
                 for batch in reader {
                     let batch = batch?;
+                    db.supervisor.seqno.fetch_max(batch.seqno + 1);
+                    touched_keyspaces.clear();
 
                     for item in batch.items {
                         highest_encountered_keyspace_id =
@@ -765,6 +769,13 @@ impl Database {
                                 unreachable!()
                             }
                         }
+
+                        if !touched_keyspaces
+                            .iter()
+                            .any(|touched: &&Keyspace| touched.id() == keyspace.id())
+                        {
+                            touched_keyspaces.push(keyspace);
+                        }
                     }
 
                     for keyspace_id in &batch.cleared_keyspaces {
@@ -776,8 +787,22 @@ impl Database {
                             continue;
                         };
 
-                        keyspace.tree.clear().ok();
+                        keyspace.tree.clear()?;
+                        if !touched_keyspaces
+                            .iter()
+                            .any(|touched: &&Keyspace| touched.id() == keyspace.id())
+                        {
+                            touched_keyspaces.push(keyspace);
+                        }
                     }
+
+                    // A journal batch is atomic. Do not persist a partial
+                    // batch to separate tables with the same sequence number.
+                    recovery_budget.after_batch(
+                        &db,
+                        touched_keyspaces.drain(..),
+                        keyspaces.values(),
+                    )?;
                 }
 
                 for keyspace in keyspaces.values() {
