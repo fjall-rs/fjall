@@ -86,3 +86,85 @@ fn recover_flushed_items_after_clear() -> fjall::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn recover_partially_flushed_batch() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let unflushed_size = {
+        let db = Database::builder(&folder).open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        let mut batch = db.batch();
+        for x in 0..ITEM_COUNT {
+            batch.insert(&a, x.to_be_bytes(), "a");
+            batch.insert(&b, x.to_be_bytes(), "b");
+        }
+        batch.commit()?;
+
+        a.rotate_memtable_and_wait()?;
+
+        let mut batch = db.batch();
+        for x in ITEM_COUNT..ITEM_COUNT * 2 {
+            batch.insert(&a, x.to_be_bytes(), "a");
+        }
+        batch.commit()?;
+
+        a.tree.active_memtable().size() + b.tree.active_memtable().size()
+    };
+
+    {
+        let db = Database::builder(&folder).open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(a.len()?, ITEM_COUNT as usize * 2);
+        assert_eq!(b.len()?, ITEM_COUNT as usize);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
+    use fjall::SingleWriterTxDatabase;
+
+    let folder = tempfile::tempdir()?;
+
+    let unflushed_size = {
+        let db = SingleWriterTxDatabase::builder(&folder).open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        let mut tx = db.write_tx();
+        for x in 0..ITEM_COUNT {
+            tx.insert(&a, x.to_be_bytes(), "a");
+            tx.insert(&b, x.to_be_bytes(), "b");
+        }
+        tx.commit()?;
+
+        a.inner().rotate_memtable_and_wait()?;
+
+        let mut tx = db.write_tx();
+        for x in ITEM_COUNT..ITEM_COUNT * 2 {
+            tx.insert(&a, x.to_be_bytes(), "a");
+        }
+        tx.commit()?;
+
+        a.inner().tree.active_memtable().size() + b.inner().tree.active_memtable().size()
+    };
+
+    {
+        let db = SingleWriterTxDatabase::builder(&folder).open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(a.inner().len()?, ITEM_COUNT as usize * 2);
+        assert_eq!(b.inner().len()?, ITEM_COUNT as usize);
+    }
+
+    Ok(())
+}
