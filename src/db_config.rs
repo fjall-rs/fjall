@@ -79,11 +79,15 @@ impl Config {
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 
+            #[cfg(feature = "lz4")]
+            journal_compression_type: CompressionType::Lz4,
+
             #[cfg(not(feature = "lz4"))]
             journal_compression_type: CompressionType::None,
 
-            #[cfg(feature = "lz4")]
-            journal_compression_type: CompressionType::Lz4,
+            #[cfg(not(feature = "lz4"))]
+            #[cfg(feature = "zlib")]
+            journal_compression_type: CompressionType::Zlib(3),
 
             journal_compression_threshold: 4_096,
 

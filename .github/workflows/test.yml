@@ -99,7 +99,7 @@ jobs:
         env:
           RUST_LOG: trace
       - name: Run tests
-        run: cargo nextest run --features lz4
+        run: cargo nextest run --features lz4,zlib
       - name: Run doc tests
         run: cargo test --doc
   codecov:
@@ -120,7 +120,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@nextest
       - name: Run tests
-        run: cargo llvm-cov --no-report nextest --features lz4
+        run: cargo llvm-cov --no-report nextest --features lz4,zlib
       - name: Run doc tests
         run: cargo llvm-cov --no-report --doc
       - name: Create code coverage report

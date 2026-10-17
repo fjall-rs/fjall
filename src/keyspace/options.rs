@@ -112,8 +112,12 @@ impl Default for CreateOptions {
 
             level_count: default_tree_config.level_count,
 
-            #[cfg(feature = "lz4")]
+            #[cfg(feature="lz4")]
             data_block_compression_policy: CompressionPolicy::new([CompressionType::None, CompressionType::None, CompressionType::Lz4]),
+
+            #[cfg(feature = "zlib")]
+            #[cfg(not(feature = "lz4"))]
+            data_block_compression_policy: CompressionPolicy::new([CompressionType::None, CompressionType::None, CompressionType::Zlib(6)]),
 
             #[cfg(not(feature = "lz4"))]
             data_block_compression_policy: CompressionPolicy::new(&[CompressionType::None]),

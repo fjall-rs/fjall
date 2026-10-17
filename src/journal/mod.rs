@@ -61,6 +61,12 @@ impl Drop for Journal {
 
 impl Journal {
     pub fn with_compression(self, comp: CompressionType, threshold: usize) -> Self {
+        #[cfg(feature = "zlib")]
+        assert!(
+            !matches!(comp, CompressionType::Zlib(_)),
+            "zlib not yet supported for journal compression"
+        );
+
         {
             let mut writer = self.writer.lock().expect("lock is poisoned");
             writer.set_compression(comp, threshold);

@@ -9,7 +9,7 @@
 //! - LSM-tree-based storage similar to `RocksDB`
 //! - Range & prefix searching with forward and reverse iteration
 //! - Keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
-//! - Built-in compression (default = `LZ4`)
+//! - Built-in compression: LZ4 (default), Zlib
 //! - Serializable transactions (optional)
 //! - Key-value separation for large blob use cases (optional)
 //! - Automatic background maintenance

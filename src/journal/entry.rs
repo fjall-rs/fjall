@@ -60,6 +60,9 @@ pub fn serialize_marker_item<W: Write>(
             let compressed = lz4_flex::compress(value);
             std::borrow::Cow::Owned(compressed)
         }
+
+        #[cfg(feature = "zlib")]
+        CompressionType::Zlib(_) => unimplemented!(),
     };
 
     // NOTE: Truncation is okay and actually needed
@@ -212,6 +215,9 @@ impl Entry {
 
                         Slice::from(value.freeze())
                     }
+
+                    #[cfg(feature = "zlib")]
+                    CompressionType::Zlib(_) => unimplemented!(),
                 };
 
                 Ok(Self::Item {

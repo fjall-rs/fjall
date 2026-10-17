@@ -35,7 +35,7 @@ It features:
 - LSM-tree-based storage similar to `RocksDB`
 - Range & prefix searching with forward and reverse iteration
 - Multiple keyspaces (a.k.a. column families) with cross-keyspace atomic semantics
-- Built-in compression (default = `LZ4`)
+- Built-in compression: LZ4 (default), Zlib
 - Serializable transactions (optional)
 - Key-value separation for large blob use cases (optional)
 - Custom compaction filters to run custom logic during compactions (optional)
@@ -171,6 +171,12 @@ This is trivially serializable because it _literally_ serializes write transacti
 Allows using `LZ4` compression, powered by [`lz4_flex`](https://github.com/PSeitz/lz4_flex).
 
 *Enabled by default.*
+
+### zlib
+
+Allows using `zlib` compression, powered by [`zlib-rs`](https://github.com/trifectatechfoundation/zlib-rs).
+
+*Disabled by default.*
 
 ### bytes_1
 
