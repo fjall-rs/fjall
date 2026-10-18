@@ -1,4 +1,4 @@
-use crate::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test_log::test]
@@ -238,6 +238,50 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
         assert_eq!(i + 1, tree2.len()?.try_into().unwrap());
 
         tree.rotate_memtable_and_wait()?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let unflushed_size = {
+        let db = Database::builder(folder.path()).open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        let mut batch = db.batch();
+        for x in 0_u64..100 {
+            batch.insert(&a, x.to_be_bytes(), "a");
+            batch.insert(&b, x.to_be_bytes(), "b");
+        }
+        batch.commit()?;
+
+        a.rotate_memtable_and_wait()?;
+
+        let mut batch = db.batch();
+        for x in 100_u64..200 {
+            batch.insert(&a, x.to_be_bytes(), "a");
+        }
+        batch.commit()?;
+
+        db.supervisor.journal.get_writer()?.rotate()?;
+
+        a.tree.active_memtable().size() + b.tree.active_memtable().size()
+    };
+
+    {
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
+        let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+        let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(200, a.len()?);
+        assert_eq!(100, b.len()?);
     }
 
     Ok(())

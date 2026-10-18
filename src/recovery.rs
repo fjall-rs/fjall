@@ -138,6 +138,8 @@ pub fn recover_sealed_memtables(
     #[expect(clippy::expect_used)]
     let keyspaces_lock = db.supervisor.keyspaces.read().expect("lock is poisoned");
 
+    let mut persisted_seqnos: HashMap<_, _> = HashMap::default();
+
     for journal_path in sealed_journal_paths {
         log::debug!("Recovering sealed journal: {}", journal_path.display());
 
@@ -177,6 +179,16 @@ pub fn recover_sealed_memtables(
                         lsn: batch.seqno,
                     });
 
+                // NOTE: Skip items that were already flushed, otherwise the next flush
+                // writes them again into a table that overlaps the existing one
+                let persisted_seqno = *persisted_seqnos
+                    .entry(item.keyspace_id)
+                    .or_insert_with(|| tree.get_highest_persisted_seqno());
+
+                if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
+                    continue;
+                }
+
                 match item.value_type {
                     lsm_tree::ValueType::Value => {
                         tree.insert(item.key, item.value, batch.seqno);
@@ -215,6 +227,8 @@ pub fn recover_sealed_memtables(
                 handle.tree.clear().inspect_err(|e| {
                     log::error!("Keyspace clear failed during recovery: {e}");
                 })?;
+
+                persisted_seqnos.remove(keyspace_id);
             }
         }
 
