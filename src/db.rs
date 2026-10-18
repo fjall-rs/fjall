@@ -716,6 +716,8 @@ impl Database {
 
                 let reader = db.supervisor.journal.get_reader()?;
 
+                let mut persisted_seqnos: HashMap<_, _> = HashMap::default();
+
                 for batch in reader {
                     let batch = batch?;
 
@@ -733,6 +735,16 @@ impl Database {
                         };
 
                         let tree = &keyspace.tree;
+
+                        // NOTE: Skip items that were already flushed, otherwise the next flush
+                        // writes them again into a table that overlaps the existing one
+                        let persisted_seqno = *persisted_seqnos
+                            .entry(item.keyspace_id)
+                            .or_insert_with(|| tree.get_highest_persisted_seqno());
+
+                        if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
+                            continue;
+                        }
 
                         match item.value_type {
                             lsm_tree::ValueType::Value => {
@@ -760,6 +772,8 @@ impl Database {
                         };
 
                         keyspace.tree.clear().ok();
+
+                        persisted_seqnos.remove(keyspace_id);
                     }
                 }
 
