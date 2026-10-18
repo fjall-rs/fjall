@@ -66,13 +66,12 @@ impl Drop for DatabaseInner {
 
         self.stop_signal.send();
 
-        let _ = self.worker_pool.rx.drain().count();
-
         while self
             .active_thread_counter
             .load(std::sync::atomic::Ordering::Relaxed)
             > 0
         {
+            let _ = self.worker_pool.rx.drain().count();
             let _ = self.worker_pool.sender.try_send(WorkerMessage::Close);
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
