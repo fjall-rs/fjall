@@ -287,6 +287,7 @@ impl WritePipeline {
     ///
     /// When returning, the write record is guaranteed to be persisted matching
     /// the record's durability parameter (or stronger).
+    #[expect(clippy::collapsible_if)]
     pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
         self.push_write_record(&record);
 
@@ -304,7 +305,7 @@ impl WritePipeline {
             for i in 0.. {
                 match record.state() {
                     WRITE_RECORD_STATE_PENDING => {
-                        // We need to do this to catch leader abdications
+                        // NOTE: We need to do this to catch leader abdications
                         //
                         // Imagine this TOCTOU scenario:
                         //   Existing leader sees no queue head
@@ -340,11 +341,20 @@ impl WritePipeline {
             let assigned_seqno = record.assigned_seqno.load(Acquire);
 
             // Spin on the visible seqno until our record is visible
-            loop {
+            for i in 0.. {
                 let visible_seqno = self.snapshot_tracker.get();
 
                 if visible_seqno > assigned_seqno {
                     break;
+                }
+
+                // See above why we do this
+                if i % 1_000 == 0 {
+                    if self.try_acquire_leader_lease() {
+                        // Crown ourselves as leader
+                        is_leader = true;
+                        continue 'start;
+                    }
                 }
 
                 std::hint::spin_loop();
