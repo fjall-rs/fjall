@@ -213,7 +213,9 @@ impl WritePipeline {
             // Limit the bytes written per leader term to
             // avoid tail latencies growing too large for any
             // given writer
-            if bytes_written >= 1_000_000 {
+            //
+            // Also, we cannot exit the loop until our record is processed.
+            if bytes_written >= 1_000_000 && record.is_processed() {
                 break;
             }
         }
@@ -302,8 +304,6 @@ impl WritePipeline {
             for i in 0.. {
                 match record.state() {
                     WRITE_RECORD_STATE_PENDING => {
-                        std::hint::spin_loop();
-
                         // We need to do this to catch leader abdications
                         //
                         // Imagine this TOCTOU scenario:
@@ -318,6 +318,8 @@ impl WritePipeline {
                                 continue 'start;
                             }
                         }
+
+                        std::hint::spin_loop();
                     }
                     WRITE_RECORD_STATE_PUBLISHED => break,
                     WRITE_RECORD_STATE_LEADER_ABDICATED => {
