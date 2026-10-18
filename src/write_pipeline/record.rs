@@ -75,11 +75,8 @@ pub struct WriteRecord {
 }
 
 impl WriteRecord {
-    pub fn is_processed(&self) -> bool {
-        let s = self.state();
-        s == WRITE_RECORD_STATE_PUBLISHED
-            || s == WRITE_RECORD_STATE_LEADER_ABDICATED
-            || s == WRITE_RECORD_STATE_CONFLICTED
+    pub fn is_pending(&self) -> bool {
+        self.state() != WRITE_RECORD_STATE_PENDING
     }
 
     pub fn state(&self) -> u8 {

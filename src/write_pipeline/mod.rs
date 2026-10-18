@@ -215,7 +215,7 @@ impl WritePipeline {
             // given writer
             //
             // Also, we cannot exit the loop until our record is processed.
-            if bytes_written >= 1_000_000 && record.is_processed() {
+            if bytes_written >= 1_000_000 && !record.is_pending() {
                 break;
             }
         }
