@@ -17,11 +17,11 @@ pub(super) const SCAN_CHUNK_LEN: usize = 64 * 1_024;
 
 /// In a batch trailer, the `Tag::End` byte sits this far before the trailer magic:
 /// the tag itself plus the little-endian batch checksum.
-const TRAILER_TAG_OFFSET: usize = 1 + std::mem::size_of::<u64>();
+pub(super) const TRAILER_TAG_OFFSET: usize = 1 + std::mem::size_of::<u64>();
 
 /// Bytes of the previous chunk that are kept in front of the next one, so a trailer
 /// that a chunk boundary splits apart is still seen.
-const SCAN_CARRY_LEN: usize = TRAILER_TAG_OFFSET + MAGIC_BYTES.len() - 1;
+pub(super) const SCAN_CARRY_LEN: usize = TRAILER_TAG_OFFSET + MAGIC_BYTES.len() - 1;
 
 /// Reads and emits through the entries in a journal file, but doesn't
 /// check the validity of batches
@@ -56,7 +56,7 @@ impl JournalReader {
         })
     }
 
-    /// Whether a fully written batch terminator follows the current position.
+    /// Whether a fully written batch terminator follows the last entry that decoded.
     ///
     /// The trailer magic is written after the batch checksum, so it is only in the
     /// file once the whole batch has been written, and the padding after the last
@@ -67,27 +67,19 @@ impl JournalReader {
 
         // A failed decode can read past the corrupt entry — an oversized length is read to its
         // end — so the scan starts at the end of the last entry that decoded. Starting after the
-        // failed read would start past a trailer the corrupt entry swallowed.
+        // failed read would start past a trailer the corrupt entry swallowed. The region the
+        // failed decode consumed is scanned too, so its bytes (an arbitrary key or value) can now
+        // produce a `MidJournalCorruption` the old read-then-scan did not: the alternative is
+        // missing a completed batch and truncating it.
         self.reader.seek(SeekFrom::Start(self.last_valid_pos))?;
         let found = self.scan_for_batch_trailer();
 
-        // The caller keeps reading from the failed entry, and truncates from there.
+        // Truncation still starts where the decode stopped, not at the scan start.
         self.reader.seek(SeekFrom::Start(pos))?;
 
         found
     }
 
-    /// Scans towards the end of the file in bounded chunks for a batch trailer.
-    ///
-    /// The magic is only [`MAGIC_BYTES`] long, so a corrupt key or value can contain
-    /// it; a trailer is only accepted when the byte [`TRAILER_TAG_OFFSET`] bytes
-    /// before the magic is `Tag::End`.
-    ///
-    /// The checksum of that `End` record is deliberately **not** verified: it is xxh3
-    /// over the batch body (see [`super::batch_reader`]), and an undecodable body is
-    /// exactly why this scan runs. Re-hashing a corrupt body would reject the
-    /// completed-batch-after-corruption case that strict recovery exists to report, so
-    /// the framing is the necessary and sufficient condition.
     fn scan_for_batch_trailer(&mut self) -> crate::Result<bool> {
         scan_for_trailer(&mut self.reader)
     }
@@ -110,7 +102,19 @@ impl JournalReader {
     }
 }
 
-/// The same scan over any reader, so a test can put the trailer exactly on a chunk boundary.
+/// Scans towards the end of the reader in bounded chunks for a batch trailer.
+///
+/// The magic is only [`MAGIC_BYTES`] long, so a corrupt key or value can contain
+/// it; a trailer is only accepted when the byte [`TRAILER_TAG_OFFSET`] bytes
+/// before the magic is `Tag::End`.
+///
+/// The checksum of that `End` record is deliberately **not** verified: it is xxh3
+/// over the batch body (see [`super::batch_reader`]), and an undecodable body is
+/// exactly why this scan runs. Re-hashing a corrupt body would reject the
+/// completed-batch-after-corruption case that strict recovery exists to report, so
+/// the framing is the necessary and sufficient condition.
+///
+/// It takes any reader so a test can put the trailer exactly on a chunk boundary.
 pub(super) fn scan_for_trailer<R: Read>(reader: &mut R) -> crate::Result<bool> {
     let mut buf = vec![0u8; SCAN_CARRY_LEN + SCAN_CHUNK_LEN];
 

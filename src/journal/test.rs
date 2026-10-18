@@ -679,8 +679,9 @@ fn journal_strict_recovery_rejects_unframed_magic_in_a_torn_tail() -> crate::Res
 
 /// A trailer far beyond the corrupt entry is still seen: the tail is scanned in bounded chunks.
 ///
-/// The chunk boundary itself, and the bytes carried across it, are pinned by
-/// `scan_for_a_trailer_across_a_chunk_boundary`.
+/// The bytes carried across a chunk boundary are pinned by
+/// `scan_for_a_trailer_across_a_chunk_boundary`; this one covers the end-to-end path, which the scan
+/// start makes deterministic (its first read is a full chunk, because the scan begins at a seek).
 #[test]
 #[expect(clippy::unwrap_used, clippy::redundant_clone)]
 fn journal_strict_recovery_finds_a_trailer_beyond_a_large_corrupt_region() -> crate::Result<()> {
@@ -754,19 +755,23 @@ fn journal_strict_recovery_scans_from_the_last_valid_entry() -> crate::Result<()
         writer.pos()?
     };
 
-    // An item that claims more bytes than the journal holds, followed by a completed batch
+    // A batch that opens and then claims more bytes than the journal holds, followed by a
+    // completed one: the reader is inside a batch when the corruption surfaces, which is the
+    // state `on_close` must not truncate
     {
-        // The journal is preallocated to 64 MiB, so this runs past its end
-        const TOO_LONG: u32 = 65 * 1_024 * 1_024;
+        let too_long = u32::try_from(writer::PRE_ALLOCATED_BYTES).unwrap() + 1;
 
         let mut file = std::fs::OpenOptions::new().write(true).open(&path)?;
         file.seek(SeekFrom::Start(end_of_batch))?;
+        file.write_all(&[u8::from(entry::Tag::Start)])?;
+        file.write_all(&1u32.to_le_bytes())?;
+        file.write_all(&0u64.to_le_bytes())?;
         file.write_all(&[u8::from(entry::Tag::Item), u8::from(ValueType::Value)])?;
         lsm_tree::CompressionType::None.encode_into(&mut file)?;
         file.write_all(&keyspace.id.to_le_bytes())?;
         file.write_all(&3u16.to_le_bytes())?;
-        file.write_all(&TOO_LONG.to_le_bytes())?;
-        file.write_all(&TOO_LONG.to_le_bytes())?;
+        file.write_all(&too_long.to_le_bytes())?;
+        file.write_all(&too_long.to_le_bytes())?;
         file.write_all(b"abc")?;
         file.write_all(&Entry::End(1234).encode_into_vec())?;
         file.sync_all()?;
@@ -799,10 +804,14 @@ fn journal_strict_recovery_scans_from_the_last_valid_entry() -> crate::Result<()
 fn scan_for_a_trailer_across_a_chunk_boundary() -> crate::Result<()> {
     let trailer = Entry::End(1234).encode_into_vec();
 
-    // The magic starts two bytes before the boundary (the tag sits nine bytes before the magic), so
-    // two bytes of it are in the first chunk and two in the second
-    const TWO_BYTES_AND_THE_TAG: usize = 2 + 9;
-    let mut bytes = vec![0u8; reader::SCAN_CHUNK_LEN - TWO_BYTES_AND_THE_TAG];
+    // The carry is exactly a trailer's tag plus the magic minus one byte, so padding by the carry
+    // puts the tag in the first carried byte and the magic three bytes before the boundary: the
+    // worst split the carry can still hold
+    assert_eq!(
+        reader::SCAN_CARRY_LEN,
+        reader::TRAILER_TAG_OFFSET + MAGIC_BYTES.len() - 1
+    );
+    let mut bytes = vec![0u8; reader::SCAN_CHUNK_LEN - reader::SCAN_CARRY_LEN];
     bytes.extend_from_slice(&trailer);
 
     assert!(
