@@ -46,9 +46,9 @@ struct Slot<T> {
 }
 
 #[expect(unsafe_code)]
-unsafe impl<T> Sync for Queue<T> {}
+unsafe impl<T: Send> Sync for Queue<T> {}
 #[expect(unsafe_code)]
-unsafe impl<T> Send for Queue<T> {}
+unsafe impl<T: Send> Send for Queue<T> {}
 
 /// A bounded, FIFO MPSC queue
 ///

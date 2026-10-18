@@ -308,7 +308,7 @@ impl BaseTransaction {
         self.seqno += 1;
     }
 
-    pub(crate) fn into_batch(self) -> crate::OwnedWriteBatch {
+    pub(crate) fn into_batch(self) -> (crate::OwnedWriteBatch, SnapshotNonce) {
         let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
 
         for (keyspace, memtable) in self.memtables {
@@ -332,7 +332,7 @@ impl BaseTransaction {
             }
         }
 
-        batch
+        (batch, self.nonce)
     }
 
     /// Commits the transaction.
@@ -346,7 +346,9 @@ impl BaseTransaction {
             return Ok(());
         }
 
-        self.into_batch().commit()?;
+        // NOTE: Hold the snapshot nonce until the end of the function
+        let (batch, _nonce) = self.into_batch();
+        batch.commit()?;
 
         Ok(())
     }

@@ -31,7 +31,7 @@ const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
 /// A write pipeline using flat combining to allow grouped commits
 /// and better concurrent throughput
 ///
-/// See the paper on flat combining: https://dl.acm.org/doi/10.1145/1810479.1810540
+/// See the paper on flat combining: <https://dl.acm.org/doi/10.1145/1810479.1810540>
 pub struct WritePipeline {
     write_buffer_size: WriteBufferManager,
     seqno: SequenceNumberCounter,
@@ -83,6 +83,10 @@ impl WritePipeline {
         let mut collected_persist: Option<PersistMode> = None;
         let mut bytes_written = 0;
 
+        // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
+        #[expect(clippy::mutable_key_type)]
+        let mut keyspaces_with_possible_stall = HashSet::new();
+
         // Process records
         for _ in 0..100_000 {
             let Some(write_record) = self.queue.try_pop() else {
@@ -133,10 +137,6 @@ impl WritePipeline {
 
             let mut batch_size = 0;
 
-            // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
-            #[expect(clippy::mutable_key_type)]
-            let mut keyspaces_with_possible_stall = HashSet::new();
-
             match payload {
                 WriteRecordPayload::Single(item) => {
                     // TODO: need a better, generic write op in lsm-tree?
@@ -152,6 +152,8 @@ impl WritePipeline {
                     };
 
                     batch_size += item_size;
+
+                    keyspaces_with_possible_stall.insert(item.keyspace.clone());
                 }
                 WriteRecordPayload::Multiple(items) => {
                     for item in items {
@@ -177,11 +179,11 @@ impl WritePipeline {
                 }
             }
 
-            write_record.set_published();
-
             write_record
                 .assigned_seqno
                 .store(batch_seqno, std::sync::atomic::Ordering::Release);
+
+            write_record.set_published();
 
             highest_seqno_published = Some(batch_seqno);
 
@@ -208,13 +210,6 @@ impl WritePipeline {
             // TODO: how to do write stalling etc: like this?...
             // TODO: maybe we can create a "global" function and pass in the keyspaces instead
 
-            // Check each affected keyspace for write stall/halt
-            for keyspace in &keyspaces_with_possible_stall {
-                let memtable_size = keyspace.tree.active_memtable().size();
-                keyspace.check_memtable_rotate(memtable_size);
-                keyspace.local_backpressure();
-            }
-
             // Limit the bytes written per leader term to
             // avoid tail latencies growing too large for any
             // given writer
@@ -236,6 +231,13 @@ impl WritePipeline {
         }
 
         drop(journal_writer);
+
+        // Check each affected keyspace for write stall/halt
+        for keyspace in &keyspaces_with_possible_stall {
+            let memtable_size = keyspace.tree.active_memtable().size();
+            keyspace.check_memtable_rotate(memtable_size);
+            keyspace.local_backpressure();
+        }
 
         self.abdicate();
 
@@ -325,6 +327,8 @@ impl WritePipeline {
                     WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
                     _ => unreachable!(),
                 }
+
+                std::hint::spin_loop();
             }
 
             // NOTE: Even if we had persist_mode=None, we still need to wait for the
@@ -340,6 +344,8 @@ impl WritePipeline {
                 if visible_seqno > assigned_seqno {
                     break;
                 }
+
+                std::hint::spin_loop();
             }
 
             return Ok(Ok(()));

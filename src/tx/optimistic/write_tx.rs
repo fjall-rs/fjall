@@ -466,19 +466,23 @@ impl WriteTransaction {
             return Ok(Ok(()));
         }
 
-        let instant = self.inner.nonce.instant;
         let db = self.inner.db.clone();
-        let data = self.inner.into_batch().data;
+        let instant = self.inner.nonce.instant;
+        let durability = self.inner.durability;
+
+        // NOTE: Hold the snapshot nonce until the end of the function
+        let (batch, _nonce) = self.inner.into_batch();
 
         db.supervisor.write_pipeline.commit(Arc::new(
             crate::write_pipeline::WriteRecord::new(
-                crate::write_pipeline::WriteRecordPayload::Multiple(data),
+                crate::write_pipeline::WriteRecordPayload::Multiple(batch.data),
             )
             .with_occ(OptimisticConflictCheck::new(
                 self.oracle.clone(),
                 instant,
                 std::mem::take(&mut self.cm.lock().expect("lock is poisoned")),
-            )),
+            ))
+            .persist_mode(durability),
         ))
     }
 
