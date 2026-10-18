@@ -88,7 +88,7 @@ impl WritePipeline {
         let mut keyspaces_with_possible_stall = HashSet::new();
 
         // Process records
-        for _ in 0..100_000 {
+        for _ in 0.. {
             let Some(write_record) = self.queue.try_pop() else {
                 break;
             };
