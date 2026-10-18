@@ -677,10 +677,13 @@ fn journal_strict_recovery_rejects_unframed_magic_in_a_torn_tail() -> crate::Res
     Ok(())
 }
 
-/// A trailer that a chunk boundary splits apart is still seen.
+/// A trailer far beyond the corrupt entry is still seen: the tail is scanned in bounded chunks.
+///
+/// The chunk boundary itself, and the bytes carried across it, are pinned by
+/// `scan_for_a_trailer_across_a_chunk_boundary`.
 #[test]
 #[expect(clippy::unwrap_used, clippy::redundant_clone)]
-fn journal_strict_recovery_finds_a_trailer_across_a_scan_chunk_boundary() -> crate::Result<()> {
+fn journal_strict_recovery_finds_a_trailer_beyond_a_large_corrupt_region() -> crate::Result<()> {
     let keyspace_dir = tempdir()?;
     let db = crate::Database::builder(&keyspace_dir).open()?;
     let keyspace = db.keyspace("default", Default::default)?;
@@ -716,6 +719,96 @@ fn journal_strict_recovery_finds_a_trailer_across_a_scan_chunk_boundary() -> cra
             crate::JournalRecoveryError::MidJournalCorruption
         )))
     ));
+
+    Ok(())
+}
+
+/// A corrupt entry can claim more bytes than the journal holds, so decoding it reads to the end of
+/// the file and takes a later batch's trailer with it. The scan has to start at the end of the last
+/// entry that decoded, not after the failed read, or strict recovery truncates acknowledged data.
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_strict_recovery_scans_from_the_last_valid_entry() -> crate::Result<()> {
+    use lsm_tree::coding::Encode;
+    use std::io::{Seek, SeekFrom};
+
+    let keyspace_dir = tempdir()?;
+    let db = crate::Database::builder(&keyspace_dir).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir = tempdir()?;
+    let path = dir.path().join("0.jnl");
+
+    let items = [BatchItem::new(
+        keyspace.clone(),
+        *b"abc",
+        *b"def",
+        ValueType::Value,
+    )];
+
+    // The batch ends here; the rest of the journal is the preallocated zeroes
+    let end_of_batch = {
+        let journal = Journal::create_new(&path)?;
+        let mut writer = journal.get_writer()?;
+        writer.write_batch(items.iter(), items.len(), 0)?;
+        writer.pos()?
+    };
+
+    // An item that claims more bytes than the journal holds, followed by a completed batch
+    {
+        // The journal is preallocated to 64 MiB, so this runs past its end
+        const TOO_LONG: u32 = 65 * 1_024 * 1_024;
+
+        let mut file = std::fs::OpenOptions::new().write(true).open(&path)?;
+        file.seek(SeekFrom::Start(end_of_batch))?;
+        file.write_all(&[u8::from(entry::Tag::Item), u8::from(ValueType::Value)])?;
+        lsm_tree::CompressionType::None.encode_into(&mut file)?;
+        file.write_all(&keyspace.id.to_le_bytes())?;
+        file.write_all(&3u16.to_le_bytes())?;
+        file.write_all(&TOO_LONG.to_le_bytes())?;
+        file.write_all(&TOO_LONG.to_le_bytes())?;
+        file.write_all(b"abc")?;
+        file.write_all(&Entry::End(1234).encode_into_vec())?;
+        file.sync_all()?;
+    }
+
+    let len_before = std::fs::metadata(&path)?.len();
+
+    let journal = Journal::from_file(&path)?.with_recovery_mode(RecoveryMode::Strict);
+    let collected = journal.get_reader()?.collect::<Vec<_>>();
+
+    assert_eq!(2, collected.len());
+    assert!(matches!(
+        collected.last(),
+        Some(Err(crate::Error::JournalRecovery(
+            crate::JournalRecoveryError::MidJournalCorruption
+        )))
+    ));
+    assert_eq!(
+        len_before,
+        std::fs::metadata(&path)?.len(),
+        "strict recovery must not truncate the journal"
+    );
+
+    Ok(())
+}
+
+/// A trailer that a scan chunk boundary splits apart is still seen: the carried bytes put its
+/// `Tag::End` back in front of the magic, and without them the magic starts in the previous chunk.
+#[test]
+fn scan_for_a_trailer_across_a_chunk_boundary() -> crate::Result<()> {
+    let trailer = Entry::End(1234).encode_into_vec();
+
+    // The magic starts two bytes before the boundary (the tag sits nine bytes before the magic), so
+    // two bytes of it are in the first chunk and two in the second
+    const TWO_BYTES_AND_THE_TAG: usize = 2 + 9;
+    let mut bytes = vec![0u8; reader::SCAN_CHUNK_LEN - TWO_BYTES_AND_THE_TAG];
+    bytes.extend_from_slice(&trailer);
+
+    assert!(
+        reader::scan_for_trailer(&mut std::io::Cursor::new(bytes))?,
+        "a trailer split by a chunk boundary is a trailer"
+    );
 
     Ok(())
 }

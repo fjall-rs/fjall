@@ -64,6 +64,11 @@ impl JournalReader {
     /// a half-written tail: a batch completed further along.
     fn completed_batch_follows(&mut self) -> crate::Result<bool> {
         let pos = self.reader.stream_position()?;
+
+        // A failed decode can read past the corrupt entry — an oversized length is read to its
+        // end — so the scan starts at the end of the last entry that decoded. Starting after the
+        // failed read would start past a trailer the corrupt entry swallowed.
+        self.reader.seek(SeekFrom::Start(self.last_valid_pos))?;
         let found = self.scan_for_batch_trailer();
 
         // The caller keeps reading from the failed entry, and truncates from there.
@@ -84,49 +89,7 @@ impl JournalReader {
     /// completed-batch-after-corruption case that strict recovery exists to report, so
     /// the framing is the necessary and sufficient condition.
     fn scan_for_batch_trailer(&mut self) -> crate::Result<bool> {
-        let mut buf = vec![0u8; SCAN_CARRY_LEN + SCAN_CHUNK_LEN];
-
-        // The journal is pre-allocated and what was never written is zeroes, so
-        // matching the first byte of the trailer first keeps this one cheap pass
-        // over the file instead of a comparison per byte.
-        let Some(&first) = MAGIC_BYTES.first() else {
-            return Ok(false);
-        };
-
-        let end_tag = u8::from(Tag::End);
-
-        loop {
-            let read = {
-                let (_, chunk) = buf.split_at_mut(SCAN_CARRY_LEN);
-                self.reader.read(chunk)?
-            };
-
-            if read == 0 {
-                return Ok(false);
-            }
-
-            // `read` plus the carried bytes; the windows of the next chunk overlap with
-            // the carried tail, so nothing is skipped at a chunk boundary
-            let len = SCAN_CARRY_LEN + read;
-            let found = buf
-                .windows(MAGIC_BYTES.len())
-                .enumerate()
-                .take(len - MAGIC_BYTES.len() + 1)
-                .any(|(pos, window)| {
-                    window.first() == Some(&first)
-                        && window == MAGIC_BYTES
-                        && pos
-                            .checked_sub(TRAILER_TAG_OFFSET)
-                            .and_then(|tag_pos| buf.get(tag_pos))
-                            == Some(&end_tag)
-                });
-
-            if found {
-                return Ok(true);
-            }
-
-            buf.copy_within(read..len, 0);
-        }
+        scan_for_trailer(&mut self.reader)
     }
 
     fn truncate_file(&mut self, pos: u64) -> crate::Result<()> {
@@ -144,6 +107,53 @@ impl JournalReader {
         }
 
         Ok(())
+    }
+}
+
+/// The same scan over any reader, so a test can put the trailer exactly on a chunk boundary.
+pub(super) fn scan_for_trailer<R: Read>(reader: &mut R) -> crate::Result<bool> {
+    let mut buf = vec![0u8; SCAN_CARRY_LEN + SCAN_CHUNK_LEN];
+
+    // The journal is pre-allocated and what was never written is zeroes, so
+    // matching the first byte of the trailer first keeps this one cheap pass
+    // over the file instead of a comparison per byte.
+    let Some(&first) = MAGIC_BYTES.first() else {
+        return Ok(false);
+    };
+
+    let end_tag = u8::from(Tag::End);
+
+    loop {
+        let read = {
+            let (_, chunk) = buf.split_at_mut(SCAN_CARRY_LEN);
+            reader.read(chunk)?
+        };
+
+        if read == 0 {
+            return Ok(false);
+        }
+
+        // `read` plus the carried bytes; the windows of the next chunk overlap with
+        // the carried tail, so nothing is skipped at a chunk boundary
+        let len = SCAN_CARRY_LEN + read;
+        let found = buf
+            .windows(MAGIC_BYTES.len())
+            .enumerate()
+            .take(len - MAGIC_BYTES.len() + 1)
+            .any(|(pos, window)| {
+                window.first() == Some(&first)
+                    && window == MAGIC_BYTES
+                    && pos
+                        .checked_sub(TRAILER_TAG_OFFSET)
+                        .and_then(|tag_pos| buf.get(tag_pos))
+                        == Some(&end_tag)
+            });
+
+        if found {
+            return Ok(true);
+        }
+
+        buf.copy_within(read..len, 0);
     }
 }
 
