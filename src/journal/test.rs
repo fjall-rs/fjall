@@ -1,5 +1,6 @@
 use super::*;
 use crate::batch::item::Item as BatchItem;
+use crate::file::MAGIC_BYTES;
 use entry::Entry;
 use lsm_tree::ValueType;
 use std::io::Write;
@@ -522,6 +523,9 @@ fn journal_mid_journal_corruption_recovery_modes() -> crate::Result<()> {
         {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
             file.write_all(b"09pmu35w3a9mp53bao9upw3ab5up")?;
+            // the magic is only 4 bytes, so an unframed one can sit inside the corrupt
+            // region without being the trailer of the batch that follows it
+            file.write_all(MAGIC_BYTES)?;
             file.sync_all()?;
         }
 
@@ -613,6 +617,105 @@ fn journal_strict_recovery_tolerates_a_corrupt_tail() -> crate::Result<()> {
     let collected = journal.get_reader()?.collect::<crate::Result<Vec<_>>>()?;
 
     assert_eq!(1, collected.len());
+
+    Ok(())
+}
+
+/// The trailer magic can occur inside a corrupt key or value, so only a magic that is
+/// preceded by `Tag::End` is a completed batch trailer.
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_strict_recovery_rejects_unframed_magic_in_a_torn_tail() -> crate::Result<()> {
+    let keyspace_dir = tempdir()?;
+    let db = crate::Database::builder(&keyspace_dir).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let items = [BatchItem::new(keyspace, *b"abc", *b"def", ValueType::Value)];
+
+    // 0xf0 is not a journal tag, so decoding fails right there; nine bytes in front of the
+    // magic is where a trailer would carry its `Tag::End`
+    let torn_tail = |tag_before_magic: u8| {
+        let mut bytes = vec![0xf0, tag_before_magic];
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.extend_from_slice(MAGIC_BYTES);
+        bytes
+    };
+
+    for tag_before_magic in [0x00, u8::from(entry::Tag::Item)] {
+        let dir = tempdir()?;
+        let path = dir.path().join("0.jnl");
+
+        {
+            let journal = Journal::create_new(&path)?;
+            journal
+                .get_writer()?
+                .write_batch(items.iter(), items.len(), 0)?;
+        }
+
+        {
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+            file.write_all(&torn_tail(tag_before_magic))?;
+            file.sync_all()?;
+        }
+
+        let len_before = std::fs::metadata(&path)?.len();
+
+        let journal = Journal::from_file(&path)?.with_recovery_mode(RecoveryMode::Strict);
+        let collected = journal.get_reader()?.collect::<crate::Result<Vec<_>>>()?;
+
+        assert_eq!(
+            1,
+            collected.len(),
+            "an unframed magic in a torn tail is not a completed batch"
+        );
+        assert!(
+            std::fs::metadata(&path)?.len() < len_before,
+            "strict recovery truncates a torn tail like the default mode"
+        );
+    }
+
+    Ok(())
+}
+
+/// A trailer that a chunk boundary splits apart is still seen.
+#[test]
+#[expect(clippy::unwrap_used, clippy::redundant_clone)]
+fn journal_strict_recovery_finds_a_trailer_across_a_scan_chunk_boundary() -> crate::Result<()> {
+    let keyspace_dir = tempdir()?;
+    let db = crate::Database::builder(&keyspace_dir).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+
+    let dir = tempdir()?;
+    let path = dir.path().join("0.jnl");
+
+    let items = [BatchItem::new(keyspace, *b"abc", *b"def", ValueType::Value)];
+
+    {
+        let journal = Journal::create_new(&path)?;
+        journal
+            .get_writer()?
+            .write_batch(items.iter(), items.len(), 0)?;
+    }
+
+    // Place the trailer so that its last two bytes fall into the next scan chunk
+    {
+        let trailer = Entry::End(1234).encode_into_vec();
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+        file.write_all(&vec![0xf0; reader::SCAN_CHUNK_LEN - trailer.len() + 2])?;
+        file.write_all(&trailer)?;
+        file.sync_all()?;
+    }
+
+    let journal = Journal::from_file(&path)?.with_recovery_mode(RecoveryMode::Strict);
+    let collected = journal.get_reader()?.collect::<Vec<_>>();
+
+    assert_eq!(2, collected.len());
+    assert!(matches!(
+        collected.last(),
+        Some(Err(crate::Error::JournalRecovery(
+            crate::JournalRecoveryError::MidJournalCorruption
+        )))
+    ));
 
     Ok(())
 }
