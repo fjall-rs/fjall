@@ -107,6 +107,7 @@ mod db;
 #[cfg(test)]
 mod db_test;
 
+mod cache_pad;
 mod error;
 mod file;
 mod flush;

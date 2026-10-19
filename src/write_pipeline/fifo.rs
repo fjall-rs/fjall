@@ -2,8 +2,6 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use std::mem::MaybeUninit;
-
 // Wrapper for loom-specific "with" API
 #[cfg(not(feature = "__internal_loom"))]
 pub(crate) struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
@@ -36,6 +34,9 @@ use loom::{
     sync::atomic::Ordering::{Acquire, Relaxed, Release},
 };
 
+use crate::cache_pad::CachePadded;
+use std::mem::MaybeUninit;
+
 /// Slot in bounded queue
 struct Slot<T> {
     /// Actual user payload
@@ -57,10 +58,10 @@ pub struct Queue<T> {
     slots: Box<[Slot<T>]>,
 
     /// Monotonic head index
-    head: AtomicUsize,
+    head: CachePadded<AtomicUsize>,
 
     /// Monotonic tail index
-    tail: AtomicUsize,
+    tail: CachePadded<AtomicUsize>,
 
     // See https://www.snellman.net/blog/archive/2016-12-13-ring-buffers/
     // or https://stackoverflow.com/questions/10527581/why-must-a-ring-buffer-size-be-a-power-of-2
@@ -88,8 +89,8 @@ impl<T> Queue<T> {
 
                 v.into_boxed_slice()
             },
-            head: AtomicUsize::default(),
-            tail: AtomicUsize::default(),
+            head: CachePadded::default(),
+            tail: CachePadded::default(),
             mask: n - 1,
         }
     }
