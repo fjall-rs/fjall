@@ -275,10 +275,23 @@ impl WritePipeline {
     }
 
     /// Tries to push a record until it is definitely enqueued.
-    fn push_write_record(&self, record: &Arc<WriteRecord>) {
-        while self.queue.try_push(record.clone()).is_none() {
+    #[expect(clippy::collapsible_if)]
+    fn push_write_record(&self, record: &Arc<WriteRecord>) -> crate::Result<()> {
+        for i in 0.. {
+            if self.queue.try_push(record.clone()).is_some() {
+                return Ok(());
+            }
+
+            if i % 1_000 == 0 {
+                if self.state.poison_flag.is_poisoned() {
+                    return Err(crate::Error::Poisoned);
+                }
+            }
+
             std::hint::spin_loop();
         }
+
+        Ok(())
     }
 
     #[cfg(test)]
@@ -510,6 +523,47 @@ mod tests {
             write_pipeline.commit(first_record),
             Err(crate::Error::Poisoned),
         ));
+
+        let later_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace,
+                b"later".into(),
+                b"value".into(),
+                ValueType::Value,
+            ),
+        )));
+        assert!(matches!(
+            write_pipeline.commit(later_record),
+            Err(crate::Error::Poisoned),
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_pipeline_poisoned_commits_fill_queue_and_block_later_writers() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path()).open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        db.is_poisoned.poison();
+
+        for _ in 0..WRITE_PIPELINE_QUEUE_CAPACITY {
+            let record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+                crate::batch::item::Item::new(
+                    keyspace.clone(),
+                    b"key".into(),
+                    b"value".into(),
+                    ValueType::Value,
+                ),
+            )));
+
+            assert!(matches!(
+                write_pipeline.commit(record),
+                Err(crate::Error::Poisoned),
+            ));
+        }
 
         let later_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new(
