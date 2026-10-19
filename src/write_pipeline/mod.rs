@@ -281,16 +281,17 @@ impl WritePipeline {
         }
     }
 
-    /// Appends the write record to the write pipeline.
-    ///
-    /// When returning, the write record is guaranteed to be persisted matching
-    /// the record's durability parameter (or stronger).
+    #[cfg(test)]
+    fn become_follower(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
+        self.commit_inner(record, false)
+    }
+
     #[expect(clippy::collapsible_if)]
-    pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
-        self.push_write_record(&record);
-
-        let mut is_leader = self.try_acquire_leader_lease();
-
+    fn commit_inner(
+        &self,
+        record: Arc<WriteRecord>,
+        mut is_leader: bool,
+    ) -> crate::Result<Result<(), Conflict>> {
         'start: loop {
             if is_leader {
                 return self.act_as_leader(record).inspect_err(|_| {
@@ -360,6 +361,15 @@ impl WritePipeline {
 
             return Ok(Ok(()));
         }
+    }
+
+    /// Appends the write record to the write pipeline.
+    ///
+    /// When returning, the write record is guaranteed to be persisted matching
+    /// the record's durability parameter (or stronger).
+    pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
+        self.push_write_record(&record);
+        self.commit_inner(record, self.try_acquire_leader_lease())
     }
 }
 
@@ -559,7 +569,47 @@ mod tests {
         Ok(())
     }
 
-    // TODO: test that followers do not block forever
-    // TODO: -> we need to manually make them follower so they do not become leader
-    // TODO: so push_write_record, followed by become_follower(record)
+    #[test]
+    fn write_pipeline_follower_does_not_block_when_leader_errors() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path()).open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        let leader_record = Arc::new(
+            WriteRecord::new(WriteRecordPayload::Single(crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"leader".into(),
+                b"value".into(),
+                ValueType::Value,
+            )))
+            .inject_error(),
+        );
+        let follower_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace,
+                b"follower".into(),
+                b"value".into(),
+                ValueType::Value,
+            ),
+        )));
+
+        write_pipeline.push_write_record(&leader_record);
+        assert!(write_pipeline.try_acquire_leader_lease());
+        write_pipeline.push_write_record(&follower_record);
+
+        std::thread::scope(|scope| {
+            let follower = scope.spawn(move || write_pipeline.become_follower(follower_record));
+
+            let leader_result = write_pipeline.commit_inner(leader_record, true);
+            assert!(matches!(leader_result, Err(crate::Error::Io(_))));
+
+            let Ok(follower_result) = follower.join() else {
+                panic!("follower should not panic");
+            };
+            assert!(matches!(follower_result, Err(crate::Error::Poisoned)));
+        });
+
+        Ok(())
+    }
 }
