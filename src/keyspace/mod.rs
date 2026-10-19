@@ -717,6 +717,9 @@ impl Keyspace {
             while self.tree.sealed_memtable_count() > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
+
+            // The worker updates write-buffer accounting after removing sealed memtables.
+            drop(self.tree.get_flush_lock());
         }
         Ok(())
     }
@@ -759,8 +762,7 @@ impl Keyspace {
             // we never opened a snapshot, we need to pull the watermark up
             //
             // https://github.com/fjall-rs/fjall/discussions/85
-            self.supervisor.snapshot_tracker.pullup();
-            self.supervisor.snapshot_tracker.gc();
+            self.supervisor.snapshot_tracker.advance_gc_watermark();
 
             for keyspace in self
                 .supervisor
