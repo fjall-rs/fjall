@@ -39,38 +39,7 @@ use core::{
 ///
 /// Since crossbeam-utils 0.8.22, this type is `#[repr(C)]` and is guaranteed that the pointer to
 /// `CachePadded<T>` has the same address as the pointer to the underlying `T`.
-///
-/// # Examples
-///
-/// Alignment and padding:
-///
-/// ```
-/// use crossbeam_utils::CachePadded;
-///
-/// let array = [CachePadded::new(1i8), CachePadded::new(2i8)];
-/// let addr1 = &*array[0] as *const i8 as usize;
-/// let addr2 = &*array[1] as *const i8 as usize;
-///
-/// assert!(addr2 - addr1 >= 16);
-/// assert_eq!(addr1 % 16, 0);
-/// assert_eq!(addr2 % 16, 0);
-/// ```
-///
-/// When building a concurrent queue with a head and a tail index, it is wise to place them in
-/// different cache lines so that concurrent threads pushing and popping elements don't invalidate
-/// each other's cache lines:
-///
-/// ```
-/// use crossbeam_utils::CachePadded;
-/// use std::sync::atomic::AtomicUsize;
-///
-/// struct Queue<T> {
-///     head: CachePadded<AtomicUsize>,
-///     tail: CachePadded<AtomicUsize>,
-///     buffer: *mut T,
-/// }
-/// ```
-#[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
+//
 // Starting from Intel's Sandy Bridge, spatial prefetcher is now pulling pairs of 64-byte cache
 // lines at a time, so we have to align to 128 bytes rather than 64.
 //
@@ -157,42 +126,13 @@ use core::{
     repr(align(64))
 )]
 #[repr(C)]
+#[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
 pub struct CachePadded<T> {
     value: T,
 }
 
 unsafe impl<T: Send> Send for CachePadded<T> {}
 unsafe impl<T: Sync> Sync for CachePadded<T> {}
-
-impl<T> CachePadded<T> {
-    /// Pads and aligns a value to the length of a cache line.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use crossbeam_utils::CachePadded;
-    ///
-    /// let padded_value = CachePadded::new(1);
-    /// ```
-    pub const fn new(t: T) -> Self {
-        Self { value: t }
-    }
-
-    /// Returns the inner value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use crossbeam_utils::CachePadded;
-    ///
-    /// let padded_value = CachePadded::new(7);
-    /// let value = padded_value.into_inner();
-    /// assert_eq!(value, 7);
-    /// ```
-    pub fn into_inner(self) -> T {
-        self.value
-    }
-}
 
 impl<T> Deref for CachePadded<T> {
     type Target = T;
@@ -205,25 +145,5 @@ impl<T> Deref for CachePadded<T> {
 impl<T> DerefMut for CachePadded<T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.value
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for CachePadded<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CachePadded")
-            .field("value", &self.value)
-            .finish()
-    }
-}
-
-impl<T> From<T> for CachePadded<T> {
-    fn from(t: T) -> Self {
-        Self::new(t)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for CachePadded<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.value, f)
     }
 }
