@@ -72,11 +72,21 @@ pub struct WriteRecord {
     pub(super) assigned_seqno: AtomicU64,
 
     pub(super) occ: Option<OptimisticConflictCheck>,
+
+    // TODO: refactor write pipeline to be generic?
+    /// Used to inject failures into the write pipeline
+    #[cfg(test)]
+    pub(super) error_flag: bool,
 }
 
 impl WriteRecord {
+    #[cfg(test)]
+    pub fn is_published_regular(&self) -> bool {
+        self.state() == WRITE_RECORD_STATE_PUBLISHED
+    }
+
     pub fn is_pending(&self) -> bool {
-        self.state() != WRITE_RECORD_STATE_PENDING
+        self.state() == WRITE_RECORD_STATE_PENDING
     }
 
     pub fn state(&self) -> u8 {
@@ -102,13 +112,22 @@ impl WriteRecord {
 
     /// Creates a new write record.
     pub fn new(payload: Payload) -> Self {
-        WriteRecord {
+        Self {
             state: AtomicU8::new(WRITE_RECORD_STATE_PENDING),
             persist_mode: None,
             payload: TakeOnce::new_with(payload),
             assigned_seqno: AtomicU64::default(),
             occ: None,
+
+            #[cfg(test)]
+            error_flag: false,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_error(mut self) -> Self {
+        self.error_flag = true;
+        self
     }
 
     /// Sets the write record's persist mode.

@@ -28,39 +28,33 @@ pub use record::{OptimisticConflictCheck, Payload as WriteRecordPayload, WriteRe
 
 const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
 
+pub struct State {
+    pub journal: Arc<Journal>,
+    pub write_buffer_size: WriteBufferManager,
+    pub seqno: SequenceNumberCounter,
+    pub snapshot_tracker: SnapshotTracker,
+    pub poison_flag: PoisonSignal,
+}
+
 /// A write pipeline using flat combining to allow grouped commits
 /// and better concurrent throughput
 ///
 /// See the paper on flat combining: <https://dl.acm.org/doi/10.1145/1810479.1810540>
 pub struct WritePipeline {
-    write_buffer_size: WriteBufferManager,
-    seqno: SequenceNumberCounter,
-    snapshot_tracker: SnapshotTracker,
-    journal: Arc<Journal>,
     queue: Queue<Arc<WriteRecord>>,
     leader_lease: AtomicBool,
-    poison_flag: PoisonSignal,
+    state: State,
 }
 
 impl WritePipeline {
     /// Creates a new write pipeline.
     ///
     /// One database has one write pipeline.
-    pub fn new(
-        journal: Arc<Journal>,
-        seqno: SequenceNumberCounter,
-        snapshot_tracker: SnapshotTracker,
-        write_buffer_size: WriteBufferManager,
-        poison_flag: PoisonSignal,
-    ) -> Self {
+    pub fn new(state: State) -> Self {
         Self {
             queue: Queue::with_capacity(WRITE_PIPELINE_QUEUE_CAPACITY),
             leader_lease: AtomicBool::new(true),
-            journal,
-            seqno,
-            snapshot_tracker,
-            write_buffer_size,
-            poison_flag,
+            state,
         }
     }
 
@@ -68,6 +62,7 @@ impl WritePipeline {
         log::trace!("getting journal writer");
 
         let mut journal_writer = self
+            .state
             .journal
             .get_writer()
             .map_err(|_| crate::Error::Poisoned)?;
@@ -75,7 +70,7 @@ impl WritePipeline {
         log::trace!("got journal writer");
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.poison_flag.is_poisoned() {
+        if self.state.poison_flag.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
@@ -108,7 +103,7 @@ impl WritePipeline {
                 }
             }
 
-            let batch_seqno = self.seqno.next();
+            let batch_seqno = self.state.seqno.next();
 
             #[expect(
                 clippy::expect_used,
@@ -118,6 +113,11 @@ impl WritePipeline {
                 .payload
                 .take()
                 .expect("should get write record payload");
+
+            #[cfg(test)]
+            if write_record.error_flag {
+                return Err(crate::Error::Io(std::io::Error::other("injected failure")));
+            }
 
             bytes_written += match &payload {
                 WriteRecordPayload::Single(item) => journal_writer.write_raw(
@@ -205,7 +205,7 @@ impl WritePipeline {
                 _ => collected_persist,
             };
 
-            self.write_buffer_size.allocate(batch_size);
+            self.state.write_buffer_size.allocate(batch_size);
 
             // TODO: how to do write stalling etc: like this?...
             // TODO: maybe we can create a "global" function and pass in the keyspaces instead
@@ -229,7 +229,7 @@ impl WritePipeline {
         }
 
         if let Some(seqno) = highest_seqno_published {
-            self.snapshot_tracker.publish(seqno);
+            self.state.snapshot_tracker.publish(seqno);
         }
 
         drop(journal_writer);
@@ -296,7 +296,7 @@ impl WritePipeline {
         'start: loop {
             if is_leader {
                 return self.act_as_leader(record).inspect_err(|_| {
-                    self.poison_flag.poison();
+                    self.state.poison_flag.poison();
                     self.abdicate();
                 });
             }
@@ -342,7 +342,7 @@ impl WritePipeline {
 
             // Spin on the visible seqno until our record is visible
             for i in 0.. {
-                let visible_seqno = self.snapshot_tracker.get();
+                let visible_seqno = self.state.snapshot_tracker.get();
 
                 if visible_seqno > assigned_seqno {
                     break;
@@ -363,4 +363,128 @@ impl WritePipeline {
             return Ok(Ok(()));
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_log::test;
+
+    #[test]
+    fn write_pipeline_failure_simple() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path()).open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        write_pipeline.push_write_record(&Arc::new(
+            WriteRecord::new(WriteRecordPayload::Single(crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"a".into(),
+                b"a".into(),
+                ValueType::Value,
+            )))
+            // Inject I/O error
+            .inject_error(),
+        ));
+        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"b".into(),
+                b"b".into(),
+                ValueType::Value,
+            ),
+        ))));
+        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"c".into(),
+                b"c".into(),
+                ValueType::Value,
+            ),
+        ))));
+
+        // We push a, b, c into the queue using a raw method
+        // not the actual write pipeline
+        // Then we push d, who becomes leader, this way we simulate a leader
+        // being crowned and immediately encountering an error
+        assert!(matches!(
+            write_pipeline.commit(Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+                crate::batch::item::Item::new(
+                    keyspace,
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+            )))),
+            Err(crate::Error::Io(_))
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_pipeline_failure_simple_2() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path()).open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        let record_a = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"a".into(),
+                b"a".into(),
+                ValueType::Value,
+            ),
+        )));
+        let record_b = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"b".into(),
+                b"b".into(),
+                ValueType::Value,
+            ),
+        )));
+        let record_c = Arc::new(
+            WriteRecord::new(WriteRecordPayload::Single(crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"c".into(),
+                b"c".into(),
+                ValueType::Value,
+            )))
+            // Inject I/O error
+            .inject_error(),
+        );
+
+        write_pipeline.push_write_record(&record_a);
+        write_pipeline.push_write_record(&record_b);
+        write_pipeline.push_write_record(&record_c);
+
+        assert!(matches!(
+            write_pipeline.commit(Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+                crate::batch::item::Item::new(
+                    keyspace,
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+            )))),
+            Err(crate::Error::Io(_))
+        ));
+
+        // Leader should still have committed the OK write records
+        assert!(record_a.is_published_regular());
+        assert!(record_b.is_published_regular());
+        assert!(record_c.is_pending());
+
+        Ok(())
+    }
+
+    // TODO: test that leader still processes its own record even when byte limit is reached
+    // TODO: make the limit configurable (default = 1 MB)
+
+    // TODO: test that followers do not block forever
+    // TODO: -> we need to manually make them follower so they do not become leader
+    // TODO: so push_write_record, followed by become_follower(record)
 }

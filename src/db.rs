@@ -595,8 +595,8 @@ impl Database {
         )?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
-        let active_journal = Arc::new(journal_recovery.active);
-        active_journal.get_writer()?.persist(PersistMode::SyncAll)?;
+        let journal = Arc::new(journal_recovery.active);
+        journal.get_writer()?.persist(PersistMode::SyncAll)?;
 
         let sealed_journals = journal_recovery.sealed;
 
@@ -641,13 +641,13 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
         let poison_signal = PoisonSignal::default();
 
-        let write_pipeline = WritePipeline::new(
-            active_journal.clone(),
-            seqno.clone(),
-            snapshot_tracker.clone(),
-            write_buffer_size.clone(),
-            poison_signal.clone(),
-        );
+        let write_pipeline = WritePipeline::new(crate::write_pipeline::State {
+            journal: journal.clone(),
+            seqno: seqno.clone(),
+            snapshot_tracker: snapshot_tracker.clone(),
+            write_buffer_size: write_buffer_size.clone(),
+            poison_flag: poison_signal.clone(),
+        });
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
@@ -655,7 +655,7 @@ impl Database {
             flush_manager: FlushManager::new(),
             write_buffer_size,
             snapshot_tracker,
-            journal: active_journal,
+            journal,
             journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
@@ -930,13 +930,13 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
         let poison_signal = PoisonSignal::default();
 
-        let write_pipeline = WritePipeline::new(
-            journal.clone(),
-            seqno.clone(),
-            snapshot_tracker.clone(),
-            write_buffer_size.clone(),
-            poison_signal.clone(),
-        );
+        let write_pipeline = WritePipeline::new(crate::write_pipeline::State {
+            journal: journal.clone(),
+            seqno: seqno.clone(),
+            snapshot_tracker: snapshot_tracker.clone(),
+            write_buffer_size: write_buffer_size.clone(),
+            poison_flag: poison_signal.clone(),
+        });
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
