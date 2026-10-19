@@ -188,11 +188,11 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             };
 
             {
-                #[expect(clippy::expect_used)]
-                let keyspaces = ctx.supervisor.keyspaces.read().expect("lock is poisoned");
-
                 log::trace!("acquiring journal lock to maybe rotate journal");
                 let mut journal_writer = ctx.supervisor.journal.get_writer()?;
+
+                #[expect(clippy::expect_used)]
+                let keyspaces = ctx.supervisor.keyspaces.read().expect("lock is poisoned");
 
                 if journal_writer.pos()? > 64_000_000 {
                     #[expect(clippy::expect_used)]

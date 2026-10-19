@@ -380,8 +380,8 @@ impl Database {
     }
 
     fn flush_all_inner(&self) -> crate::Result<()> {
-        let keyspaces = self.supervisor.keyspaces.read()?;
         let mut journal = self.supervisor.journal.get_writer()?;
+        let keyspaces = self.supervisor.keyspaces.read()?;
 
         // Check after acquiring the journal lock so a concurrent failure cannot race us.
         if self.is_poisoned.is_poisoned() {
@@ -802,6 +802,9 @@ impl Database {
                     }
 
                     for keyspace_id in &batch.cleared_keyspaces {
+                        highest_encountered_keyspace_id =
+                            highest_encountered_keyspace_id.max(*keyspace_id);
+
                         let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
                             continue;
                         };
