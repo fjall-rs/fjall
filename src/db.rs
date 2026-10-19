@@ -641,13 +641,16 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
         let poison_signal = PoisonSignal::default();
 
-        let write_pipeline = WritePipeline::new(crate::write_pipeline::State {
-            journal: journal.clone(),
-            seqno: seqno.clone(),
-            snapshot_tracker: snapshot_tracker.clone(),
-            write_buffer_size: write_buffer_size.clone(),
-            poison_flag: poison_signal.clone(),
-        });
+        let write_pipeline = WritePipeline::with_capacity(
+            crate::write_pipeline::State {
+                journal: journal.clone(),
+                seqno: seqno.clone(),
+                snapshot_tracker: snapshot_tracker.clone(),
+                write_buffer_size: write_buffer_size.clone(),
+                poison_flag: poison_signal.clone(),
+            },
+            config.write_pipeline_leader_capacity,
+        );
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
@@ -930,13 +933,16 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
         let poison_signal = PoisonSignal::default();
 
-        let write_pipeline = WritePipeline::new(crate::write_pipeline::State {
-            journal: journal.clone(),
-            seqno: seqno.clone(),
-            snapshot_tracker: snapshot_tracker.clone(),
-            write_buffer_size: write_buffer_size.clone(),
-            poison_flag: poison_signal.clone(),
-        });
+        let write_pipeline = WritePipeline::with_capacity(
+            crate::write_pipeline::State {
+                journal: journal.clone(),
+                seqno: seqno.clone(),
+                snapshot_tracker: snapshot_tracker.clone(),
+                write_buffer_size: write_buffer_size.clone(),
+                poison_flag: poison_signal.clone(),
+            },
+            config.write_pipeline_leader_capacity,
+        );
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),

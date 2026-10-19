@@ -44,17 +44,19 @@ pub struct WritePipeline {
     queue: Queue<Arc<WriteRecord>>,
     leader_lease: AtomicBool,
     state: State,
+    leader_capacity: usize,
 }
 
 impl WritePipeline {
     /// Creates a new write pipeline.
     ///
     /// One database has one write pipeline.
-    pub fn new(state: State) -> Self {
+    pub fn with_capacity(state: State, leader_capacity: usize) -> Self {
         Self {
             queue: Queue::with_capacity(WRITE_PIPELINE_QUEUE_CAPACITY),
             leader_lease: AtomicBool::new(true),
             state,
+            leader_capacity,
         }
     }
 
@@ -211,7 +213,7 @@ impl WritePipeline {
             // given writer
             //
             // Also, we cannot exit the loop until our record is processed.
-            if bytes_written >= 1_000_000 && !record.is_pending() {
+            if bytes_written >= self.leader_capacity && !record.is_pending() {
                 break;
             }
         }
@@ -515,8 +517,47 @@ mod tests {
         Ok(())
     }
 
-    // TODO: test that leader still processes its own record even when byte limit is reached
-    // TODO: make the limit configurable (default = 1 MB)
+    #[test]
+    fn write_pipeline_leader_processes_own_record_after_byte_limit() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path())
+            .journal_compression(lsm_tree::CompressionType::None)
+            .write_pipeline_leader_capacity(64_000)
+            .open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        let preceding_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"preceding".into(),
+                vec![7; 64_000].into(),
+                ValueType::Value,
+            ),
+        )));
+        write_pipeline.push_write_record(&preceding_record);
+
+        let leader_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"leader".into(),
+                b"value".into(),
+                ValueType::Value,
+            ),
+        )));
+
+        assert!(matches!(
+            write_pipeline.commit(leader_record.clone()),
+            Ok(Ok(())),
+        ));
+        assert!(preceding_record.is_published_regular());
+        assert!(leader_record.is_published_regular());
+        assert!(keyspace.contains_key(b"preceding")?);
+        assert!(keyspace.contains_key(b"leader")?);
+
+        Ok(())
+    }
 
     // TODO: test that followers do not block forever
     // TODO: -> we need to manually make them follower so they do not become leader
