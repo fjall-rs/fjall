@@ -26,14 +26,14 @@ impl<T> UnsafeCell<T> {
 #[cfg(not(feature = "__internal_loom"))]
 use std::{
     sync::atomic::AtomicUsize,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::Ordering::{Acquire, Relaxed, Release},
 };
 
 #[cfg(feature = "__internal_loom")]
 use loom::{
     cell::UnsafeCell,
     sync::atomic::AtomicUsize,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::Ordering::{Acquire, Relaxed, Release},
 };
 
 /// Slot in bounded queue
@@ -41,8 +41,7 @@ struct Slot<T> {
     /// Actual user payload
     data: UnsafeCell<MaybeUninit<T>>,
 
-    /// Avoid race condition where tail is incremented but not yet written to slot
-    published: AtomicBool,
+    seqno: AtomicUsize,
 }
 
 #[expect(unsafe_code)]
@@ -52,7 +51,7 @@ unsafe impl<T: Send> Send for Queue<T> {}
 
 /// A bounded, FIFO MPSC queue
 ///
-/// Consumers must be synchronized externally for performance reasons.
+/// Based on the Vyukov queue.
 pub struct Queue<T> {
     /// Bounded list of slots
     slots: Box<[Slot<T>]>,
@@ -71,8 +70,8 @@ pub struct Queue<T> {
 impl<T> Queue<T> {
     pub fn with_capacity(n: usize) -> Self {
         assert!(
-            n > 0 && n.is_power_of_two(),
-            "capacity must be a power of two and > 0"
+            n >= 2 && n.is_power_of_two(),
+            "capacity must be a power of two and >= 2"
         );
 
         Self {
@@ -80,10 +79,10 @@ impl<T> Queue<T> {
             slots: {
                 let mut v = Vec::<Slot<T>>::with_capacity(n);
 
-                for _ in 0..n {
+                for i in 0..n {
                     v.push(Slot {
                         data: UnsafeCell::new(MaybeUninit::uninit()),
-                        published: AtomicBool::default(),
+                        seqno: AtomicUsize::new(i),
                     });
                 }
 
@@ -101,124 +100,134 @@ impl<T> Queue<T> {
     }
 
     pub fn try_push(&self, item: T) -> Option<()> {
-        let mut tail = self.tail.load(Ordering::Acquire);
+        use std::cmp::Ordering;
+
+        let mut tail = self.tail.load(Relaxed);
 
         loop {
-            let head = self.head.load(Ordering::Acquire);
+            #[expect(clippy::indexing_slicing)]
+            let slot = &self.slots[self.get_index(tail)];
+            let seqno = slot.seqno.load(Acquire);
 
-            // If the gap between head and tail is greater or equal to our capacity...
-            //
-            // Tail is never < head
-            if (tail - head) >= self.slots.len() {
-                // We are full
-                return None;
-            }
+            // Vyukov's algorithm compares the sequence-number difference as a
+            // signed value: a negative difference means the queue is full.
+            let diff = seqno.wrapping_sub(tail) as isize;
 
-            match self.tail.compare_exchange_weak(
-                tail,
-                tail + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    // We got the slot
-                    let idx = self.get_index(tail);
-
-                    #[expect(clippy::indexing_slicing)]
-                    let slot = &self.slots[idx];
-
-                    // SAFETY: We won the CAS, and are setting a value
-                    #[expect(unsafe_code)]
-                    unsafe {
-                        slot.data.with_mut(|d| {
-                            *d = MaybeUninit::new(item);
-                        });
+            match diff.cmp(&0) {
+                Ordering::Equal => {
+                    match self.tail.compare_exchange_weak(
+                        tail,
+                        tail.wrapping_add(1),
+                        Relaxed,
+                        Relaxed,
+                    ) {
+                        Ok(_) => {
+                            // SAFETY: We won the CAS, and are setting a value
+                            #[expect(unsafe_code)]
+                            unsafe {
+                                slot.data.with_mut(|d| {
+                                    *d = MaybeUninit::new(item);
+                                });
+                            }
+                            slot.seqno.store(tail.wrapping_add(1), Release);
+                            return Some(());
+                        }
+                        Err(actual_tail) => tail = actual_tail,
                     }
-
-                    slot.published.store(true, Ordering::Release);
-
-                    return Some(());
                 }
-                Err(newer_tail) => {
-                    // Spin with new tail
-                    tail = newer_tail;
-                }
+                Ordering::Less => return None,
+                Ordering::Greater => tail = self.tail.load(Relaxed),
             }
         }
     }
 
     // We have a specific invariant in fjall: there is only a single consumer
     pub fn try_pop(&self) -> Option<T> {
-        let head = self.head.load(Ordering::Acquire);
+        use std::cmp::Ordering;
 
-        let idx = self.get_index(head);
+        let mut head = self.head.load(Relaxed);
 
-        #[expect(clippy::indexing_slicing)]
-        let slot = &self.slots[idx];
+        loop {
+            #[expect(clippy::indexing_slicing)]
+            let slot = &self.slots[self.get_index(head)];
+            let seqno = slot.seqno.load(Acquire);
 
-        if !slot.published.load(Ordering::Acquire) {
-            return None;
+            let diff = seqno.wrapping_sub(head.wrapping_add(1)) as isize;
+
+            match diff.cmp(&0) {
+                Ordering::Equal => {
+                    match self.head.compare_exchange_weak(
+                        head,
+                        head.wrapping_add(1),
+                        Relaxed,
+                        Relaxed,
+                    ) {
+                        Ok(_) => {
+                            // SAFETY: We set published=true after pushing a value
+                            // We set published=false after popping a value
+                            #[expect(unsafe_code)]
+                            let value = unsafe { slot.data.with(|d| d).read().assume_init() };
+
+                            slot.seqno
+                                .store(head.wrapping_add(self.mask).wrapping_add(1), Release);
+
+                            return Some(value);
+                        }
+                        Err(actual_head) => head = actual_head,
+                    }
+                }
+                Ordering::Less => return None,
+                Ordering::Greater => head = self.head.load(Relaxed),
+            }
         }
-
-        // SAFETY: We set published=true after pushing a value
-        // We set published=false after popping a value
-        #[expect(unsafe_code)]
-        #[expect(clippy::indexing_slicing)]
-        let value = unsafe { self.slots[idx].data.with(|d| d).read().assume_init() };
-
-        slot.published.store(false, Ordering::Release);
-
-        // There is only a single consumer, so this is fine
-        self.head.store(head + 1, Ordering::Release);
-
-        Some(value)
     }
 
+    // We have a special invariant in fjall: we only have a single consumer
     pub fn peek(&self) -> Option<&T> {
-        let head = self.head.load(Ordering::Acquire);
+        use std::cmp::Ordering;
 
-        let idx = self.get_index(head);
+        let head = self.head.load(Acquire);
 
         #[expect(clippy::indexing_slicing)]
-        let slot = &self.slots[idx];
+        let slot = &self.slots[self.get_index(head)];
+        let seqno = slot.seqno.load(Acquire);
 
-        if !slot.published.load(Ordering::Acquire) {
-            return None;
+        let diff = seqno.wrapping_sub(head + 1);
+
+        match diff.cmp(&0) {
+            Ordering::Equal => {
+                // SAFETY: Uhhh
+                #[expect(unsafe_code)]
+                let ptr = {
+                    let ptr = slot.data.with(|d| d).cast();
+                    unsafe { &*ptr }
+                };
+
+                Some(ptr)
+            }
+            Ordering::Less | Ordering::Greater => None,
         }
-
-        // SAFETY: Uhhh
-        #[expect(unsafe_code)]
-        let ptr = {
-            let ptr = slot.data.with(|d| d).cast();
-            unsafe { &*ptr }
-        };
-
-        Some(ptr)
     }
 }
 
 impl<T> Drop for Queue<T> {
     fn drop(&mut self) {
         // At drop time, we have &mut self, so no concurrent access should exist.
-        let head = self.head.load(Ordering::Acquire);
-        let tail = self.tail.load(Ordering::Acquire);
+        let head = self.head.load(Acquire);
+        let tail = self.tail.load(Acquire);
 
-        let mut ticket = head;
-
-        while ticket < tail {
-            let idx = self.get_index(ticket);
-
+        for idx in head..tail {
             #[expect(clippy::indexing_slicing)]
-            let slot = &self.slots[idx];
+            let slot = &self.slots[self.get_index(idx)];
 
-            if slot.published.load(Ordering::Acquire) {
+            // A slot is published for enqueue position `idx` when its sequence
+            // number is advanced to the next position.
+            if slot.seqno.load(Acquire) == idx.wrapping_add(1) {
                 #[expect(unsafe_code)]
                 unsafe {
                     std::ptr::drop_in_place((*slot.data.with_mut(|d| d)).as_mut_ptr());
                 }
             }
-
-            ticket += 1;
         }
     }
 }
@@ -339,7 +348,7 @@ mod tests {
         loom::model(|| {
             use loom::{sync::Arc, thread};
 
-            let queue = Arc::new(Queue::with_capacity(1));
+            let queue = Arc::new(Queue::with_capacity(2));
 
             let producer_1 = {
                 let queue = Arc::clone(&queue);
