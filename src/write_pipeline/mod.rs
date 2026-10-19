@@ -59,15 +59,11 @@ impl WritePipeline {
     }
 
     fn act_as_leader(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
-        log::trace!("getting journal writer");
-
         let mut journal_writer = self
             .state
             .journal
             .get_writer()
             .map_err(|_| crate::Error::Poisoned)?;
-
-        log::trace!("got journal writer");
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.state.poison_flag.is_poisoned() {
@@ -250,18 +246,18 @@ impl WritePipeline {
         Ok(Ok(()))
     }
 
-    /// Promotes the queue head, or frees the leader lease if the queue is empty.
+    /// Frees the leader lease.
     //
     // IMPORTANT: Only call this as leader!!!
     fn abdicate(&self) {
+        self.leader_lease
+            .store(true, std::sync::atomic::Ordering::Release);
+
         if let Some(head) = self.queue.peek() {
-            // NOTE: If the queue has entry, there must be a follower
-            // The follower will see the abdication status and
-            // become leader, so no need to free the leader lease
+            // If there is a queue head, we wake it up and try to make
+            // it the leader; if it does not get the CAS,
+            // it falls back to being a follower again
             head.set_abdicated();
-        } else {
-            self.leader_lease
-                .store(true, std::sync::atomic::Ordering::Release);
         }
     }
 
@@ -324,7 +320,7 @@ impl WritePipeline {
                     }
                     WRITE_RECORD_STATE_PUBLISHED => break,
                     WRITE_RECORD_STATE_LEADER_ABDICATED => {
-                        is_leader = true;
+                        is_leader = self.try_acquire_leader_lease();
                         continue 'start;
                     }
                     WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
@@ -477,6 +473,44 @@ mod tests {
         assert!(record_a.is_published_regular());
         assert!(record_b.is_published_regular());
         assert!(record_c.is_pending());
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_pipeline_poisoned_leader_does_not_block_later_writers() -> crate::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = crate::Database::builder(dir.path()).open()?;
+        let keyspace = db.keyspace("items", Default::default)?;
+        let write_pipeline = &db.supervisor.write_pipeline;
+
+        db.is_poisoned.poison();
+
+        let first_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace.clone(),
+                b"first".into(),
+                b"value".into(),
+                ValueType::Value,
+            ),
+        )));
+        assert!(matches!(
+            write_pipeline.commit(first_record),
+            Err(crate::Error::Poisoned),
+        ));
+
+        let later_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
+            crate::batch::item::Item::new(
+                keyspace,
+                b"later".into(),
+                b"value".into(),
+                ValueType::Value,
+            ),
+        )));
+        assert!(matches!(
+            write_pipeline.commit(later_record),
+            Err(crate::Error::Poisoned),
+        ));
 
         Ok(())
     }
