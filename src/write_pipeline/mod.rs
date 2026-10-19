@@ -12,10 +12,7 @@ use crate::{
 };
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
-use record::{
-    WRITE_RECORD_STATE_CONFLICTED, WRITE_RECORD_STATE_LEADER_ABDICATED,
-    WRITE_RECORD_STATE_PUBLISHED,
-};
+use record::{WRITE_RECORD_STATE_CONFLICTED, WRITE_RECORD_STATE_PUBLISHED};
 use std::{
     collections::HashSet,
     sync::{
@@ -254,13 +251,6 @@ impl WritePipeline {
     fn abdicate(&self) {
         self.leader_lease
             .store(true, std::sync::atomic::Ordering::Release);
-
-        if let Some(head) = self.queue.peek() {
-            // If there is a queue head, we wake it up and try to make
-            // it the leader; if it does not get the CAS,
-            // it falls back to being a follower again
-            head.set_abdicated();
-        }
     }
 
     fn try_acquire_leader_lease(&self) -> bool {
@@ -335,10 +325,6 @@ impl WritePipeline {
                         std::hint::spin_loop();
                     }
                     WRITE_RECORD_STATE_PUBLISHED => break,
-                    WRITE_RECORD_STATE_LEADER_ABDICATED => {
-                        is_leader = self.try_acquire_leader_lease();
-                        continue 'start;
-                    }
                     WRITE_RECORD_STATE_CONFLICTED => return Ok(Err(Conflict)),
                     _ => unreachable!(),
                 }
@@ -381,7 +367,7 @@ impl WritePipeline {
     /// When returning, the write record is guaranteed to be persisted matching
     /// the record's durability parameter (or stronger).
     pub fn commit(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
-        self.push_write_record(&record);
+        self.push_write_record(&record)?;
         self.commit_inner(record, self.try_acquire_leader_lease())
     }
 }
@@ -407,23 +393,23 @@ mod tests {
             )))
             // Inject I/O error
             .inject_error(),
-        ));
-        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(WriteRecordPayload::Single(
-            crate::batch::item::Item::new(
+        ))?;
+        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(
+            WriteRecordPayload::Single(crate::batch::item::Item::new(
                 keyspace.clone(),
                 b"b".into(),
                 b"b".into(),
                 ValueType::Value,
-            ),
-        ))));
-        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(WriteRecordPayload::Single(
-            crate::batch::item::Item::new(
+            )),
+        )))?;
+        write_pipeline.push_write_record(&Arc::new(WriteRecord::new(
+            WriteRecordPayload::Single(crate::batch::item::Item::new(
                 keyspace.clone(),
                 b"c".into(),
                 b"c".into(),
                 ValueType::Value,
-            ),
-        ))));
+            )),
+        )))?;
 
         // We push a, b, c into the queue using a raw method
         // not the actual write pipeline
@@ -478,9 +464,9 @@ mod tests {
             .inject_error(),
         );
 
-        write_pipeline.push_write_record(&record_a);
-        write_pipeline.push_write_record(&record_b);
-        write_pipeline.push_write_record(&record_c);
+        write_pipeline.push_write_record(&record_a)?;
+        write_pipeline.push_write_record(&record_b)?;
+        write_pipeline.push_write_record(&record_c)?;
 
         assert!(matches!(
             write_pipeline.commit(Arc::new(WriteRecord::new(WriteRecordPayload::Single(
@@ -600,7 +586,7 @@ mod tests {
                 ValueType::Value,
             ),
         )));
-        write_pipeline.push_write_record(&preceding_record);
+        write_pipeline.push_write_record(&preceding_record)?;
 
         let leader_record = Arc::new(WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new(
@@ -648,9 +634,9 @@ mod tests {
             ),
         )));
 
-        write_pipeline.push_write_record(&leader_record);
+        write_pipeline.push_write_record(&leader_record)?;
         assert!(write_pipeline.try_acquire_leader_lease());
-        write_pipeline.push_write_record(&follower_record);
+        write_pipeline.push_write_record(&follower_record)?;
 
         std::thread::scope(|scope| {
             let follower = scope.spawn(move || write_pipeline.become_follower(follower_record));
