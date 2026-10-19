@@ -272,6 +272,8 @@ impl WritePipeline {
                 return Ok(());
             }
 
+            // The poison flag can be enabled at any time,
+            // so we need to check it here and there
             if i % 1_000 == 0 {
                 if self.state.poison_flag.is_poisoned() {
                     return Err(crate::Error::Poisoned);
