@@ -41,6 +41,9 @@ pub struct Config {
     /// Number of concurrent worker threads
     pub(crate) worker_threads: usize,
 
+    #[doc(hidden)]
+    pub(crate) write_pipeline_leader_capacity: usize,
+
     pub(crate) journal_compression_type: CompressionType,
 
     pub(crate) journal_compression_threshold: usize,
@@ -76,6 +79,7 @@ impl Config {
             max_write_buffer_size_in_bytes: None,
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_threads,
+            write_pipeline_leader_capacity: 1_000_000,
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
 

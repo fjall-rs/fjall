@@ -308,20 +308,7 @@ impl BaseTransaction {
         self.seqno += 1;
     }
 
-    /// Commits the transaction.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if an IO error occurs.
-    pub(super) fn commit(self) -> crate::Result<()> {
-        // skip all the logic if no keys were written to
-        if self.memtables.is_empty() {
-            return Ok(());
-        }
-
-        // TODO: instead of using batch, write batch::commit as a generic function that takes
-        // a impl Iterator<BatchItem>
-        // that way, we don't have to move the memtable(s) into the batch first to commit
+    pub(crate) fn into_batch(self) -> (crate::OwnedWriteBatch, SnapshotNonce) {
         let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
 
         for (keyspace, memtable) in self.memtables {
@@ -337,14 +324,30 @@ impl BaseTransaction {
                 batch.data.push(Item::new(
                     keyspace.clone(),
                     item.key.user_key.clone(),
-                    item.value.clone(),
+                    item.value,
                     item.key.value_type,
                 ));
 
-                prev_key = Some(item.key.user_key.clone());
+                prev_key = Some(item.key.user_key);
             }
         }
 
+        (batch, self.nonce)
+    }
+
+    /// Commits the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub(super) fn commit(self) -> crate::Result<()> {
+        // skip all the logic if no keys were written to
+        if self.memtables.is_empty() {
+            return Ok(());
+        }
+
+        // NOTE: Hold the snapshot nonce until the end of the function
+        let (batch, _nonce) = self.into_batch();
         batch.commit()?;
 
         Ok(())

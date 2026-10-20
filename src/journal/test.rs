@@ -38,11 +38,10 @@ fn journal_rotation() -> crate::Result<()> {
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace.clone(), *b"a", *b"a", ValueType::Value),
-                BatchItem::new(keyspace.clone(), *b"b", *b"b", ValueType::Value),
+                BatchItem::new(keyspace.clone(), b"a".into(), b"a".into(), ValueType::Value),
+                BatchItem::new(keyspace.clone(), b"b".into(), b"b".into(), ValueType::Value),
             ]
             .iter(),
-            2,
             0,
         )?;
         writer.rotate()?;
@@ -74,33 +73,60 @@ fn journal_recovery_active() -> crate::Result<()> {
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace0.clone(), *b"a", *b"a", ValueType::Value),
-                BatchItem::new(keyspace0.clone(), *b"b", *b"b", ValueType::Value),
+                BatchItem::new(
+                    keyspace0.clone(),
+                    b"a".into(),
+                    b"a".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace0.clone(),
+                    b"b".into(),
+                    b"b".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             0,
         )?;
         writer.rotate()?;
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace1.clone(), *b"c", *b"c", ValueType::Value),
-                BatchItem::new(keyspace1.clone(), *b"d", *b"d", ValueType::Value),
+                BatchItem::new(
+                    keyspace1.clone(),
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace1.clone(),
+                    b"d".into(),
+                    b"d".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             1,
         )?;
         writer.rotate()?;
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace2.clone(), *b"c", *b"c", ValueType::Value),
-                BatchItem::new(keyspace2.clone(), *b"d", *b"d", ValueType::Value),
+                BatchItem::new(
+                    keyspace2.clone(),
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace2.clone(),
+                    b"d".into(),
+                    b"d".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             1,
         )?;
     }
@@ -137,33 +163,60 @@ fn journal_recovery_active_lz4() -> crate::Result<()> {
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace0.clone(), *b"a", *b"a", ValueType::Value),
-                BatchItem::new(keyspace0.clone(), *b"b", *b"b", ValueType::Value),
+                BatchItem::new(
+                    keyspace0.clone(),
+                    b"a".into(),
+                    b"a".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace0.clone(),
+                    b"b".into(),
+                    b"b".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             0,
         )?;
         writer.rotate()?;
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace1.clone(), *b"c", *b"c", ValueType::Value),
-                BatchItem::new(keyspace1.clone(), *b"d", *b"d", ValueType::Value),
+                BatchItem::new(
+                    keyspace1.clone(),
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace1.clone(),
+                    b"d".into(),
+                    b"d".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             1,
         )?;
         writer.rotate()?;
 
         writer.write_batch(
             [
-                BatchItem::new(keyspace2.clone(), *b"c", *b"c", ValueType::Value),
-                BatchItem::new(keyspace2.clone(), *b"d", *b"d", ValueType::Value),
+                BatchItem::new(
+                    keyspace2.clone(),
+                    b"c".into(),
+                    b"c".into(),
+                    ValueType::Value,
+                ),
+                BatchItem::new(
+                    keyspace2.clone(),
+                    b"d".into(),
+                    b"d".into(),
+                    ValueType::Value,
+                ),
             ]
             .iter(),
-            2,
             1,
         )?;
     }
@@ -198,11 +251,10 @@ fn journal_recovery_no_active() -> crate::Result<()> {
 
             writer.write_batch(
                 [
-                    BatchItem::new(keyspace.clone(), *b"a", *b"a", ValueType::Value),
-                    BatchItem::new(keyspace.clone(), *b"b", *b"b", ValueType::Value),
+                    BatchItem::new(keyspace.clone(), b"a".into(), b"a".into(), ValueType::Value),
+                    BatchItem::new(keyspace.clone(), b"b".into(), b"b".into(), ValueType::Value),
                 ]
                 .iter(),
-                2,
                 0,
             )?;
             writer.rotate()?;
@@ -234,15 +286,23 @@ fn journal_truncation_corrupt_bytes() -> crate::Result<()> {
     let path = dir2.path().join("0.jnl");
 
     let values = [
-        BatchItem::new(keyspace.clone(), *b"abc", *b"def", ValueType::Value),
-        BatchItem::new(keyspace.clone(), *b"yxc", *b"ghj", ValueType::Value),
+        BatchItem::new(
+            keyspace.clone(),
+            b"abc".into(),
+            b"def".into(),
+            ValueType::Value,
+        ),
+        BatchItem::new(
+            keyspace.clone(),
+            b"yxc".into(),
+            b"ghj".into(),
+            ValueType::Value,
+        ),
     ];
 
     {
         let journal = Journal::create_new(&path)?;
-        journal
-            .get_writer()?
-            .write_batch(values.iter(), values.len(), 0)?;
+        journal.get_writer()?.write_batch(values.iter(), 0)?;
     }
 
     {
@@ -294,15 +354,23 @@ fn journal_truncation_repeating_start_marker() -> crate::Result<()> {
     let path = dir2.path().join("0.jnl");
 
     let values = [
-        BatchItem::new(keyspace.clone(), *b"abc", *b"def", ValueType::Value),
-        BatchItem::new(keyspace.clone(), *b"yxc", *b"ghj", ValueType::Value),
+        BatchItem::new(
+            keyspace.clone(),
+            b"abc".into(),
+            b"def".into(),
+            ValueType::Value,
+        ),
+        BatchItem::new(
+            keyspace.clone(),
+            b"yxc".into(),
+            b"ghj".into(),
+            ValueType::Value,
+        ),
     ];
 
     {
         let journal = Journal::create_new(&path)?;
-        journal
-            .get_writer()?
-            .write_batch(values.iter(), values.len(), 0)?;
+        journal.get_writer()?.write_batch(values.iter(), 0)?;
     }
 
     {
@@ -362,15 +430,23 @@ fn journal_truncation_repeating_end_marker() -> crate::Result<()> {
     let path = dir2.path().join("0.jnl");
 
     let values = [
-        BatchItem::new(keyspace.clone(), *b"abc", *b"def", ValueType::Value),
-        BatchItem::new(keyspace.clone(), *b"yxc", *b"ghj", ValueType::Value),
+        BatchItem::new(
+            keyspace.clone(),
+            b"abc".into(),
+            b"def".into(),
+            ValueType::Value,
+        ),
+        BatchItem::new(
+            keyspace.clone(),
+            b"yxc".into(),
+            b"ghj".into(),
+            ValueType::Value,
+        ),
     ];
 
     {
         let journal = Journal::create_new(&path)?;
-        journal
-            .get_writer()?
-            .write_batch(values.iter(), values.len(), 0)?;
+        journal.get_writer()?.write_batch(values.iter(), 0)?;
     }
 
     {
@@ -422,15 +498,23 @@ fn journal_truncation_repeating_item_marker() -> crate::Result<()> {
     let path = dir2.path().join("0.jnl");
 
     let values = [
-        BatchItem::new(keyspace.clone(), *b"abc", *b"def", ValueType::Value),
-        BatchItem::new(keyspace.clone(), *b"yxc", *b"ghj", ValueType::Value),
+        BatchItem::new(
+            keyspace.clone(),
+            b"abc".into(),
+            b"def".into(),
+            ValueType::Value,
+        ),
+        BatchItem::new(
+            keyspace.clone(),
+            b"yxc".into(),
+            b"ghj".into(),
+            ValueType::Value,
+        ),
     ];
 
     {
         let journal = Journal::create_new(&path)?;
-        journal
-            .get_writer()?
-            .write_batch(values.iter(), values.len(), 0)?;
+        journal.get_writer()?.write_batch(values.iter(), 0)?;
     }
 
     {
