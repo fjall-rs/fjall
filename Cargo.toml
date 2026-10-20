@@ -22,6 +22,7 @@ lz4 = ["lsm-tree/lz4", "dep:lz4_flex"]
 bytes_1 = ["lsm-tree/bytes_1"]
 metrics = ["lsm-tree/metrics"]
 __internal_whitebox = []
+__internal_bench = []
 __internal_loom = ["dep:loom"]
 
 [dependencies]
@@ -38,9 +39,15 @@ take-once = "0.1.3"
 loom = { version = "0.7.2", optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
 nanoid = "0.4.0"
 test-log = "0.2.18"
 rand = "0.10.0"
 
 [package.metadata.cargo-all-features]
 denylist = ["__internal_whitebox"]
+
+[[bench]]
+name = "oracle_gc"
+harness = false
+required-features = ["__internal_bench"]

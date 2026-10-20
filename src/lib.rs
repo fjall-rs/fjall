@@ -170,6 +170,10 @@ pub use tx::optimistic::{
     WriteTransaction as OptimisticWriteTx,
 };
 
+#[cfg(feature = "__internal_bench")]
+#[doc(hidden)]
+pub use tx::optimistic::{CommittedTxnTracker, ConflictManager};
+
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
 

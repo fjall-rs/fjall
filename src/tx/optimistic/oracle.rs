@@ -6,10 +6,49 @@ use super::conflict_manager::ConflictManager;
 use crate::snapshot_tracker::SnapshotTracker;
 use crate::SeqNo;
 use std::collections::BTreeMap;
+use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::{Mutex, MutexGuard};
 
+#[derive(Default)]
+pub struct CommittedTxnTracker(BTreeMap<SeqNo, ConflictManager>);
+
+impl CommittedTxnTracker {
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn insert(&mut self, seqno: SeqNo, cc: ConflictManager) {
+        self.0.insert(seqno, cc);
+    }
+
+    pub fn gc(&mut self, safe_to_gc: SeqNo) {
+        let Some((&first_to_keep, _)) = self.0.range((Excluded(safe_to_gc), Unbounded)).next()
+        else {
+            self.0.clear();
+            return;
+        };
+
+        if self
+            .0
+            .first_key_value()
+            .is_some_and(|(ts, _)| *ts == first_to_keep)
+        {
+            return;
+        }
+
+        self.0 = self.0.split_off(&first_to_keep);
+    }
+
+    pub fn has_conflict(&self, instant: SeqNo, cc: &ConflictManager) -> bool {
+        self.0
+            .range((instant + 1)..)
+            .any(|(_ts, other_conflict_checker)| cc.has_conflict(other_conflict_checker))
+    }
+}
+
 pub struct Oracle {
-    pub(super) write_serialize_lock: Mutex<BTreeMap<SeqNo, ConflictManager>>, // TODO: remove this lock, use Mutex<Oracle> instead
+    pub(super) committed_txns: Mutex<CommittedTxnTracker>, // TODO: remove this lock, use Mutex<Oracle> instead
     pub(super) snapshot_tracker: SnapshotTracker,
 }
 
@@ -20,15 +59,11 @@ impl Oracle {
         conflict_checker: &ConflictManager,
     ) -> crate::Result<bool> {
         let committed_txns = self
-            .write_serialize_lock
+            .committed_txns
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        Ok(committed_txns
-            .range((instant + 1)..)
-            .any(|(_ts, other_conflict_checker)| {
-                conflict_checker.has_conflict(other_conflict_checker)
-            }))
+        Ok(committed_txns.has_conflict(instant, conflict_checker))
     }
 
     pub(crate) fn finalize(
@@ -37,7 +72,7 @@ impl Oracle {
         conflict_checker: ConflictManager,
     ) -> crate::Result<()> {
         let mut committed_txns = self
-            .write_serialize_lock
+            .committed_txns
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
@@ -46,15 +81,15 @@ impl Oracle {
         // TODO: This can be expensive and should probably be done in a background worker, or a after a memtable rotation
         // TODO: also only do this in write pipeline once?
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
-        committed_txns.retain(|ts, _| *ts > safe_to_gc);
+        committed_txns.gc(safe_to_gc);
 
         Ok(())
     }
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> crate::Result<MutexGuard<'_, BTreeMap<u64, ConflictManager>>> {
-        self.write_serialize_lock
+    ) -> crate::Result<MutexGuard<'_, CommittedTxnTracker>> {
+        self.committed_txns
             .lock()
             .map_err(|_| crate::Error::Poisoned)
     }
@@ -62,7 +97,32 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
+    use super::{CommittedTxnTracker, ConflictManager};
     use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable};
+
+    #[test]
+    fn conflicts_gc_1() {
+        let mut tracker = CommittedTxnTracker::default();
+        tracker.insert(1, ConflictManager::default());
+        tracker.insert(2, ConflictManager::default());
+        tracker.insert(3, ConflictManager::default());
+
+        tracker.gc(2);
+
+        assert_eq!(1, tracker.len());
+    }
+
+    #[test]
+    fn conflicts_gc_2() {
+        let mut tracker = CommittedTxnTracker::default();
+        tracker.insert(6, ConflictManager::default());
+        tracker.insert(7, ConflictManager::default());
+        tracker.insert(8, ConflictManager::default());
+
+        tracker.gc(5);
+
+        assert_eq!(3, tracker.len());
+    }
 
     #[expect(clippy::significant_drop_tightening)]
     fn run_tx(
@@ -96,13 +156,13 @@ mod tests {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
+        assert!(dbg!(db.oracle.committed_txns.lock().unwrap().len()) < 10_000);
 
         for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
+        assert!(dbg!(db.oracle.committed_txns.lock().unwrap().len()) < 10_000);
 
         Ok(())
     }
