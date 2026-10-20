@@ -361,10 +361,12 @@ impl Database {
         Ok(())
     }
 
-    /// Synchronously flushes all keyspaces into LSM-tree tables and starts a new journal.
+    /// Synchronously flushes all keyspaces into table files, and starts a new journal.
     ///
-    /// This blocks writes and keyspace changes for the duration of the operation.
-    /// Reads may continue.
+    /// This operations blocks writes and keyspace changes for the duration of the operation.
+    ///
+    /// Readers are not blocked.
+    ///
     /// The database remains usable afterwards, and reopening it
     /// does not need to replay writes preceding the flush.
     ///
