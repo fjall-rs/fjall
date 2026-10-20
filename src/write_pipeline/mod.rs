@@ -202,9 +202,6 @@ impl WritePipeline {
 
             self.state.write_buffer_size.allocate(batch_size);
 
-            // TODO: how to do write stalling etc: like this?...
-            // TODO: maybe we can create a "global" function and pass in the keyspaces instead
-
             // Limit the bytes written per leader term to
             // avoid tail latencies growing too large for any
             // given writer
