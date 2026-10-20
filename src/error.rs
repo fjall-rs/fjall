@@ -2,6 +2,8 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use std::sync::PoisonError;
+
 use crate::{
     journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion, CompressionType,
 };
@@ -65,6 +67,12 @@ impl From<std::io::Error> for Error {
 impl From<lsm_tree::Error> for Error {
     fn from(inner: lsm_tree::Error) -> Self {
         Self::Storage(inner)
+    }
+}
+
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_: PoisonError<T>) -> Self {
+        Self::Poisoned
     }
 }
 

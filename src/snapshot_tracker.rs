@@ -133,7 +133,12 @@ impl SnapshotTracker {
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    pub(crate) fn pullup(&self) {
+    pub(crate) fn advance_gc_watermark(&self) {
+        self.pullup();
+        self.gc();
+    }
+
+    fn pullup(&self) {
         #[expect(clippy::expect_used)]
         let _lock = self.gc_lock.write().expect("lock is poisoned");
 
