@@ -3,7 +3,7 @@ use test_log::test;
 
 /// Flushing all keyspaces removes the covered journal and allows reopening without replay.
 #[test]
-fn flush_all_materializes_journal() -> crate::Result<()> {
+fn flush_all_evicts_journal() -> crate::Result<()> {
     use crate::AbstractTree;
 
     let folder = tempfile::tempdir()?;

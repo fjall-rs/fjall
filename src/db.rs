@@ -371,7 +371,6 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs.
-    /// A failure poisons the database.
     pub fn flush_all(&self) -> crate::Result<()> {
         self.flush_all_inner().inspect_err(|e| {
             log::error!("flush_all failed, database is poisoned: {e:?}");
@@ -400,6 +399,7 @@ impl Database {
         for keyspace in keyspaces.values() {
             // NOTE: lsm-tree checks for empty memtable, so we don't have to
             keyspace.tree.rotate_memtable();
+
             run_flush(
                 keyspace,
                 &self.supervisor.write_buffer_size,
