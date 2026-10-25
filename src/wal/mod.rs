@@ -1,8 +1,8 @@
-use std::io::Write;
-
-use byteorder::{WriteBytesExt, LE};
+use byteorder::WriteBytesExt;
 use hwal::SeqNo;
 use lsm_tree::ValueType;
+use std::io::Write;
+use varint_rs::VarintWriter;
 
 use crate::{keyspace::InternalKeyspaceId, DurabilityLevel};
 
@@ -19,6 +19,7 @@ impl Wal {
         }
     }
 
+    /// Writes a single KV contained in its own write batch to the WAL.
     pub fn write(
         &mut self,
         keyspace_id: InternalKeyspaceId,
@@ -31,15 +32,15 @@ impl Wal {
 
         self.buf.write_u8(3)?;
 
-        self.buf.write_u64::<LE>(keyspace_id)?;
+        self.buf.write_u64_varint(keyspace_id)?;
 
-        self.buf.write_u16::<LE>(key.len() as u16)?;
+        self.buf.write_u16_varint(key.len() as u16)?;
         self.buf.write_all(key)?;
 
-        self.buf.write_u32::<LE>(val.len() as u32)?;
+        self.buf.write_u32_varint(val.len() as u32)?;
         self.buf.write_all(val)?;
 
-        self.buf.write_u64::<LE>(seqno)?;
+        self.buf.write_u64_varint(seqno)?;
         self.buf.write_u8(value_type.into())?;
 
         self.inner.append(&self.buf)?;
