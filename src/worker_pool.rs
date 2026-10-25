@@ -249,10 +249,8 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         }
         WorkerMessage::Compact(keyspace) => {
             // NOTE: Let one worker prioritize flushing if there are pending flushes
-            //
-            // Disable when only 1 worker exists to avoid deadlock
             if ctx.pool_size > 1 && ctx.worker_id == 0 {
-                ctx.sender.send(WorkerMessage::Compact(keyspace)).ok();
+                ctx.sender.try_send(WorkerMessage::Compact(keyspace)).ok();
                 return Ok(false);
             }
 
