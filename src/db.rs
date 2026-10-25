@@ -594,7 +594,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns error, if an IO error occurred.
+    /// Returns an error, if an IO error occurred.
     pub fn backup_into<P: AsRef<Path>>(&self, path: P) -> crate::Result<()> {
         let path = path.as_ref();
         log::info!("Backing up database into {}", path.display());
