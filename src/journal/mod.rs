@@ -13,6 +13,7 @@ pub mod writer;
 #[cfg(test)]
 mod test;
 
+use self::error::RecoveryMode;
 use self::writer::PersistMode;
 use crate::file::fsync_directory;
 use batch_reader::JournalBatchReader;
@@ -27,6 +28,7 @@ use writer::Writer;
 
 pub struct Journal {
     writer: Mutex<Writer>,
+    recovery_mode: RecoveryMode,
 }
 
 impl std::fmt::Debug for Journal {
@@ -71,7 +73,15 @@ impl Journal {
     fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         Ok(Self {
             writer: Mutex::new(Writer::from_file(path)?),
+            recovery_mode: RecoveryMode::default(),
         })
+    }
+
+    /// Sets the recovery mode used when reading this journal back.
+    #[must_use]
+    pub fn with_recovery_mode(mut self, recovery_mode: RecoveryMode) -> Self {
+        self.recovery_mode = recovery_mode;
+        self
     }
 
     pub fn create_new<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
@@ -97,6 +107,7 @@ impl Journal {
 
         Ok(Self {
             writer: Mutex::new(writer),
+            recovery_mode: RecoveryMode::default(),
         })
     }
 
@@ -114,7 +125,7 @@ impl Journal {
     }
 
     pub fn get_reader(&self) -> crate::Result<JournalBatchReader> {
-        let raw_reader = JournalReader::new(self.path()?)?;
+        let raw_reader = JournalReader::with_recovery_mode(self.path()?, self.recovery_mode)?;
         Ok(JournalBatchReader::new(raw_reader))
     }
 
@@ -128,7 +139,8 @@ impl Journal {
         path: P,
         compression: CompressionType,
         compression_threshold: usize,
+        recovery_mode: RecoveryMode,
     ) -> crate::Result<RecoveryResult> {
-        recover_journals(path, compression, compression_threshold)
+        recover_journals(path, compression, compression_threshold, recovery_mode)
     }
 }

@@ -583,14 +583,12 @@ impl Database {
 
         let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
 
-        // TODO:
-        // let recovery_mode = config.journal_recovery_mode;
-
         // Reload active journal
         let journal_recovery = Journal::recover(
             &config.path,
             config.journal_compression_type,
             config.journal_compression_threshold,
+            config.journal_recovery_mode,
         )?;
         log::debug!("journal recovery result: {journal_recovery:#?}");
 
