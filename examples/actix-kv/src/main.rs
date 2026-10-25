@@ -8,7 +8,7 @@ use actix_web::{
     App, HttpResponse, HttpServer,
 };
 use error::RouteResult;
-use fjall::{Database, Keyspace, PersistMode};
+use fjall::{Database, DurabilityLevel, Keyspace};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -57,13 +57,16 @@ async fn insert_batch(
         }
 
         batch.commit()?;
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;
 
     Ok(HttpResponse::Ok()
-        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
+        .append_header((
+            "server-timing",
+            format!("total;dur={}", before.elapsed().as_millis()),
+        ))
         .body("OK"))
 }
 
@@ -79,13 +82,16 @@ async fn delete_item(
 
     web::block(move || {
         state.tree.remove(key)?;
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;
 
     Ok(HttpResponse::Ok()
-        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
+        .append_header((
+            "server-timing",
+            format!("total;dur={}", before.elapsed().as_millis()),
+        ))
         .body("OK"))
 }
 
@@ -107,13 +113,16 @@ async fn insert_item(
         state
             .tree
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;
 
     Ok(HttpResponse::Created()
-        .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
+        .append_header((
+            "server-timing",
+            format!("total;dur={}", before.elapsed().as_millis()),
+        ))
         .body("Created"))
 }
 
@@ -139,7 +148,10 @@ async fn get_item(
             let body = actix_web::body::BoxBody::new(actix_web::web::Bytes::from(item));
 
             Ok(HttpResponse::Ok()
-                .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
+                .append_header((
+                    "server-timing",
+                    format!("total;dur={}", before.elapsed().as_millis()),
+                ))
                 .content_type("application/json; utf-8")
                 .body(body))
         }
@@ -147,7 +159,10 @@ async fn get_item(
             let body = json!(null);
 
             Ok(HttpResponse::NotFound()
-                .append_header(("server-timing", format!("total;dur={}", before.elapsed().as_millis())))
+                .append_header((
+                    "server-timing",
+                    format!("total;dur={}", before.elapsed().as_millis()),
+                ))
                 .content_type("application/json; utf-8")
                 .body(serde_json::to_string(&body).unwrap()))
         }

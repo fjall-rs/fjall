@@ -8,7 +8,7 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use fjall::{Database, Keyspace, PersistMode};
+use fjall::{Database, DurabilityLevel, Keyspace};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -57,7 +57,7 @@ async fn insert_batch(
         }
 
         batch.commit()?;
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;
@@ -82,7 +82,7 @@ async fn delete_item(
 
     tokio::task::spawn_blocking(move || {
         state.tree.remove(key)?;
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;
@@ -114,7 +114,7 @@ async fn insert_item(
             .tree
             .insert(key, serde_json::to_string(&body.item).unwrap())?;
 
-        state.db.persist(PersistMode::SyncAll)
+        state.db.persist(DurabilityLevel::SyncAll)
     })
     .await
     .unwrap()?;

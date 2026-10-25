@@ -127,7 +127,7 @@ fn main() -> fjall::Result<()> {
             )?;
         }
     }
-    store.db.persist(fjall::PersistMode::SyncAll)?;
+    store.db.persist(fjall::DurabilityLevel::SyncAll)?;
 
     let mut count = 0;
 

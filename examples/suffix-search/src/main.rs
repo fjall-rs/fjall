@@ -1,4 +1,4 @@
-use fjall::{Database, Guard, PersistMode};
+use fjall::{Database, DurabilityLevel, Guard};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -36,7 +36,7 @@ fn main() -> fjall::Result<()> {
         }
     }
 
-    db.persist(PersistMode::SyncAll)?;
+    db.persist(DurabilityLevel::SyncAll)?;
 
     let suffix = "west";
     let test_runs = 5;

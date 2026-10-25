@@ -1,4 +1,4 @@
-use fjall::{OptimisticTxDatabase, PersistMode, Readable};
+use fjall::{DurabilityLevel, OptimisticTxDatabase, Readable};
 use std::path::Path;
 
 const LIMIT: u64 = 100;

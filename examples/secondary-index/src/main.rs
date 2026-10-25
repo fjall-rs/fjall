@@ -44,7 +44,7 @@ fn main() -> fjall::Result<()> {
     create_item(&mut batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
 
     batch.commit()?;
-    db.persist(fjall::PersistMode::SyncAll)?;
+    db.persist(fjall::DurabilityLevel::SyncAll)?;
 
     // Get items from 1990 to 2000 (exclusive)
     let lo = 1_990_u64;

@@ -71,7 +71,7 @@ cargo add fjall
 ```
 
 ```rust
-use fjall::{Database, KeyspaceCreateOptions, PersistMode};
+use fjall::{Database, KeyspaceCreateOptions, DurabilityLevel};
 
 fn main() -> fjall::Result<()> {
     // A database may contain multiple keyspaces
@@ -107,8 +107,8 @@ fn main() -> fjall::Result<()> {
     }
 
     // Sync the journal to disk to make sure data is definitely durable
-    // When the database is dropped, it will try to persist with `PersistMode::SyncAll` automatically
-    db.persist(PersistMode::SyncAll)
+    // When the database is dropped, it will try to persist with `DurabilityLevel::SyncAll` automatically
+    db.persist(DurabilityLevel::SyncAll)
 }
 ```
 
@@ -120,7 +120,7 @@ fn main() -> fjall::Result<()> {
 
 To support different kinds of workloads, Fjall is agnostic about the type of durability
 your application needs.
-After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Database::persist`](https://docs.rs/fjall/latest/fjall/struct.Database.html#method.persist) which takes a [`PersistMode`](https://docs.rs/fjall/latest/fjall/enum.PersistMode.html) parameter.
+After writing data (`insert`, `remove` or committing a write batch/transaction), you can choose to call [`Database::persist`](https://docs.rs/fjall/latest/fjall/struct.Database.html#method.persist) which takes a [`DurabilityLevel`](https://docs.rs/fjall/latest/fjall/enum.DurabilityLevel.html) parameter.
 By default, any operation will flush to OS buffers, but **not** to disk.
 This matches RocksDB's default durability.
 Also, when dropped, the database will try to persist the journal *to disk* synchronously.

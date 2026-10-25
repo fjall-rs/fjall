@@ -126,7 +126,7 @@ fn main() -> fjall::Result<()> {
                 song_db.insert(item_to_insert)?;
             }
         }
-        db.persist(fjall::PersistMode::SyncAll)?;
+        db.persist(fjall::DurabilityLevel::SyncAll)?;
 
         assert_eq!(items.len(), song_db.len()?);
     }

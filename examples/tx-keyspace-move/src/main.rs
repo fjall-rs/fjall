@@ -1,4 +1,4 @@
-use fjall::{PersistMode, Readable, SingleWriterTxDatabase};
+use fjall::{DurabilityLevel, Readable, SingleWriterTxDatabase};
 use std::path::Path;
 
 const ITEM_COUNT: u64 = 200;

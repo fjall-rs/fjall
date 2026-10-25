@@ -1,5 +1,5 @@
 use fjall::{
-    GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions, PersistMode, TxDatabase,
+    DurabilityLevel, GarbageCollection, KeyspaceCreateOptions, KvSeparationOptions, TxDatabase,
     TxKeyspace, UserValue, WriteTransaction,
 };
 use format_bytes::format_bytes;
@@ -134,7 +134,7 @@ impl Cas {
         }
 
         tx.commit()?;
-        self.db.persist(PersistMode::SyncAll)?;
+        self.db.persist(DurabilityLevel::SyncAll)?;
 
         Ok(())
     }
@@ -156,7 +156,7 @@ impl Cas {
             }
 
             tx.commit()?;
-            self.db.persist(PersistMode::SyncAll)?;
+            self.db.persist(DurabilityLevel::SyncAll)?;
         }
 
         Ok(())
