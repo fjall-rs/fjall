@@ -230,6 +230,7 @@ mod tests {
     const ITEM_COUNT: usize = 10;
 
     #[test]
+    #[allow(clippy::char_lit_as_u8)]
     fn meta_keyspace_smoke_test() -> crate::Result<()> {
         use crate::AbstractTree;
         use lsm_tree::SeqNo;
@@ -243,7 +244,7 @@ mod tests {
                 None,
                 db.meta_keyspace
                     .inner
-                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .get(['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
                     .as_deref(),
             );
 
@@ -253,7 +254,7 @@ mod tests {
                 Some(b"items".as_slice()),
                 db.meta_keyspace
                     .inner
-                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .get(['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
                     .as_deref(),
             );
             assert_eq!(
@@ -261,7 +262,7 @@ mod tests {
                 db.meta_keyspace
                     .inner
                     .get(
-                        &[
+                        [
                             'c' as u8, 0, 0, 0, 0, 0, 0, 0, 1, 'v' as u8, 'e' as u8, 'r' as u8,
                             's' as u8, 'i' as u8, 'o' as u8, 'n' as u8
                         ],
@@ -279,7 +280,7 @@ mod tests {
                 Some(b"items".as_slice()),
                 db.meta_keyspace
                     .inner
-                    .get(&['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
+                    .get(['n' as u8, 0, 0, 0, 0, 0, 0, 0, 1], SeqNo::MAX)?
                     .as_deref(),
             );
             assert_eq!(
@@ -287,7 +288,7 @@ mod tests {
                 db.meta_keyspace
                     .inner
                     .get(
-                        &[
+                        [
                             'c' as u8, 0, 0, 0, 0, 0, 0, 0, 1, 'v' as u8, 'e' as u8, 'r' as u8,
                             's' as u8, 'i' as u8, 'o' as u8, 'n' as u8
                         ],
