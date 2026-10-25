@@ -109,7 +109,6 @@ impl WriteBatch {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    #[allow(clippy::missing_panics_doc)]
     pub fn commit(self) -> crate::Result<()> {
         if self.is_empty() {
             return Ok(());
@@ -119,6 +118,11 @@ impl WriteBatch {
             crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(self.data))
                 .persist_mode(self.durability);
 
+        #[expect(
+            clippy::expect_used,
+            reason = "does not use OCC, so should not conflict"
+        )]
+        #[allow(clippy::missing_panics_doc)]
         self.db
             .supervisor
             .write_pipeline

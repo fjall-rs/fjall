@@ -1,3 +1,7 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use byteorder::WriteBytesExt;
 use hwal::SeqNo;
 use lsm_tree::ValueType;
@@ -34,9 +38,11 @@ impl Wal {
 
         self.buf.write_u64_varint(keyspace_id)?;
 
+        #[expect(clippy::cast_possible_truncation, reason = "limit in lsm-tree")]
         self.buf.write_u16_varint(key.len() as u16)?;
         self.buf.write_all(key)?;
 
+        #[expect(clippy::cast_possible_truncation, reason = "limit in lsm-tree")]
         self.buf.write_u32_varint(val.len() as u32)?;
         self.buf.write_all(val)?;
 

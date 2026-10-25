@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{stats::Stats, supervisor::Supervisor, Keyspace};
-use lsm_tree::AbstractTree;
 
 /// Runs flush logic.
 pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crate::Result<()> {
