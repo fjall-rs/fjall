@@ -20,6 +20,8 @@ impl Drop for LockedFileGuardInner {
                 log::warn!("Failed to unlock database lock: {e:?}");
             })
             .ok();
+
+        log::trace!("Unlocked database lock");
     }
 }
 

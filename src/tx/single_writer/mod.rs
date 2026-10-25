@@ -6,8 +6,8 @@ mod keyspace;
 mod write_tx;
 
 use crate::{
-    builder::Openable, keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode,
-    Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, Config, Database, DurabilityLevel,
+    KeyspaceCreateOptions, Snapshot,
 };
 use std::{
     path::Path,
@@ -65,7 +65,7 @@ impl SingleWriterTxDatabase {
         );
 
         if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(PersistMode::Buffer));
+            write_tx = write_tx.durability(Some(DurabilityLevel::Buffer));
         }
 
         write_tx
@@ -83,7 +83,7 @@ impl SingleWriterTxDatabase {
         self.inner.snapshot()
     }
 
-    /// Flushes the active journal. The durability depends on the [`PersistMode`]
+    /// Flushes the active journal. The durability depends on the [`DurabilityLevel`]
     /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
@@ -92,14 +92,14 @@ impl SingleWriterTxDatabase {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, SingleWriterTxDatabase, KeyspaceCreateOptions};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = SingleWriterTxDatabase::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
-    /// db.persist(PersistMode::SyncAll)?;
+    /// db.persist(DurabilityLevel::SyncAll)?;
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
@@ -107,7 +107,7 @@ impl SingleWriterTxDatabase {
     /// # Errors
     ///
     /// Returns error, if an IO error occurred.
-    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
+    pub fn persist(&self, mode: DurabilityLevel) -> crate::Result<()> {
         self.inner.persist(mode)
     }
 

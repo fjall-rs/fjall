@@ -5,7 +5,7 @@
 pub mod item;
 
 use crate::write_pipeline::WriteRecordPayload;
-use crate::{Database, Keyspace, PersistMode};
+use crate::{Database, DurabilityLevel, Keyspace};
 use item::Item;
 use lsm_tree::{UserKey, UserValue, ValueType};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct WriteBatch {
     pub(crate) data: Vec<Item>,
     db: Database,
-    durability: Option<PersistMode>,
+    durability: Option<DurabilityLevel>,
 }
 
 impl WriteBatch {
@@ -59,7 +59,7 @@ impl WriteBatch {
 
     /// Sets the durability level.
     #[must_use]
-    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
         self.durability = mode;
         self
     }

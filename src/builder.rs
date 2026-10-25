@@ -75,7 +75,7 @@ impl<O: Openable> Builder<O> {
     ///
     /// Default = false
     ///
-    /// Set to `true` to handle persistence manually, e.g. manually using `PersistMode::SyncData` for ACID transactions.
+    /// Set to `true` to handle persistence manually, e.g. manually using `DurabilityLevel::SyncData` for ACID transactions.
     #[must_use]
     pub fn manual_journal_persist(mut self, flag: bool) -> Self {
         self.inner.manual_journal_persist = flag;
@@ -164,7 +164,7 @@ impl<O: Openable> Builder<O> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+    /// # use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?.into_path();
     /// let db = Database::builder(&folder).temporary(true).open()?;
     ///
@@ -185,7 +185,7 @@ impl<O: Openable> Builder<O> {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+    /// # use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
     /// # use std::sync::Arc;
     /// # let folder = tempfile::tempdir()?.keep();
     /// use lsm_tree::compaction::filter::Factory;

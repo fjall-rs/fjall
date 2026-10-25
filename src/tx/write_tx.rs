@@ -3,8 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    batch::item::Item, snapshot_nonce::SnapshotNonce, Database, Guard, HashMap, Iter, Keyspace,
-    OwnedWriteBatch, PersistMode, Readable,
+    batch::item::Item, snapshot_nonce::SnapshotNonce, Database, DurabilityLevel, Guard, HashMap,
+    Iter, Keyspace, OwnedWriteBatch, Readable,
 };
 use lsm_tree::{AbstractTree, InternalValue, Memtable, SeqNo, UserKey, UserValue};
 use std::{ops::RangeBounds, sync::Arc};
@@ -29,8 +29,10 @@ pub(super) struct BaseTransaction {
     /// The snapshot, for repeatable reads
     pub(crate) nonce: SnapshotNonce,
 
-    /// Durability level used, see [`PersistMode`].
-    pub(crate) durability: Option<PersistMode>,
+    // TODO: change to be non-Option, default = Buffer
+    //
+    /// Durability level used, see [`DurabilityLevel`].
+    pub(crate) durability: Option<DurabilityLevel>,
 
     /// Current sequence number
     ///
@@ -170,7 +172,7 @@ impl BaseTransaction {
 
     /// Sets the durability level.
     #[must_use]
-    pub(super) fn durability(mut self, mode: Option<PersistMode>) -> Self {
+    pub(super) fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
         self.durability = mode;
         self
     }

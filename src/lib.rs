@@ -26,7 +26,7 @@
 //! ## Basic usage
 //!
 //! ```
-//! use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+//! use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
 //! #
 //! # let folder = tempfile::tempdir().unwrap();
 //!
@@ -63,8 +63,8 @@
 //! }
 //!
 //! // Sync the journal to disk to make sure data is definitely durable
-//! // When the database is dropped, it will try to persist with `PersistMode::SyncAll` as well
-//! db.persist(PersistMode::SyncAll)?;
+//! // When the database is dropped, it will try to persist with `DurabilityLevel::SyncAll` as well
+//! db.persist(DurabilityLevel::SyncAll)?;
 //! #
 //! # Ok::<_, fjall::Error>(())
 //! ```
@@ -108,6 +108,7 @@ mod db;
 mod db_test;
 
 mod cache_pad;
+mod durability;
 mod error;
 mod file;
 mod flush;
@@ -150,10 +151,10 @@ pub use {
     builder::Builder as DatabaseBuilder,
     db::Database,
     db_config::Config,
+    durability::DurabilityLevel,
     error::{Error, Result},
     guard::Guard,
     iter::Iter,
-    journal::{error::RecoveryError as JournalRecoveryError, writer::PersistMode},
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
     readable::Readable,
     snapshot::Snapshot,

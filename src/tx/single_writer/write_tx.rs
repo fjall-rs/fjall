@@ -5,7 +5,7 @@
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
-    Guard, Iter, Keyspace, PersistMode, Readable, SingleWriterTxDatabase,
+    DurabilityLevel, Guard, Iter, Keyspace, Readable, SingleWriterTxDatabase,
 };
 use lsm_tree::{UserKey, UserValue};
 use std::{ops::RangeBounds, sync::MutexGuard};
@@ -89,7 +89,7 @@ impl<'tx> WriteTransaction<'tx> {
 
     /// Sets the durability level.
     #[must_use]
-    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
         self.inner = self.inner.durability(mode);
         self
     }

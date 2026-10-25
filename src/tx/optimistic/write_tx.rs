@@ -9,7 +9,7 @@ use crate::{
         write_tx::BaseTransaction,
     },
     write_pipeline::OptimisticConflictCheck,
-    Database, Guard, Iter, Keyspace, PersistMode, Readable,
+    Database, DurabilityLevel, Guard, Iter, Keyspace, Readable,
 };
 use lsm_tree::{UserKey, UserValue};
 use std::{
@@ -145,7 +145,7 @@ impl WriteTransaction {
 
     /// Sets the durability level.
     #[must_use]
-    pub fn durability(mut self, mode: Option<PersistMode>) -> Self {
+    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
         self.inner = self.inner.durability(mode);
         self
     }

@@ -2,10 +2,7 @@
 
 // Taken from https://github.com/crossbeam-rs/crossbeam/blob/099d0469efcfacb32527bd9451a4fb62586ae537/crossbeam-utils/src/cache_padded.rs
 
-use core::{
-    fmt,
-    ops::{Deref, DerefMut},
-};
+use core::ops::{Deref, DerefMut};
 
 /// Pads and aligns a value to the length of a cache line.
 ///
