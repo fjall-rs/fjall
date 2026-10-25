@@ -179,15 +179,16 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
         }
         WorkerMessage::RotateMemtable(keyspace, memtable_id) => {
             log::trace!("acquiring journal lock");
-            let journal_writer = keyspace.supervisor.journal.get_writer()?;
-            keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
+            //let journal_writer = keyspace.supervisor.journal.get_writer()?;
+            // keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
+            todo!("rotate");
         }
         WorkerMessage::Flush => {
             let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
                 return Ok(false);
             };
 
-            {
+            /*{
                 log::trace!("acquiring journal lock to maybe rotate journal");
                 let mut journal_writer = ctx.supervisor.journal.get_writer()?;
 
@@ -224,16 +225,18 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     }
                 } else {
                     // https://github.com/fjall-rs/fjall/issues/329
-                    journal_writer.persist(crate::PersistMode::SyncAll)?;
+                    journal_writer.persist(crate::DurabilityLevel::SyncAll)?;
                 }
-            }
+            }*/
 
-            run_flush(
+            todo!();
+
+            /*run_flush(
                 &task,
                 &ctx.supervisor.write_buffer_size,
                 &ctx.supervisor.snapshot_tracker,
                 &ctx.stats,
-            )?;
+            )?;*/
 
             for _ in 0..ctx.pool_size {
                 ctx.sender
@@ -241,11 +244,13 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
                     .ok();
             }
 
-            ctx.supervisor
-                .journal_manager
-                .write()
-                .expect("lock is poisoned")
-                .maintenance()?;
+            /*ctx.supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .maintenance()?;*/
+
+            todo!();
         }
         WorkerMessage::Compact(keyspace) => {
             // NOTE: Let one worker prioritize flushing if there are pending flushes

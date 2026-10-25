@@ -3,7 +3,6 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{snapshot_tracker::SnapshotTracker, stats::Stats, Keyspace};
-use lsm_tree::AbstractTree;
 use std::time::Instant;
 
 /// Runs a single run of compaction.
@@ -31,7 +30,7 @@ pub fn run(
 
     let start = Instant::now();
 
-    if let Err(e) = keyspace
+    /*if let Err(e) = keyspace
         .tree
         .compact(strategy.clone(), snapshot_tracker.get_seqno_safe_to_gc())
     {
@@ -39,7 +38,8 @@ pub fn run(
         stats.active_compaction_count.fetch_sub(1, Relaxed);
 
         return Err(e.into());
-    }
+    }*/
+    todo!("restore compaction");
 
     // TODO: we need feedback from the compaction strategy...
     // TODO: if there is nothing more to do, we should clear the compaction_manager semaphore

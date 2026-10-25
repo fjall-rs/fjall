@@ -4,14 +4,10 @@
 
 use std::path::Path;
 
-pub const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 3];
-
 pub const KEYSPACES_FOLDER: &str = "keyspaces";
-
 pub const LOCK_FILE: &str = "lock";
 pub const VERSION_MARKER: &str = "version";
-
-pub const LSM_CURRENT_VERSION_MARKER: &str = "current";
+pub const CURRENT_VERSION_MARKER: &str = "current";
 
 #[cfg(not(target_os = "windows"))]
 pub fn fsync_directory<P: AsRef<Path>>(path: P) -> std::io::Result<()> {

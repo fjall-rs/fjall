@@ -49,18 +49,21 @@ impl<'a> Ingestion<'a> {
         // -----------------
         // |
         // insert seqno=1
-        let _journal_lock = self.keyspace.supervisor.journal.get_writer()?;
 
-        self.inner
-            .finish()
-            .inspect(|()| {
-                self.keyspace
-                    .worker_messager
-                    .try_send(WorkerMessage::Compact(self.keyspace.clone()))
-                    .ok();
+        // let _journal_lock = self.keyspace.supervisor.journal.get_writer()?;
 
-                self.keyspace.supervisor.snapshot_tracker.gc();
-            })
-            .map_err(Into::into)
+        /*self.inner
+        .finish()
+        .inspect(|()| {
+            self.keyspace
+                .worker_messager
+                .try_send(WorkerMessage::Compact(self.keyspace.clone()))
+                .ok();
+
+            self.keyspace.supervisor.snapshot_tracker.gc();
+        })
+        .map_err(Into::into)*/
+
+        todo!("restore ingestion")
     }
 }

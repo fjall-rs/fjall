@@ -115,10 +115,9 @@ mod flush;
 mod guard;
 mod ingestion;
 mod iter;
-mod journal;
 mod keyspace;
+mod legacy;
 mod locked_file;
-mod meta_keyspace;
 mod path;
 mod poison;
 mod readable;
@@ -130,6 +129,7 @@ mod stats;
 mod supervisor;
 mod tx;
 mod version;
+mod wal;
 mod worker_pool;
 mod write_buffer_manager;
 mod write_pipeline;
@@ -177,6 +177,9 @@ pub use tx::optimistic::{CommittedTxnTracker, ConflictManager};
 
 #[doc(hidden)]
 pub use lsm_tree::{AbstractTree, AnyTree, Error as LsmError, TreeType};
+
+#[doc(hidden)]
+pub use legacy::v3::journal::JournalRecoveryError;
 
 pub use lsm_tree::{
     CompressionType, KvPair, KvSeparationOptions, SeqNo, Slice, UserKey, UserValue,

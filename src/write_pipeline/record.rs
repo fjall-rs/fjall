@@ -5,7 +5,7 @@
 use lsm_tree::SeqNo;
 use take_once::TakeOnce;
 
-use crate::{tx::optimistic::Oracle, PersistMode};
+use crate::{tx::optimistic::Oracle, DurabilityLevel};
 use std::sync::{
     atomic::{AtomicU64, AtomicU8},
     Arc, Mutex,
@@ -54,8 +54,10 @@ pub enum Payload {
 pub struct WriteRecord {
     state: AtomicU8,
 
+    //TODO: change to be DurabilityLevel, default = Buffer
+    //
     /// This write record's durability requirement
-    pub(super) persist_mode: Option<PersistMode>,
+    pub(super) persist_mode: Option<DurabilityLevel>,
 
     /// The actual user data to write
     pub(super) payload: TakeOnce<Payload>,
@@ -129,7 +131,7 @@ impl WriteRecord {
     /// level that was encountered.
     /// If buffer/fsync/fsyncdata, only a single syscall will be issued for all
     /// batches.
-    pub fn persist_mode(mut self, mode: Option<PersistMode>) -> Self {
+    pub fn persist_mode(mut self, mode: Option<DurabilityLevel>) -> Self {
         self.persist_mode = mode;
         self
     }

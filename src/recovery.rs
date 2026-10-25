@@ -3,77 +3,55 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
-    journal::{
-        batch_reader::JournalBatchReader, manager::EvictionWatermark, reader::JournalReader,
-    },
     keyspace::{
-        apply_to_base_config, options::CreateOptions as KeyspaceCreateOptions, InternalKeyspaceId,
+        apply_to_base_config, options::ConfigProvider as KeyspaceConfigProvider,
+        InternalKeyspaceId, KeyspaceKey,
     },
-    meta_keyspace::MetaKeyspace,
-    Database, HashMap, Keyspace,
+    Database, Keyspace, KeyspaceCreateOptions,
 };
-use lsm_tree::AbstractTree;
-use std::path::PathBuf;
+use std::sync::Arc;
 
-/// Recovers keyspaces
-pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::Result<()> {
-    let keyspaces_folder = db.config.path.join(KEYSPACES_FOLDER);
+pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
+    db: &Database,
+    keyspace_ids: &[InternalKeyspaceId],
+    get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
+    get_config_provider: impl Fn(InternalKeyspaceId) -> P,
+) -> crate::Result<()> {
+    let registry = &db.supervisor.keyspaces;
+    let mut registry = registry.write().expect("lock should not be poisoned");
 
-    log::trace!("Recovering keyspaces in {}", keyspaces_folder.display());
+    let mut highest_keyspace_id = 0;
 
-    #[expect(clippy::expect_used)]
-    let mut keyspaces_lock = db.supervisor.keyspaces.write().expect("lock is poisoned");
+    for &keyspace_id in keyspace_ids {
+        let keyspace_name: KeyspaceKey = get_keyspace_name(keyspace_id);
+        log::trace!("Recovering keyspace={keyspace_id} ({keyspace_name:?})");
 
-    let mut highest_keyspace_id = 1;
+        let tree_path = db
+            .config
+            .path
+            .join("keyspaces")
+            .join(keyspace_id.to_string());
 
-    for dirent in std::fs::read_dir(&keyspaces_folder)? {
-        let dirent = dirent?;
-        let keyspace_path = dirent.path();
+        let tree_version = lsm_tree::legacy::v3::load_manifest(
+            &tree_path,
+            // TODO: this should not really require cache & FD cache
+            // because we are just reading the manifest data;
+            // tables should be loaded in a separate step
+            &db.config.cache,
+            // TODO: -----------v rename to descriptor_cache?
+            db.config
+                .descriptor_table
+                .as_ref()
+                .expect("fd cache should exist"),
+        )?;
 
-        if dirent.file_type()?.is_file() {
-            log::warn!(
-                "Found stray file {} in keyspaces folder",
-                keyspace_path.display(),
-            );
-            continue;
-        }
+        // TODO: need persisting provider
+        let version_set_provider = Arc::new(
+            lsm_tree::MemoryVersionSetProvider::with_initial_version(tree_version),
+        );
 
-        let keyspace_id = dirent
-            .file_name()
-            .to_str()
-            .expect("should be valid keyspace name")
-            .parse::<InternalKeyspaceId>()
-            .expect("should be valid integer");
-
-        // NOTE: Is meta keyspace
-        if keyspace_id == 0 {
-            continue;
-        }
-
-        highest_keyspace_id = highest_keyspace_id.max(keyspace_id);
-
-        let Some(keyspace_name) = meta_keyspace.resolve_id(keyspace_id)? else {
-            log::debug!("Deleting unreferenced keyspace id={keyspace_id}");
-            std::fs::remove_dir_all(keyspace_path)?;
-            continue;
-        };
-
-        log::trace!("Recovering keyspace with id={keyspace_id}");
-
-        // NOTE: Check for marker, maybe the keyspace is not fully initialized
-        if !keyspace_path
-            .join(LSM_CURRENT_VERSION_MARKER)
-            .try_exists()?
-        {
-            log::debug!("Deleting uninitialized keyspace {keyspace_name:?}");
-            std::fs::remove_dir_all(keyspace_path)?;
-            continue;
-        }
-
-        let path = keyspaces_folder.join(keyspace_id.to_string());
-
-        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &db.meta_keyspace)?;
+        let config_provider = get_config_provider(keyspace_id);
+        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &config_provider)?;
 
         // Install compaction filter factory if needed
         if let Some(f) = db
@@ -85,13 +63,9 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             recovered_config = recovered_config.with_compaction_filter_factory(f);
         }
 
-        let base_config = lsm_tree::Config::new(
-            path,
-            db.supervisor.seqno.clone(),
-            db.supervisor.snapshot_tracker.get_ref(),
-        )
-        .use_descriptor_table(db.config.descriptor_table.clone())
-        .use_cache(db.config.cache.clone());
+        let base_config = lsm_tree::Config::new(tree_path, version_set_provider.clone())
+            .use_descriptor_table(db.config.descriptor_table.clone())
+            .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &recovered_config);
 
@@ -103,200 +77,22 @@ pub fn recover_keyspaces(db: &Database, meta_keyspace: &MetaKeyspace) -> crate::
             tree,
             keyspace_name.clone(),
             recovered_config,
+            version_set_provider,
         );
 
         // Add keyspace to dictionary
-        keyspaces_lock.insert(keyspace_name.clone(), keyspace.clone());
+        registry.insert(keyspace_name.clone(), keyspace.clone());
 
-        log::trace!("Recovered keyspace {keyspace_name:?}");
+        highest_keyspace_id = highest_keyspace_id.max(keyspace_id);
     }
 
     db.keyspace_id_counter.set(highest_keyspace_id + 1);
-
     log::trace!(
-        "Set keyspace id counter to {}",
+        "Keyspace ID counter set to {}",
         db.keyspace_id_counter.get(),
     );
 
-    Ok(())
-}
-
-#[expect(clippy::too_many_lines)]
-pub fn recover_sealed_memtables(
-    db: &Database,
-    sealed_journal_paths: &[PathBuf],
-) -> crate::Result<()> {
-    let mut highest_encountered_keyspace_id = 0;
-
-    #[expect(clippy::expect_used)]
-    let mut journal_manager_lock = db
-        .supervisor
-        .journal_manager
-        .write()
-        .expect("lock is poisoned");
-
-    #[expect(clippy::expect_used)]
-    let keyspaces_lock = db.supervisor.keyspaces.read().expect("lock is poisoned");
-
-    let mut persisted_seqnos: HashMap<_, _> = HashMap::default();
-
-    for journal_path in sealed_journal_paths {
-        log::debug!("Recovering sealed journal: {}", journal_path.display());
-
-        let journal_size = journal_path.metadata()?.len();
-
-        log::debug!("Replaying sealed journal at {}", journal_path.display());
-
-        let raw_reader = JournalReader::new(journal_path)?;
-        let reader = JournalBatchReader::new(raw_reader);
-
-        let mut watermarks: HashMap<_, EvictionWatermark> = HashMap::default();
-
-        for batch in reader {
-            let batch = batch?;
-
-            for item in batch.items {
-                highest_encountered_keyspace_id =
-                    highest_encountered_keyspace_id.max(item.keyspace_id);
-
-                let Some(keyspace_name) = db.meta_keyspace.resolve_id(item.keyspace_id)? else {
-                    continue;
-                };
-
-                let Some(handle) = keyspaces_lock.get(&keyspace_name) else {
-                    continue;
-                };
-
-                let tree = &handle.tree;
-
-                watermarks
-                    .entry(item.keyspace_id)
-                    .and_modify(|prev| {
-                        prev.lsn = prev.lsn.max(batch.seqno);
-                    })
-                    .or_insert_with(|| EvictionWatermark {
-                        keyspace: handle.clone(),
-                        lsn: batch.seqno,
-                    });
-
-                // NOTE: Skip items that were already flushed, otherwise the next flush
-                // writes them again into a table that overlaps the existing one
-                let persisted_seqno = *persisted_seqnos
-                    .entry(item.keyspace_id)
-                    .or_insert_with(|| tree.get_highest_persisted_seqno());
-
-                if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
-                    continue;
-                }
-
-                match item.value_type {
-                    lsm_tree::ValueType::Value => {
-                        tree.insert(item.key, item.value, batch.seqno);
-                    }
-                    lsm_tree::ValueType::Tombstone => {
-                        tree.remove(item.key, batch.seqno);
-                    }
-                    lsm_tree::ValueType::WeakTombstone => {
-                        tree.remove_weak(item.key, batch.seqno);
-                    }
-                    lsm_tree::ValueType::Indirection => {
-                        unreachable!()
-                    }
-                }
-            }
-
-            for keyspace_id in &batch.cleared_keyspaces {
-                let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
-                    continue;
-                };
-
-                let Some(handle) = keyspaces_lock.get(&keyspace_name) else {
-                    continue;
-                };
-
-                watermarks
-                    .entry(*keyspace_id)
-                    .and_modify(|prev| {
-                        prev.lsn = prev.lsn.max(batch.seqno);
-                    })
-                    .or_insert_with(|| EvictionWatermark {
-                        keyspace: handle.clone(),
-                        lsn: batch.seqno,
-                    });
-
-                handle.tree.clear().inspect_err(|e| {
-                    log::error!("Keyspace clear failed during recovery: {e}");
-                })?;
-
-                persisted_seqnos.remove(keyspace_id);
-            }
-        }
-
-        log::debug!("Sealing recovered memtables");
-        let mut recovered_count = 0;
-
-        for wm in watermarks.values() {
-            let tree = &wm.keyspace.tree;
-
-            let keyspace_lsn = tree.get_highest_persisted_seqno();
-
-            // IMPORTANT: Apply the sealed memtable only if it contains data newer than the
-            // keyspace's persisted LSN.
-            let should_skip_sealed_memtable =
-                keyspace_lsn.is_some_and(|keyspace_lsn| keyspace_lsn >= wm.lsn);
-
-            if should_skip_sealed_memtable {
-                log::trace!(
-                    "Keyspace {:?} has higher seqno ({keyspace_lsn:?}), skipping",
-                    wm.keyspace.name,
-                );
-
-                tree.clear_active_memtable();
-            } else if let Some(sealed_memtable) = tree.rotate_memtable() {
-                log::trace!("Sealed active memtable of keyspace {:?}", wm.keyspace.name);
-
-                assert_eq!(
-                    Some(wm.lsn),
-                    sealed_memtable.get_highest_seqno(),
-                    "memtable lsn does not match what was recovered - this is a bug",
-                );
-
-                // Maybe the memtable has a higher seqno, so try to set to maximum
-                let maybe_next_seqno = tree.get_highest_seqno().map(|x| x + 1).unwrap_or_default();
-                db.supervisor.seqno.fetch_max(maybe_next_seqno);
-
-                log::debug!("Database seqno is now {}", db.supervisor.seqno.get());
-
-                // IMPORTANT: Add sealed memtable size to current write buffer size
-                db.supervisor
-                    .write_buffer_size
-                    .allocate(sealed_memtable.size());
-
-                // TODO: unit test write buffer size after recovery
-
-                recovered_count += 1;
-            }
-        }
-
-        log::debug!("Recovered {recovered_count} sealed memtables");
-
-        // IMPORTANT: Add sealed journal to journal manager
-        journal_manager_lock.enqueue(crate::journal::manager::Item {
-            watermarks: watermarks.into_values().collect(),
-            path: journal_path.clone(),
-            size_in_bytes: journal_size,
-        });
-
-        log::debug!("Requeued sealed journal at {}", journal_path.display());
-    }
-
-    db.keyspace_id_counter
-        .fetch_max(highest_encountered_keyspace_id + 1);
-
-    log::trace!(
-        "Set keyspace id counter to {}",
-        db.keyspace_id_counter.get(),
-    );
+    log::debug!("Recovered {} keyspaces", registry.len());
 
     Ok(())
 }

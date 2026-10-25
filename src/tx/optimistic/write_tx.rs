@@ -143,6 +143,8 @@ impl WriteTransaction {
         }
     }
 
+    // TODO: change to be non-Option, default = Buffer
+
     /// Sets the durability level.
     #[must_use]
     pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {

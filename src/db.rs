@@ -6,14 +6,11 @@ use crate::{
     batch::WriteBatch,
     builder::Openable,
     db_config::Config,
-    file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
+    file::{fsync_directory, CURRENT_VERSION_MARKER, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
     flush::manager::FlushManager,
-    journal::{manager::JournalManager, writer::PersistMode, Journal},
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
-    meta_keyspace::MetaKeyspace,
-    poison::{self, PoisonDart, PoisonSignal},
-    recovery::{recover_keyspaces, recover_sealed_memtables},
+    poison::{PoisonDart, PoisonSignal},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
@@ -22,9 +19,9 @@ use crate::{
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
-    HashMap, Keyspace, KeyspaceCreateOptions,
+    DurabilityLevel, HashMap, Keyspace, KeyspaceCreateOptions,
 };
-use lsm_tree::{AbstractTree, SequenceNumberCounter};
+use lsm_tree::SequenceNumberCounter;
 use std::{
     fs::remove_dir_all,
     path::Path,
@@ -34,8 +31,7 @@ use std::{
 pub type Keyspaces = HashMap<KeyspaceKey, Keyspace>;
 
 pub struct DatabaseInner {
-    pub(crate) meta_keyspace: MetaKeyspace,
-
+    // pub(crate) meta_keyspace: MetaKeyspace,
     /// Database configuration
     #[doc(hidden)]
     pub config: Config,
@@ -82,18 +78,20 @@ impl Drop for DatabaseInner {
 
         // IMPORTANT: Break cyclic Arcs
         self.supervisor.flush_manager.clear();
+
         self.supervisor
             .keyspaces
             .write()
             .expect("lock is poisoned")
             .clear();
-        self.supervisor
-            .journal_manager
-            .write()
-            .expect("lock is poisoned")
-            .clear();
 
-        if self.config.clean_path_on_drop {
+        /*self.supervisor
+        .journal_manager
+        .write()
+        .expect("lock is poisoned")
+        .clear();*/
+
+        /*if self.config.clean_path_on_drop {
             log::info!(
                 "Deleting database because temporary=true: {}",
                 self.config.path.display(),
@@ -105,7 +103,7 @@ impl Drop for DatabaseInner {
                     self.config.path.display()
                 );
             }
-        }
+        }*/
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
@@ -188,7 +186,7 @@ impl Database {
         let mut batch = WriteBatch::new(self.clone());
 
         if !self.config.manual_journal_persist {
-            batch = batch.durability(Some(PersistMode::Buffer));
+            batch = batch.durability(Some(DurabilityLevel::Buffer));
         }
 
         batch
@@ -275,23 +273,25 @@ impl Database {
     /// ```
     #[must_use]
     pub fn journal_count(&self) -> usize {
-        self.supervisor
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .journal_count()
+        /*self.supervisor
+        .journal_manager
+        .read()
+        .expect("lock is poisoned")
+        .journal_count()*/
+        todo!()
     }
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
-        Ok(self.supervisor.journal.get_writer()?.len()?
-            + self
-                .supervisor
-                .journal_manager
-                .read()
-                .expect("lock is poisoned")
-                .disk_space_used())
+        /*Ok(self.supervisor.journal.get_writer()?.len()?
+        + self
+            .supervisor
+            .journal_manager
+            .read()
+            .expect("lock is poisoned")
+            .disk_space_used())*/
+        todo!()
     }
 
     /// Returns the disk space usage of the entire database.
@@ -323,7 +323,7 @@ impl Database {
         Ok(journal_size + keyspaces_size)
     }
 
-    /// Flushes the active journal. The durability depends on the [`PersistMode`]
+    /// Flushes the active journal. The durability depends on the [`DurabilityLevel`]
     /// used.
     ///
     /// Persisting only affects durability, NOT consistency! Even without flushing
@@ -332,14 +332,14 @@ impl Database {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{PersistMode, Database, KeyspaceCreateOptions};
+    /// # use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
     /// # let folder = tempfile::tempdir()?;
     /// let db = Database::builder(folder).open()?;
     /// let items = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
     ///
     /// items.insert("a", "hello")?;
     ///
-    /// db.persist(PersistMode::SyncAll)?;
+    /// db.persist(DurabilityLevel::SyncAll)?;
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
@@ -347,17 +347,19 @@ impl Database {
     /// # Errors
     ///
     /// Returns error, if an IO error occurred.
-    pub fn persist(&self, mode: PersistMode) -> crate::Result<()> {
+    pub fn persist(&self, mode: DurabilityLevel) -> crate::Result<()> {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
-        self.supervisor.journal.persist(mode).inspect_err(|e| {
+        /*self.supervisor.journal.persist(mode).inspect_err(|e| {
             log::error!(
                 "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}",
             );
             self.is_poisoned.poison();
-        })?;
+        })?;*/
+
+        todo!();
 
         Ok(())
     }
@@ -380,8 +382,9 @@ impl Database {
     ///
     /// Returns error, if an IO error occurred.
     pub fn open(config: Config) -> crate::Result<Self> {
-        log::debug!(
-            "cache capacity={}MiB",
+        log::info!("Opening or creating database at {}", config.path.display());
+        log::trace!(
+            "Cache capacity={}MiB",
             config.cache.capacity() / 1_024 / 1_024,
         );
 
@@ -401,11 +404,24 @@ impl Database {
     /// Should not be user-facing.
     #[doc(hidden)]
     pub fn create_or_recover(config: Config) -> crate::Result<Self> {
-        if config.path.join(VERSION_MARKER).try_exists()? {
+        let db = if config.path.join(VERSION_MARKER).try_exists()? {
             Self::recover(config)
         } else {
             Self::create_new(config)
+        }?;
+
+        /*if db.config.worker_threads > 0 {
+            db.worker_pool.start(
+                db.config.worker_threads,
+                &db.supervisor,
+                &db.stats,
+                &PoisonDart::new(db.is_poisoned.clone()),
+                &db.active_thread_counter,
+            )?;
         }
+        */
+
+        Ok(db)
     }
 
     /// Destroys the keyspace, removing all data associated with it.
@@ -418,7 +434,8 @@ impl Database {
     /// Will return `Err` if an IO error occurs.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        self.meta_keyspace.remove_keyspace(&handle.name)?;
+        //self.meta_keyspace.remove_keyspace(&handle.name)?;
+        todo!("persist deletion");
 
         handle
             .is_deleted
@@ -485,10 +502,9 @@ impl Database {
                 opts = opts.with_compaction_filter_factory(f);
             }
 
-            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
+            // TODO: persist keyspace in Manifest
 
-            self.meta_keyspace
-                .create_keyspace(keyspace_id, &name, handle.clone(), keyspaces)?;
+            let handle = Keyspace::create_new(keyspace_id, self, name, opts)?;
 
             #[cfg(feature = "__internal_whitebox")]
             crate::drop::increment_drop_counter();
@@ -500,23 +516,13 @@ impl Database {
     /// Returns the number of keyspaces.
     #[must_use]
     pub fn keyspace_count(&self) -> usize {
-        self.supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .len()
+        self.supervisor.keyspace_count()
     }
 
     /// Gets a list of all keyspace names in the database.
     #[must_use]
     pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
-        self.supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .keys()
-            .cloned()
-            .collect()
+        self.supervisor.list_keyspace_names()
     }
 
     /// Returns `true` if the keyspace with the given name exists.
@@ -536,7 +542,7 @@ impl Database {
     /// ```
     #[must_use]
     pub fn keyspace_exists(&self, name: &str) -> bool {
-        self.meta_keyspace.keyspace_exists(name)
+        self.supervisor.keyspace_exists(name)
     }
 
     /// Gets the would-be-next sequence number.
@@ -560,10 +566,10 @@ impl Database {
             if version == FormatVersion::V2 {
                 log::error!("It looks like you are trying to open a V2 database - the database needs a manual migration, a tool is available at https://github.com/fjall-rs/migrate-v2-v3.");
             }
-            if version as u8 > 3 {
+            if version as u8 > 4 {
                 log::error!("It looks like you are trying to open a database from the future. Are you a time traveller?");
             }
-            if version != FormatVersion::V3 {
+            if version != FormatVersion::V3 && version != FormatVersion::V4 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
         } else {
@@ -573,77 +579,68 @@ impl Database {
         Ok(())
     }
 
-    /// Recovers existing database from directory.
-    #[expect(clippy::too_many_lines)]
-    #[doc(hidden)]
-    pub fn recover(config: Config) -> crate::Result<Self> {
-        log::info!("Recovering database at {}", config.path.display());
+    /// Returns the database path.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.config.path
+    }
 
-        // Check version
-        Self::check_version(&config.path)?;
+    /// Backs up the database into the given destination folder.
+    ///
+    /// If the destination folder is already an older backup,
+    /// it will be incrementally updated.
+    ///
+    /// If possible, data will be hard-linked.
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occurred.
+    pub fn backup_into<P: AsRef<Path>>(&self, path: P) -> crate::Result<()> {
+        let path = path.as_ref();
+        log::info!("Backing up database into {}", path.display());
+        todo!();
+    }
 
-        let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
-
-        // TODO:
-        // let recovery_mode = config.journal_recovery_mode;
-
-        // Reload active journal
-        let journal_recovery = Journal::recover(
-            &config.path,
-            config.journal_compression_type,
-            config.journal_compression_threshold,
-        )?;
-        log::debug!("journal recovery result: {journal_recovery:#?}");
-
-        let journal = Arc::new(journal_recovery.active);
-        journal.get_writer()?.persist(PersistMode::SyncAll)?;
-
-        let sealed_journals = journal_recovery.sealed;
-
-        let journal_manager = JournalManager::new();
-
+    pub(crate) fn prepare_database(
+        config: Config,
+        lock_file: LockedFileGuard,
+        recover: bool,
+    ) -> crate::Result<Self> {
+        let keyspaces = Arc::new(RwLock::default());
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
+        let write_buffer_size = WriteBufferManager::default();
 
-        let meta_tree = lsm_tree::Config::new(
-            config.path.join(KEYSPACES_FOLDER).join("0"),
-            seqno.clone(),
-            visible_seqno.clone(),
-        )
-        .use_cache(config.cache.clone())
-        .use_descriptor_table(config.descriptor_table.clone())
-        .expect_point_read_hits(true)
-        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
-        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
-        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
-        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
-        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
-        .filter_policy(crate::config::FilterPolicy::new([
-            lsm_tree::config::FilterPolicyEntry::Bloom(
-                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
-            ),
-            lsm_tree::config::FilterPolicyEntry::Bloom(
-                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
-            ),
-        ]))
-        .open()?;
+        let wal = if recover {
+            // TODO: need to recover keyspaces before
 
-        let keyspaces = Arc::new(RwLock::default());
+            log::info!("Recovering WAL");
 
-        let meta_keyspace = MetaKeyspace::new(
-            meta_tree,
-            keyspaces.clone(),
-            seqno.clone(),
-            visible_seqno.clone(),
-        );
+            // TODO: actually do WAL recovery somewhere else
+            let mut wal = hwal::Wal::recover(&config.path)?;
+
+            for record in wal.by_ref() {
+                let record = record?;
+
+                // TODO: replay into memtables
+                let payload = record.payload();
+                eprintln!("recovered KV: {payload:?}");
+
+                // TODO: use record.fragment_id() to save watermarks
+            }
+
+            wal.into_writer()?
+        } else {
+            log::info!("Creating v4 WAL");
+            hwal::Wal::create(&config.path)?
+        };
 
         let snapshot_tracker = SnapshotTracker::new(visible_seqno);
-        let write_buffer_size = WriteBufferManager::default();
         let poison_signal = PoisonSignal::default();
 
         let write_pipeline = WritePipeline::with_capacity(
             crate::write_pipeline::State {
-                journal: journal.clone(),
+                writer: Mutex::new(crate::wal::Wal::new(wal)),
                 seqno: seqno.clone(),
                 snapshot_tracker: snapshot_tracker.clone(),
                 write_buffer_size: write_buffer_size.clone(),
@@ -658,8 +655,6 @@ impl Database {
             flush_manager: FlushManager::new(),
             write_buffer_size,
             snapshot_tracker,
-            journal,
-            journal_manager: Arc::new(RwLock::new(journal_manager)),
             backpressure_lock: Mutex::default(),
             seqno,
             write_pipeline,
@@ -673,7 +668,6 @@ impl Database {
             supervisor,
             worker_pool: WorkerPool::prepare(),
             keyspace_id_counter: SequenceNumberCounter::new(1),
-            meta_keyspace: meta_keyspace.clone(),
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
@@ -682,136 +676,33 @@ impl Database {
             lock_file,
         };
 
-        let db = Self(Arc::new(inner));
+        Ok(Self(Arc::new(inner)))
+    }
 
-        // Recover keyspaces
-        recover_keyspaces(&db, &meta_keyspace)?;
+    /// Recovers existing database from directory.
+    #[doc(hidden)]
+    pub fn recover(config: Config) -> crate::Result<Self> {
+        log::info!("Recovering database at {}", config.path.display());
 
-        // Recover sealed memtables by walking through old journals
-        recover_sealed_memtables(
-            &db,
-            &sealed_journals
-                .into_iter()
-                .map(|(_, x)| x)
-                .collect::<Vec<_>>(),
-        )?;
+        Self::check_version(&config.path)?;
 
-        {
-            #[expect(clippy::expect_used)]
-            let keyspaces = db.supervisor.keyspaces.read().expect("lock is poisoned");
+        // We check for the "current" file
+        //
+        // Once that is written, a previous v4 recovery was definitely fully completed,
+        // so if it is missing, we do the v3 migration (again)
+        let db = if config.path.join(CURRENT_VERSION_MARKER).try_exists()? {
+            log::info!("Recovering v4 database");
+            let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+            Self::prepare_database(config, lock_file, true)
+        } else {
+            // V3->V4 migration
+            //
+            // TODO: remove in V5
+            let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+            crate::legacy::migrate_v3_to_v4(config, lock_file)
+        }?;
 
-            // NOTE: If this triggers, the last sealed memtable
-            // was not correctly rotated
-            for keyspace in keyspaces.values() {
-                if keyspace.tree.active_memtable().size() > 0 {
-                    log::error!("Active memtable is not empty after recovery for keyspace {:?} - recovery failed", keyspace.name);
-                    return Err(crate::Error::Unrecoverable);
-                }
-            }
-
-            let mut highest_encountered_keyspace_id = 0;
-
-            // NOTE: We only need to recover the active journal, if it actually existed before
-            // nothing to recover, if we just created it
-            if !journal_recovery.was_active_created {
-                log::trace!("Replaying active journal");
-
-                let reader = db.supervisor.journal.get_reader()?;
-
-                let mut persisted_seqnos: HashMap<_, _> = HashMap::default();
-
-                for batch in reader {
-                    let batch = batch?;
-
-                    for item in batch.items {
-                        highest_encountered_keyspace_id =
-                            highest_encountered_keyspace_id.max(item.keyspace_id);
-
-                        let Some(keyspace_name) = db.meta_keyspace.resolve_id(item.keyspace_id)?
-                        else {
-                            continue;
-                        };
-
-                        let Some(keyspace) = keyspaces.get(&keyspace_name) else {
-                            continue;
-                        };
-
-                        let tree = &keyspace.tree;
-
-                        // NOTE: Skip items that were already flushed, otherwise the next flush
-                        // writes them again into a table that overlaps the existing one
-                        let persisted_seqno = *persisted_seqnos
-                            .entry(item.keyspace_id)
-                            .or_insert_with(|| tree.get_highest_persisted_seqno());
-
-                        if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
-                            continue;
-                        }
-
-                        match item.value_type {
-                            lsm_tree::ValueType::Value => {
-                                tree.insert(item.key, item.value, batch.seqno);
-                            }
-                            lsm_tree::ValueType::Tombstone => {
-                                tree.remove(item.key, batch.seqno);
-                            }
-                            lsm_tree::ValueType::WeakTombstone => {
-                                tree.remove_weak(item.key, batch.seqno);
-                            }
-                            lsm_tree::ValueType::Indirection => {
-                                unreachable!()
-                            }
-                        }
-                    }
-
-                    for keyspace_id in &batch.cleared_keyspaces {
-                        let Some(keyspace_name) = db.meta_keyspace.resolve_id(*keyspace_id)? else {
-                            continue;
-                        };
-
-                        let Some(keyspace) = keyspaces.get(&keyspace_name) else {
-                            continue;
-                        };
-
-                        keyspace.tree.clear().ok();
-
-                        persisted_seqnos.remove(keyspace_id);
-                    }
-                }
-
-                for keyspace in keyspaces.values() {
-                    let size = keyspace.tree.active_memtable().size();
-
-                    log::trace!(
-                        "Recovered active memtable of size {size}B for keyspace {:?} ({} items)",
-                        keyspace.name,
-                        keyspace.tree.active_memtable().len(),
-                    );
-
-                    // IMPORTANT: Add active memtable size to current write buffer size
-                    db.supervisor.write_buffer_size.allocate(size);
-
-                    // Recover seqno
-                    let maybe_next_seqno = keyspace
-                        .tree
-                        .get_highest_seqno()
-                        .map(|x| x + 1)
-                        .unwrap_or_default();
-
-                    db.supervisor.seqno.fetch_max(maybe_next_seqno);
-                    log::debug!("Database seqno is now {}", db.supervisor.seqno.get());
-                }
-
-                db.keyspace_id_counter
-                    .fetch_max(highest_encountered_keyspace_id + 1);
-
-                log::trace!(
-                    "Set keyspace id counter to {}",
-                    db.keyspace_id_counter.get(),
-                );
-            }
-        }
-
+        /*
         db.supervisor
             .snapshot_tracker
             .set(db.supervisor.seqno.get());
@@ -851,14 +742,7 @@ impl Database {
                     .ok();
             }
         }
-
-        db.worker_pool.start(
-            db.config.worker_threads,
-            &db.supervisor,
-            &db.stats,
-            &PoisonDart::new(db.is_poisoned.clone()),
-            &db.active_thread_counter,
-        )?;
+        */
 
         log::trace!("Database recovery successful");
 
@@ -868,120 +752,26 @@ impl Database {
     #[doc(hidden)]
     pub fn create_new(config: Config) -> crate::Result<Self> {
         log::info!("Creating database at {}", config.path.display());
-
         std::fs::create_dir_all(&config.path)?;
 
         let lock_file = LockedFileGuard::create_new(&config.path.join(LOCK_FILE))?;
 
-        let journal_folder_path = &config.path;
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
-
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
-        let active_journal_path = journal_folder_path.join("0.jnl");
-        let journal = Journal::create_new(&active_journal_path)?.with_compression(
-            config.journal_compression_type,
-            config.journal_compression_threshold,
-        );
-        let journal = Arc::new(journal);
+        let db = Self::prepare_database(config, lock_file, false)?;
+
+        // TODO: v4 create actual db manifest
+        std::fs::File::create(db.path().join("current"))?;
 
         // NOTE: Lastly, fsync version marker, which contains the version
-        let mut marker = std::fs::File::create_new(config.path.join(VERSION_MARKER))?;
+        let mut marker = std::fs::File::create_new(db.path().join(VERSION_MARKER))?;
         FormatVersion::V3.write_file_header(&mut marker)?;
         marker.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix
         fsync_directory(&keyspaces_folder_path)?;
-        fsync_directory(&config.path)?;
-
-        let seqno = SequenceNumberCounter::default();
-        let visible_seqno = SequenceNumberCounter::default();
-
-        let meta_tree = lsm_tree::Config::new(
-            config.path.join(KEYSPACES_FOLDER).join("0"),
-            seqno.clone(),
-            visible_seqno.clone(),
-        )
-        .use_cache(config.cache.clone())
-        .use_descriptor_table(config.descriptor_table.clone())
-        .expect_point_read_hits(true)
-        .data_block_size_policy(crate::config::BlockSizePolicy::all(4_096))
-        .data_block_hash_ratio_policy(crate::config::HashRatioPolicy::all(8.0))
-        .data_block_compression_policy(crate::config::CompressionPolicy::disabled())
-        .data_block_restart_interval_policy(crate::config::RestartIntervalPolicy::all(1))
-        .index_block_compression_policy(crate::config::CompressionPolicy::disabled())
-        .filter_policy(crate::config::FilterPolicy::new([
-            lsm_tree::config::FilterPolicyEntry::Bloom(
-                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.0001),
-            ),
-            lsm_tree::config::FilterPolicyEntry::Bloom(
-                lsm_tree::config::BloomConstructionPolicy::FalsePositiveRate(0.01),
-            ),
-        ]))
-        .open()?;
-
-        let keyspaces = Arc::new(RwLock::default());
-
-        let meta_keyspace = MetaKeyspace::new(
-            meta_tree,
-            keyspaces.clone(),
-            seqno.clone(),
-            visible_seqno.clone(),
-        );
-
-        let snapshot_tracker = SnapshotTracker::new(visible_seqno);
-        let write_buffer_size = WriteBufferManager::default();
-        let poison_signal = PoisonSignal::default();
-
-        let write_pipeline = WritePipeline::with_capacity(
-            crate::write_pipeline::State {
-                journal: journal.clone(),
-                seqno: seqno.clone(),
-                snapshot_tracker: snapshot_tracker.clone(),
-                write_buffer_size: write_buffer_size.clone(),
-                poison_flag: poison_signal.clone(),
-            },
-            config.write_pipeline_leader_capacity,
-        );
-
-        let supervisor = Supervisor::new(SupervisorInner {
-            db_config: config.clone(),
-            keyspaces,
-            flush_manager: FlushManager::new(),
-            write_buffer_size,
-            snapshot_tracker,
-            journal,
-            journal_manager: Arc::new(RwLock::new(JournalManager::new())),
-            backpressure_lock: Mutex::default(),
-            seqno,
-            write_pipeline,
-        });
-
-        let active_thread_counter = Arc::<AtomicUsize>::default();
-        let stats = Arc::<Stats>::default();
-
-        let inner = DatabaseInner {
-            supervisor,
-            worker_pool: WorkerPool::prepare(),
-            keyspace_id_counter: SequenceNumberCounter::new(1),
-            meta_keyspace,
-            config,
-            stop_signal: lsm_tree::stop_signal::StopSignal::default(),
-            active_thread_counter,
-            is_poisoned: poison_signal,
-            stats,
-            lock_file,
-        };
-
-        let db = Self(Arc::new(inner));
-
-        db.worker_pool.start(
-            db.config.worker_threads,
-            &db.supervisor,
-            &db.stats,
-            &PoisonDart::new(db.is_poisoned.clone()),
-            &db.active_thread_counter,
-        )?;
+        fsync_directory(db.path())?;
 
         Ok(db)
     }

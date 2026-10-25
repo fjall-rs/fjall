@@ -6,9 +6,9 @@ mod fifo;
 mod record;
 
 use crate::{
-    journal::Journal, poison::PoisonSignal, snapshot_tracker::SnapshotTracker,
+    poison::PoisonSignal, snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager, write_pipeline::record::WRITE_RECORD_STATE_PENDING,
-    Conflict, PersistMode,
+    Conflict, DurabilityLevel,
 };
 use fifo::Queue;
 use lsm_tree::{AbstractTree, SequenceNumberCounter, ValueType};
@@ -17,7 +17,7 @@ use std::{
     collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering::Acquire},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -26,7 +26,7 @@ pub use record::{OptimisticConflictCheck, Payload as WriteRecordPayload, WriteRe
 const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
 
 pub struct State {
-    pub journal: Arc<Journal>,
+    pub writer: Mutex<crate::wal::Wal>,
     pub write_buffer_size: WriteBufferManager,
     pub seqno: SequenceNumberCounter,
     pub snapshot_tracker: SnapshotTracker,
@@ -60,8 +60,8 @@ impl WritePipeline {
     fn act_as_leader(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
         let mut journal_writer = self
             .state
-            .journal
-            .get_writer()
+            .writer
+            .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
@@ -70,7 +70,7 @@ impl WritePipeline {
         }
 
         let mut highest_seqno_published = None;
-        let mut collected_persist: Option<PersistMode> = None;
+        let mut collected_persist: Option<DurabilityLevel> = None;
         let mut bytes_written = 0;
 
         // TODO: maybe we can use a stack alloc hashset/vec here, such as smallset
@@ -114,16 +114,14 @@ impl WritePipeline {
                 return Err(crate::Error::Io(std::io::Error::other("injected failure")));
             }
 
+            // TODO: restore
             bytes_written += match &payload {
-                WriteRecordPayload::Single(item) => journal_writer.write_raw(
-                    item.keyspace.id(),
-                    &item.key,
-                    &item.value,
-                    item.value_type,
-                    batch_seqno,
-                ),
+                WriteRecordPayload::Single(item) => {
+                    journal_writer.write(item.keyspace.id(), &item.key, &item.value, batch_seqno, item.value_type)
+                },
                 WriteRecordPayload::Multiple(batch) => {
-                    journal_writer.write_batch(batch.iter(), batch_seqno)
+                   //    journal_writer.write_batch(batch.iter(), batch_seqno)
+                   Ok (0)
                 }
             }
             .inspect_err(|e| {
@@ -212,13 +210,7 @@ impl WritePipeline {
             }
         }
 
-        if let Some(persist_mode) = collected_persist {
-            journal_writer
-                .persist(persist_mode)
-                .inspect_err(|e| {
-                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
-                })?;
-        }
+        journal_writer.persist(collected_persist)?;
 
         if let Some(seqno) = highest_seqno_published {
             self.state.snapshot_tracker.publish(seqno);

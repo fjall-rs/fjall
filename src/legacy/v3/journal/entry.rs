@@ -2,13 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{file::MAGIC_BYTES, keyspace::InternalKeyspaceId, Slice};
+use crate::keyspace::InternalKeyspaceId;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use lsm_tree::{
     coding::{Decode, Encode},
     CompressionType, SeqNo, UserKey, UserValue, ValueType,
 };
 use std::io::{Read, Write};
+
+const MAGIC_BYTES: &[u8] = &[b'F', b'J', b'L', 3];
 
 /// Journal entry. Every batch is composed as a Start, followed by N items, followed by an End.
 ///
@@ -115,6 +117,7 @@ impl From<Tag> for u8 {
 
 impl Entry {
     #[cfg(test)]
+    #[expect(clippy::expect_used)]
     pub fn encode_into_vec(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         self.encode_into(&mut buf).expect("should encode");
@@ -183,21 +186,21 @@ impl Entry {
                 // Read on-disk value size
                 let on_disk_value_len = reader.read_u32::<LittleEndian>()?;
 
-                let key = Slice::from_reader(reader, usize::from(key_len))?;
+                let key = UserKey::from_reader(reader, usize::from(key_len))?;
 
                 let value = match compression {
                     CompressionType::None => {
                         debug_assert_eq!(value_len, on_disk_value_len);
-                        Slice::from_reader(reader, on_disk_value_len as usize)?
+                        UserValue::from_reader(reader, on_disk_value_len as usize)?
                     }
 
                     #[cfg(feature = "lz4")]
                     CompressionType::Lz4 => {
                         let compressed_value =
-                            Slice::from_reader(reader, on_disk_value_len as usize)?;
+                            UserValue::from_reader(reader, on_disk_value_len as usize)?;
 
-                        #[warn(unsafe_code)]
-                        let mut value = unsafe { Slice::builder_unzeroed(value_len as usize) };
+                        #[expect(unsafe_code)]
+                        let mut value = unsafe { UserValue::builder_unzeroed(value_len as usize) };
 
                         let size = lz4_flex::decompress_into(&compressed_value, &mut value)
                             .map_err(|e| {
@@ -210,7 +213,7 @@ impl Entry {
                             return Err(crate::Error::Decompress(CompressionType::Lz4));
                         }
 
-                        Slice::from(value.freeze())
+                        UserValue::from(value.freeze())
                     }
                 };
 

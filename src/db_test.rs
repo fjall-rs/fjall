@@ -21,7 +21,10 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
         tree.rotate_memtable_and_wait()?;
         assert!(tree.is_empty()?);
-        db.supervisor.journal.get_writer()?.rotate()?;
+
+        // TODO: v4 restore
+        // db.supervisor.journal.get_writer()?.rotate()?;
+        todo!();
 
         tree.insert("b", "a")?;
         assert!(tree.contains_key("b")?);
@@ -267,7 +270,9 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         }
         batch.commit()?;
 
-        db.supervisor.journal.get_writer()?.rotate()?;
+        // TODO: v4 restore
+        //db.supervisor.journal.get_writer()?.rotate()?;
+        todo!();
 
         a.tree.active_memtable().size() + b.tree.active_memtable().size()
     };

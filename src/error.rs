@@ -2,14 +2,15 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{
-    journal::error::RecoveryError as JournalRecoveryError, version::FormatVersion, CompressionType,
-};
+use crate::{legacy::v3::journal::JournalRecoveryError, version::FormatVersion, CompressionType};
 
 /// Errors that may occur in the storage engine
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// Write-ahead log errors
+    Log(hwal::Error),
+
     /// Error inside LSM-tree
     Storage(lsm_tree::Error),
 
@@ -48,6 +49,12 @@ pub enum Error {
 
     /// Database is unrecoverable, see logs for details
     Unrecoverable,
+}
+
+impl From<hwal::Error> for Error {
+    fn from(value: hwal::Error) -> Self {
+        Self::Log(value)
+    }
 }
 
 impl std::fmt::Display for Error {

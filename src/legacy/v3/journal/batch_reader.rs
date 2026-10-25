@@ -3,7 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use super::reader::JournalReader;
-use crate::{journal::entry::Entry, keyspace::InternalKeyspaceId, JournalRecoveryError};
+use super::{JournalEntry as Entry, JournalRecoveryError};
+use crate::keyspace::InternalKeyspaceId;
 use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
 use std::{fs::OpenOptions, hash::Hasher};
 
@@ -22,7 +23,6 @@ pub struct Batch {
     pub(crate) cleared_keyspaces: Vec<InternalKeyspaceId>,
 }
 
-#[expect(clippy::module_name_repetitions)]
 pub struct JournalBatchReader {
     reader: JournalReader,
     items: Vec<ReadBatchItem>,

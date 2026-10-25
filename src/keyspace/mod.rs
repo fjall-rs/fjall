@@ -11,23 +11,18 @@ mod write_delay;
 mod test;
 
 use crate::write_pipeline::WriteRecordPayload;
+use crate::DurabilityLevel;
 use crate::{
-    file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
-    flush::Task as FlushTask,
-    ingestion::Ingestion,
-    locked_file::LockedFileGuard,
-    poison::PoisonSignal,
-    stats::Stats,
-    supervisor::Supervisor,
-    worker_pool::WorkerMessage,
-    Database, Guard, Iter, PersistMode,
+    file::KEYSPACES_FOLDER, ingestion::Ingestion, locked_file::LockedFileGuard,
+    poison::PoisonSignal, stats::Stats, supervisor::Supervisor, worker_pool::WorkerMessage,
+    Database, Guard, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, MutexGuard},
+    sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -78,9 +73,12 @@ pub struct KeyspaceInner {
     /// If `true`, fsync failed during persisting, see `Error::Poisoned`
     pub(crate) is_poisoned: PoisonSignal,
 
-    /// LSM-tree wrapper
+    /// The actual LSM-tree
     #[doc(hidden)]
     pub tree: AnyTree,
+
+    // TODO: change to OUR provider
+    pub(crate) version_set_provider: Arc<lsm_tree::MemoryVersionSetProvider>,
 
     pub(crate) supervisor: Supervisor,
 
@@ -98,7 +96,9 @@ impl Drop for KeyspaceInner {
         log::trace!("Dropping KeyspaceInner: {:?}", self.name);
 
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            let path = &self.tree.tree_config().path;
+            todo!("handle deletion");
+
+            /*let path = &self.tree.tree_config().path;
 
             // IMPORTANT: First, delete the manifest,
             // once that is deleted, the keyspace is treated as uninitialized
@@ -107,7 +107,7 @@ impl Drop for KeyspaceInner {
             // This is important, because if somehow `remove_dir_all` ends up
             // deleting the `.deleted` marker first, we would end up resurrecting
             // the keyspace
-            let manifest_file = path.join(LSM_CURRENT_VERSION_MARKER);
+            let manifest_file = path.join(CURRENT_VERSION_MARKER);
 
             // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
             #[expect(clippy::collapsible_else_if)]
@@ -135,7 +135,7 @@ impl Drop for KeyspaceInner {
                         path.display(),
                     );
                 }
-            }
+            }*/
         }
 
         #[cfg(feature = "__internal_whitebox")]
@@ -236,7 +236,7 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        let mut journal_writer = self.supervisor.journal.get_writer()?;
+        /*let mut journal_writer = self.supervisor.journal.get_writer()?;
 
         // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
         if self.is_poisoned.is_poisoned() {
@@ -256,18 +256,19 @@ impl Keyspace {
 
         if !self.config.manual_journal_persist {
             journal_writer
-                .persist(crate::PersistMode::Buffer)
+                .persist(crate::DurabilityLevel::Buffer)
                 .inspect_err(|e| {
                     log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
                     self.is_poisoned.poison();
                 })?;
-        }
+        }*/
 
-        self.tree.clear().inspect_err(|_| {
+        /*self.tree.clear().inspect_err(|_| {
             self.is_poisoned.poison();
-        })?;
+        })?;*/
+        todo!("restore clear");
 
-        self.supervisor.snapshot_tracker.publish(seqno);
+        // self.supervisor.snapshot_tracker.publish(seqno);
 
         Ok(())
     }
@@ -308,6 +309,7 @@ impl Keyspace {
         tree: AnyTree,
         name: KeyspaceKey,
         config: CreateOptions,
+        version_set_provider: Arc<lsm_tree::MemoryVersionSetProvider>,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             id: keyspace_id,
@@ -320,6 +322,7 @@ impl Keyspace {
             is_poisoned: db.is_poisoned.clone(),
             lock_file: db.lock_file.clone(),
             stats: db.stats.clone(),
+            version_set_provider,
         }))
     }
 
@@ -340,13 +343,12 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        let base_config = lsm_tree::Config::new(
-            base_folder,
-            db.supervisor.seqno.clone(),
-            db.supervisor.snapshot_tracker.get_ref(),
-        )
-        .use_descriptor_table(db.config.descriptor_table.clone())
-        .use_cache(db.config.cache.clone());
+        // TODO: persisting provider
+        let version_set_provider = Arc::new(lsm_tree::MemoryVersionSetProvider::default());
+
+        let base_config = lsm_tree::Config::new(base_folder, version_set_provider.clone())
+            .use_descriptor_table(db.config.descriptor_table.clone())
+            .use_cache(db.config.cache.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
@@ -362,6 +364,7 @@ impl Keyspace {
             is_poisoned: db.is_poisoned.clone(),
             stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
+            version_set_provider,
         })))
     }
 
@@ -731,13 +734,14 @@ impl Keyspace {
 
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
-        log::trace!("acquiring journal lock");
+        /* log::trace!("acquiring journal lock");
         let journal_writer = self.supervisor.journal.get_writer()?;
         let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(journal_writer, active_memtable_id)
+        self.inner_rotate_memtable(journal_writer, active_memtable_id)*/
+        todo!()
     }
 
-    pub(crate) fn inner_rotate_memtable(
+    /*pub(crate) fn inner_rotate_memtable(
         &self,
         journal_writer: MutexGuard<'_, crate::journal::writer::Writer>,
         memtable_id: lsm_tree::MemtableId,
@@ -748,11 +752,12 @@ impl Keyspace {
             return Ok(false);
         }
 
-        // Rotate memtable
+        /*// Rotate memtable
         let Some(_) = self.tree.rotate_memtable() else {
             log::debug!("Got no sealed memtable, someone beat us to it");
             return Ok(false);
-        };
+        };*/
+        todo!("r");
 
         drop(journal_writer);
 
@@ -770,7 +775,8 @@ impl Keyspace {
             self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
 
-            for keyspace in self
+            todo!("maintenance?");
+            /*for keyspace in self
                 .supervisor
                 .keyspaces
                 .read()
@@ -786,7 +792,7 @@ impl Keyspace {
                         keyspace.name,
                     );
                 }
-            }
+            }*/
         }
 
         #[expect(clippy::expect_used)]
@@ -797,7 +803,7 @@ impl Keyspace {
             .maintenance()?;
 
         Ok(true)
-    }
+    }*/
 
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 30 {
@@ -829,7 +835,9 @@ impl Keyspace {
     }
 
     pub(crate) fn request_rotation(&self) {
-        let lock = self.tree.get_version_history_lock();
+        todo!("restore");
+
+        /*let lock = self.tree.get_version_history_lock();
         let latest_version = lock.latest_version();
         let active_memtable = &latest_version.active_memtable;
 
@@ -838,7 +846,7 @@ impl Keyspace {
                 self.clone(),
                 active_memtable.id(),
             ))
-            .ok();
+            .ok();*/
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
@@ -879,13 +887,14 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        self.tree.major_compact(
+        /*self.tree.major_compact(
             64_000_000,
             self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
-        )?;
+        )?;*/
+        todo!("restore compaction");
 
-        // TODO: 3.0.0 ----^
-        // compaction strategy needs a method: strategy.table_target_size()
+        // TODO: 4.0.0 ----^
+        // compaction strategy needs a method: strategy.table_target_size()?
 
         Ok(())
     }
@@ -935,9 +944,14 @@ impl Keyspace {
         .persist_mode(if self.config.manual_journal_persist {
             None
         } else {
-            Some(PersistMode::Buffer)
+            Some(DurabilityLevel::Buffer)
         });
 
+        #[expect(
+            clippy::expect_used,
+            reason = "does not use OCC, so should not conflict"
+        )]
+        #[expect(clippy::missing_panics_doc)]
         self.supervisor
             .write_pipeline
             .commit(Arc::new(write_record))?
@@ -990,9 +1004,14 @@ impl Keyspace {
         .persist_mode(if self.config.manual_journal_persist {
             None
         } else {
-            Some(PersistMode::Buffer)
+            Some(DurabilityLevel::Buffer)
         });
 
+        #[expect(
+            clippy::expect_used,
+            reason = "does not use OCC, so should not conflict"
+        )]
+        #[expect(clippy::missing_panics_doc)]
         self.supervisor
             .write_pipeline
             .commit(Arc::new(write_record))?
@@ -1057,9 +1076,13 @@ impl Keyspace {
         .persist_mode(if self.config.manual_journal_persist {
             None
         } else {
-            Some(PersistMode::Buffer)
+            Some(DurabilityLevel::Buffer)
         });
 
+        #[expect(
+            clippy::expect_used,
+            reason = "does not use OCC, so should not conflict"
+        )]
         self.supervisor
             .write_pipeline
             .commit(Arc::new(write_record))?

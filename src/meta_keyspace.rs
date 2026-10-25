@@ -86,16 +86,17 @@ impl MetaKeyspace {
     }
 
     fn maintenance(&self) -> crate::Result<()> {
-        self.inner
-            .compact(
-                Arc::new(
-                    crate::compaction::Leveled::default()
-                        .with_l0_threshold(2)
-                        .with_level_ratio_policy(vec![20.0]),
-                ),
-                0,
-            )
-            .map_err(Into::into)
+        /*self.inner
+        .compact(
+            Arc::new(
+                crate::compaction::Leveled::default()
+                    .with_l0_threshold(2)
+                    .with_level_ratio_policy(vec![20.0]),
+            ),
+            0,
+        )
+        .map_err(Into::into)*/
+        Ok(())
     }
 
     pub(crate) fn create_keyspace(
@@ -134,7 +135,7 @@ impl MetaKeyspace {
             ingestion.write(kv.0, kv.1)?;
         }
 
-        ingestion.finish()?;
+        //ingestion.finish()?;
 
         keyspaces.insert(name.into(), keyspace);
 
@@ -180,7 +181,7 @@ impl MetaKeyspace {
             key.extend(keyspace.id.to_be_bytes());
             ingestion.write_tombstone(key)?;
         }
-        ingestion.finish()?;
+        //ingestion.finish()?;
 
         self.visible_seqno.fetch_max(seqno + 1);
 

@@ -14,7 +14,6 @@ use std::{
 ///
 /// Will truncate the file to the last valid position to prevent corrupt
 /// bytes at the end of the file, which would jeopardize future writes into the file.
-#[expect(clippy::module_name_repetitions)]
 pub struct JournalReader {
     pub(crate) path: PathBuf,
     pub(crate) reader: BufReader<File>,

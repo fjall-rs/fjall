@@ -5,11 +5,8 @@
 use lsm_tree::SequenceNumberCounter;
 
 use crate::{
-    db::Keyspaces,
-    flush::manager::FlushManager,
-    journal::{manager::JournalManager, Journal},
-    snapshot_tracker::SnapshotTracker,
-    write_buffer_manager::WriteBufferManager,
+    db::Keyspaces, flush::manager::FlushManager, keyspace::KeyspaceKey,
+    snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
 };
 use std::sync::{Arc, Mutex, RwLock};
@@ -28,11 +25,8 @@ pub struct SupervisorInner {
 
     pub snapshot_tracker: SnapshotTracker,
 
-    pub(crate) journal: Arc<Journal>,
-
     /// Tracks journal size and garbage collects sealed journals when possible
-    pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-
+    // pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
     pub(crate) backpressure_lock: Mutex<()>,
 
     pub(crate) write_pipeline: WritePipeline,
@@ -54,11 +48,31 @@ impl Supervisor {
         Self(Arc::new(inner))
     }
 
-    pub fn build_seqno_map(
+    pub fn keyspace_exists(&self, name: &str) -> bool {
+        self.keyspaces
+            .read()
+            .expect("lock should not be poisoned")
+            .contains_key(name)
+    }
+
+    pub fn keyspace_count(&self) -> usize {
+        self.keyspaces.read().expect("lock is poisoned").len()
+    }
+
+    pub fn list_keyspace_names(&self) -> Vec<KeyspaceKey> {
+        self.keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /*pub fn build_seqno_map(
         &self,
         keyspaces: &Keyspaces,
     ) -> Vec<crate::journal::manager::EvictionWatermark> {
-        use crate::AbstractTree;
+        /*use crate::AbstractTree;
 
         let mut seqnos = Vec::with_capacity(keyspaces.len());
 
@@ -69,8 +83,11 @@ impl Supervisor {
                     keyspace: keyspace.clone(),
                 });
             }
-        }
+        }*
 
-        seqnos
-    }
+        seqnos*/
+
+        // TODO:
+        todo!()
+    }*/
 }
