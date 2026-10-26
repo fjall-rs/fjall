@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, Readable};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, Readable};
 use test_log::test;
 
 #[test]
@@ -11,15 +11,15 @@ fn keyspace_iter_dirty_read() -> fjall::Result<()> {
         KeyspaceCreateOptions::default().with_kv_separation(Default::default())
     })?;
 
-    tree.insert("a#1", "a")?;
-    tree.insert("a#2", "b")?;
-    tree.insert("a#3", "c")?;
+    tree.insert("a#1", "a", Buffer)?;
+    tree.insert("a#2", "b", Buffer)?;
+    tree.insert("a#3", "c", Buffer)?;
 
     tree.rotate_memtable_and_wait()?;
 
     let iter = tree.iter();
 
-    tree.insert("a#4", "d")?;
+    tree.insert("a#4", "d", Buffer)?;
 
     assert_eq!(3, iter.count());
 
@@ -39,17 +39,17 @@ fn keyspace_snapshot_read() -> fjall::Result<()> {
         KeyspaceCreateOptions::default().with_kv_separation(Default::default())
     })?;
 
-    tree.insert("a#1", "a")?;
-    tree.insert("a#2", "b")?;
-    tree.insert("a#3", "c")?;
-    tree2.insert("b#1", "5")?;
+    tree.insert("a#1", "a", Buffer)?;
+    tree.insert("a#2", "b", Buffer)?;
+    tree.insert("a#3", "c", Buffer)?;
+    tree2.insert("b#1", "5", Buffer)?;
 
     let snapshot = db.snapshot();
 
     tree.rotate_memtable_and_wait()?;
 
-    tree.insert("a#4", "d")?;
-    tree2.insert("b#2", "6")?;
+    tree.insert("a#4", "d", Buffer)?;
+    tree2.insert("b#2", "6", Buffer)?;
 
     assert_eq!(3, snapshot.iter(&tree).count());
     assert_eq!(3, snapshot.iter(&tree).count());
@@ -67,12 +67,12 @@ fn keyspace_visible_seqno() -> fjall::Result<()> {
 
     let initial_seqno = db.snapshot().seqno();
 
-    tree.insert("a#1", "a")?;
+    tree.insert("a#1", "a", Buffer)?;
 
     let snapshot = db.snapshot();
     assert_eq!(initial_seqno + 1, snapshot.seqno());
 
-    tree.insert("a#2", "a")?;
+    tree.insert("a#2", "a", Buffer)?;
 
     let snapshot = db.snapshot();
     assert_eq!(initial_seqno + 2, snapshot.seqno());

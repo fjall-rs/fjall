@@ -10,7 +10,7 @@ mod write_delay;
 #[cfg(test)]
 mod test;
 
-use crate::write_pipeline::WriteRecordPayload;
+use crate::write_pipeline::{WriteRecord, WriteRecordPayload};
 use crate::DurabilityLevel;
 use crate::{
     file::KEYSPACES_FOLDER, ingestion::Ingestion, locked_file::LockedFileGuard,
@@ -236,33 +236,6 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        /*let mut journal_writer = self.supervisor.journal.get_writer()?;
-
-        // IMPORTANT: Check the poisoned flag after getting journal mutex, otherwise TOCTOU
-        if self.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
-
-        let seqno = self.supervisor.seqno.next();
-
-        journal_writer
-            .write_clear(self.id, seqno)
-            .inspect_err(|e| {
-                log::error!(
-                    "persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}",
-                );
-                self.is_poisoned.poison();
-            })?;
-
-        if !self.config.manual_journal_persist {
-            journal_writer
-                .persist(crate::DurabilityLevel::Buffer)
-                .inspect_err(|e| {
-                    log::error!("persist failed, which is a FATAL, and possibly hardware-related, failure: {e:?}");
-                    self.is_poisoned.poison();
-                })?;
-        }*/
-
         /*self.tree.clear().inspect_err(|_| {
             self.is_poisoned.poison();
         })?;*/
@@ -928,24 +901,21 @@ impl Keyspace {
         &self,
         key: K,
         value: V,
+        durability: DurabilityLevel,
     ) -> crate::Result<()> {
-        use std::sync::atomic::Ordering;
+        use std::sync::atomic::Ordering::Relaxed;
 
-        if self.is_deleted.load(Ordering::Relaxed) {
+        if self.is_deleted.load(Relaxed) {
             return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();
         let value = value.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
+        let write_record = WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new(self.clone(), key, value, lsm_tree::ValueType::Value),
         ))
-        .persist_mode(if self.config.manual_journal_persist {
-            None
-        } else {
-            Some(DurabilityLevel::Buffer)
-        });
+        .durability(durability);
 
         #[expect(
             clippy::expect_used,
@@ -989,23 +959,23 @@ impl Keyspace {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn remove<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        use std::sync::atomic::Ordering;
+    pub fn remove<K: Into<UserKey>>(
+        &self,
+        key: K,
+        durability: DurabilityLevel,
+    ) -> crate::Result<()> {
+        use std::sync::atomic::Ordering::Relaxed;
 
-        if self.is_deleted.load(Ordering::Relaxed) {
+        if self.is_deleted.load(Relaxed) {
             return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
+        let write_record = WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, false),
         ))
-        .persist_mode(if self.config.manual_journal_persist {
-            None
-        } else {
-            Some(DurabilityLevel::Buffer)
-        });
+        .durability(durability);
 
         #[expect(
             clippy::expect_used,
@@ -1061,23 +1031,23 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn remove_weak<K: Into<UserKey>>(&self, key: K) -> crate::Result<()> {
-        use std::sync::atomic::Ordering;
+    pub fn remove_weak<K: Into<UserKey>>(
+        &self,
+        key: K,
+        durability: DurabilityLevel,
+    ) -> crate::Result<()> {
+        use std::sync::atomic::Ordering::Relaxed;
 
-        if self.is_deleted.load(Ordering::Relaxed) {
+        if self.is_deleted.load(Relaxed) {
             return Err(crate::Error::KeyspaceDeleted);
         }
 
         let key = key.into();
 
-        let write_record = crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Single(
+        let write_record = WriteRecord::new(WriteRecordPayload::Single(
             crate::batch::item::Item::new_tombstone(self.clone(), key, true),
         ))
-        .persist_mode(if self.config.manual_journal_persist {
-            None
-        } else {
-            Some(DurabilityLevel::Buffer)
-        });
+        .durability(durability);
 
         #[expect(
             clippy::expect_used,

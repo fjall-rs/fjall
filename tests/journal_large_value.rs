@@ -1,6 +1,6 @@
 // Regression test for https://github.com/fjall-rs/fjall/issues/68
 
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, KvSeparationOptions};
 
 #[test_log::test]
 fn journal_recover_large_value() -> fjall::Result<()> {
@@ -11,8 +11,8 @@ fn journal_recover_large_value() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-        tree.insert("a", &large_value)?;
-        tree.insert("b", "b")?;
+        tree.insert("a", &large_value, Buffer)?;
+        tree.insert("b", "b", Buffer)?;
     }
 
     {
@@ -37,8 +37,8 @@ fn journal_recover_large_value_blob() -> fjall::Result<()> {
             KeyspaceCreateOptions::default()
                 .with_kv_separation(Some(KvSeparationOptions::default()))
         })?;
-        tree.insert("a", &large_value)?;
-        tree.insert("b", "b")?;
+        tree.insert("a", &large_value, Buffer)?;
+        tree.insert("b", "b", Buffer)?;
     }
 
     {

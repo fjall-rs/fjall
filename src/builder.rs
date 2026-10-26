@@ -71,17 +71,6 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// If `false`, write batches or transactions automatically flush data to the operating system.
-    ///
-    /// Default = false
-    ///
-    /// Set to `true` to handle persistence manually, e.g. manually using `DurabilityLevel::SyncData` for ACID transactions.
-    #[must_use]
-    pub fn manual_journal_persist(mut self, flag: bool) -> Self {
-        self.inner.manual_journal_persist = flag;
-        self
-    }
-
     /// Sets the number of worker threads.
     ///
     /// Default = min(# CPU cores, 4)

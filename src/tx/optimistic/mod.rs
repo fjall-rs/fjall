@@ -86,14 +86,11 @@ impl OptimisticTxDatabase {
             self.inner.supervisor.snapshot_tracker.open()
         };
 
-        let mut write_tx =
-            WriteTransaction::new(self.inner().clone(), snapshot, self.oracle.clone());
-
-        if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(DurabilityLevel::Buffer));
-        }
-
-        Ok(write_tx)
+        Ok(WriteTransaction::new(
+            self.inner().clone(),
+            snapshot,
+            self.oracle.clone(),
+        ))
     }
 
     /// Acquires a snapshot for read isolation, a.k.a. "read transaction".

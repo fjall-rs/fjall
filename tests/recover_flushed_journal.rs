@@ -1,4 +1,4 @@
-use fjall::{AbstractTree, Database, KeyspaceCreateOptions};
+use fjall::{AbstractTree, Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use std::sync::Arc;
 use test_log::test;
 
@@ -23,7 +23,7 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
         let tree = open_fifo(&db)?;
 
         for x in 0..ITEM_COUNT {
-            tree.insert(key(x), "a")?;
+            tree.insert(key(x), "a", Buffer)?;
         }
 
         // Flushed, but still in the active journal
@@ -39,7 +39,7 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
         assert_eq!(tree.len()?, ITEM_COUNT as usize);
 
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
-            tree.insert(key(x), "a")?;
+            tree.insert(key(x), "a", Buffer)?;
         }
 
         tree.rotate_memtable_and_wait()?;
@@ -47,7 +47,7 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
         assert_eq!(tree.len()?, ITEM_COUNT as usize * 2);
 
         // Would fail if the FIFO compaction panicked and poisoned the database
-        tree.insert(key(ITEM_COUNT * 2), "a")?;
+        tree.insert(key(ITEM_COUNT * 2), "a", Buffer)?;
     }
 
     Ok(())
@@ -62,14 +62,14 @@ fn recover_flushed_items_after_clear() -> fjall::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         for x in 0..ITEM_COUNT {
-            tree.insert(x.to_be_bytes(), "old")?;
+            tree.insert(x.to_be_bytes(), "old", Buffer)?;
         }
         tree.rotate_memtable_and_wait()?;
 
         tree.clear()?;
 
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
-            tree.insert(x.to_be_bytes(), "new")?;
+            tree.insert(x.to_be_bytes(), "new", Buffer)?;
         }
         tree.rotate_memtable_and_wait()?;
     }

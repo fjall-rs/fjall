@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 #[test]
@@ -11,9 +11,9 @@ fn keyspace_prefix_carl() -> fjall::Result<()> {
         KeyspaceCreateOptions::default().with_kv_separation(Default::default())
     })?;
 
-    tree.insert("a#1", "a".repeat(4_096))?;
-    tree.insert("a#2", "b".repeat(4_096))?;
-    tree.insert("a#3", "c".repeat(4_096))?;
+    tree.insert("a#1", "a".repeat(4_096), Buffer)?;
+    tree.insert("a#2", "b".repeat(4_096), Buffer)?;
+    tree.insert("a#3", "c".repeat(4_096), Buffer)?;
 
     tree.rotate_memtable_and_wait()?;
 

@@ -143,11 +143,11 @@ impl WriteTransaction {
         }
     }
 
-    // TODO: change to be non-Option, default = Buffer
-
     /// Sets the durability level.
+    ///
+    /// Default = [`DurabilityLevel::Buffer`]
     #[must_use]
-    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
+    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
         self.inner = self.inner.durability(mode);
         self
     }
@@ -484,7 +484,7 @@ impl WriteTransaction {
                 instant,
                 std::mem::take(&mut self.cm.lock().expect("lock is poisoned")),
             ))
-            .persist_mode(durability),
+            .durability(durability),
         ))
     }
 
@@ -513,8 +513,12 @@ mod tests {
 
     impl TestEnv {
         fn seed_hermitage_data(&self) -> crate::Result<()> {
-            self.tree.inner().insert([1u8], [10u8])?;
-            self.tree.inner().insert([2u8], [20u8])?;
+            self.tree
+                .inner()
+                .insert([1u8], [10u8], crate::DurabilityLevel::Buffer)?;
+            self.tree
+                .inner()
+                .insert([2u8], [20u8], crate::DurabilityLevel::Buffer)?;
             Ok(())
         }
     }
@@ -710,8 +714,12 @@ mod tests {
     fn tx_ssi_swap() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.tree.inner().insert("x", "x")?;
-        env.tree.inner().insert("y", "y")?;
+        env.tree
+            .inner()
+            .insert("x", "x", crate::DurabilityLevel::Buffer)?;
+        env.tree
+            .inner()
+            .insert("y", "y", crate::DurabilityLevel::Buffer)?;
 
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;

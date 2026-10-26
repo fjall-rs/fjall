@@ -57,7 +57,7 @@ pub struct WriteRecord {
     //TODO: change to be DurabilityLevel, default = Buffer
     //
     /// This write record's durability requirement
-    pub(super) persist_mode: Option<DurabilityLevel>,
+    pub(super) persist_mode: DurabilityLevel,
 
     /// The actual user data to write
     pub(super) payload: TakeOnce<Payload>,
@@ -109,7 +109,7 @@ impl WriteRecord {
     pub fn new(payload: Payload) -> Self {
         Self {
             state: AtomicU8::new(WRITE_RECORD_STATE_PENDING),
-            persist_mode: None,
+            persist_mode: DurabilityLevel::Buffer,
             payload: TakeOnce::new_with(payload),
             assigned_seqno: AtomicU64::default(),
             occ: None,
@@ -131,7 +131,7 @@ impl WriteRecord {
     /// level that was encountered.
     /// If buffer/fsync/fsyncdata, only a single syscall will be issued for all
     /// batches.
-    pub fn persist_mode(mut self, mode: Option<DurabilityLevel>) -> Self {
+    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
         self.persist_mode = mode;
         self
     }

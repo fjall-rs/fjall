@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test]
@@ -10,7 +10,7 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
     let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     assert_eq!(0, db.write_buffer_size());
 
-    tree.insert("asd", "def")?;
+    tree.insert("asd", "def", Buffer)?;
 
     let write_buffer_size_after = db.write_buffer_size();
     assert!(write_buffer_size_after > 0);
@@ -39,7 +39,7 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
     })?;
     assert_eq!(0, db.write_buffer_size());
 
-    tree.insert("asd", "def")?;
+    tree.insert("asd", "def", Buffer)?;
 
     let write_buffer_size_after = db.write_buffer_size();
     assert!(write_buffer_size_after > 0);
@@ -66,7 +66,7 @@ fn write_buffer_size_after_reopen_of_flushed_db() -> fjall::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         for x in 0u64..1_000 {
-            tree.insert(x.to_be_bytes(), "a".repeat(1_000))?;
+            tree.insert(x.to_be_bytes(), "a".repeat(1_000), Buffer)?;
         }
 
         // Flushed, but still in the active journal

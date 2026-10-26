@@ -1,4 +1,4 @@
-use fjall::Readable;
+use fjall::{DurabilityLevel::Buffer, Readable};
 
 /// Tests that modifications to a write transaction do not dirty a previously started snapshot
 #[test_log::test]
@@ -48,11 +48,11 @@ fn tx_ryow_snapshot_ssi() -> fjall::Result<()> {
 
     assert_eq!(100, tx.iter(&tree).count());
 
-    tree.inner().insert("2", "2")?;
+    tree.inner().insert("2", "2", Buffer)?;
     assert_eq!(100, tx.iter(&tree).count());
 
     let iter = tx.iter(&tree);
-    tree.inner().insert("3", "3")?;
+    tree.inner().insert("3", "3", Buffer)?;
     assert_eq!(100, iter.count());
 
     Ok(())

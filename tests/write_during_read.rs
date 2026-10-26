@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 #[test]
@@ -12,13 +12,13 @@ fn write_during_read() -> fjall::Result<()> {
     })?;
 
     for x in 0u64..50_000 {
-        tree.insert(x.to_be_bytes(), x.to_be_bytes())?;
+        tree.insert(x.to_be_bytes(), x.to_be_bytes(), Buffer)?;
     }
     tree.rotate_memtable_and_wait()?;
 
     for guard in tree.iter() {
         let (k, v) = guard.into_inner()?;
-        tree.insert(k, v.repeat(4))?;
+        tree.insert(k, v.repeat(4), Buffer)?;
     }
 
     Ok(())

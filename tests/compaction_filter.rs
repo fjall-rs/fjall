@@ -1,4 +1,4 @@
-use fjall::KeyspaceCreateOptions;
+use fjall::{DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use lsm_tree::compaction::filter::{
     CompactionFilter, Context as CompactionFilterContext, Factory, ItemAccessor, Verdict,
 };
@@ -49,10 +49,10 @@ fn compaction_filter() -> fjall::Result<()> {
     {
         let tree = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", Buffer)?;
         tree.rotate_memtable_and_wait()?;
-        tree.insert("abc", "abc")?;
-        tree.insert("b", "b")?;
+        tree.insert("abc", "abc", Buffer)?;
+        tree.insert("b", "b", Buffer)?;
         tree.rotate_memtable_and_wait()?;
 
         assert!(tree.contains_key("a")?);
@@ -69,10 +69,10 @@ fn compaction_filter() -> fjall::Result<()> {
     {
         let tree = db.keyspace("my_items_imposter", KeyspaceCreateOptions::default)?;
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", Buffer)?;
         tree.rotate_memtable_and_wait()?;
-        tree.insert("abc", "abc")?;
-        tree.insert("b", "b")?;
+        tree.insert("abc", "abc", Buffer)?;
+        tree.insert("b", "b", Buffer)?;
         tree.rotate_memtable_and_wait()?;
 
         assert!(tree.contains_key("a")?);
@@ -116,10 +116,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
         {
             let tree = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
-            tree.insert("a", "a")?;
+            tree.insert("a", "a", Buffer)?;
             tree.rotate_memtable_and_wait()?;
-            tree.insert("abc", "abc")?;
-            tree.insert("b", "b")?;
+            tree.insert("abc", "abc", Buffer)?;
+            tree.insert("b", "b", Buffer)?;
             tree.rotate_memtable_and_wait()?;
 
             assert!(tree.contains_key("a")?);
@@ -136,10 +136,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
         {
             let tree = db.keyspace("my_items_imposter", KeyspaceCreateOptions::default)?;
 
-            tree.insert("a", "a")?;
+            tree.insert("a", "a", Buffer)?;
             tree.rotate_memtable_and_wait()?;
-            tree.insert("abc", "abc")?;
-            tree.insert("b", "b")?;
+            tree.insert("abc", "abc", Buffer)?;
+            tree.insert("b", "b", Buffer)?;
             tree.rotate_memtable_and_wait()?;
 
             assert!(tree.contains_key("a")?);

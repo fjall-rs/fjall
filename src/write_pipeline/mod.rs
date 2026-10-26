@@ -45,6 +45,10 @@ pub struct WritePipeline {
 }
 
 impl WritePipeline {
+    pub fn wal(&self) -> &Mutex<crate::wal::Wal> {
+        &self.state.writer
+    }
+
     /// Creates a new write pipeline.
     ///
     /// One database has one write pipeline.
@@ -114,14 +118,12 @@ impl WritePipeline {
                 return Err(crate::Error::Io(std::io::Error::other("injected failure")));
             }
 
-            // TODO: restore
             bytes_written += match &payload {
                 WriteRecordPayload::Single(item) => {
                     journal_writer.write(item.keyspace.id(), &item.key, &item.value, batch_seqno, item.value_type)
                 },
                 WriteRecordPayload::Multiple(batch) => {
-                   //    journal_writer.write_batch(batch.iter(), batch_seqno)
-                   Ok (0)
+                    journal_writer.write_batch(batch_seqno, batch)
                 }
             }
             .inspect_err(|e| {
@@ -192,9 +194,8 @@ impl WritePipeline {
             }
 
             collected_persist = match (collected_persist, write_record.persist_mode) {
-                (Some(prev), Some(curr)) => Some(prev.max(curr)),
-                (None, Some(curr)) => Some(curr),
-                (Some(prev), _) => Some(prev),
+                (Some(prev), curr) => Some(prev.max(curr)),
+                (None, curr) => Some(curr),
                 _ => collected_persist,
             };
 

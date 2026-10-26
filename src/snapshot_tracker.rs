@@ -192,8 +192,8 @@ mod tests {
         let db = crate::Database::builder(&dir).open()?;
         let tree = db.keyspace("default", Default::default)?;
 
-        tree.insert("a", "a")?;
-        tree.insert("a", "b")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
+        tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
         tree.rotate_memtable_and_wait()?;
@@ -212,8 +212,8 @@ mod tests {
         let db = crate::Database::builder(&dir).open()?;
         let tree = db.keyspace("default", Default::default)?;
 
-        tree.insert("a", "a")?;
-        tree.insert("a", "b")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
+        tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
         db.supervisor.snapshot_tracker.gc();
@@ -234,11 +234,11 @@ mod tests {
         let db = crate::Database::builder(&dir).open()?;
         let tree = db.keyspace("default", Default::default)?;
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
 
         let snapshot = db.snapshot();
 
-        tree.insert("a", "b")?;
+        tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 
@@ -262,11 +262,11 @@ mod tests {
         let db = crate::Database::builder(&dir).open()?;
         let tree = db.keyspace("default", Default::default)?;
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
 
         let snapshot = db.snapshot();
 
-        tree.insert("a", "b")?;
+        tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 

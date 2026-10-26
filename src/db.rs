@@ -10,7 +10,7 @@ use crate::{
     flush::manager::FlushManager,
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
-    poison::{PoisonDart, PoisonSignal},
+    poison::PoisonSignal,
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
@@ -23,7 +23,6 @@ use crate::{
 };
 use lsm_tree::SequenceNumberCounter;
 use std::{
-    fs::remove_dir_all,
     path::Path,
     sync::{atomic::AtomicUsize, Arc, Mutex, RwLock},
 };
@@ -183,16 +182,10 @@ impl Database {
     /// ```
     #[must_use]
     pub fn batch(&self) -> WriteBatch {
-        let mut batch = WriteBatch::new(self.clone());
-
-        if !self.config.manual_journal_persist {
-            batch = batch.durability(Some(DurabilityLevel::Buffer));
-        }
-
-        batch
+        WriteBatch::new(self.clone())
     }
 
-    // TODO: refactor: accessor to stats(), so we don't have that many methods in DB
+    // TODO: v4 refactor: accessor to stats(), so we don't have that many methods in DB
 
     /// Returns the current write buffer size (active + sealed memtables).
     ///
@@ -272,26 +265,28 @@ impl Database {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
+    #[expect(clippy::expect_used, clippy::missing_panics_doc)]
     pub fn journal_count(&self) -> usize {
-        /*self.supervisor
-        .journal_manager
-        .read()
-        .expect("lock is poisoned")
-        .journal_count()*/
-        todo!()
+        // 1 = active WAL fragment
+        1 + self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .expect("should not be poisoned")
+            .sealed_fragment_count()
     }
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
+    #[expect(clippy::expect_used)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
-        /*Ok(self.supervisor.journal.get_writer()?.len()?
-        + self
-            .supervisor
-            .journal_manager
-            .read()
-            .expect("lock is poisoned")
-            .disk_space_used())*/
-        todo!()
+        self.supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .expect("should not be poisoned")
+            .disk_usage()
     }
 
     /// Returns the disk space usage of the entire database.
@@ -308,6 +303,11 @@ impl Database {
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error, if an IO error occurred.
+    #[expect(clippy::expect_used, clippy::missing_panics_doc)]
     pub fn disk_space(&self) -> crate::Result<u64> {
         let journal_size = self.journal_disk_space()?;
 
@@ -348,18 +348,21 @@ impl Database {
     ///
     /// Returns error, if an IO error occurred.
     pub fn persist(&self, mode: DurabilityLevel) -> crate::Result<()> {
-        if self.is_poisoned.is_poisoned() {
-            return Err(crate::Error::Poisoned);
-        }
+        use crate::write_pipeline::WriteRecordPayload;
 
-        /*self.supervisor.journal.persist(mode).inspect_err(|e| {
-            log::error!(
-                "flush failed, which is a FATAL, and possibly hardware-related, failure: {e:?}",
-            );
-            self.is_poisoned.poison();
-        })?;*/
+        let write_record =
+            crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(vec![]))
+                .durability(mode);
 
-        todo!();
+        #[expect(
+            clippy::expect_used,
+            reason = "does not use OCC, so should not conflict"
+        )]
+        #[expect(clippy::missing_panics_doc)]
+        self.supervisor
+            .write_pipeline
+            .commit(Arc::new(write_record))?
+            .expect("should not do OCC");
 
         Ok(())
     }
@@ -601,6 +604,24 @@ impl Database {
         todo!();
     }
 
+    /// Synchronously flushes all keyspaces into tables files and rotates the write-ahead log.
+    ///
+    /// This blocks writes and keyspace changes for the duration of the operation.
+    /// Readers may continue.
+    ///
+    /// The database remains usable afterwards, and reopening it
+    /// does not need to replay writes preceding the flush.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O error occurs.
+    pub fn flush_all(&self) -> crate::Result<()> {
+        // TODO: v4: https://github.com/fjall-rs/fjall/pull/315
+        log::info!("Flushing all write buffers");
+        log::debug!("Rotating WAL");
+        todo!();
+    }
+
     pub(crate) fn prepare_database(
         config: Config,
         lock_file: LockedFileGuard,
@@ -612,24 +633,8 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
 
         let wal = if recover {
-            // TODO: need to recover keyspaces before
-
-            log::info!("Recovering WAL");
-
-            // TODO: actually do WAL recovery somewhere else
-            let mut wal = hwal::Wal::recover(&config.path)?;
-
-            for record in wal.by_ref() {
-                let record = record?;
-
-                // TODO: replay into memtables
-                let payload = record.payload();
-                eprintln!("recovered KV: {payload:?}");
-
-                // TODO: use record.fragment_id() to save watermarks
-            }
-
-            wal.into_writer()?
+            let keyspaces = keyspaces.read().expect("lock should not be poisoned");
+            crate::wal::recover_wal(&config, &keyspaces, |id| todo!())?
         } else {
             log::info!("Creating v4 WAL");
             hwal::Wal::create(&config.path)?

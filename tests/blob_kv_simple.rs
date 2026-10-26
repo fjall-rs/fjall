@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, KvSeparationOptions};
 use lsm_tree::AbstractTree;
 use test_log::test;
 
@@ -12,9 +12,9 @@ fn blob_kv_simple() -> fjall::Result<()> {
     })?;
 
     assert_eq!(tree.len()?, 0);
-    tree.insert("1", "oxygen".repeat(1_000_000))?;
-    tree.insert("3", "abc")?;
-    tree.insert("5", "abc")?;
+    tree.insert("1", "oxygen".repeat(1_000_000), Buffer)?;
+    tree.insert("3", "abc", Buffer)?;
+    tree.insert("5", "abc", Buffer)?;
     assert_eq!(tree.len()?, 3);
 
     tree.rotate_memtable_and_wait()?;
@@ -45,9 +45,9 @@ fn blob_kv_simple_recovery() -> fjall::Result<()> {
         })?;
 
         assert_eq!(tree.len()?, 0);
-        tree.insert("1", "oxygen".repeat(1_000_000))?;
-        tree.insert("3", "abc")?;
-        tree.insert("5", "abc")?;
+        tree.insert("1", "oxygen".repeat(1_000_000), Buffer)?;
+        tree.insert("3", "abc", Buffer)?;
+        tree.insert("5", "abc", Buffer)?;
         assert_eq!(tree.len()?, 3);
 
         tree.rotate_memtable_and_wait()?;

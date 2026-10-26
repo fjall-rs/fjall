@@ -2,7 +2,10 @@ use fjall::config::{
     BlockSizePolicy, FilterPolicy, FilterPolicyEntry, HashRatioPolicy, PinningPolicy,
     RestartIntervalPolicy,
 };
-use fjall::{AbstractTree, CompressionType, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use fjall::{
+    AbstractTree, CompressionType, Database, DurabilityLevel::Buffer, KeyspaceCreateOptions,
+    KvSeparationOptions,
+};
 use lsm_tree::compaction::CompactionStrategy;
 use std::sync::Arc;
 use test_log::test;
@@ -247,13 +250,13 @@ fn reload_with_keyspaces() -> fjall::Result<()> {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
                 let value = nanoid::nanoid!();
-                tree.insert(key, value.as_bytes())?;
+                tree.insert(key, value.as_bytes(), Buffer)?;
             }
 
             for x in 0..ITEM_COUNT as u64 {
                 let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
                 let value = nanoid::nanoid!();
-                tree.insert(key, value.as_bytes())?;
+                tree.insert(key, value.as_bytes(), Buffer)?;
             }
         }
 

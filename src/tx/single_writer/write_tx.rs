@@ -88,8 +88,10 @@ impl<'tx> WriteTransaction<'tx> {
     }
 
     /// Sets the durability level.
+    ///
+    /// Default = [`DurabilityLevel::Buffer`]
     #[must_use]
-    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
+    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
         self.inner = self.inner.durability(mode);
         self
     }

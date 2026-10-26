@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 
 #[test_log::test]
 fn clear_recover() -> fjall::Result<()> {
@@ -10,7 +10,7 @@ fn clear_recover() -> fjall::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", Buffer)?;
         assert!(tree.contains_key("a")?);
 
         tree.clear()?;
@@ -39,13 +39,13 @@ fn clear_recover_multi_tree() -> fjall::Result<()> {
         let other = db.keyspace("other", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", Buffer)?;
         assert!(tree.contains_key("a")?);
 
         tree.clear()?;
         assert!(tree.is_empty()?);
 
-        other.insert("a", "z")?;
+        other.insert("a", "z", Buffer)?;
     }
 
     {
@@ -67,7 +67,7 @@ fn clear_recover_multi_tree() -> fjall::Result<()> {
         assert!(tree.is_empty()?);
         assert!(other.is_empty()?);
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", Buffer)?;
         other.clear()?;
     }
 

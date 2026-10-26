@@ -64,10 +64,6 @@ impl SingleWriterTxDatabase {
             guard,
         );
 
-        if !self.inner.config.manual_journal_persist {
-            write_tx = write_tx.durability(Some(DurabilityLevel::Buffer));
-        }
-
         write_tx
     }
 

@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 10_000;
@@ -14,13 +14,13 @@ fn reload_with_memtable() -> fjall::Result<()> {
         for x in 0..ITEM_COUNT as u64 {
             let key = x.to_be_bytes();
             let value = nanoid::nanoid!();
-            tree.insert(key, value.as_bytes())?;
+            tree.insert(key, value.as_bytes(), Buffer)?;
         }
 
         for x in 0..ITEM_COUNT as u64 {
             let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
             let value = nanoid::nanoid!();
-            tree.insert(key, value.as_bytes())?;
+            tree.insert(key, value.as_bytes(), Buffer)?;
         }
 
         assert_eq!(tree.len()?, ITEM_COUNT * 2);

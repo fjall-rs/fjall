@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 const ITEM_COUNT: usize = 100;
@@ -15,7 +15,7 @@ fn recover_seqno_smoke_test() -> fjall::Result<()> {
         let keyspace = db.keyspace("default1", KeyspaceCreateOptions::default)?;
 
         for k in ["a", "b", "c"] {
-            keyspace.insert(k, k)?;
+            keyspace.insert(k, k, Buffer)?;
         }
 
         seqno = db.seqno();
@@ -58,7 +58,7 @@ fn recover_seqno() -> fjall::Result<()> {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
                 let value = nanoid::nanoid!();
-                tree.insert(key, value.as_bytes())?;
+                tree.insert(key, value.as_bytes(), Buffer)?;
 
                 seqno += 1;
                 assert_eq!(seqno, db.seqno());
@@ -67,7 +67,7 @@ fn recover_seqno() -> fjall::Result<()> {
             for x in 0..ITEM_COUNT as u64 {
                 let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
                 let value = nanoid::nanoid!();
-                tree.insert(key, value.as_bytes())?;
+                tree.insert(key, value.as_bytes(), Buffer)?;
 
                 seqno += 1;
                 assert_eq!(seqno, db.seqno());
@@ -129,7 +129,7 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
         for tree in keyspaces {
             for x in 0..ITEM_COUNT as u64 {
                 let key = x.to_be_bytes();
-                tree.remove(key)?;
+                tree.remove(key, Buffer)?;
 
                 seqno += 1;
                 assert_eq!(seqno, db.seqno());
@@ -137,7 +137,7 @@ fn recover_seqno_tombstone() -> fjall::Result<()> {
 
             for x in 0..ITEM_COUNT as u64 {
                 let key: [u8; 8] = (x + ITEM_COUNT as u64).to_be_bytes();
-                tree.remove(key)?;
+                tree.remove(key, Buffer)?;
 
                 seqno += 1;
                 assert_eq!(seqno, db.seqno());

@@ -29,10 +29,10 @@ pub(super) struct BaseTransaction {
     /// The snapshot, for repeatable reads
     pub(crate) nonce: SnapshotNonce,
 
-    // TODO: change to be non-Option, default = Buffer
-    //
     /// Durability level used, see [`DurabilityLevel`].
-    pub(crate) durability: Option<DurabilityLevel>,
+    ///
+    /// Default = [`DurabilityLevel::Buffer`]
+    pub(crate) durability: DurabilityLevel,
 
     /// Current sequence number
     ///
@@ -165,14 +165,16 @@ impl BaseTransaction {
             db,
             memtables: HashMap::default(),
             nonce,
-            durability: None,
+            durability: DurabilityLevel::Buffer,
             seqno: 0x8000_0000_0000_0000,
         }
     }
 
     /// Sets the durability level.
+    ///
+    /// Default = [`DurabilityLevel::Buffer`]
     #[must_use]
-    pub(super) fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
+    pub(super) fn durability(mut self, mode: DurabilityLevel) -> Self {
         self.durability = mode;
         self
     }
@@ -390,7 +392,9 @@ mod tests {
     fn update_fetch() -> Result<(), Box<dyn std::error::Error>> {
         let env = setup()?;
 
-        env.tree.inner().insert([2u8], [20u8])?;
+        env.tree
+            .inner()
+            .insert([2u8], [20u8], crate::DurabilityLevel::Buffer)?;
 
         let mut tx = BaseTransaction::new(
             env.db.inner.clone(),

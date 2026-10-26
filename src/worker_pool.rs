@@ -282,13 +282,13 @@ mod tests {
 
             let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
-            ks.insert("a", "a")?;
+            ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
             ks.rotate_memtable_and_wait()?;
 
-            ks.insert("a", "a")?;
+            ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
             ks.rotate_memtable_and_wait()?;
 
-            ks.insert("a", "a")?;
+            ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
             ks.rotate_memtable_and_wait()?;
 
             assert!(ks.tree.l0_run_count() > 0);

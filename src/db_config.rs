@@ -36,16 +36,19 @@ pub struct Config {
     /// many (possibly inactive) keyspaces.
     pub(crate) max_write_buffer_size_in_bytes: Option<u64>, // TODO: should be configurable during runtime: AtomicU64
 
-    pub(crate) manual_journal_persist: bool,
-
     /// Number of concurrent worker threads
     pub(crate) worker_threads: usize,
 
     #[doc(hidden)]
     pub(crate) write_pipeline_leader_capacity: usize,
 
+    // TODO: rename wal_
+    /// WAL compression
     pub(crate) journal_compression_type: CompressionType,
 
+    /// Value size threshold
+    ///
+    /// Values equal or larger the threshold are compressed
     pub(crate) journal_compression_threshold: usize,
 
     // pub(crate) journal_recovery_mode: RecoveryMode,
@@ -81,7 +84,6 @@ impl Config {
             worker_threads,
             write_pipeline_leader_capacity: 1_000_000,
             // journal_recovery_mode: RecoveryMode::default(),
-            manual_journal_persist: false,
 
             #[cfg(not(feature = "lz4"))]
             journal_compression_type: CompressionType::None,

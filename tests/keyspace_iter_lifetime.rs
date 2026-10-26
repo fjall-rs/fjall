@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 struct Counter<'a, I: DoubleEndedIterator<Item = fjall::Result<fjall::KvPair>>> {
@@ -20,9 +20,9 @@ fn keyspace_iter_lifetime() -> fjall::Result<()> {
     let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
     assert_eq!(0, db.write_buffer_size());
 
-    tree.insert("asd", "def")?;
-    tree.insert("efg", "hgf")?;
-    tree.insert("hij", "wer")?;
+    tree.insert("asd", "def", Buffer)?;
+    tree.insert("efg", "hgf", Buffer)?;
+    tree.insert("hij", "wer", Buffer)?;
 
     {
         let mut iter = tree.iter().map(|guard| guard.into_inner());

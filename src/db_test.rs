@@ -13,7 +13,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
         assert!(tree.contains_key("a")?);
 
         tree.clear()?;
@@ -26,7 +26,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
         // db.supervisor.journal.get_writer()?.rotate()?;
         todo!();
 
-        tree.insert("b", "a")?;
+        tree.insert("b", "a", crate::DurabilityLevel::Buffer)?;
         assert!(tree.contains_key("b")?);
     }
 
@@ -126,7 +126,7 @@ pub fn test_exotic_keyspace_names() -> crate::Result<()> {
 
     for name in ["hello$world", "hello#world", "hello.world", "hello_world"] {
         let tree = db.keyspace(name, KeyspaceCreateOptions::default)?;
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
         assert_eq!(1, tree.len()?);
     }
 
@@ -145,7 +145,11 @@ fn recover_sealed_smoke_test() -> crate::Result<()> {
 
         assert_eq!(i, tree.len()?.try_into().unwrap());
 
-        tree.insert(i.to_be_bytes(), i.to_be_bytes())?;
+        tree.insert(
+            i.to_be_bytes(),
+            i.to_be_bytes(),
+            crate::DurabilityLevel::Buffer,
+        )?;
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
 
         tree.rotate_memtable_and_wait()?;
@@ -166,13 +170,13 @@ fn recover_sealed_order() -> crate::Result<()> {
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
-        tree.insert("a", "a")?;
+        tree.insert("a", "a", crate::DurabilityLevel::Buffer)?;
         tree.rotate_memtable()?;
 
-        tree.insert("a", "b")?;
+        tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         tree.rotate_memtable()?;
 
-        tree.insert("a", "c")?;
+        tree.insert("a", "c", crate::DurabilityLevel::Buffer)?;
         tree.rotate_memtable()?;
     }
 
@@ -203,7 +207,11 @@ fn recover_sealed_blob() -> crate::Result<()> {
 
         assert_eq!(i, tree.len()?.try_into().unwrap());
 
-        tree.insert(i.to_be_bytes(), i.to_be_bytes().repeat(1_024))?;
+        tree.insert(
+            i.to_be_bytes(),
+            i.to_be_bytes().repeat(1_024),
+            crate::DurabilityLevel::Buffer,
+        )?;
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
 
         tree.rotate_memtable_and_wait()?;
@@ -301,7 +309,7 @@ fn delete_keyspace_1() -> crate::Result<()> {
         let db = Database::builder(folder.path()).open()?;
         let _keep = db.keyspace("keep", KeyspaceCreateOptions::default)?;
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
-        a.insert("stale", "written to a")?;
+        a.insert("stale", "written to a", crate::DurabilityLevel::Buffer)?;
         db.delete_keyspace(a)?;
     }
 

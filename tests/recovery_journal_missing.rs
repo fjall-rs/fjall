@@ -20,7 +20,7 @@ fn db_journal_recovery_no_journal_files() -> fjall::Result<()> {
     {
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", Default::default)?;
-        tree.insert("hello", "world")?;
+        tree.insert("hello", "world", fjall::DurabilityLevel::Buffer)?;
         db.persist(DurabilityLevel::SyncAll)?;
     }
 

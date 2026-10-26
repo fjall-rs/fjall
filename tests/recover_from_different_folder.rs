@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel::Buffer, KeyspaceCreateOptions};
 use test_log::test;
 
 #[test]
@@ -13,13 +13,13 @@ fn recover_from_different_folder() -> fjall::Result<()> {
         let db = Database::builder(folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
-        tree.insert("abc", "def")?;
-        tree.insert("wqewe", "def")?;
-        tree.insert("ewewq", "def")?;
-        tree.insert("asddas", "def")?;
-        tree.insert("ycxycx", "def")?;
-        tree.insert("asdsda", "def")?;
-        tree.insert("wewqe", "def")?;
+        tree.insert("abc", "def", Buffer)?;
+        tree.insert("wqewe", "def", Buffer)?;
+        tree.insert("ewewq", "def", Buffer)?;
+        tree.insert("asddas", "def", Buffer)?;
+        tree.insert("ycxycx", "def", Buffer)?;
+        tree.insert("asdsda", "def", Buffer)?;
+        tree.insert("wewqe", "def", Buffer)?;
     }
 
     let absolute_folder = std::path::Path::new(folder).canonicalize()?;

@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct WriteBatch {
     pub(crate) data: Vec<Item>,
     db: Database,
-    durability: Option<DurabilityLevel>,
+    durability: DurabilityLevel,
 }
 
 impl WriteBatch {
@@ -27,7 +27,7 @@ impl WriteBatch {
         Self {
             data: Vec::new(),
             db,
-            durability: None,
+            durability: DurabilityLevel::Buffer,
         }
     }
 
@@ -41,7 +41,7 @@ impl WriteBatch {
         Self {
             data: Vec::with_capacity(capacity),
             db,
-            durability: None,
+            durability: DurabilityLevel::Buffer,
         }
     }
 
@@ -58,8 +58,10 @@ impl WriteBatch {
     }
 
     /// Sets the durability level.
+    ///
+    /// Default = [`DurabilityLevel::Buffer`]
     #[must_use]
-    pub fn durability(mut self, mode: Option<DurabilityLevel>) -> Self {
+    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
         self.durability = mode;
         self
     }
@@ -116,7 +118,7 @@ impl WriteBatch {
 
         let write_record =
             crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(self.data))
-                .persist_mode(self.durability);
+                .durability(self.durability);
 
         #[expect(
             clippy::expect_used,
