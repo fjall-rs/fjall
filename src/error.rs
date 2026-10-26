@@ -48,6 +48,9 @@ pub enum Error {
 
     /// Database is unrecoverable, see logs for details
     Unrecoverable,
+
+    /// Transaction has been manually aborted
+    TransactionAborted,
 }
 
 impl std::fmt::Display for Error {
