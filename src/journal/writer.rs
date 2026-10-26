@@ -31,22 +31,23 @@ pub struct Writer {
 }
 
 /// The persist mode allows setting the durability guarantee of previous writes
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(u8)]
 pub enum PersistMode {
     /// Flushes data to OS buffers. This allows the OS to write out data in case of an
     /// application crash.
     ///
     /// When this function returns, data is **not** guaranteed to be persisted in case
     /// of a power loss event or OS crash.
-    Buffer,
+    Buffer = 0,
 
     /// Flushes data using `fdatasync`.
     ///
     /// Use if you know that `fdatasync` is sufficient for your file system and/or operating system.
-    SyncData,
+    SyncData = 1,
 
     /// Flushes data + metadata using `fsync`.
-    SyncAll,
+    SyncAll = 2,
 }
 
 impl Writer {
@@ -255,6 +256,9 @@ impl Writer {
         Ok(self.buf.len())
     }
 
+    /// Writes a single key-value pair to the journal.
+    ///
+    /// Returns the number of bytes written to the journal file.
     pub(crate) fn write_raw(
         &mut self,
         keyspace_id: InternalKeyspaceId,
@@ -323,13 +327,15 @@ impl Writer {
         Ok(byte_count)
     }
 
+    /// Writes an atomic write batch to the journal.
+    ///
+    /// Returns the number of bytes written to the journal file.
     pub fn write_batch<'a>(
         &mut self,
-        items: impl Iterator<Item = &'a BatchItem>,
-        batch_size: usize,
+        items: impl ExactSizeIterator<Item = &'a BatchItem>,
         seqno: SeqNo,
     ) -> crate::Result<usize> {
-        if batch_size == 0 {
+        if items.len() == 0 {
             return Ok(0);
         }
 
@@ -339,7 +345,7 @@ impl Writer {
 
         // NOTE: entries.len() is surely never > u32::MAX
         #[expect(clippy::cast_possible_truncation)]
-        let item_count = batch_size as u32;
+        let item_count = items.len() as u32;
 
         let mut hasher = xxhash_rust::xxh3::Xxh3::default();
         let mut byte_count = 0;
