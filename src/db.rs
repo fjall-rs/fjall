@@ -645,7 +645,10 @@ impl Database {
 
         let write_pipeline = WritePipeline::with_capacity(
             crate::write_pipeline::State {
-                writer: Mutex::new(crate::wal::Wal::new(wal)),
+                writer: Mutex::new(crate::wal::Wal::new(wal).with_compression(
+                    config.wal_compression_type,
+                    config.wal_compression_threshold,
+                )),
                 seqno: seqno.clone(),
                 snapshot_tracker: snapshot_tracker.clone(),
                 write_buffer_size: write_buffer_size.clone(),

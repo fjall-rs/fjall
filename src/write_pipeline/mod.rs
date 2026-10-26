@@ -563,7 +563,7 @@ mod tests {
     fn write_pipeline_leader_processes_own_record_after_byte_limit() -> crate::Result<()> {
         let dir = tempfile::tempdir()?;
         let db = crate::Database::builder(dir.path())
-            .journal_compression(lsm_tree::CompressionType::None)
+            .wal_compression(lsm_tree::CompressionType::None)
             .write_pipeline_leader_capacity(64_000)
             .open()?;
         let keyspace = db.keyspace("items", Default::default)?;

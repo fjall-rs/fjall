@@ -8,7 +8,7 @@ use crate::{
     Config, HashMap,
 };
 use byteorder::ReadBytesExt;
-use lsm_tree::{SeqNo, UserKey, UserValue, ValueType};
+use lsm_tree::{coding::Decode, CompressionType, SeqNo, UserKey, UserValue, ValueType};
 use std::io::Read;
 use varint_rs::VarintReader;
 
@@ -51,7 +51,37 @@ fn decode_item<R: Read>(reader: &mut R, batch_seqno: SeqNo) -> crate::Result<Dec
     let key = UserKey::from_reader(reader, key_len)?;
 
     let value_len = reader.read_u32_varint()? as usize;
-    let value = UserValue::from_reader(reader, value_len)?;
+
+    let compression = CompressionType::decode_from(reader)?;
+
+    let value = match compression {
+        CompressionType::None => UserValue::from_reader(reader, value_len)?,
+
+        #[cfg(feature = "lz4")]
+        CompressionType::Lz4 => {
+            let compressed_value_len = reader.read_u32_varint()? as usize;
+
+            let compressed_value = UserValue::from_reader(reader, compressed_value_len)?;
+
+            #[expect(unsafe_code)]
+            let mut uncompressed_value = unsafe { UserValue::builder_unzeroed(value_len) };
+
+            let uncompressed_len =
+                lz4_flex::decompress_into(&compressed_value, &mut uncompressed_value).map_err(
+                    |e| {
+                        log::error!("LZ4 decompression failed: {e}");
+                        crate::Error::Decompress(CompressionType::Lz4)
+                    },
+                )?;
+
+            if uncompressed_len != uncompressed_value.len() {
+                log::error!("Decompressed size does not match expected value size");
+                return Err(crate::Error::Decompress(CompressionType::Lz4));
+            }
+
+            UserValue::from(uncompressed_value.freeze())
+        }
+    };
 
     let value_type = reader.read_u8()?;
     let value_type = value_type
@@ -173,4 +203,46 @@ pub fn recover_wal(
     let _watermarks = recovery.into_watermarks();
 
     wal.into_writer().map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wal::encoder::Encoder;
+    use test_log::test;
+
+    #[test]
+    fn wal_kv_coding_roundtrip() -> crate::Result<()> {
+        let mut encoder = Encoder::default();
+        encoder.encode_kv(0, b"hello", b"world", ValueType::Value)?;
+        let encoded_bytes = encoder.to_vec();
+
+        let decoded = decode_item(&mut encoded_bytes.as_slice(), 5)?;
+        assert_eq!(b"hello", &*decoded.key);
+        assert_eq!(b"world", &*decoded.value);
+        assert_eq!(5, decoded.seqno);
+        assert_eq!(0, decoded.keyspace_id);
+        assert_eq!(ValueType::Value, decoded.value_type);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "lz4")]
+    fn wal_kv_coding_roundtrip_compressed_lz4() -> crate::Result<()> {
+        use lsm_tree::CompressionType::Lz4;
+
+        let mut encoder = Encoder::default().with_compression(Lz4, 0);
+        encoder.encode_kv(0, b"hello", b"world", ValueType::Value)?;
+        let encoded_bytes = encoder.to_vec();
+
+        let decoded = decode_item(&mut encoded_bytes.as_slice(), 5)?;
+        assert_eq!(b"hello", &*decoded.key);
+        assert_eq!(b"world", &*decoded.value);
+        assert_eq!(5, decoded.seqno);
+        assert_eq!(0, decoded.keyspace_id);
+        assert_eq!(ValueType::Value, decoded.value_type);
+
+        Ok(())
+    }
 }

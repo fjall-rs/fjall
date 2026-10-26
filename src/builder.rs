@@ -50,10 +50,10 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Sets the compression type to use for large values that are written into the journal file.
+    /// Sets the compression type to use for large values that are written into the write-ahead log.
     #[must_use]
-    pub fn journal_compression(mut self, comp: CompressionType) -> Self {
-        self.inner.journal_compression_type = comp;
+    pub fn wal_compression(mut self, comp: CompressionType) -> Self {
+        self.inner.wal_compression_type = comp;
         self
     }
 
@@ -192,6 +192,7 @@ impl<O: Openable> Builder<O> {
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
+    #[must_use]
     pub fn with_compaction_filter_factories(mut self, f: CompactionFilterAssigner) -> Self {
         self.inner.compaction_filter_factory_assigner = Some(f);
         self

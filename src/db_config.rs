@@ -42,14 +42,19 @@ pub struct Config {
     #[doc(hidden)]
     pub(crate) write_pipeline_leader_capacity: usize,
 
-    // TODO: rename wal_
-    /// WAL compression
-    pub(crate) journal_compression_type: CompressionType,
+    /// Write-ahead log value compression
+    ///
+    /// See `wal_compression_threshold`.
+    ///
+    /// Default = Lz4, if available; otherwise None
+    pub(crate) wal_compression_type: CompressionType,
 
-    /// Value size threshold
+    /// Value size threshold in write-ahead log
     ///
     /// Values equal or larger the threshold are compressed
-    pub(crate) journal_compression_threshold: usize,
+    ///
+    /// Default = 4 KiB
+    pub(crate) wal_compression_threshold: u32,
 
     // pub(crate) journal_recovery_mode: RecoveryMode,
     //
@@ -86,14 +91,14 @@ impl Config {
             // journal_recovery_mode: RecoveryMode::default(),
 
             #[cfg(not(feature = "lz4"))]
-            journal_compression_type: CompressionType::None,
+            wal_compression_type: CompressionType::None,
 
             #[cfg(feature = "lz4")]
-            journal_compression_type: CompressionType::Lz4,
+            wal_compression_type: CompressionType::Lz4,
 
-            journal_compression_threshold: 4_096,
+            wal_compression_threshold: 4_096,
 
-            cache: Arc::new(Cache::with_capacity_bytes(/* 32 MiB */ 32 * 1_024 * 1_024)),
+            cache: Arc::new(Cache::with_capacity_bytes(/* 64 MiB */ 64 * 1_024 * 1_024)),
 
             compaction_filter_factory_assigner: None,
         }
