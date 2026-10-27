@@ -7,6 +7,7 @@ use crate::{
         apply_to_base_config, options::ConfigProvider as KeyspaceConfigProvider,
         InternalKeyspaceId, KeyspaceKey,
     },
+    manifest::ManifestPersister,
     Database, Keyspace, KeyspaceCreateOptions,
 };
 use std::sync::Arc;
@@ -45,10 +46,13 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
                 .expect("fd cache should exist"),
         )?;
 
-        // TODO: need persisting provider
-        let version_set_provider = Arc::new(
-            lsm_tree::MemoryVersionSetProvider::with_initial_version(tree_version),
-        );
+        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
+            tree_version,
+            Arc::new(ManifestPersister::new(
+                db.supervisor.manifest.clone(),
+                keyspace_id,
+            )),
+        ));
 
         let config_provider = get_config_provider(keyspace_id);
         let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &config_provider)?;

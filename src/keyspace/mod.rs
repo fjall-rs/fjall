@@ -10,6 +10,7 @@ mod write_delay;
 #[cfg(test)]
 mod test;
 
+use crate::manifest::ManifestPersister;
 use crate::write_pipeline::{WriteRecord, WriteRecordPayload};
 use crate::DurabilityLevel;
 use crate::{
@@ -77,8 +78,7 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    // TODO: change to OUR provider
-    pub(crate) version_set_provider: Arc<lsm_tree::MemoryVersionSetProvider>,
+    pub(crate) version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
 
     pub(crate) supervisor: Supervisor,
 
@@ -282,7 +282,7 @@ impl Keyspace {
         tree: AnyTree,
         name: KeyspaceKey,
         config: CreateOptions,
-        version_set_provider: Arc<lsm_tree::MemoryVersionSetProvider>,
+        version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             id: keyspace_id,
@@ -306,7 +306,7 @@ impl Keyspace {
         name: KeyspaceKey,
         config: CreateOptions,
     ) -> crate::Result<Self> {
-        log::debug!("Creating keyspace {name:?}->{keyspace_id}");
+        log::debug!("Creating keyspace {keyspace_id}={name:?}");
 
         let base_folder = db
             .config
@@ -316,8 +316,9 @@ impl Keyspace {
 
         std::fs::create_dir_all(&base_folder)?;
 
-        // TODO: persisting provider
-        let version_set_provider = Arc::new(lsm_tree::MemoryVersionSetProvider::default());
+        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new(Arc::new(
+            ManifestPersister::new(db.supervisor.manifest.clone(), keyspace_id),
+        )));
 
         let base_config = lsm_tree::Config::new(base_folder, version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())

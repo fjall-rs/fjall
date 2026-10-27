@@ -10,6 +10,7 @@ use crate::{
     flush::manager::FlushManager,
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
+    manifest::Manifest,
     poison::PoisonSignal,
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
@@ -484,7 +485,7 @@ impl Database {
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
-        let keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
+        let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
             log::trace!("Opening existing keyspace {name:?}");
@@ -505,9 +506,18 @@ impl Database {
                 opts = opts.with_compaction_filter_factory(f);
             }
 
+            let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
+
+            self.supervisor.manifest.append(
+                keyspace_id,
+                &lsm_tree::VersionEdit::new(vec![lsm_tree::EditRecord::Custom(
+                    b"CREATED KEYSPACE :DDD".to_vec(),
+                )]),
+            )?;
+
             // TODO: persist keyspace in Manifest
 
-            let handle = Keyspace::create_new(keyspace_id, self, name, opts)?;
+            keyspaces.insert(name, handle.clone());
 
             #[cfg(feature = "__internal_whitebox")]
             crate::drop::increment_drop_counter();
@@ -562,7 +572,7 @@ impl Database {
         self.supervisor.snapshot_tracker.get()
     }
 
-    fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<()> {
+    fn check_version<P: AsRef<Path>>(path: P) -> crate::Result<FormatVersion> {
         let bytes = std::fs::read(path.as_ref().join(VERSION_MARKER))?;
 
         if let Some(version) = FormatVersion::parse_file_header(&bytes) {
@@ -575,11 +585,11 @@ impl Database {
             if version != FormatVersion::V3 && version != FormatVersion::V4 {
                 return Err(crate::Error::InvalidVersion(Some(version)));
             }
-        } else {
-            return Err(crate::Error::InvalidVersion(None));
-        }
 
-        Ok(())
+            Ok(version)
+        } else {
+            Err(crate::Error::InvalidVersion(None))
+        }
     }
 
     /// Returns the database path.
@@ -616,10 +626,26 @@ impl Database {
     ///
     /// Returns an error if an I/O error occurs.
     pub fn flush_all(&self) -> crate::Result<()> {
+        // TODO: hold WAL lock
+
         // TODO: v4: https://github.com/fjall-rs/fjall/pull/315
         log::info!("Flushing all write buffers");
+
+        for keyspace in self
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock is poisoned")
+            .values()
+        {
+            // TODO: run_with_wal_lock
+            crate::flush::worker::run(keyspace, &self.supervisor, &self.stats)?;
+        }
+
         log::debug!("Rotating WAL");
-        todo!();
+
+        Ok(())
+        // TODO:
     }
 
     pub(crate) fn prepare_database(
@@ -632,12 +658,18 @@ impl Database {
         let visible_seqno = SequenceNumberCounter::default();
         let write_buffer_size = WriteBufferManager::default();
 
+        let manifest = if recover {
+            Manifest::recover(&config.path)?
+        } else {
+            Manifest::create_new(&config.path)?
+        };
+
         let wal = if recover {
             let keyspaces = keyspaces.read().expect("lock should not be poisoned");
             crate::wal::recover_wal(&config, &keyspaces, |id| todo!())?
         } else {
             log::info!("Creating v4 WAL");
-            hwal::Wal::create(&config.path)?
+            hwal::Wal::builder().create_new(&config.path)?
         };
 
         let snapshot_tracker = SnapshotTracker::new(visible_seqno);
@@ -666,16 +698,17 @@ impl Database {
             backpressure_lock: Mutex::default(),
             seqno,
             write_pipeline,
+            manifest,
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
-        let stats = Arc::<Stats>::default();
+        let stats = Arc::default();
 
         // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
-            keyspace_id_counter: SequenceNumberCounter::new(1),
+            keyspace_id_counter: SequenceNumberCounter::new(0),
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
@@ -692,22 +725,26 @@ impl Database {
     pub fn recover(config: Config) -> crate::Result<Self> {
         log::info!("Recovering database at {}", config.path.display());
 
-        Self::check_version(&config.path)?;
+        let version = Self::check_version(&config.path)?;
 
-        // We check for the "current" file
+        // We check for the "version" file (which holds the format version)
         //
-        // Once that is written, a previous v4 recovery was definitely fully completed,
-        // so if it is missing, we do the v3 migration (again)
-        let db = if config.path.join(CURRENT_VERSION_MARKER).try_exists()? {
-            log::info!("Recovering v4 database");
-            let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
-            Self::prepare_database(config, lock_file, true)
-        } else {
-            // V3->V4 migration
-            //
-            // TODO: remove in V5
-            let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
-            crate::legacy::migrate_v3_to_v4(config, lock_file)
+        // Once that is updated, a previous v4 recovery was definitely fully completed,
+        // so if it is = 3, we do the v3 migration again
+        let db = match version {
+            FormatVersion::V4 => {
+                log::info!("Recovering v4 database");
+                let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+                Self::prepare_database(config, lock_file, true)
+            }
+            FormatVersion::V3 => {
+                // V3->V4 migration
+                //
+                // TODO: remove in V5
+                let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+                crate::legacy::migrate_v3_to_v4(config, lock_file)
+            }
+            _ => unreachable!("should already be checked"),
         }?;
 
         /*
@@ -764,6 +801,7 @@ impl Database {
 
         let lock_file = LockedFileGuard::create_new(&config.path.join(LOCK_FILE))?;
 
+        // TODO: v4 remove----v
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
@@ -774,7 +812,7 @@ impl Database {
 
         // NOTE: Lastly, fsync version marker, which contains the version
         let mut marker = std::fs::File::create_new(db.path().join(VERSION_MARKER))?;
-        FormatVersion::V3.write_file_header(&mut marker)?;
+        FormatVersion::V4.write_file_header(&mut marker)?;
         marker.sync_all()?;
 
         // IMPORTANT: fsync folders on Unix

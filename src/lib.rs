@@ -119,6 +119,7 @@ mod iter;
 mod keyspace;
 mod legacy;
 mod locked_file;
+mod manifest;
 mod path;
 mod poison;
 mod readable;

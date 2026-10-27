@@ -5,7 +5,7 @@
 use lsm_tree::SequenceNumberCounter;
 
 use crate::{
-    db::Keyspaces, flush::manager::FlushManager, keyspace::KeyspaceKey,
+    db::Keyspaces, flush::manager::FlushManager, keyspace::KeyspaceKey, manifest::Manifest,
     snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
 };
@@ -30,6 +30,8 @@ pub struct SupervisorInner {
     pub(crate) backpressure_lock: Mutex<()>,
 
     pub(crate) write_pipeline: WritePipeline,
+
+    pub(crate) manifest: Manifest,
 }
 
 #[derive(Clone)]

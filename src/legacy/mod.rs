@@ -11,9 +11,18 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
 
     // TODO: refactor this to use a hwal method or so
     let existing_v4_wal = config.path.join("0.hwal");
-
     if existing_v4_wal.try_exists()? {
         std::fs::remove_file(existing_v4_wal)?;
+    }
+
+    let existing_manifest = config.path.join("v0");
+    if existing_manifest.try_exists()? {
+        std::fs::remove_file(existing_manifest)?;
+    }
+
+    let current_file = config.path.join("current");
+    if current_file.try_exists()? {
+        std::fs::remove_file(current_file)?;
     }
 
     log::debug!("Preparing database");
@@ -68,9 +77,15 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         );
     }
 
+    log::trace!("Writing DB manifest");
+    // TODO: write all version data into manifest
+
     // TODO: Finish DB manifest
-    // TODO: Update "version" file to v4
+    // TODO: atomically write "current" file with correct contents
     std::fs::File::create(db.path().join("current"))?;
+
+    // IMPORTANT: Do this as final step
+    // TODO: atomically Update "version" file to v4
 
     log::debug!("Removing old v3 files");
     crate::legacy::v3::journal::nuke_journal(db.path())?;
