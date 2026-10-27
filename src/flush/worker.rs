@@ -8,11 +8,11 @@ use crate::{stats::Stats, supervisor::Supervisor, Keyspace};
 pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crate::Result<()> {
     log::debug!("Flushing keyspace {:?}", keyspace.name());
 
-    // TODO: take journal lock
     let _lock = supervisor
-        .backpressure_lock
+        .write_pipeline
+        .wal()
         .lock()
-        .expect("lock should not be poisoned");
+        .expect("should not be poisoned");
 
     let gc_watermark = supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
@@ -27,6 +27,8 @@ pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crat
         .inspect_err(|e| {
             log::error!("Flush error: {e:?}");
         })?;
+
+    // TODO: publish seqno
 
     log::debug!("Flush completed, freed {flushed_bytes} bytes from write buffer");
 

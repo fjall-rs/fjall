@@ -181,7 +181,7 @@ pub fn recover_wal(
 ) -> crate::Result<hwal::Wal> {
     log::info!("Recovering WAL at {}", config.path.display());
 
-    let mut wal = hwal::Wal::recover(&config.path)?;
+    let mut wal = hwal::Wal::builder().recover(&config.path)?;
     let mut recovery = WalRecovery::new(keyspaces, get_keyspace_name);
 
     for record in wal.by_ref() {
