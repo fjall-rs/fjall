@@ -27,8 +27,6 @@ pub struct SupervisorInner {
 
     /// Tracks journal size and garbage collects sealed journals when possible
     // pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) backpressure_lock: Mutex<()>,
-
     pub(crate) write_pipeline: WritePipeline,
 
     pub(crate) manifest: Manifest,

@@ -15,6 +15,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+const CURRENT_VERSION_MARKER: &str = "current";
 const PREALLOC_BYTES: u64 = 1_024 * 1_024; // 1 MiB
 
 struct ManifestNameStrategy;
