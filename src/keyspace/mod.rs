@@ -152,6 +152,12 @@ impl Drop for KeyspaceInner {
 ///
 /// As long as a handle to a keyspace is held, its folder is not cleaned up from disk
 /// in case it is deleted from another thread.
+///
+/// # Lifetime Requirements
+///
+/// **CRITICAL**: The parent `Database` handle must outlive all `Keyspace` handles.
+/// If the `Database` is dropped while `Keyspace` handles exist, all keyspace operations
+/// will hang indefinitely. See the `Database` documentation for examples.
 #[derive(Clone)]
 #[doc(alias = "column family")]
 #[doc(alias = "locality group")]
