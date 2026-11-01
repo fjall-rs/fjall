@@ -5,13 +5,14 @@
 use crate::{
     db::Keyspaces,
     keyspace::{InternalKeyspaceId, KeyspaceKey},
-    Config, HashMap,
+    Database, HashMap,
 };
 use byteorder::ReadBytesExt;
 use lsm_tree::{coding::Decode, CompressionType, SeqNo, UserKey, UserValue, ValueType};
 use std::io::Read;
 use varint_rs::VarintReader;
 
+#[derive(Debug)]
 struct DecodedItem {
     keyspace_id: InternalKeyspaceId,
     key: UserKey,
@@ -175,34 +176,52 @@ where
 
 /// Recovers the WAL and replays its records into the available keyspaces.
 pub fn recover_wal(
-    config: &Config,
+    db: &Database,
     keyspaces: &Keyspaces,
     get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
-) -> crate::Result<hwal::Wal> {
-    log::info!("Recovering WAL at {}", config.path.display());
+) -> crate::Result<SeqNo> {
+    log::info!("Recovering WAL at {}", db.path().display());
 
-    let mut wal = hwal::Wal::builder().recover(&config.path)?;
-    let mut recovery = WalRecovery::new(keyspaces, get_keyspace_name);
+    let mut wal = db
+        .supervisor
+        .write_pipeline
+        .wal()
+        .lock()
+        .expect("should not be poisoned");
 
-    for record in wal.by_ref() {
+    let mut recovery = wal.inner.recover()?;
+    let mut find_a_name = WalRecovery::new(keyspaces, get_keyspace_name);
+
+    let mut highest_seqno = SeqNo::default();
+
+    for record in recovery.by_ref() {
         let record = record?;
 
         let wal_fragment_id = record.fragment_id();
         let payload = record.payload();
 
         match decode_wal_record(&mut &payload[..])? {
-            DecodedRecord::Single(item) => recovery.replay_item(wal_fragment_id, item),
+            DecodedRecord::Single(item) => {
+                highest_seqno = highest_seqno.max(item.seqno);
+                find_a_name.replay_item(wal_fragment_id, item);
+            }
             DecodedRecord::Full(batch) => {
+                highest_seqno = highest_seqno.max(batch.batch_seqno);
+
                 for item in batch {
-                    recovery.replay_item(wal_fragment_id, item?);
+                    find_a_name.replay_item(wal_fragment_id, item?);
                 }
             }
         }
     }
 
-    let _watermarks = recovery.into_watermarks();
+    let watermarks = find_a_name.into_watermarks();
+    dbg!(watermarks);
 
-    wal.into_writer().map_err(Into::into)
+    // IMPORTANT: Finish recovery
+    recovery.finish()?;
+
+    Ok(highest_seqno)
 }
 
 #[cfg(test)]
