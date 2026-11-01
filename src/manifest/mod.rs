@@ -2,11 +2,21 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+mod coding;
+mod custom_record;
 mod provider;
+mod recovery;
 
+pub use custom_record::DbEditRecord;
 pub use provider::ManifestPersister;
 
-use crate::keyspace::InternalKeyspaceId;
+use crate::{
+    keyspace::InternalKeyspaceId,
+    manifest::{
+        coding::{encode_db_edit, encode_keyspace_version_edit},
+        recovery::{recover_db_manifest, RecoveryResult},
+    },
+};
 use hwal::{FragmentId, NameStrategy};
 use std::{
     ffi::OsStr,
@@ -50,11 +60,19 @@ impl Inner {
             .with_name_strategy(Arc::new(ManifestNameStrategy))
     }
 
-    pub fn create_new(path: &Path) -> crate::Result<Self> {
+    fn create_new(path: &Path) -> crate::Result<Self> {
         log::trace!("Creating DB manifest at {}", path.display());
 
         Ok(Self {
             inner: Self::get_wal_builder().create_new(path)?,
+        })
+    }
+
+    fn open(path: &Path) -> crate::Result<Self> {
+        log::trace!("Opening DB manifest at {}", path.display());
+
+        Ok(Self {
+            inner: Self::get_wal_builder().open(path)?,
         })
     }
 
@@ -63,41 +81,20 @@ impl Inner {
     // TODO: then apply to hwal internal state...
     // TODO: e.g. wal.rotate_with(fn(file) -> Error)
 
-    pub fn recover(path: &Path) -> crate::Result<Self> {
-        log::trace!("Recovering DB manifest at {}", path.display());
-
-        // TODO: read current, etc. etc.
-
-        // TODO: we need a HWAL function to only recover the current version
-        let mut recovery = Self::get_wal_builder().recover(path)?;
-
-        for wal_record in recovery.by_ref() {
-            let wal_record = wal_record?;
-
-            log::warn!(
-                "WAL record: {:?}",
-                String::from_utf8_lossy(wal_record.payload()),
-            );
-        }
-
-        Ok(Self {
-            inner: recovery.into_writer()?,
-        })
-    }
-
-    // TODO: append with a 0x1 byte, which says basically
-    // "this VersionEdit" adjusts a keyspace-specific thing (keyspace ID + VersionEdit)
-    pub fn append(
+    fn append(
         &mut self,
         keyspace_id: InternalKeyspaceId,
         version_edit: &lsm_tree::VersionEdit,
     ) -> crate::Result<()> {
         log::trace!("Appending version edit {version_edit:#?} for keyspace #{keyspace_id}");
-
-        // TODO: correctly encode version Edits and prefix with keyspace ID
         self.inner
-            .append(format!("{keyspace_id:?} => {version_edit:?}").as_bytes())?;
+            .append(&encode_keyspace_version_edit(keyspace_id, version_edit)?)?;
+        Ok(())
+    }
 
+    fn append_db_edit(&mut self, records: &[DbEditRecord]) -> crate::Result<()> {
+        log::trace!("Appending DB edits {records:#?}");
+        self.inner.append(&encode_db_edit(records)?)?;
         Ok(())
     }
 }
@@ -110,8 +107,13 @@ impl Manifest {
         Inner::create_new(path).map(|inner| Self(Arc::new(Mutex::new(inner))))
     }
 
-    pub fn recover(path: &Path) -> crate::Result<Self> {
-        Inner::recover(path).map(|inner| Self(Arc::new(Mutex::new(inner))))
+    pub fn open(path: &Path) -> crate::Result<Self> {
+        Inner::open(path).map(|inner| Self(Arc::new(Mutex::new(inner))))
+    }
+
+    pub fn recover(&self) -> crate::Result<RecoveryResult> {
+        let mut inner = self.0.lock().expect("lock should not be poisoned");
+        recover_db_manifest(&mut inner)
     }
 
     pub fn append(
@@ -123,5 +125,12 @@ impl Manifest {
             .lock()
             .expect("should not be poisoned")
             .append(keyspace_id, version_edit)
+    }
+
+    pub fn append_db_edits(&self, records: &[DbEditRecord]) -> crate::Result<()> {
+        self.0
+            .lock()
+            .expect("should not be poisoned")
+            .append_db_edit(records)
     }
 }
