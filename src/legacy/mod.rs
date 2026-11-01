@@ -167,14 +167,6 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
                 .expect("fd cache should exist"),
         )?;
 
-        log::error!(
-            "TREE {keyspace_id} TABLES: {:?}",
-            tree_version
-                .iter_tables()
-                .map(lsm_tree::Table::id)
-                .collect::<Vec<_>>(),
-        );
-
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
             tree_version,
             Arc::new(ManifestPersister::new(
