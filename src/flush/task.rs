@@ -4,6 +4,7 @@
 
 use crate::Keyspace;
 
+// TODO: v4 maybe remove
 pub struct Task {
     pub(crate) keyspace: Keyspace,
 }

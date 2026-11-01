@@ -9,7 +9,7 @@ use crate::{
     snapshot_tracker::SnapshotTracker, write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
 };
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 pub struct SupervisorInner {
     pub db_config: crate::Config,

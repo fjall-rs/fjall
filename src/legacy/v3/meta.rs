@@ -3,28 +3,13 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    keyspace::{
-        options::ConfigProvider as KeyspaceConfigProvider, InternalKeyspaceId, KeyspaceKey,
-    },
+    keyspace::KeyspaceKey,
+    recovery::{KeyspaceInfo, MetaKeyspaceInfo},
     HashMap,
 };
 use byteorder::{ReadBytesExt, BE};
 use lsm_tree::{AbstractTree, Guard, SeqNo};
 use std::{path::Path, sync::Arc};
-
-#[derive(Debug)]
-pub struct KeyspaceInfo {
-    pub name: KeyspaceKey,
-    config: HashMap<String, Vec<u8>>,
-}
-
-impl KeyspaceConfigProvider for &KeyspaceInfo {
-    fn get_kv_for_config(&self, config_name: &str) -> crate::Result<Option<lsm_tree::UserValue>> {
-        Ok(self.config.get(config_name).map(Into::into))
-    }
-}
-
-pub type MetaKeyspaceInfo = HashMap<InternalKeyspaceId, KeyspaceInfo>;
 
 #[expect(clippy::expect_used)]
 pub fn read_meta_keyspace(path: &Path) -> crate::Result<MetaKeyspaceInfo> {
@@ -69,9 +54,11 @@ pub fn read_meta_keyspace(path: &Path) -> crate::Result<MetaKeyspaceInfo> {
             result
                 .entry(keyspace_id)
                 .and_modify(|entry| {
+                    entry.id = keyspace_id;
                     entry.name = KeyspaceKey::new(keyspace_name);
                 })
                 .or_insert_with(|| KeyspaceInfo {
+                    id: keyspace_id,
                     name: KeyspaceKey::new(keyspace_name),
                     config: HashMap::default(),
                 });

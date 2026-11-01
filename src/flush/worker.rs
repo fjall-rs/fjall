@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{stats::Stats, supervisor::Supervisor, Keyspace};
+use lsm_tree::AbstractTree;
 
 /// Runs flush logic.
 pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crate::Result<()> {
@@ -14,10 +15,9 @@ pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crat
         .lock()
         .expect("should not be poisoned");
 
-    let gc_watermark = supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+    let _flush_lock = keyspace.tree.get_flush_lock();
 
-    // TODO: we probably don't need this anymore in lsm-tree
-    // let flush_lock = keyspace.tree.get_flush_lock();
+    let gc_watermark = supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
     let seqno = supervisor.seqno.next();
 
@@ -28,7 +28,7 @@ pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crat
             log::error!("Flush error: {e:?}");
         })?;
 
-    // TODO: publish seqno
+    supervisor.snapshot_tracker.publish(seqno);
 
     log::debug!("Flush completed, freed {flushed_bytes} bytes from write buffer");
 

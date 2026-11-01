@@ -6,17 +6,18 @@ use crate::{
     batch::WriteBatch,
     builder::Openable,
     db_config::Config,
-    file::{fsync_directory, CURRENT_VERSION_MARKER, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
+    file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
     flush::manager::FlushManager,
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
-    manifest::Manifest,
+    manifest::{DbEditRecord, Manifest, ManifestPersister},
     poison::PoisonSignal,
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
     supervisor::{Supervisor, SupervisorInner},
     version::FormatVersion,
+    wal::recover_wal,
     worker_pool::{WorkerMessage, WorkerPool},
     write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
@@ -483,6 +484,8 @@ impl Database {
         name: &str,
         create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<Keyspace> {
+        use lsm_tree::coding::Encode;
+
         assert!(is_valid_keyspace_name(name));
 
         let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
@@ -508,14 +511,15 @@ impl Database {
 
             let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
 
-            self.supervisor.manifest.append(
-                keyspace_id,
-                &lsm_tree::VersionEdit::new(vec![lsm_tree::EditRecord::Custom(
-                    b"CREATED KEYSPACE :DDD".to_vec(),
-                )]),
+            // TODO: make DB edits not run through VersionEdit, remove Custom from lsm-tree
+            // TODO: make it possible to encode multiple CustomRecords because of atomicity
+            self.supervisor.manifest.append_db_edits(
+                &[DbEditRecord::CreateKeyspace {
+                    id: keyspace_id,
+                    name: name.clone(),
+                }],
+                // TODO: ^------ also store "serialized" config
             )?;
-
-            // TODO: persist keyspace in Manifest
 
             keyspaces.insert(name, handle.clone());
 
@@ -561,11 +565,13 @@ impl Database {
     /// Gets the would-be-next sequence number.
     #[must_use]
     #[doc(hidden)]
-    pub fn seqno(&self) -> crate::SeqNo {
+    pub fn next_seqno(&self) -> crate::SeqNo {
         self.supervisor.seqno.get()
     }
 
     /// Gets the currently visible sequence number.
+    ///
+    /// As per lsm-tree rules, a visible seqno of 1 means, that items with seqno < 1 are readable.
     #[must_use]
     #[doc(hidden)]
     pub fn visible_seqno(&self) -> crate::SeqNo {
@@ -648,6 +654,7 @@ impl Database {
         // TODO:
     }
 
+    /// Constructs an ("empty") database to fill back with actual data later on.
     pub(crate) fn prepare_database(
         config: Config,
         lock_file: LockedFileGuard,
@@ -659,16 +666,16 @@ impl Database {
         let write_buffer_size = WriteBufferManager::default();
 
         let manifest = if recover {
-            Manifest::recover(&config.path)?
+            Manifest::open(&config.path)?
         } else {
             Manifest::create_new(&config.path)?
         };
 
         let wal = if recover {
-            let keyspaces = keyspaces.read().expect("lock should not be poisoned");
-            crate::wal::recover_wal(&config, &keyspaces, |id| todo!())?
+            log::info!("Opening WAL at {}", config.path.display());
+            hwal::Wal::builder().open(&config.path)?
         } else {
-            log::info!("Creating v4 WAL");
+            log::info!("Creating WAL at {}", config.path.display());
             hwal::Wal::builder().create_new(&config.path)?
         };
 
@@ -695,7 +702,6 @@ impl Database {
             flush_manager: FlushManager::new(),
             write_buffer_size,
             snapshot_tracker,
-            backpressure_lock: Mutex::default(),
             seqno,
             write_pipeline,
             manifest,
@@ -704,7 +710,6 @@ impl Database {
         let active_thread_counter = Arc::<AtomicUsize>::default();
         let stats = Arc::default();
 
-        // Construct (empty) database, then fill back with keyspace data
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
@@ -734,8 +739,120 @@ impl Database {
         let db = match version {
             FormatVersion::V4 => {
                 log::info!("Recovering v4 database");
-                let lock_file = LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
-                Self::prepare_database(config, lock_file, true)
+                let lock_file: LockedFileGuard =
+                    LockedFileGuard::try_acquire(&config.path.join(LOCK_FILE))?;
+
+                let db = Self::prepare_database(config, lock_file, true)?;
+
+                log::debug!("Loading keyspace info from DB manifest");
+                let manifest_recovery_result = db.supervisor.manifest.recover()?;
+                let keyspace_info = &manifest_recovery_result.keyspace_info;
+                let keyspace_versions = &manifest_recovery_result.keyspace_versions;
+
+                // NOTE: We set the seqno (that is, the next seqno a write batch would get)
+                // to be one higher than the last found seqno (trivial)
+                db.supervisor
+                    .seqno
+                    .fetch_max(manifest_recovery_result.highest_seqno + 1);
+
+                // NOTE: We PUBLISH the last actually found seqno
+                db.supervisor
+                    .snapshot_tracker
+                    .publish(manifest_recovery_result.highest_seqno);
+
+                log::warn!("Got keyspace info: {keyspace_info:#?}");
+
+                // TODO: use DB path for tree path, once v4 folder migration is done;
+                // make sure to also set path correctly when creating keyspaces
+                // TODO: and create folders on DB::create_new
+
+                let mut registry = db
+                    .supervisor
+                    .keyspaces
+                    .write()
+                    .expect("lock should not be poisoned");
+
+                let mut highest_keyspace_id = 0;
+                {
+                    log::debug!("Loading {} existing keyspaces", keyspace_info.len());
+
+                    for keyspace in keyspace_info.values() {
+                        let version_set_provider =
+                            Arc::new(lsm_tree::IoVersionSetProvider::new(Arc::new(
+                                ManifestPersister::new(db.supervisor.manifest.clone(), keyspace.id),
+                            )));
+
+                        // TODO: v4 we need a different path here
+                        let tree_path = db
+                            .config
+                            .path
+                            .join("keyspaces")
+                            .join(keyspace.id.to_string());
+
+                        let base_config =
+                            lsm_tree::Config::new(tree_path, version_set_provider.clone())
+                                .use_descriptor_table(db.config.descriptor_table.clone())
+                                .use_cache(db.config.cache.clone());
+
+                        // TODO: apply config, including compaction filter etc.
+
+                        let tree = base_config.open()?;
+
+                        let keyspace = Keyspace::from_database(
+                            keyspace.id,
+                            &db,
+                            tree,
+                            keyspace.name.clone(),
+                            KeyspaceCreateOptions::default(),
+                            version_set_provider,
+                        );
+
+                        // Add keyspace to dictionary
+                        registry.insert(keyspace.name.clone(), keyspace.clone());
+
+                        highest_keyspace_id = highest_keyspace_id.max(keyspace.id);
+                    }
+
+                    log::debug!("Recovered {} keyspaces", registry.len());
+
+                    db.keyspace_id_counter.set(highest_keyspace_id + 1);
+                    log::trace!(
+                        "Keyspace ID counter set to {}",
+                        db.keyspace_id_counter.get(),
+                    );
+                }
+
+                log::debug!("Replaying DB manifest");
+                {
+                    for (&kid, vdata) in keyspace_versions {
+                        if let Some(keyspace) = registry.values().find(|ks| ks.id() == kid) {
+                            keyspace
+                                .version_set_provider
+                                .hydrate(&keyspace.tree, vdata)?;
+                        }
+                    }
+                }
+
+                log::debug!("Replaying WAL");
+                {
+                    // TODO: change to be Option<Seqno>
+                    let highest_seqno = recover_wal(&db, &registry, |id| {
+                        registry
+                            .values()
+                            .find(|ks| ks.id() == id)
+                            .map(|ks| ks.name())
+                            .cloned()
+                            .expect("should find keyspace")
+                    })?;
+
+                    // See notes above
+                    db.supervisor.seqno.fetch_max(highest_seqno + 1);
+                    db.supervisor.snapshot_tracker.publish(highest_seqno);
+                }
+
+                drop(registry);
+
+                Ok(db)
             }
             FormatVersion::V3 => {
                 // V3->V4 migration
@@ -748,10 +865,6 @@ impl Database {
         }?;
 
         /*
-        db.supervisor
-            .snapshot_tracker
-            .set(db.supervisor.seqno.get());
-
         db.supervisor.snapshot_tracker.gc();
 
         for keyspace in db
@@ -805,9 +918,15 @@ impl Database {
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
+        let tables_folder_path = config.path.join("tables");
+        let blobs_folder_path = config.path.join("blobs");
+
+        std::fs::create_dir_all(&tables_folder_path)?;
+        std::fs::create_dir_all(&blobs_folder_path)?;
+
         let db = Self::prepare_database(config, lock_file, false)?;
 
-        // TODO: v4 create actual db manifest
+        // TODO: do this correctly (write correct ID atomically)
         std::fs::File::create(db.path().join("current"))?;
 
         // NOTE: Lastly, fsync version marker, which contains the version
@@ -817,6 +936,8 @@ impl Database {
 
         // IMPORTANT: fsync folders on Unix
         fsync_directory(&keyspaces_folder_path)?;
+        fsync_directory(&tables_folder_path)?;
+        fsync_directory(&blobs_folder_path)?;
         fsync_directory(db.path())?;
 
         Ok(db)

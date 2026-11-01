@@ -8,10 +8,26 @@ use crate::{
         InternalKeyspaceId, KeyspaceKey,
     },
     manifest::ManifestPersister,
-    Database, Keyspace, KeyspaceCreateOptions,
+    Database, HashMap, Keyspace, KeyspaceCreateOptions,
 };
 use std::sync::Arc;
 
+pub type MetaKeyspaceInfo = HashMap<InternalKeyspaceId, KeyspaceInfo>;
+
+#[derive(Debug)]
+pub struct KeyspaceInfo {
+    pub id: InternalKeyspaceId,
+    pub name: KeyspaceKey,
+    pub config: HashMap<String, Vec<u8>>,
+}
+
+impl KeyspaceConfigProvider for &KeyspaceInfo {
+    fn get_kv_for_config(&self, config_name: &str) -> crate::Result<Option<lsm_tree::UserValue>> {
+        Ok(self.config.get(config_name).map(Into::into))
+    }
+}
+
+// TODO: just pass in KeyspaceInfo instead?
 pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
     db: &Database,
     keyspace_ids: &[InternalKeyspaceId],
@@ -27,6 +43,7 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
         let keyspace_name: KeyspaceKey = get_keyspace_name(keyspace_id);
         log::trace!("Recovering keyspace={keyspace_id} ({keyspace_name:?})");
 
+        // TODO: v4 we need a different path here, when migration is done
         let tree_path = db
             .config
             .path
