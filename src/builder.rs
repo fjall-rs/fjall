@@ -95,6 +95,12 @@ impl<O: Openable> Builder<O> {
 
     /// Sets the upper limit for cached file descriptors.
     ///
+    /// All user data stored in multiple, immutable files.
+    /// Large database can approach hundreds or thousands of files; for IO-bound workloads
+    /// this may require many `fopen()` (or equivalent) syscalls.
+    ///
+    /// Caching files descriptors reduces the impact of such syscalls, at the cost of more open file descriptors.
+    ///
     /// # Note
     ///
     /// Setting to None is currently not supported.

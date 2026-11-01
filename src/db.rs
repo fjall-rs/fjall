@@ -484,8 +484,6 @@ impl Database {
         name: &str,
         create_options: impl FnOnce() -> KeyspaceCreateOptions,
     ) -> crate::Result<Keyspace> {
-        use lsm_tree::coding::Encode;
-
         assert!(is_valid_keyspace_name(name));
 
         let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
@@ -509,17 +507,25 @@ impl Database {
                 opts = opts.with_compaction_filter_factory(f);
             }
 
+            let config = opts.encode_kvs(keyspace_id);
             let handle = Keyspace::create_new(keyspace_id, self, name.clone(), opts)?;
 
-            // TODO: make DB edits not run through VersionEdit, remove Custom from lsm-tree
-            // TODO: make it possible to encode multiple CustomRecords because of atomicity
-            self.supervisor.manifest.append_db_edits(
-                &[DbEditRecord::CreateKeyspace {
-                    id: keyspace_id,
-                    name: name.clone(),
-                }],
-                // TODO: ^------ also store "serialized" config
-            )?;
+            let mut db_edits = Vec::with_capacity(config.len() + 1);
+            db_edits.push(DbEditRecord::CreateKeyspace {
+                id: keyspace_id,
+                name: name.clone(),
+            });
+            db_edits.extend(
+                config
+                    .into_iter()
+                    .map(|(k, v)| DbEditRecord::ConfigurationChanged {
+                        id: keyspace_id,
+                        k,
+                        v,
+                    }),
+            );
+
+            self.supervisor.manifest.append_db_edits(&db_edits)?;
 
             keyspaces.insert(name, handle.clone());
 

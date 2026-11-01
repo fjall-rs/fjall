@@ -11,9 +11,9 @@ use crate::{
     keyspace::{config::DecodeConfig, InternalKeyspaceId},
 };
 use byteorder::ReadBytesExt;
+use byteview::{ByteView, StrView};
 use lsm_tree::{
-    compaction::Factory as CompactionFilterFactory, CompressionType, KvPair, KvSeparationOptions,
-    UserValue,
+    compaction::Factory as CompactionFilterFactory, CompressionType, KvSeparationOptions, UserValue,
 };
 use std::sync::Arc;
 
@@ -384,99 +384,69 @@ impl CreateOptions {
         })
     }
 
-    #[expect(clippy::too_many_lines)]
-    pub(crate) fn encode_kvs(&self, keyspace_id: InternalKeyspaceId) -> Vec<KvPair> {
+    pub(crate) fn encode_kvs(&self, _keyspace_id: InternalKeyspaceId) -> Vec<(StrView, ByteView)> {
         use crate::keyspace::config::EncodeConfig;
 
+        fn encode(name: &str, value: impl AsRef<[u8]>) -> (StrView, ByteView) {
+            (name.into(), ByteView::new(value.as_ref()))
+        }
+
         let mut kvs = vec![
-            /*
-            {
-                let key = encode_config_key(keyspace_id, "compaction_strategy");
-                (key, self.compaction_strategy.get_name().into())
-            },
-            policy!(
-                keyspace_id,
+            encode("compaction_strategy", self.compaction_strategy.get_name()),
+            encode(
                 "data_block_compression_policy",
-                self.data_block_compression_policy
+                self.data_block_compression_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "data_block_hash_ratio_policy",
-                self.data_block_hash_ratio_policy
+                self.data_block_hash_ratio_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "data_block_restart_interval_policy",
-                self.data_block_restart_interval_policy
+                self.data_block_restart_interval_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "data_block_size_policy",
-                self.data_block_size_policy
+                self.data_block_size_policy.encode(),
             ),
-            {
-                let key = encode_config_key(keyspace_id, "expect_point_read_hits");
-
-                let value = (if self.expect_point_read_hits {
-                    [1u8]
-                } else {
-                    [0u8]
-                })
-                .into();
-
-                (key, value)
-            },
-            policy!(
-                keyspace_id,
+            encode(
+                "expect_point_read_hits",
+                [u8::from(self.expect_point_read_hits)],
+            ),
+            encode(
                 "filter_block_partitioning_policy",
-                self.filter_block_partitioning_policy
+                self.filter_block_partitioning_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "filter_block_pinning_policy",
-                self.filter_block_pinning_policy
+                self.filter_block_pinning_policy.encode(),
             ),
-            policy!(keyspace_id, "filter_policy", self.filter_policy),
-            policy!(
-                keyspace_id,
+            encode("filter_policy", self.filter_policy.encode()),
+            encode(
                 "index_block_compression_policy",
-                self.index_block_compression_policy
+                self.index_block_compression_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "index_block_partitioning_policy",
-                self.index_block_partitioning_policy
+                self.index_block_partitioning_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "index_block_pinning_policy",
-                self.index_block_pinning_policy
+                self.index_block_pinning_policy.encode(),
             ),
-            policy!(
-                keyspace_id,
+            encode(
                 "index_block_restart_interval_policy",
-                self.index_block_restart_interval_policy
+                self.index_block_restart_interval_policy.encode(),
             ),
-            {
-                let key = encode_config_key(keyspace_id, "level_count");
-                (key, [self.level_count].into())
-            },
-            {
-                let key = encode_config_key(keyspace_id, "manual_journal_persist");
-                (key, [u8::from(self.manual_journal_persist)].into())
-            },
-            {
-                let key = encode_config_key(keyspace_id, "max_memtable_size");
-                (key, self.max_memtable_size.to_le_bytes().into())
-            },
-            {
-                let key = encode_config_key(keyspace_id, "version");
-                (key, [3u8].into())
-            },
-            */
+            encode("level_count", [self.level_count]),
+            encode(
+                "manual_journal_persist",
+                [u8::from(self.manual_journal_persist)],
+            ),
+            encode("max_memtable_size", self.max_memtable_size.to_le_bytes()),
+            encode("version", [3u8]),
         ];
 
-        /*
         match self.compaction_strategy.get_name() {
             "LeveledCompaction" | "FifoCompaction" => {
                 kvs.extend(
@@ -484,12 +454,10 @@ impl CreateOptions {
                         .get_config()
                         .into_iter()
                         .map(|(k, v)| {
-                            // TODO: this is a bit stupid right now because we depend on behaviour in lsm-tree
-                            // we should probably make lsm-tree just return a String for the key
-                            let k = std::str::from_utf8(&k)
-                                .expect("compaction strategy should return UTF-8 key");
-
-                            (encode_config_key(keyspace_id, k), v)
+                            let Ok(k) = std::str::from_utf8(k.as_ref()) else {
+                                unreachable!("compaction strategy should return UTF-8 key");
+                            };
+                            encode(k, v)
                         }),
                 );
             }
@@ -497,38 +465,27 @@ impl CreateOptions {
                 panic!("Invalid/unsupported compaction strategy: {name:?}");
             }
         }
-        */
 
         if let Some(blob_opts) = &self.kv_separation_opts {
             kvs.extend([
-                /*
-                {
-                    let key = encode_config_key(keyspace_id, "blob");
-                    (key, [1u8].into())
-                },
-                {
-                    let key = encode_config_key(keyspace_id, "blob_age_cutoff");
-                    (key, blob_opts.age_cutoff.to_le_bytes().into())
-                },
-                {
+                encode("blob", [1u8]),
+                encode("blob_age_cutoff", blob_opts.age_cutoff.to_le_bytes()),
+                encode("blob_compression", {
                     use lsm_tree::coding::Encode;
-
-                    let key = encode_config_key(keyspace_id, "blob_compression");
-                    (key, blob_opts.compression.encode_into_vec().into())
-                },
-                {
-                    let key = encode_config_key(keyspace_id, "blob_file_target_size");
-                    (key, blob_opts.file_target_size.to_le_bytes().into())
-                },
-                {
-                    let key = encode_config_key(keyspace_id, "blob_separation_threshold");
-                    (key, blob_opts.separation_threshold.to_le_bytes().into())
-                },
-                {
-                    let key = encode_config_key(keyspace_id, "blob_staleness_threshold");
-                    (key, blob_opts.staleness_threshold.to_le_bytes().into())
-                },
-                 */
+                    blob_opts.compression.encode_into_vec()
+                }),
+                encode(
+                    "blob_file_target_size",
+                    blob_opts.file_target_size.to_le_bytes(),
+                ),
+                encode(
+                    "blob_separation_threshold",
+                    blob_opts.separation_threshold.to_le_bytes(),
+                ),
+                encode(
+                    "blob_staleness_threshold",
+                    blob_opts.staleness_threshold.to_le_bytes(),
+                ),
             ]);
         }
 

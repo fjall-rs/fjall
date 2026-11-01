@@ -3,11 +3,11 @@
 // (found in the LICENSE-* files in the repository)
 
 mod coding;
-mod custom_record;
+mod db_edit;
 mod provider;
 mod recovery;
 
-pub use custom_record::DbEditRecord;
+pub use db_edit::DbEditRecord;
 pub use provider::ManifestPersister;
 
 use crate::{

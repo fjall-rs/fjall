@@ -83,6 +83,15 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
                                 config: HashMap::default(),
                             });
                     }
+                    DbEditRecord::ConfigurationChanged { id, k, v } => {
+                        if let Some(entry) = keyspace_info.get_mut(&id) {
+                            entry.config.insert(k.to_string(), v.to_vec());
+                        } else {
+                            log::warn!(
+                                "Ignoring configuration change for unknown keyspace {id}: {k}"
+                            );
+                        }
+                    }
                 }
             }
         }
