@@ -814,6 +814,10 @@ impl Keyspace {
     }
 
     pub(crate) fn local_backpressure(&self) -> bool {
+        if self.supervisor.db_config.disable_write_stalls {
+            return false;
+        }
+
         let mut throttled = false;
 
         let l0_run_count = self.tree.l0_run_count();

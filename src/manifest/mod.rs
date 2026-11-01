@@ -89,12 +89,22 @@ impl Inner {
         log::trace!("Appending version edit {version_edit:#?} for keyspace #{keyspace_id}");
         self.inner
             .append(&encode_keyspace_version_edit(keyspace_id, version_edit)?)?;
-        Ok(())
+        self.sync()
     }
 
     fn append_db_edit(&mut self, records: &[DbEditRecord]) -> crate::Result<()> {
         log::trace!("Appending DB edits {records:#?}");
         self.inner.append(&encode_db_edit(records)?)?;
+        self.sync()
+    }
+
+    /// Makes appended edits durable before returning.
+    ///
+    /// IMPORTANT: hwal buffers appends in memory; without this, edits
+    /// (keyspace creation, flushes, clears) only reach the file when the
+    /// manifest is dropped, while the WAL may already reference them.
+    fn sync(&mut self) -> crate::Result<()> {
+        self.inner.flush(hwal::DurabilityLevel::SyncAll)?;
         Ok(())
     }
 }

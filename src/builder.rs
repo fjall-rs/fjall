@@ -93,6 +93,18 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Disables write stalls and write halts.
+    ///
+    /// Only meant for deterministic testing, where background workers are disabled
+    /// and flushes (and compactions) are run manually; otherwise writes could
+    /// halt forever, waiting for maintenance that never happens.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn disable_write_stalls(mut self, flag: bool) -> Self {
+        self.inner.disable_write_stalls = flag;
+        self
+    }
+
     /// Sets the upper limit for cached file descriptors.
     ///
     /// All user data stored in multiple, immutable files.

@@ -42,6 +42,13 @@ pub struct Config {
     #[doc(hidden)]
     pub(crate) write_pipeline_leader_capacity: usize,
 
+    /// If `true`, writes are never stalled or halted (L0 run count, sealed memtables)
+    ///
+    /// Used for deterministic testing without background workers, where
+    /// flushes and compactions are run manually.
+    #[doc(hidden)]
+    pub(crate) disable_write_stalls: bool,
+
     /// Write-ahead log value compression
     ///
     /// See `wal_compression_threshold`.
@@ -88,6 +95,7 @@ impl Config {
             max_journaling_size_in_bytes: /* 512 MiB */ 512 * 1_024 * 1_024,
             worker_threads,
             write_pipeline_leader_capacity: 1_000_000,
+            disable_write_stalls: false,
             // journal_recovery_mode: RecoveryMode::default(),
 
             #[cfg(not(feature = "lz4"))]
