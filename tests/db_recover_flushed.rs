@@ -11,30 +11,28 @@ fn db_flush_all_smoke_test() -> fjall::Result<()> {
 
         tree.insert("1", "abc", Buffer)?;
         assert_eq!(Some(b"abc".as_slice()), tree.get(b"1")?.as_deref());
-        assert_eq!(1, db.seqno());
+        assert_eq!(1, db.next_seqno());
         assert_eq!(1, db.visible_seqno());
 
         db.flush_all()?;
         assert_eq!(Some(b"abc".as_slice()), tree.get(b"1")?.as_deref());
-        assert_eq!(2, db.seqno());
+        assert_eq!(2, db.next_seqno());
         assert_eq!(2, db.visible_seqno());
 
-        (db.seqno(), db.visible_seqno())
+        (db.next_seqno(), db.visible_seqno())
     };
 
     {
         let db = Database::builder(&dir).worker_threads_unchecked(0).open()?;
 
-        assert_eq!(seqno_before, db.seqno());
+        assert_eq!(seqno_before, db.next_seqno());
         assert_eq!(visible_seqno_before, db.visible_seqno());
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         assert_eq!(Some(b"abc".as_slice()), tree.get(b"1")?.as_deref());
 
-        // TODO: fix seqno publishing in flush
-        //
-        // TODO: and restore seqno correctly when replaying manifest + WAL
+        // TODO: v4 fix seqno publishing in flush
         {
             let snapshot = db.snapshot();
             assert_eq!(

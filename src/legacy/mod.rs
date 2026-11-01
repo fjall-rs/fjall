@@ -2,9 +2,9 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{locked_file::LockedFileGuard, Config, Database};
-
 pub mod v3;
+
+use crate::{locked_file::LockedFileGuard, Config, Database};
 
 pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Result<Database> {
     log::info!("Migrating v3 database to v4 format");
@@ -31,7 +31,7 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     log::trace!("Recovering v3 meta keyspace contents");
     let keyspace_info = crate::legacy::v3::read_meta_keyspace(db.path())?;
 
-    log::info!("Loading existing keyspaces");
+    log::info!("Loading {} existing keyspaces", keyspace_info.len());
 
     #[expect(clippy::expect_used)]
     crate::recovery::recover_keyspaces(
