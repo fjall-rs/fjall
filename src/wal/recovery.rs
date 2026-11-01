@@ -127,6 +127,16 @@ struct WalRecovery<'a, F> {
     keyspaces: &'a Keyspaces,
     get_keyspace_name: F,
     watermarks: Watermarks,
+
+    /// Version seqno of each keyspace, as recovered from the manifest.
+    ///
+    /// Every WAL item below that seqno is already contained in the keyspace's
+    /// tables (flush) or was dropped (clear), so it must not be replayed.
+    ///
+    /// See <https://github.com/fjall-rs/fjall/pull/332>
+    version_seqnos: HashMap<InternalKeyspaceId, SeqNo>,
+
+    replayed_bytes: u64,
 }
 
 impl<'a, F> WalRecovery<'a, F>
@@ -134,31 +144,42 @@ where
     F: Fn(InternalKeyspaceId) -> KeyspaceKey,
 {
     fn new(keyspaces: &'a Keyspaces, get_keyspace_name: F) -> Self {
+        use crate::AbstractTree;
+
+        let version_seqnos = keyspaces
+            .values()
+            .map(|ks| (ks.id(), ks.tree.current_version().seqno()))
+            .collect();
+
         Self {
             keyspaces,
             get_keyspace_name,
             watermarks: HashMap::default(),
+            version_seqnos,
+            replayed_bytes: 0,
         }
     }
 
     fn replay_item(&mut self, fragment_id: hwal::FragmentId, item: DecodedItem) {
         use crate::AbstractTree;
 
+        if let Some(&version_seqno) = self.version_seqnos.get(&item.keyspace_id) {
+            if item.seqno < version_seqno {
+                return;
+            }
+        }
+
         let keyspace_name = (self.get_keyspace_name)(item.keyspace_id);
 
         if let Some(keyspace) = self.keyspaces.get(&keyspace_name) {
-            match item.value_type {
-                ValueType::Value => {
-                    keyspace.tree.insert(item.key, item.value, item.seqno);
-                }
-                ValueType::Tombstone => {
-                    keyspace.tree.remove(item.key, item.seqno);
-                }
-                ValueType::WeakTombstone => {
-                    keyspace.tree.remove_weak(item.key, item.seqno);
-                }
+            let (item_size, _) = match item.value_type {
+                ValueType::Value => keyspace.tree.insert(item.key, item.value, item.seqno),
+                ValueType::Tombstone => keyspace.tree.remove(item.key, item.seqno),
+                ValueType::WeakTombstone => keyspace.tree.remove_weak(item.key, item.seqno),
                 ValueType::Indirection => unreachable!(),
-            }
+            };
+
+            self.replayed_bytes += item_size;
 
             self.watermarks
                 .entry(fragment_id)
@@ -215,8 +236,13 @@ pub fn recover_wal(
         }
     }
 
+    // NOTE: Replayed items now sit in memtables, so they count towards the write buffer
+    db.supervisor
+        .write_buffer_size
+        .allocate(find_a_name.replayed_bytes);
+
     let watermarks = find_a_name.into_watermarks();
-    dbg!(watermarks);
+    log::trace!("WAL watermarks: {watermarks:?}");
 
     // IMPORTANT: Finish recovery
     recovery.finish()?;

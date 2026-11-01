@@ -97,6 +97,10 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
         }
     }
 
+    // IMPORTANT: Finish recovery, otherwise the manifest writer has a wrong
+    // write position & seqno, and new edits are appended incorrectly
+    recovery.finish()?;
+
     Ok(RecoveryResult {
         keyspace_info,
         keyspace_versions,

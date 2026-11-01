@@ -236,12 +236,39 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        /*self.tree.clear().inspect_err(|_| {
-            self.is_poisoned.poison();
-        })?;*/
-        todo!("restore clear");
+        // IMPORTANT: Writes are applied to memtables while holding the WAL lock,
+        // so holding it serializes the clear with all writes
+        //
+        // Same lock order as flushes: WAL lock, then flush lock
+        let _wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
 
-        // self.supervisor.snapshot_tracker.publish(seqno);
+        let _flush_lock = self.tree.get_flush_lock();
+
+        // IMPORTANT: Check the poisoned flag after getting the WAL lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        let freed_bytes = self.tree.active_memtable().size();
+
+        let seqno = self.supervisor.seqno.next();
+
+        // Appends the version edit (drop all tables & blob files) to the manifest,
+        // then installs a new, empty version
+        self.version_set_provider
+            .clear(&self.tree, seqno)
+            .inspect_err(|e| {
+                log::error!("Clear failed, which is a FATAL failure: {e:?}");
+                self.is_poisoned.poison();
+            })?;
+
+        self.supervisor.write_buffer_size.free(freed_bytes);
+        self.supervisor.snapshot_tracker.publish(seqno);
 
         Ok(())
     }
