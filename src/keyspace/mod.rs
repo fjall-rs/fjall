@@ -349,7 +349,9 @@ impl Keyspace {
 
         let base_config = lsm_tree::Config::new(base_folder, version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
-            .use_cache(db.config.cache.clone());
+            .use_cache(db.config.cache.clone())
+            .with_table_id_counter(db.table_id_counter.clone())
+            .with_blob_file_id_counter(db.blob_file_id_counter.clone());
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;

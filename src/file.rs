@@ -5,6 +5,8 @@
 use std::path::Path;
 
 pub const KEYSPACES_FOLDER: &str = "keyspaces";
+pub const TABLES_FOLDER: &str = "tables";
+pub const BLOBS_FOLDER: &str = "blobs";
 pub const LOCK_FILE: &str = "lock";
 pub const VERSION_MARKER: &str = "version";
 

@@ -6,7 +6,9 @@ use crate::{
     batch::WriteBatch,
     builder::Openable,
     db_config::Config,
-    file::{fsync_directory, KEYSPACES_FOLDER, LOCK_FILE, VERSION_MARKER},
+    file::{
+        fsync_directory, BLOBS_FOLDER, KEYSPACES_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
+    },
     flush::manager::FlushManager,
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
@@ -52,6 +54,12 @@ pub struct DatabaseInner {
     pub(crate) stats: Arc<Stats>,
 
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
+
+    /// Table ID counter, shared by all trees (tables live in one DB-level folder)
+    pub(crate) table_id_counter: SequenceNumberCounter,
+
+    /// Blob file ID counter, shared by all trees (blob files live in one DB-level folder)
+    pub(crate) blob_file_id_counter: SequenceNumberCounter,
 
     pub worker_pool: WorkerPool,
 
@@ -720,6 +728,8 @@ impl Database {
             supervisor,
             worker_pool: WorkerPool::prepare(),
             keyspace_id_counter: SequenceNumberCounter::new(0),
+            table_id_counter: SequenceNumberCounter::default(),
+            blob_file_id_counter: SequenceNumberCounter::default(),
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
@@ -798,7 +808,9 @@ impl Database {
                         let base_config =
                             lsm_tree::Config::new(tree_path, version_set_provider.clone())
                                 .use_descriptor_table(db.config.descriptor_table.clone())
-                                .use_cache(db.config.cache.clone());
+                                .use_cache(db.config.cache.clone())
+                                .with_table_id_counter(db.table_id_counter.clone())
+                                .with_blob_file_id_counter(db.blob_file_id_counter.clone());
 
                         // TODO: apply config, including compaction filter etc.
 
@@ -924,8 +936,8 @@ impl Database {
         let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
-        let tables_folder_path = config.path.join("tables");
-        let blobs_folder_path = config.path.join("blobs");
+        let tables_folder_path = config.path.join(TABLES_FOLDER);
+        let blobs_folder_path = config.path.join(BLOBS_FOLDER);
 
         std::fs::create_dir_all(&tables_folder_path)?;
         std::fs::create_dir_all(&blobs_folder_path)?;
