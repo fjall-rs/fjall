@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 pub mod journal;
+pub mod link;
 mod meta;
 
 pub use meta::read_meta_keyspace;
