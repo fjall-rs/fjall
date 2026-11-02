@@ -4,6 +4,7 @@
 
 pub mod v3;
 
+use crate::{file::fsync_directory, locked_file::LockedFileGuard, Config};
 use crate::{
     keyspace::{
         apply_to_base_config, options::ConfigProvider as KeyspaceConfigProvider,
@@ -12,7 +13,6 @@ use crate::{
     manifest::ManifestPersister,
     Database, Keyspace, KeyspaceCreateOptions,
 };
-use crate::{locked_file::LockedFileGuard, Config};
 use std::sync::Arc;
 
 pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Result<Database> {
@@ -85,6 +85,8 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
             "keyspace should not have sealed memtables",
         );
     }
+
+    fsync_directory(db.path())?;
 
     log::trace!("Writing DB manifest");
     // TODO: write all version data into manifest
@@ -166,6 +168,12 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
                 .as_ref()
                 .expect("fd cache should exist"),
         )?;
+
+        log::info!("Linking tables and blob files into DB folders");
+
+        for ks in registry.values() {
+            v3::link::link_tree_files(db.path(), ks.id, &ks.tree)?;
+        }
 
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
             tree_version,
