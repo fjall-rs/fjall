@@ -28,6 +28,7 @@ pub fn run(keyspace: &Keyspace, supervisor: &Supervisor, _stats: &Stats) -> crat
             log::error!("Flush error: {e:?}");
         })?;
 
+    supervisor.write_buffer_size.free(flushed_bytes);
     supervisor.snapshot_tracker.publish(seqno);
 
     log::debug!("Flush completed, freed {flushed_bytes} bytes from write buffer");
