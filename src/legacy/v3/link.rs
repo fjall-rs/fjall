@@ -39,19 +39,15 @@ fn link_file(
 pub fn link_tree_files(
     db_path: &Path,
     keyspace_id: InternalKeyspaceId,
-    tree: &lsm_tree::AnyTree,
+    old_tree_path: &Path,
+    version: &lsm_tree::Version,
 ) -> crate::Result<()> {
-    use lsm_tree::AbstractTree;
-
-    let tree_path = &tree.tree_config().path;
-    let version = tree.current_version();
-
     let tables_folder = db_path.join(TABLES_FOLDER);
     let blobs_folder = db_path.join(BLOBS_FOLDER);
     std::fs::create_dir_all(&tables_folder)?;
     std::fs::create_dir_all(&blobs_folder)?;
 
-    let legacy_tables_folder = tree_path.join(TABLES_FOLDER);
+    let legacy_tables_folder = old_tree_path.join(TABLES_FOLDER);
 
     for table in version.iter_tables() {
         link_file(
@@ -62,7 +58,7 @@ pub fn link_tree_files(
         )?;
     }
 
-    let legacy_blobs_folder = tree_path.join(BLOBS_FOLDER);
+    let legacy_blobs_folder = old_tree_path.join(BLOBS_FOLDER);
 
     for &blob_file_id in version.blob_files.list_ids() {
         link_file(

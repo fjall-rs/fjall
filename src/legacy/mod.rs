@@ -86,14 +86,11 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         );
     }
 
-    fsync_directory(db.path())?;
-
-    log::trace!("Writing DB manifest");
-    // TODO: write all version data into manifest
-
     // TODO: Finish DB manifest
     // TODO: atomically write "current" file with correct contents
     std::fs::File::create(db.path().join("current"))?;
+
+    fsync_directory(db.path())?;
 
     // IMPORTANT: Do this as final step
     // TODO: atomically Update "version" file to v4
@@ -134,7 +131,7 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
 }
 
 // TODO: just pass in KeyspaceInfo instead?
-pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
+fn recover_keyspaces<P: KeyspaceConfigProvider>(
     db: &Database,
     keyspace_ids: &[InternalKeyspaceId],
     get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
@@ -149,15 +146,14 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
         let keyspace_name: KeyspaceKey = get_keyspace_name(keyspace_id);
         log::trace!("Recovering keyspace={keyspace_id} ({keyspace_name:?})");
 
-        // TODO: v4 we need a different path here, when migration is done
-        let tree_path = db
+        let old_tree_path = db
             .config
             .path
             .join("keyspaces")
             .join(keyspace_id.to_string());
 
         let tree_version = lsm_tree::legacy::v3::load_manifest(
-            &tree_path,
+            &old_tree_path,
             // TODO: this should not really require cache & FD cache
             // because we are just reading the manifest data;
             // tables should be loaded in a separate step
@@ -170,10 +166,7 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
         )?;
 
         log::info!("Linking tables and blob files into DB folders");
-
-        for ks in registry.values() {
-            v3::link::link_tree_files(db.path(), ks.id, &ks.tree)?;
-        }
+        v3::link::link_tree_files(db.path(), keyspace_id, &old_tree_path, &tree_version)?;
 
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
             tree_version,
@@ -196,7 +189,8 @@ pub fn recover_keyspaces<P: KeyspaceConfigProvider>(
             recovered_config = recovered_config.with_compaction_filter_factory(f);
         }
 
-        let base_config = lsm_tree::Config::new(tree_path, version_set_provider.clone())
+        // TODO: v4 we need a different path here, when migration is done
+        let base_config = lsm_tree::Config::new(old_tree_path, version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone())
             .with_table_id_counter(db.table_id_counter.clone())
