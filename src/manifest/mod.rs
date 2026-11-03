@@ -11,6 +11,7 @@ pub use db_edit::DbEditRecord;
 pub use provider::ManifestPersister;
 
 use crate::{
+    file::rewrite_atomic,
     keyspace::InternalKeyspaceId,
     manifest::{
         coding::{encode_db_edit, encode_keyspace_version_edit},
@@ -107,6 +108,12 @@ impl Inner {
         self.inner.flush(hwal::DurabilityLevel::SyncAll)?;
         Ok(())
     }
+
+    fn place_current_marker(&self) -> crate::Result<()> {
+        let id = self.inner.active_fragment_id();
+        rewrite_atomic(&self.inner.path().join("current"), &id.to_be_bytes())?;
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -142,5 +149,12 @@ impl Manifest {
             .lock()
             .expect("should not be poisoned")
             .append_db_edit(records)
+    }
+
+    pub fn place_current_marker(&self) -> crate::Result<()> {
+        self.0
+            .lock()
+            .expect("should not be poisoned")
+            .place_current_marker()
     }
 }

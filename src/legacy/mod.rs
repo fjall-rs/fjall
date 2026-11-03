@@ -4,15 +4,16 @@
 
 pub mod v3;
 
+use crate::file::{rewrite_atomic, VERSION_MARKER};
 use crate::{file::fsync_directory, locked_file::LockedFileGuard, Config};
 use crate::{
-    keyspace::{
-        apply_to_base_config, options::ConfigProvider as KeyspaceConfigProvider,
-        InternalKeyspaceId, KeyspaceKey,
-    },
-    manifest::ManifestPersister,
+    keyspace::{apply_to_base_config, KeyspaceKey},
+    manifest::{DbEditRecord, ManifestPersister},
+    recovery::MetaKeyspaceInfo,
     Database, Keyspace, KeyspaceCreateOptions,
 };
+use byteview::ByteView;
+use lsm_tree::VersionEdit;
 use std::sync::Arc;
 
 pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Result<Database> {
@@ -42,108 +43,152 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
 
     log::info!("Loading {} existing keyspaces", keyspace_info.len());
 
-    #[expect(clippy::expect_used)]
-    recover_keyspaces(
-        &db,
-        &keyspace_info.keys().copied().collect::<Vec<_>>(),
-        |id| {
-            keyspace_info
-                .get(&id)
-                .expect("keyspace should exist")
-                .name
-                .clone()
-        },
-        |id: u64| keyspace_info.get(&id).expect("keyspace should exist"),
-    )?;
+    recover_keyspaces(&db, &keyspace_info)?;
+
+    // IMPORTANT: Write keyspaces and their versions before replaying the journal,
+    // so the flushes below append their edits on top of the full v3 versions
+    log::trace!("Writing DB manifest");
+    write_keyspaces_to_manifest(&db, &keyspace_info)?;
 
     log::info!("Replaying v3 journal");
-
     crate::legacy::v3::journal::do_full_v3_journal_recovery(&db)?;
 
-    // NOTE: If flushing fails halfway through, it's fine
-    // because the journal entries of that keyspace won't be replayed
-    log::info!("Flushing all memtables");
-
-    #[expect(clippy::expect_used)]
-    for ks in db
-        .supervisor
-        .keyspaces
-        .read()
-        .expect("lock should not be poisoned")
-        .values()
     {
         use lsm_tree::AbstractTree;
 
-        crate::flush::worker::run(ks, &db.supervisor, &db.stats)?;
+        // IMPORTANT: Continue after the highest seqno of the v3 data (tables + replayed journal),
+        // before flushing, so flush seqnos and new writes are above all migrated items
+        #[expect(clippy::expect_used)]
+        let highest_seqno = db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock should not be poisoned")
+            .values()
+            .filter_map(|ks| ks.tree.get_highest_seqno())
+            .max();
 
-        assert!(
-            ks.tree.active_memtable().is_empty(),
-            "keyspace's active memtable should be empty",
-        );
-        assert!(
-            ks.sealed_memtable_count() == 0,
-            "keyspace should not have sealed memtables",
-        );
-    }
-
-    // TODO: Finish DB manifest
-    // TODO: atomically write "current" file with correct contents
-    std::fs::File::create(db.path().join("current"))?;
-
-    fsync_directory(db.path())?;
-
-    // IMPORTANT: Do this as final step
-    // TODO: atomically Update "version" file to v4
-
-    log::debug!("Removing old v3 files");
-    crate::legacy::v3::journal::nuke_journal(db.path())?;
-
-    #[expect(clippy::expect_used)]
-    for ks in db
-        .supervisor
-        .keyspaces
-        .read()
-        .expect("lock should not be poisoned")
-        .values()
-    {
-        use lsm_tree::AbstractTree;
-
-        let tree_path = &ks.tree.tree_config().path;
-
-        for dirent in std::fs::read_dir(tree_path)? {
-            let dirent = dirent?;
-            let file_name = dirent.file_name();
-            let file_name = file_name.as_encoded_bytes();
-
-            let should_delete = file_name.starts_with(b"v") || file_name == b"current";
-
-            if should_delete {
-                log::debug!("Removing old v3 manifest file: {}", dirent.path().display());
-                std::fs::remove_file(dirent.path())?;
-            }
+        if let Some(highest_seqno) = highest_seqno {
+            db.supervisor.seqno.fetch_max(highest_seqno + 1);
+            db.supervisor.snapshot_tracker.publish(highest_seqno);
         }
     }
 
-    log::trace!("Removing old v3 meta keyspace");
+    {
+        // NOTE: If flushing fails halfway through, it's fine
+        // because the journal entries of that keyspace won't be replayed
+        log::info!("Flushing all memtables");
+
+        #[expect(clippy::expect_used)]
+        for ks in db
+            .supervisor
+            .keyspaces
+            .read()
+            .expect("lock should not be poisoned")
+            .values()
+        {
+            use lsm_tree::AbstractTree;
+
+            crate::flush::worker::run(ks, &db.supervisor, &db.stats)?;
+
+            assert!(
+                ks.tree.active_memtable().is_empty(),
+                "keyspace's active memtable should be empty",
+            );
+            assert!(
+                ks.sealed_memtable_count() == 0,
+                "keyspace should not have sealed memtables",
+            );
+        }
+    }
+
+    // IMPORTANT: Set the "current" marker
+    db.supervisor.manifest.place_current_marker()?;
+    fsync_directory(db.path())?;
+
+    // IMPORTANT: Do this as final step
+    {
+        let mut v = vec![];
+        crate::version::FormatVersion::V4.write_file_header(&mut v)?;
+        rewrite_atomic(&db.path().join(VERSION_MARKER), &v)?;
+    }
+
+    log::debug!("Removing old v3 journal files");
+    crate::legacy::v3::journal::nuke_journal(db.path())?;
+
+    log::trace!("Removing old v3 keyspaces folder");
     std::fs::remove_dir_all(db.path().join("keyspaces").join("0"))?;
 
     Ok(db)
 }
 
-// TODO: just pass in KeyspaceInfo instead?
-fn recover_keyspaces<P: KeyspaceConfigProvider>(
+/// Writes all recovered v3 keyspaces into the DB manifest:
+///
+/// - the keyspace names and their configuration, as stored in the v3 meta keyspace
+/// - the full current version of every keyspace's tree
+fn write_keyspaces_to_manifest(
     db: &Database,
-    keyspace_ids: &[InternalKeyspaceId],
-    get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
-    get_config_provider: impl Fn(InternalKeyspaceId) -> P,
+    keyspace_info: &MetaKeyspaceInfo,
 ) -> crate::Result<()> {
+    // NOTE: Sort by ID, so the manifest contents are deterministic
+    let mut infos = keyspace_info.values().collect::<Vec<_>>();
+    infos.sort_by_key(|info| info.id);
+
+    let mut db_edits = vec![];
+
+    for info in &infos {
+        db_edits.push(DbEditRecord::CreateKeyspace {
+            id: info.id,
+            name: info.name.clone(),
+        });
+
+        // NOTE: v3 and v4 store keyspace configuration the same way,
+        // so the meta keyspace entries are copied as they are
+        let mut config = info.config.iter().collect::<Vec<_>>();
+        config.sort_by_key(|(k, _)| *k);
+
+        for (k, v) in config {
+            db_edits.push(DbEditRecord::ConfigurationChanged {
+                id: info.id,
+                k: k.as_str().into(),
+                v: ByteView::new(v),
+            });
+        }
+    }
+
+    // NOTE: One DB edit, because faster
+    db.supervisor.manifest.append_db_edits(&db_edits)?;
+
+    #[expect(clippy::expect_used)]
+    let keyspaces = db
+        .supervisor
+        .keyspaces
+        .read()
+        .expect("lock should not be poisoned");
+
+    for info in &infos {
+        #[expect(clippy::expect_used)]
+        let keyspace = keyspaces
+            .get(&info.name)
+            .expect("keyspace should have been recovered");
+
+        let edit = VersionEdit::new(keyspace.version_set_provider.get_edit_records());
+        db.supervisor.manifest.append(info.id, &edit)?;
+    }
+
+    Ok(())
+}
+
+/// Loads the trees of all keyspaces listed in the v3 meta keyspace.
+fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::Result<()> {
     let registry = &db.supervisor.keyspaces;
     let mut registry = registry.write().expect("lock should not be poisoned");
 
     let mut highest_keyspace_id = 0;
 
-    for &keyspace_id in keyspace_ids {
-        let keyspace_name: KeyspaceKey = get_keyspace_name(keyspace_id);
+    for info in keyspace_info.values() {
+        let keyspace_id = info.id;
+        let keyspace_name: KeyspaceKey = info.name.clone();
         log::trace!("Recovering keyspace={keyspace_id} ({keyspace_name:?})");
 
         let old_tree_path = db
@@ -176,8 +221,7 @@ fn recover_keyspaces<P: KeyspaceConfigProvider>(
             )),
         ));
 
-        let config_provider = get_config_provider(keyspace_id);
-        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &config_provider)?;
+        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &info)?;
 
         // Install compaction filter factory if needed
         if let Some(f) = db

@@ -79,9 +79,10 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
 
                 log::debug!("Clearing keyspace {}", handle.name());
 
-                if let Some(super_version) = handle.tree.clear_active_memtable() {
-                    handle.version_set_provider.overwrite(super_version);
-                }
+                log::trace!("Applying clear to version set provider");
+                handle
+                    .version_set_provider
+                    .clear(&handle.tree, batch.seqno)?;
 
                 persisted_seqnos.remove(&keyspace_id);
             }
