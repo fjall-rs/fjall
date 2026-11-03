@@ -97,7 +97,13 @@ impl Readable for WriteTransaction {
         key: K,
     ) -> crate::Result<Option<u32>> {
         let keyspace = keyspace.as_ref();
-        self.inner.size_of(keyspace, key)
+        let key = key.as_ref();
+
+        let size = self.inner.size_of(keyspace, key)?;
+
+        self.cm.mark_read(keyspace.id, key.into());
+
+        Ok(size)
     }
 
     fn iter(&self, keyspace: impl AsRef<Keyspace>) -> Iter {
@@ -492,6 +498,77 @@ mod tests {
         let tree = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 
         Ok(TestEnv { db, tree, tmpdir })
+    }
+
+    #[test]
+    fn tx_ssi_size_of_write_skew() -> Result<(), Box<dyn std::error::Error>> {
+        for (initial, expected_size) in [(Some("x"), Some(1)), (Some(""), Some(0)), (None, None)] {
+            let env = setup()?;
+            if let Some(value) = initial {
+                env.tree.insert("a", value)?;
+                env.tree.insert("b", value)?;
+            }
+
+            let mut tx1 = env.db.write_tx()?;
+            let mut tx2 = env.db.write_tx()?;
+
+            // Both transactions base their writes on the other key's size.
+            assert_eq!(tx1.size_of(&env.tree, "b")?, expected_size);
+            tx1.insert(&env.tree, "a", "aa");
+            assert_eq!(tx2.size_of(&env.tree, "a")?, expected_size);
+            tx2.insert(&env.tree, "b", "bb");
+
+            tx1.commit()??;
+            // The snapshot still returns the old size, but committing must conflict.
+            assert_eq!(tx2.size_of(&env.tree, "a")?, expected_size);
+            assert!(matches!(tx2.commit()?, Err(Conflict)));
+            assert_eq!(env.tree.get("a")?, Some("aa".into()));
+            assert_eq!(env.tree.get("b")?, initial.map(Into::into));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn tx_ssi_size_of_deleted_key() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+        env.tree.insert("a", "abc")?;
+
+        let mut tx = env.db.write_tx()?;
+        assert_eq!(tx.size_of(&env.tree, "a")?, Some(3));
+        tx.insert(&env.tree, "result", "abc");
+
+        let mut other = env.db.write_tx()?;
+        other.remove(&env.tree, "a");
+        other.commit()??;
+
+        assert!(matches!(tx.commit()?, Err(Conflict)));
+        assert_eq!(env.tree.get("a")?, None);
+        assert_eq!(env.tree.get("result")?, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tx_ssi_size_of_unrelated_writes() -> Result<(), Box<dyn std::error::Error>> {
+        let env = setup()?;
+        let other_tree = env.db.keyspace("other", KeyspaceCreateOptions::default)?;
+        env.tree.insert("a", "abc")?;
+
+        let mut tx = env.db.write_tx()?;
+        assert_eq!(tx.size_of(&env.tree, "a")?, Some(3));
+        tx.insert(&env.tree, "result", "ab");
+        assert_eq!(tx.size_of(&env.tree, "result")?, Some(2));
+
+        let mut other = env.db.write_tx()?;
+        other.insert(&env.tree, "b", "changed");
+        other.insert(&other_tree, "a", "changed");
+        other.commit()??;
+
+        tx.commit()??;
+        assert_eq!(env.tree.get("result")?, Some("ab".into()));
+
+        Ok(())
     }
 
     // Adapted from https://github.com/al8n/skipdb/issues/10
