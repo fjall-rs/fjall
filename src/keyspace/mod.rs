@@ -14,9 +14,8 @@ use crate::manifest::ManifestPersister;
 use crate::write_pipeline::{WriteRecord, WriteRecordPayload};
 use crate::DurabilityLevel;
 use crate::{
-    file::KEYSPACES_FOLDER, ingestion::Ingestion, locked_file::LockedFileGuard,
-    poison::PoisonSignal, stats::Stats, supervisor::Supervisor, worker_pool::WorkerMessage,
-    Database, Guard, Iter,
+    ingestion::Ingestion, locked_file::LockedFileGuard, poison::PoisonSignal, stats::Stats,
+    supervisor::Supervisor, worker_pool::WorkerMessage, Database, Guard, Iter,
 };
 use lsm_tree::{AbstractTree, AnyTree, SeqNo, UserKey, UserValue};
 use options::CreateOptions;
@@ -335,19 +334,11 @@ impl Keyspace {
     ) -> crate::Result<Self> {
         log::debug!("Creating keyspace {keyspace_id}={name:?}");
 
-        let base_folder = db
-            .config
-            .path
-            .join(KEYSPACES_FOLDER)
-            .join(keyspace_id.to_string());
-
-        std::fs::create_dir_all(&base_folder)?;
-
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new(Arc::new(
             ManifestPersister::new(db.supervisor.manifest.clone(), keyspace_id),
         )));
 
-        let base_config = lsm_tree::Config::new(base_folder, version_set_provider.clone())
+        let base_config = lsm_tree::Config::new(db.path(), version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone())
             .with_table_id_counter(db.table_id_counter.clone())

@@ -7,7 +7,7 @@ use crate::{
     builder::Openable,
     db_config::Config,
     file::{
-        fsync_directory, BLOBS_FOLDER, KEYSPACES_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
+        fsync_directory, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
     },
     flush::manager::FlushManager,
     keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
@@ -460,10 +460,11 @@ impl Database {
     fn allocate_keyspace_id(&self) -> crate::Result<u64> {
         let mut keyspace_id = self.keyspace_id_counter.next();
 
+        // TODO: v4 look at this
         while self
             .config
             .path
-            .join(KEYSPACES_FOLDER)
+            .join("keyspaces")
             .join(keyspace_id.to_string())
             .try_exists()?
         {
@@ -932,10 +933,6 @@ impl Database {
 
         let lock_file = LockedFileGuard::create_new(&config.path.join(LOCK_FILE))?;
 
-        // TODO: v4 remove----v
-        let keyspaces_folder_path = config.path.join(KEYSPACES_FOLDER);
-        std::fs::create_dir_all(&keyspaces_folder_path)?;
-
         let tables_folder_path = config.path.join(TABLES_FOLDER);
         let blobs_folder_path = config.path.join(BLOBS_FOLDER);
 
@@ -947,13 +944,17 @@ impl Database {
         // TODO: do this correctly (write correct ID atomically)
         std::fs::File::create(db.path().join("current"))?;
 
+        // IMPORTANT: Set the "current" marker
+        db.supervisor.manifest.place_current_marker()?;
+
         // NOTE: Lastly, fsync version marker, which contains the version
-        let mut marker = std::fs::File::create_new(db.path().join(VERSION_MARKER))?;
-        FormatVersion::V4.write_file_header(&mut marker)?;
-        marker.sync_all()?;
+        {
+            let mut v = vec![];
+            crate::version::FormatVersion::V4.write_file_header(&mut v)?;
+            rewrite_atomic(&db.path().join(VERSION_MARKER), &v)?;
+        }
 
         // IMPORTANT: fsync folders on Unix
-        fsync_directory(&keyspaces_folder_path)?;
         fsync_directory(&tables_folder_path)?;
         fsync_directory(&blobs_folder_path)?;
         fsync_directory(db.path())?;
