@@ -24,38 +24,35 @@ fn v3_migration_tables() -> fjall::Result<()> {
     let dir = tempfile::tempdir()?;
     copy_dir_all(folder, &dir)?;
 
-    let db = Database::builder(&dir).open()?;
-    let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-    let tree2 = db.keyspace("default2", KeyspaceCreateOptions::default)?;
+    for i in 0..5 {
+        log::info!("[{i}] recovering");
 
-    /*
-        tree.insert("hello", "world")?;
-        tree2.insert("hello", "world")?;
+        let db = Database::builder(&dir).open()?;
 
-        tree.clear()?;
-        tree2.clear()?;
+        // NOTE: The highest seqno in the v3 fixture is 12,
+        // so migrated data must be visible, and new writes must get higher seqnos
+        assert!(
+            db.visible_seqno() > 12,
+            "visible seqno: {}",
+            db.visible_seqno(),
+        );
+        assert!(db.next_seqno() > 12, "next seqno: {}", db.next_seqno());
 
-        tree.insert("a", "avalue")?;
-        tree.insert("b", "bvalue")?;
-        tree.insert("c", "cvalue")?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("default2", KeyspaceCreateOptions::default)?;
 
-        tree2.insert("d", "dvalue")?;
+        assert_eq!(1, tree.table_count());
+        assert_eq!(1, tree2.table_count());
 
-        tree.rotate_memtable_and_wait()?;
-        tree2.rotate_memtable_and_wait()?;
-    */
+        assert!(!tree.contains_key("hello")?);
+        assert!(!tree2.contains_key("hello")?);
 
-    assert!(tree.table_count() == 1);
-    assert!(tree2.table_count() == 1);
+        assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
+        assert_eq!(Some(b"bvalue".as_slice()), tree.get("b")?.as_deref());
+        assert_eq!(Some(b"cvalue".as_slice()), tree.get("c")?.as_deref());
 
-    assert!(!tree.contains_key("hello")?);
-    assert!(!tree2.contains_key("hello")?);
-
-    assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
-    assert_eq!(Some(b"bvalue".as_slice()), tree.get("b")?.as_deref());
-    assert_eq!(Some(b"cvalue".as_slice()), tree.get("c")?.as_deref());
-
-    assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+        assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+    }
 
     Ok(())
 }
@@ -68,46 +65,46 @@ fn v3_migration_blobs() -> fjall::Result<()> {
     let dir = tempfile::tempdir()?;
     copy_dir_all(folder, &dir)?;
 
-    let db = Database::builder(&dir).open()?;
-    let tree = db.keyspace("default", || {
-        KeyspaceCreateOptions::default()
-            .with_kv_separation(Some(KvSeparationOptions::default().separation_threshold(1)))
-    })?;
-    let tree2 = db.keyspace("default2", || {
-        KeyspaceCreateOptions::default()
-            .with_kv_separation(Some(KvSeparationOptions::default().separation_threshold(1)))
-    })?;
+    for i in 0..5 {
+        log::info!("[{i}] recovering");
 
-    /*
-        tree.insert("hello", "world")?;
-        tree2.insert("hello", "world")?;
+        let db = Database::builder(&dir).open()?;
 
-        tree.clear()?;
-        tree2.clear()?;
+        // NOTE: The highest seqno in the v3 fixture is 12,
+        // so migrated data must be visible, and new writes must get higher seqnos
+        assert!(
+            db.visible_seqno() > 12,
+            "visible seqno: {}",
+            db.visible_seqno(),
+        );
+        assert!(db.next_seqno() > 12, "next seqno: {}", db.next_seqno());
 
-        tree.insert("a", "avalue")?;
-        tree.insert("b", "bvalue")?;
-        tree.insert("c", "cvalue")?;
+        let tree = db.keyspace("default", || {
+            KeyspaceCreateOptions::default()
+                .with_kv_separation(Some(KvSeparationOptions::default().separation_threshold(1)))
+        })?;
+        let tree2 = db.keyspace("default2", || {
+            KeyspaceCreateOptions::default()
+                .with_kv_separation(Some(KvSeparationOptions::default().separation_threshold(1)))
+        })?;
 
-        tree2.insert("d", "dvalue")?;
+        assert!(tree.is_kv_separated());
+        assert!(tree2.is_kv_separated());
 
-        tree.rotate_memtable_and_wait()?;
-        tree2.rotate_memtable_and_wait()?;
-    */
+        assert_eq!(1, tree.table_count());
+        assert_eq!(1, tree.blob_file_count());
+        assert_eq!(1, tree2.table_count());
+        assert_eq!(1, tree2.blob_file_count());
 
-    assert!(tree.table_count() == 1);
-    assert!(tree.blob_file_count() == 1);
-    assert!(tree2.table_count() == 1);
-    assert!(tree2.blob_file_count() == 1);
+        assert!(!tree.contains_key("hello")?);
+        assert!(!tree2.contains_key("hello")?);
 
-    assert!(!tree.contains_key("hello")?);
-    assert!(!tree2.contains_key("hello")?);
+        assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
+        assert_eq!(Some(b"bvalue".as_slice()), tree.get("b")?.as_deref());
+        assert_eq!(Some(b"cvalue".as_slice()), tree.get("c")?.as_deref());
 
-    assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
-    assert_eq!(Some(b"bvalue".as_slice()), tree.get("b")?.as_deref());
-    assert_eq!(Some(b"cvalue".as_slice()), tree.get("c")?.as_deref());
-
-    assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+        assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+    }
 
     Ok(())
 }
