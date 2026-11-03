@@ -10,7 +10,7 @@ use crate::{
         fsync_directory, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
     },
     flush::manager::FlushManager,
-    keyspace::{name::is_valid_keyspace_name, KeyspaceKey},
+    keyspace::{apply_to_base_config, name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
     manifest::{DbEditRecord, Manifest, ManifestPersister},
     poison::PoisonSignal,
@@ -799,21 +799,28 @@ impl Database {
                                 ManifestPersister::new(db.supervisor.manifest.clone(), keyspace.id),
                             )));
 
-                        // TODO: v4 we need a different path here
-                        let tree_path = db
-                            .config
-                            .path
-                            .join("keyspaces")
-                            .join(keyspace.id.to_string());
-
+                        // NOTE: All trees share the DB-level tables & blobs folders,
+                        // same as when creating a keyspace
                         let base_config =
-                            lsm_tree::Config::new(tree_path, version_set_provider.clone())
+                            lsm_tree::Config::new(db.path(), version_set_provider.clone())
                                 .use_descriptor_table(db.config.descriptor_table.clone())
                                 .use_cache(db.config.cache.clone())
                                 .with_table_id_counter(db.table_id_counter.clone())
                                 .with_blob_file_id_counter(db.blob_file_id_counter.clone());
 
-                        // TODO: apply config, including compaction filter etc.
+                        let mut recovered_config = KeyspaceCreateOptions::from_kvs(&keyspace)?;
+
+                        // Install compaction filter factory if needed
+                        if let Some(f) = db
+                            .config
+                            .compaction_filter_factory_assigner
+                            .as_ref()
+                            .and_then(|f| f(&keyspace.name))
+                        {
+                            recovered_config = recovered_config.with_compaction_filter_factory(f);
+                        }
+
+                        let base_config = apply_to_base_config(base_config, &recovered_config);
 
                         let tree = base_config.open()?;
 
@@ -822,7 +829,7 @@ impl Database {
                             &db,
                             tree,
                             keyspace.name.clone(),
-                            KeyspaceCreateOptions::default(),
+                            recovered_config,
                             version_set_provider,
                         );
 

@@ -157,10 +157,7 @@ impl CreateOptions {
     }
 
     #[expect(clippy::expect_used, clippy::too_many_lines)]
-    pub(crate) fn from_kvs(
-        keyspace_id: InternalKeyspaceId,
-        config_provider: &impl ConfigProvider,
-    ) -> crate::Result<Self> {
+    pub(crate) fn from_kvs(config_provider: &impl ConfigProvider) -> crate::Result<Self> {
         let blob = config_provider.get_kv_for_config("blob")?;
 
         let data_block_compression_policy = config_provider

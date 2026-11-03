@@ -221,7 +221,7 @@ fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::
             )),
         ));
 
-        let mut recovered_config = KeyspaceCreateOptions::from_kvs(keyspace_id, &info)?;
+        let mut recovered_config = KeyspaceCreateOptions::from_kvs(&info)?;
 
         // Install compaction filter factory if needed
         if let Some(f) = db
