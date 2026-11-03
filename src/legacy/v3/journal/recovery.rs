@@ -143,10 +143,7 @@ pub fn find_journal_files(path: &Path) -> crate::Result<Vec<(JournalId, PathBuf)
         let filename = dirent.file_name();
 
         let Some(filename) = filename.to_str() else {
-            log::error!("Invalid journal file name: {}", filename.display());
-            return Err(crate::Error::JournalRecovery(
-                crate::JournalRecoveryError::InvalidFileName,
-            ));
+            continue;
         };
 
         if !std::path::Path::new(filename)
