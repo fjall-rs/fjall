@@ -16,7 +16,7 @@ fn link_file(
     id: u64,
 ) -> std::io::Result<()> {
     let src = src_folder.join(id.to_string());
-    let dst = dst_folder.join(format!("{keyspace_id}_{id}"));
+    let dst = dst_folder.join(crate::file_resolver::legacy_file_name(keyspace_id, id));
 
     log::trace!("Linking {} -> {}", src.display(), dst.display());
 

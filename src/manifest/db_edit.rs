@@ -29,6 +29,11 @@ pub enum DbEditRecord {
         k: StrView,
         v: ByteView,
     },
+
+    /// Marks which table and blob file IDs belong to migrated v3 files
+    ///
+    /// See [`crate::legacy::watermark::LegacyWatermark`].
+    SetLegacyWatermark { tables: u64, blob_files: u64 },
 }
 
 impl lsm_tree::coding::Encode for DbEditRecord {
@@ -62,6 +67,11 @@ impl lsm_tree::coding::Encode for DbEditRecord {
                 )]
                 writer.write_u32_varint(v.len() as u32)?;
                 writer.write_all(v)?;
+            }
+            Self::SetLegacyWatermark { tables, blob_files } => {
+                writer.write_u8(0xF0)?; // Enum discriminant
+                writer.write_u64_varint(*tables)?;
+                writer.write_u64_varint(*blob_files)?;
             }
         }
 
@@ -108,6 +118,12 @@ impl lsm_tree::coding::Decode for DbEditRecord {
                     k: key.into(),
                     v: value,
                 })
+            }
+            0xF0 => {
+                let tables = reader.read_u64_varint()?;
+                let blob_files = reader.read_u64_varint()?;
+
+                Ok(Self::SetLegacyWatermark { tables, blob_files })
             }
             tag => Err(lsm_tree::Error::InvalidTag(("DbEditRecord", tag))),
         }

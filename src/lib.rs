@@ -112,6 +112,7 @@ mod cache_pad;
 mod durability;
 mod error;
 mod file;
+mod file_resolver;
 mod flush;
 mod guard;
 mod ingestion;

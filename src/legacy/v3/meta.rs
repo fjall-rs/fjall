@@ -30,6 +30,7 @@ pub fn read_meta_keyspace(path: &Path) -> crate::Result<MetaKeyspaceInfo> {
         )),
         // TODO: -----------v rename to descriptor_cache?
         &Arc::new(lsm_tree::DescriptorTable::new(5)),
+        None,
     )?;
 
     let version_provider = Arc::new(lsm_tree::MemoryVersionSetProvider::with_initial_version(

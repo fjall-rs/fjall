@@ -1,5 +1,6 @@
 use crate::{
     keyspace::InternalKeyspaceId,
+    legacy::watermark::LegacyWatermark,
     manifest::{DbEditRecord, Inner},
     recovery::{KeyspaceInfo, MetaKeyspaceInfo},
     HashMap,
@@ -12,6 +13,9 @@ pub struct RecoveryResult {
     pub keyspace_info: MetaKeyspaceInfo,
     pub keyspace_versions: HashMap<InternalKeyspaceId, lsm_tree::RawVersionData>,
     pub highest_seqno: SeqNo,
+
+    /// Set if the DB was migrated from v3
+    pub legacy_watermark: Option<LegacyWatermark>,
 }
 
 pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult> {
@@ -20,6 +24,7 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
     let mut highest_seqno = SeqNo::default();
     let mut keyspace_info = MetaKeyspaceInfo::default();
     let mut keyspace_versions = HashMap::<_, lsm_tree::RawVersionData>::default();
+    let mut legacy_watermark = None;
 
     // TODO: we need a HWAL function to only recover the current version
     let mut recovery = manifest.inner.recover()?;
@@ -92,6 +97,9 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
                             );
                         }
                     }
+                    DbEditRecord::SetLegacyWatermark { tables, blob_files } => {
+                        legacy_watermark = Some(LegacyWatermark { tables, blob_files });
+                    }
                 }
             }
         }
@@ -105,5 +113,6 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
         keyspace_info,
         keyspace_versions,
         highest_seqno,
+        legacy_watermark,
     })
 }

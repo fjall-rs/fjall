@@ -3,17 +3,20 @@
 // (found in the LICENSE-* files in the repository)
 
 pub mod v3;
+pub mod watermark;
 
 use crate::file::{rewrite_atomic, VERSION_MARKER};
 use crate::{file::fsync_directory, locked_file::LockedFileGuard, Config};
 use crate::{
+    file_resolver::KeyspaceFileResolver,
     keyspace::{apply_to_base_config, KeyspaceKey},
+    legacy::watermark::LegacyWatermark,
     manifest::{DbEditRecord, ManifestPersister},
     recovery::MetaKeyspaceInfo,
     Database, Keyspace, KeyspaceCreateOptions,
 };
 use byteview::ByteView;
-use lsm_tree::VersionEdit;
+use lsm_tree::{EditRecord, VersionEdit};
 use std::sync::Arc;
 
 pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Result<Database> {
@@ -42,7 +45,6 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     let keyspace_info = crate::legacy::v3::read_meta_keyspace(db.path())?;
 
     log::info!("Loading {} existing keyspaces", keyspace_info.len());
-
     recover_keyspaces(&db, &keyspace_info)?;
 
     // IMPORTANT: Write keyspaces and their versions before replaying the journal,
@@ -102,6 +104,14 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         }
     }
 
+    // IMPORTANT: The v3 journal is deleted below, so the seqno must survive in the manifest.
+    //
+    // Without this:
+    // 1. v3: insert, flush (journal has nothing left to replay)
+    // 2. migrate: memtables are empty, so no flush persists a seqno
+    // 3. reopen in v4: seqno starts at 0 again, and the migrated data is invisible
+    write_highest_seqno_to_manifest(&db)?;
+
     // IMPORTANT: Set the "current" marker
     db.supervisor.manifest.place_current_marker()?;
     fsync_directory(db.path())?;
@@ -116,10 +126,40 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     log::debug!("Removing old v3 journal files");
     crate::legacy::v3::journal::nuke_journal(db.path())?;
 
+    // NOTE: The v3 tables and blob files live on through their links in the DB-level folders
     log::trace!("Removing old v3 keyspaces folder");
-    std::fs::remove_dir_all(db.path().join("keyspaces").join("0"))?;
+    std::fs::remove_dir_all(db.path().join("keyspaces"))?;
 
     Ok(db)
+}
+
+/// Persists the highest seqno of the migrated database.
+///
+/// The v3 journal is removed after the migration, so on recovery the seqno can only
+/// come from the DB manifest. v3 versions have no seqno, and flushing an empty memtable
+/// takes a seqno without persisting it, so set every keyspace's version seqno
+/// to the highest seqno.
+///
+/// This is valid because all data is flushed into tables at this point.
+fn write_highest_seqno_to_manifest(db: &Database) -> crate::Result<()> {
+    let Some(highest_seqno) = db.supervisor.seqno.get().checked_sub(1) else {
+        return Ok(());
+    };
+
+    let edit = VersionEdit::new(vec![EditRecord::SetVersionSeqno(highest_seqno)]);
+
+    #[expect(clippy::expect_used)]
+    for keyspace in db
+        .supervisor
+        .keyspaces
+        .read()
+        .expect("lock should not be poisoned")
+        .values()
+    {
+        db.supervisor.manifest.append(keyspace.id, &edit)?;
+    }
+
+    Ok(())
 }
 
 /// Writes all recovered v3 keyspaces into the DB manifest:
@@ -155,6 +195,13 @@ fn write_keyspaces_to_manifest(
             });
         }
     }
+
+    // NOTE: Opening the v3 trees raised the file ID counters above all v3 IDs,
+    // so everything below the counters is a v3 file, everything written later is not
+    db_edits.push(DbEditRecord::SetLegacyWatermark {
+        tables: db.table_id_counter.get(),
+        blob_files: db.blob_file_id_counter.get(),
+    });
 
     // NOTE: One DB edit, because faster
     db.supervisor.manifest.append_db_edits(&db_edits)?;
@@ -197,21 +244,46 @@ fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::
             .join("keyspaces")
             .join(keyspace_id.to_string());
 
+        #[expect(clippy::expect_used)]
+        let descriptor_table = db
+            .config
+            .descriptor_table
+            .as_ref()
+            .expect("fd cache should exist");
+
+        // TODO: this should not really require cache & FD cache
+        // because we are just reading the manifest data;
+        // tables should be loaded in a separate step
         let tree_version = lsm_tree::legacy::v3::load_manifest(
             &old_tree_path,
-            // TODO: this should not really require cache & FD cache
-            // because we are just reading the manifest data;
-            // tables should be loaded in a separate step
             &db.config.cache,
-            // TODO: -----------v rename to descriptor_cache?
-            db.config
-                .descriptor_table
-                .as_ref()
-                .expect("fd cache should exist"),
+            descriptor_table,
+            None,
         )?;
 
         log::info!("Linking tables and blob files into DB folders");
         v3::link::link_tree_files(db.path(), keyspace_id, &old_tree_path, &tree_version)?;
+        drop(tree_version);
+
+        // NOTE: Every file of a v3 tree is a legacy file, so the
+        // watermark is not known (or needed) yet
+        let legacy_resolver = KeyspaceFileResolver {
+            db_path: db.path().to_path_buf(),
+            keyspace_id,
+            legacy: Some(LegacyWatermark {
+                tables: u64::MAX,
+                blob_files: u64::MAX,
+            }),
+        };
+
+        // IMPORTANT: Load the version again through the links, so tables and blob files
+        // point at the links; dropping them later (compaction, clear) then deletes the links
+        let tree_version = lsm_tree::legacy::v3::load_manifest(
+            &old_tree_path,
+            &db.config.cache,
+            descriptor_table,
+            Some(&legacy_resolver),
+        )?;
 
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
             tree_version,
@@ -233,8 +305,9 @@ fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::
             recovered_config = recovered_config.with_compaction_filter_factory(f);
         }
 
-        // TODO: v4 we need a different path here, when migration is done
-        let base_config = lsm_tree::Config::new(old_tree_path, version_set_provider.clone())
+        // NOTE: All trees share the DB-level tables & blobs folders,
+        // so new files (e.g. the migration flushes) are written there
+        let base_config = lsm_tree::Config::new(db.path(), version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
             .use_cache(db.config.cache.clone())
             .with_table_id_counter(db.table_id_counter.clone())

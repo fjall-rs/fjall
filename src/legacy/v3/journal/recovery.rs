@@ -77,6 +77,24 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                     continue;
                 };
 
+                // NOTE: Skip clears that were already persisted: v3 dropped all tables when
+                // clearing, so tables with higher seqnos only contain data written after the clear.
+                // Applying the clear again would drop those tables, and rewrite their data
+                // from the journal.
+                //
+                // Remember: replaying the WAL here happens after recovering the tables etc.
+                let persisted_seqno = *persisted_seqnos
+                    .entry(keyspace_id)
+                    .or_insert_with(|| handle.tree.get_highest_persisted_seqno());
+
+                if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
+                    log::trace!(
+                        "Skipping already persisted clear of keyspace {}",
+                        handle.name(),
+                    );
+                    continue;
+                }
+
                 log::debug!("Clearing keyspace {}", handle.name());
 
                 log::trace!("Applying clear to version set provider");

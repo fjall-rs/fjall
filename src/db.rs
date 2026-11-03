@@ -9,6 +9,7 @@ use crate::{
     file::{
         fsync_directory, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
     },
+    file_resolver::KeyspaceFileResolver,
     flush::manager::FlushManager,
     keyspace::{apply_to_base_config, name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
@@ -457,21 +458,12 @@ impl Database {
         Ok(())
     }
 
-    fn allocate_keyspace_id(&self) -> crate::Result<u64> {
-        let mut keyspace_id = self.keyspace_id_counter.next();
-
-        // TODO: v4 look at this
-        while self
-            .config
-            .path
-            .join("keyspaces")
-            .join(keyspace_id.to_string())
-            .try_exists()?
-        {
-            keyspace_id = self.keyspace_id_counter.next()
-        }
-
-        Ok(keyspace_id)
+    /// Allocates a new keyspace ID.
+    ///
+    /// The counter is recovered from the DB manifest (highest keyspace ID + 1),
+    /// and keyspaces no longer have their own folder, so the ID is always free.
+    fn allocate_keyspace_id(&self) -> u64 {
+        self.keyspace_id_counter.next()
     }
 
     /// Creates or opens a keyspace.
@@ -501,7 +493,7 @@ impl Database {
             log::trace!("Opening existing keyspace {name:?}");
             keyspace.clone()
         } else {
-            let keyspace_id = self.allocate_keyspace_id()?;
+            let keyspace_id = self.allocate_keyspace_id();
 
             let name: KeyspaceKey = name.into();
             let mut opts = create_options();
@@ -801,12 +793,20 @@ impl Database {
 
                         // NOTE: All trees share the DB-level tables & blobs folders,
                         // same as when creating a keyspace
+                        // NOTE: Migrated v3 files are named differently, see `LegacyWatermark`
+                        let file_resolver = Arc::new(KeyspaceFileResolver {
+                            db_path: db.path().to_path_buf(),
+                            keyspace_id: keyspace.id,
+                            legacy: manifest_recovery_result.legacy_watermark,
+                        });
+
                         let base_config =
                             lsm_tree::Config::new(db.path(), version_set_provider.clone())
                                 .use_descriptor_table(db.config.descriptor_table.clone())
                                 .use_cache(db.config.cache.clone())
                                 .with_table_id_counter(db.table_id_counter.clone())
-                                .with_blob_file_id_counter(db.blob_file_id_counter.clone());
+                                .with_blob_file_id_counter(db.blob_file_id_counter.clone())
+                                .with_file_resolver(file_resolver);
 
                         let mut recovered_config = KeyspaceCreateOptions::from_kvs(&keyspace)?;
 
@@ -890,6 +890,7 @@ impl Database {
             _ => unreachable!("should already be checked"),
         }?;
 
+        // TODO: v4 look at this
         /*
         db.supervisor.snapshot_tracker.gc();
 
