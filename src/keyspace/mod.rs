@@ -721,6 +721,56 @@ impl Keyspace {
         Ok(())
     }
 
+    /// Synchronously flushes all sealed memtables into a table,
+    /// sealing the active memtable first if `rotate` is set.
+    ///
+    /// Does not involve the background workers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn flush(&self, rotate: bool) -> crate::Result<()> {
+        log::trace!("acquiring journal lock");
+        let mut journal_writer = self.supervisor.journal.get_writer()?;
+        self.flush_inner(&mut journal_writer, rotate)
+    }
+
+    /// Like [`Keyspace::flush`], but with the journal lock already held by the caller.
+    ///
+    /// NOTE: Writes are applied to the active memtable under the journal lock,
+    /// so no write can land in a memtable after it was sealed.
+    pub(crate) fn flush_inner(
+        &self,
+        journal_writer: &mut MutexGuard<'_, crate::journal::writer::Writer>,
+        rotate: bool,
+    ) -> crate::Result<()> {
+        if rotate {
+            self.tree.rotate_memtable();
+        }
+
+        // NOTE: Same as the flush worker, see https://github.com/fjall-rs/fjall/issues/329
+        journal_writer.persist(crate::PersistMode::SyncAll)?;
+
+        crate::flush::worker::run(
+            &FlushTask {
+                keyspace: self.clone(),
+            },
+            &self.supervisor.write_buffer_size,
+            &self.supervisor.snapshot_tracker,
+            &self.stats,
+        )?;
+
+        #[expect(clippy::expect_used)]
+        self.supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned")
+            .maintenance()?;
+
+        Ok(())
+    }
+
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
         log::trace!("acquiring journal lock");
@@ -866,6 +916,19 @@ impl Keyspace {
     #[must_use]
     pub fn blob_file_count(&self) -> usize {
         self.tree.blob_file_count()
+    }
+
+    /// Runs a single compaction with the configured compaction strategy,
+    /// blocking the caller until it's done.
+    ///
+    /// Does not involve the background workers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn compact(&self) -> crate::Result<()> {
+        crate::compaction::worker::run(self, &self.supervisor.snapshot_tracker, &self.stats)
     }
 
     /// Performs major compaction, blocking the caller until it's done.
