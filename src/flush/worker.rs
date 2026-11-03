@@ -3,26 +3,25 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    flush::Task, snapshot_tracker::SnapshotTracker, stats::Stats,
-    write_buffer_manager::WriteBufferManager,
+    snapshot_tracker::SnapshotTracker, stats::Stats, write_buffer_manager::WriteBufferManager,
+    Keyspace,
 };
 use lsm_tree::AbstractTree;
 
 /// Runs flush logic.
 pub fn run(
-    task: &Task,
+    keyspace: &Keyspace,
     write_buffer_manager: &WriteBufferManager,
     snapshot_tracker: &SnapshotTracker,
     _stats: &Stats,
 ) -> crate::Result<()> {
-    log::debug!("Flushing keyspace {:?}", task.keyspace.name);
+    log::debug!("Flushing keyspace {:?}", keyspace.name);
 
     let gc_watermark = snapshot_tracker.get_seqno_safe_to_gc();
 
-    let flush_lock = task.keyspace.tree.get_flush_lock();
+    let flush_lock = keyspace.tree.get_flush_lock();
 
-    match task
-        .keyspace
+    match keyspace
         .tree
         .flush(&flush_lock, gc_watermark)
         .inspect_err(|e| {
