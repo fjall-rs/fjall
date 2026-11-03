@@ -68,6 +68,17 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Disables write stalls & halts.
+    ///
+    /// Only used for deterministic testing, where flushes & compactions are run manually,
+    /// so nothing would ever relieve a stall.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn disable_write_stalls(mut self, flag: bool) -> Self {
+        self.inner.disable_write_stalls = flag;
+        self
+    }
+
     /// Sets the number of worker threads.
     ///
     /// Default = min(# CPU cores, 4)

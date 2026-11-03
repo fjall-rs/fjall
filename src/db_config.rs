@@ -38,6 +38,10 @@ pub struct Config {
 
     pub(crate) manual_journal_persist: bool,
 
+    /// Disables write stalls & halts (for deterministic testing, without background workers)
+    #[doc(hidden)]
+    pub(crate) disable_write_stalls: bool,
+
     /// Number of concurrent worker threads
     pub(crate) worker_threads: usize,
 
@@ -78,6 +82,7 @@ impl Config {
             worker_threads,
             // journal_recovery_mode: RecoveryMode::default(),
             manual_journal_persist: false,
+            disable_write_stalls: false,
 
             #[cfg(not(feature = "lz4"))]
             journal_compression_type: CompressionType::None,
