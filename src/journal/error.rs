@@ -17,6 +17,19 @@ pub enum RecoveryMode {
     /// This is the default mode.
     #[default]
     TolerateCorruptTail,
+
+    /// The last batch in the journal may be corrupt on crash, and
+    /// will be discarded without error, like in [`RecoveryMode::TolerateCorruptTail`].
+    ///
+    /// An unreadable region that a **completed** batch follows, however, is not a
+    /// torn tail: something was written after it, so recovering would silently drop
+    /// data that was acknowledged. This mode reports those as
+    /// [`RecoveryError::MidJournalCorruption`] instead, and leaves the file alone.
+    ///
+    /// Use this when the journal is a log another system replicates or otherwise
+    /// depends on, where losing entries without noticing breaks the guarantees of
+    /// whatever is on top of it.
+    Strict,
     // TODO: in the future?
     /*  /// Skips corrupt (invalid checksum) batches. This may violate
     /// consistency, but will recover as much data as possible.
@@ -26,6 +39,7 @@ pub enum RecoveryMode {
 
 /// Errors that can occur during journal recovery
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 #[expect(clippy::module_name_repetitions)]
 pub enum RecoveryError {
     /// Batch had less items than expected, so it's incomplete
@@ -38,6 +52,13 @@ pub enum RecoveryError {
 
     /// The checksum value does not match the expected value
     ChecksumMismatch,
+
+    /// A completed batch exists after an unreadable region, so the corruption is
+    /// in the middle of the journal rather than at a torn tail.
+    ///
+    /// Nothing was truncated: the journal is left as it is for the caller to
+    /// inspect or repair. Only reported in [`RecoveryMode::Strict`].
+    MidJournalCorruption,
 
     /// An unparseable journal file name was encountered
     InvalidFileName,

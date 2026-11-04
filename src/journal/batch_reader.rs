@@ -32,6 +32,9 @@ pub struct JournalBatchReader {
     batch_seqno: SeqNo,
     last_valid_pos: u64,
     checksum_builder: xxhash_rust::xxh3::Xxh3,
+    /// Set once mid-journal corruption was reported: strict recovery leaves the journal as it is,
+    /// so closing the reader must not truncate the batch a later wrapper is sitting in.
+    did_report_mid_journal_corruption: bool,
 }
 
 impl JournalBatchReader {
@@ -45,6 +48,7 @@ impl JournalBatchReader {
             batch_seqno: 0,
             last_valid_pos: 0,
             batch_counter: 0,
+            did_report_mid_journal_corruption: false,
         }
     }
 
@@ -62,7 +66,7 @@ impl JournalBatchReader {
     }
 
     fn on_close(&self) -> crate::Result<()> {
-        if self.is_in_batch {
+        if self.is_in_batch && !self.did_report_mid_journal_corruption {
             log::debug!("Invalid batch: missing terminator, but last batch, so probably incomplete, discarding to keep atomicity");
 
             // Discard batch
@@ -85,7 +89,20 @@ impl Iterator for JournalBatchReader {
                 fail_iter!(self.on_close());
                 return None;
             };
-            let item = fail_iter!(item);
+            let item = match item {
+                Ok(item) => item,
+                Err(e) => {
+                    // Reporting the corruption is the whole point of strict recovery: a caller that
+                    // polls the reader again must not get the truncation it refused.
+                    if matches!(
+                        e,
+                        JournalRecovery(JournalRecoveryError::MidJournalCorruption)
+                    ) {
+                        self.did_report_mid_journal_corruption = true;
+                    }
+                    return Some(Err(e));
+                }
+            };
 
             let journal_file_pos = self.reader.last_valid_pos;
 

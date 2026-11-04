@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use super::Journal;
+use super::{error::RecoveryMode, Journal};
 use lsm_tree::CompressionType;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,7 @@ pub fn recover_journals<P: AsRef<Path>>(
     path: P,
     compression: CompressionType,
     compression_threshold: usize,
+    recovery_mode: RecoveryMode,
 ) -> crate::Result<RecoveryResult> {
     let path = path.as_ref();
 
@@ -73,6 +74,7 @@ pub fn recover_journals<P: AsRef<Path>>(
     Ok(match journal_fragments.pop() {
         Some((_, active)) => RecoveryResult {
             active: Journal::from_file(active)?
+                .with_recovery_mode(recovery_mode)
                 .with_compression(compression, compression_threshold),
             sealed: journal_fragments,
             was_active_created: false,
