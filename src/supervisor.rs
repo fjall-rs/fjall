@@ -10,6 +10,7 @@ use crate::{
     journal::{manager::JournalManager, Journal},
     snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
+    write_pipeline::WritePipeline,
 };
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -33,6 +34,8 @@ pub struct SupervisorInner {
     pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
 
     pub(crate) backpressure_lock: Mutex<()>,
+
+    pub(crate) write_pipeline: WritePipeline,
 }
 
 #[derive(Clone)]

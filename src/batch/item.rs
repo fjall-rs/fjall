@@ -43,31 +43,43 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
-    pub fn new<K: Into<UserKey>, V: Into<UserValue>>(
-        keyspace: Keyspace,
-        key: K,
-        value: V,
-        value_type: ValueType,
-    ) -> Self {
-        let k = key.into();
-        let v = value.into();
-
-        assert!(!k.is_empty());
+    pub fn new(keyspace: Keyspace, key: UserKey, value: UserValue, value_type: ValueType) -> Self {
+        assert!(!key.is_empty());
 
         assert!(
-            u16::try_from(k.len()).is_ok(),
+            u16::try_from(key.len()).is_ok(),
             "Keys can be up to 65535 bytes long"
         );
         assert!(
-            u32::try_from(v.len()).is_ok(),
+            u32::try_from(value.len()).is_ok(),
             "Values can be up to 2^32 bytes long"
         );
 
         Self {
             keyspace,
-            key: k,
-            value: v,
+            key,
+            value,
             value_type,
+        }
+    }
+
+    pub fn new_tombstone(keyspace: Keyspace, key: UserKey, is_weak: bool) -> Self {
+        assert!(!key.is_empty());
+
+        assert!(
+            u16::try_from(key.len()).is_ok(),
+            "Keys can be up to 65535 bytes long"
+        );
+
+        Self {
+            keyspace,
+            key,
+            value: UserValue::default(),
+            value_type: if is_weak {
+                ValueType::WeakTombstone
+            } else {
+                ValueType::Tombstone
+            },
         }
     }
 }

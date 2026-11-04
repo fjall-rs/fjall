@@ -57,6 +57,20 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Sets the maximum number of journal bytes processed by one write-pipeline leader term.
+    ///
+    /// Default = 1 MB
+    ///
+    /// # Caution
+    ///
+    /// This feature is experimental.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn write_pipeline_leader_capacity(mut self, bytes: usize) -> Self {
+        self.inner.write_pipeline_leader_capacity = bytes;
+        self
+    }
+
     /// If `false`, write batches or transactions automatically flush data to the operating system.
     ///
     /// Default = false

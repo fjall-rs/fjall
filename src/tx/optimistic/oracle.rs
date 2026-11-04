@@ -6,65 +6,90 @@ use super::conflict_manager::ConflictManager;
 use crate::snapshot_tracker::SnapshotTracker;
 use crate::SeqNo;
 use std::collections::BTreeMap;
+use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::{Mutex, MutexGuard};
 
-pub enum CommitOutcome<E> {
-    Ok,
-    Aborted(E),
-    Conflicted,
+#[derive(Default)]
+pub struct CommittedTxnTracker(BTreeMap<SeqNo, ConflictManager>);
+
+impl CommittedTxnTracker {
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn insert(&mut self, seqno: SeqNo, cc: ConflictManager) {
+        self.0.insert(seqno, cc);
+    }
+
+    pub fn gc(&mut self, safe_to_gc: SeqNo) {
+        let Some((&first_to_keep, _)) = self.0.range((Excluded(safe_to_gc), Unbounded)).next()
+        else {
+            self.0.clear();
+            return;
+        };
+
+        if self
+            .0
+            .first_key_value()
+            .is_some_and(|(ts, _)| *ts == first_to_keep)
+        {
+            return;
+        }
+
+        self.0 = self.0.split_off(&first_to_keep);
+    }
+
+    pub fn has_conflict(&self, instant: SeqNo, cc: &ConflictManager) -> bool {
+        self.0
+            .range((instant + 1)..)
+            .any(|(_ts, other_conflict_checker)| cc.has_conflict(other_conflict_checker))
+    }
 }
 
 pub struct Oracle {
-    pub(super) write_serialize_lock: Mutex<BTreeMap<SeqNo, ConflictManager>>,
+    pub(super) committed_txns: Mutex<CommittedTxnTracker>, // TODO: remove this lock, use Mutex<Oracle> instead
     pub(super) snapshot_tracker: SnapshotTracker,
 }
 
 impl Oracle {
-    pub(super) fn with_commit<E, F: FnOnce() -> Result<(), E>>(
+    pub(crate) fn has_conflict(
         &self,
         instant: SeqNo,
-        conflict_checker: ConflictManager,
-        f: F,
-    ) -> crate::Result<CommitOutcome<E>> {
-        let mut committed_txns = self
-            .write_serialize_lock
+        conflict_checker: &ConflictManager,
+    ) -> crate::Result<bool> {
+        let committed_txns = self
+            .committed_txns
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        // If the committed_txn.ts is less than `SeqNo` that implies that the
-        // committed_txn finished before the current transaction started.
-        // We don't need to check for conflict in that case.
-        // This change assumes linearizability. Lack of linearizability could
-        // cause the read ts of a new txn to be lower than the commit ts of
-        // a txn before it.
-        let conflicted =
-            committed_txns
-                .range((instant + 1)..)
-                .any(|(_ts, other_conflict_checker)| {
-                    conflict_checker.has_conflict(other_conflict_checker)
-                });
+        Ok(committed_txns.has_conflict(instant, conflict_checker))
+    }
+
+    pub(crate) fn finalize(
+        &self,
+        seqno: SeqNo,
+        conflict_checker: ConflictManager,
+    ) -> crate::Result<()> {
+        let mut committed_txns = self
+            .committed_txns
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        committed_txns.insert(seqno, conflict_checker);
 
         // TODO: This can be expensive and should probably be done in a background worker, or a after a memtable rotation
+        // TODO: also only do this in write pipeline once?
         let safe_to_gc = self.snapshot_tracker.get_seqno_safe_to_gc();
-        committed_txns.retain(|ts, _| *ts > safe_to_gc);
+        committed_txns.gc(safe_to_gc);
 
-        if conflicted {
-            return Ok(CommitOutcome::Conflicted);
-        }
-
-        if let Err(e) = f() {
-            return Ok(CommitOutcome::Aborted(e));
-        }
-
-        committed_txns.insert(self.snapshot_tracker.get(), conflict_checker);
-
-        Ok(CommitOutcome::Ok)
+        Ok(())
     }
 
     pub(super) fn write_serialize_lock(
         &self,
-    ) -> crate::Result<MutexGuard<'_, BTreeMap<u64, ConflictManager>>> {
-        self.write_serialize_lock
+    ) -> crate::Result<MutexGuard<'_, CommittedTxnTracker>> {
+        self.committed_txns
             .lock()
             .map_err(|_| crate::Error::Poisoned)
     }
@@ -72,7 +97,32 @@ impl Oracle {
 
 #[cfg(test)]
 mod tests {
+    use super::{CommittedTxnTracker, ConflictManager};
     use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable};
+
+    #[test]
+    fn conflicts_gc_1() {
+        let mut tracker = CommittedTxnTracker::default();
+        tracker.insert(1, ConflictManager::default());
+        tracker.insert(2, ConflictManager::default());
+        tracker.insert(3, ConflictManager::default());
+
+        tracker.gc(2);
+
+        assert_eq!(1, tracker.len());
+    }
+
+    #[test]
+    fn conflicts_gc_2() {
+        let mut tracker = CommittedTxnTracker::default();
+        tracker.insert(6, ConflictManager::default());
+        tracker.insert(7, ConflictManager::default());
+        tracker.insert(8, ConflictManager::default());
+
+        tracker.gc(5);
+
+        assert_eq!(3, tracker.len());
+    }
 
     #[expect(clippy::significant_drop_tightening)]
     fn run_tx(
@@ -98,21 +148,21 @@ mod tests {
     #[test]
     fn oracle_committed_txns_does_not_leak() -> crate::Result<()> {
         let tmpdir = tempfile::tempdir()?;
-        let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
 
+        let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
         let part = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 
         for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
+        assert!(dbg!(db.oracle.committed_txns.lock().unwrap().len()) < 10_000);
 
         for _ in 0..10_000 {
             run_tx(&db, &part).unwrap();
         }
 
-        assert!(dbg!(db.oracle.write_serialize_lock.lock().unwrap().len()) < 10_000);
+        assert!(dbg!(db.oracle.committed_txns.lock().unwrap().len()) < 10_000);
 
         Ok(())
     }
@@ -120,6 +170,7 @@ mod tests {
     #[test]
     fn committing_transaction_closes_only_its_snapshot() -> Result<(), Box<dyn std::error::Error>> {
         let tmpdir = tempfile::tempdir()?;
+
         let db = OptimisticTxDatabase::builder(tmpdir.path()).open()?;
         let tree = db.keyspace("foo", KeyspaceCreateOptions::default)?;
 

@@ -2,19 +2,31 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+#[doc(hidden)]
 mod conflict_manager;
+
 mod keyspace;
+
+#[doc(hidden)]
 mod oracle;
+
 mod write_tx;
 
 use crate::{
-    builder::Openable, keyspace::KeyspaceKey, tx::optimistic::oracle::Oracle, Config, Database,
-    KeyspaceCreateOptions, PersistMode, Snapshot,
+    builder::Openable, keyspace::KeyspaceKey, Config, Database, KeyspaceCreateOptions, PersistMode,
+    Snapshot,
 };
 use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
+
+pub use conflict_manager::ConflictManager;
+pub use oracle::Oracle;
+
+#[cfg(feature = "__internal_bench")]
+#[doc(hidden)]
+pub use oracle::CommittedTxnTracker;
 
 pub use keyspace::OptimisticTxKeyspace;
 pub use write_tx::{Conflict, WriteTransaction};
@@ -39,7 +51,7 @@ impl Openable for OptimisticTxDatabase {
 
         Ok(Self {
             oracle: Arc::new(Oracle {
-                write_serialize_lock: Mutex::default(),
+                committed_txns: Mutex::default(),
                 snapshot_tracker: inner.supervisor.snapshot_tracker.clone(),
             }),
             inner,
