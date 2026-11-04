@@ -97,6 +97,12 @@ impl JournalManager {
 
         if let Some(item) = self.items.first() {
             for item in &item.watermarks {
+                // NOTE: A keyspace with empty memtables has nothing to flush,
+                // and does not hold the journal (see `maintenance`)
+                if item.keyspace.tree.get_highest_memtable_seqno().is_none() {
+                    continue;
+                }
+
                 let Some(partition_seqno) = item.keyspace.tree.get_highest_persisted_seqno() else {
                     items.push(item.keyspace.clone());
                     continue;
@@ -128,6 +134,17 @@ impl JournalManager {
                     .is_deleted
                     .load(std::sync::atomic::Ordering::Acquire)
                 {
+                    // NOTE: Writes leave the memtables only by being flushed into tables,
+                    // or by a clear, which is journaled itself, so a keyspace whose
+                    // memtables are empty needs nothing from this journal.
+                    //
+                    // Its tables cannot tell: compaction may drop all of them, or only
+                    // the newest entries, leaving a persisted seqno below the watermark
+                    // that no flush raises while the keyspace takes no writes.
+                    if item.keyspace.tree.get_highest_memtable_seqno().is_none() {
+                        continue;
+                    }
+
                     let Some(keyspace_seqno) = item.keyspace.tree.get_highest_persisted_seqno()
                     else {
                         return Ok(());
