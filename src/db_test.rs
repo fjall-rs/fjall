@@ -320,7 +320,6 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
 
 // Regression test for https://github.com/fjall-rs/fjall/issues/328
 #[test]
-#[ignore = "restore keyspace delete"]
 fn delete_keyspace_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
