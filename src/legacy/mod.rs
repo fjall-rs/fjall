@@ -222,6 +222,8 @@ fn write_keyspaces_to_manifest(
 /// Loads the trees of all keyspaces listed in the v3 meta keyspace.
 fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::Result<()> {
     let registry = &db.supervisor.keyspaces;
+
+    #[expect(clippy::expect_used)]
     let mut registry = registry.write().expect("lock should not be poisoned");
 
     let mut highest_keyspace_id = 0;

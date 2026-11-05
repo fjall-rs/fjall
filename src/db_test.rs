@@ -2,6 +2,7 @@ use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test_log::test]
+#[expect(clippy::expect_used)]
 fn clear_recover_sealed() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
 
@@ -265,6 +266,7 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
 }
 
 #[test]
+#[expect(clippy::expect_used)]
 fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
