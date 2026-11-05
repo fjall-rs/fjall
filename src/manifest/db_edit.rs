@@ -30,6 +30,18 @@ pub enum DbEditRecord {
         v: ByteView,
     },
 
+    /// The keyspace was deleted
+    ///
+    /// Its later version edits (e.g. of a compaction that was still running) are ignored.
+    DeleteKeyspace { id: InternalKeyspaceId },
+
+    /// The next keyspace ID to hand out
+    ///
+    /// IMPORTANT: Keyspace IDs must never be reused, otherwise WAL items of a deleted keyspace
+    /// would be replayed into a new keyspace with the same ID. After a manifest rotation,
+    /// deleted keyspaces are not in the snapshot anymore, so their IDs are only kept by this.
+    SetKeyspaceIdCounter { next: InternalKeyspaceId },
+
     /// Marks which table and blob file IDs belong to migrated v3 files
     ///
     /// See [`crate::legacy::watermark::LegacyWatermark`].
@@ -67,6 +79,14 @@ impl lsm_tree::coding::Encode for DbEditRecord {
                 )]
                 writer.write_u32_varint(v.len() as u32)?;
                 writer.write_all(v)?;
+            }
+            Self::DeleteKeyspace { id } => {
+                writer.write_u8(0x2)?; // Enum discriminant
+                writer.write_u64_varint(*id)?;
+            }
+            Self::SetKeyspaceIdCounter { next } => {
+                writer.write_u8(0x3)?; // Enum discriminant
+                writer.write_u64_varint(*next)?;
             }
             Self::SetLegacyWatermark { tables, blob_files } => {
                 writer.write_u8(0xF0)?; // Enum discriminant
@@ -118,6 +138,14 @@ impl lsm_tree::coding::Decode for DbEditRecord {
                     k: key.into(),
                     v: value,
                 })
+            }
+            0x2 => {
+                let id = reader.read_u64_varint()?;
+                Ok(Self::DeleteKeyspace { id })
+            }
+            0x3 => {
+                let next = reader.read_u64_varint()?;
+                Ok(Self::SetKeyspaceIdCounter { next })
             }
             0xF0 => {
                 let tables = reader.read_u64_varint()?;

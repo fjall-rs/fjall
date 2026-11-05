@@ -440,20 +440,80 @@ impl Database {
 
     /// Destroys the keyspace, removing all data associated with it.
     ///
-    /// The keyspace folder will not be deleted until all references to it are dropped,
-    /// so calling this is safe, even if the keyspace is still accessed in another thread.
+    /// The keyspace's files will not be deleted until all references to them are dropped
+    /// (e.g. snapshots, iterators), so calling this is safe, even if the keyspace is still
+    /// accessed in another thread. Writes to a deleted keyspace return [`Error::KeyspaceDeleted`].
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        //self.meta_keyspace.remove_keyspace(&handle.name)?;
-        todo!("persist deletion");
+        use lsm_tree::AbstractTree;
+
+        // IMPORTANT: Exclusive, so no compaction (or ingestion) of the keyspace installs
+        // its result after the deletion
+        //
+        // Lock order: compaction lock, WAL lock, keyspaces lock, flush lock
+        let _compaction_lock = handle
+            .compaction_lock
+            .write()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        let _wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        #[expect(clippy::expect_used)]
+        let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
+
+        let _flush_lock = handle.tree.get_flush_lock();
+
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        if handle.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+
+        log::debug!("Deleting keyspace {:?} (#{})", handle.name, handle.id);
+
+        // IMPORTANT: Persist the deletion first
+        //
+        // NOTE: A crash after this leaves the keyspace's files behind (unreferenced),
+        // but the keyspace stays deleted
+        self.supervisor
+            .manifest
+            .append_db_edits(&[DbEditRecord::DeleteKeyspace { id: handle.id }])?;
+
+        // NOTE: Drops all tables and blob files (they are removed once nothing references them),
+        // the edit is ignored on recovery, because the keyspace is deleted
+        let freed_bytes = handle.tree.active_memtable().size();
+        let seqno = self.supervisor.seqno.next();
+
+        handle
+            .version_set_provider
+            .clear(&handle.tree, seqno)
+            .inspect_err(|e| {
+                log::error!("Deleting keyspace failed, which is a FATAL failure: {e:?}");
+                self.is_poisoned.poison();
+            })?;
 
         handle
             .is_deleted
             .store(true, std::sync::atomic::Ordering::Release);
+
+        keyspaces.remove(&handle.name);
+
+        self.supervisor.write_buffer_size.free(freed_bytes);
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        // NOTE: Old versions (and their files) go away as soon as no snapshot needs them
+        handle.prune_versions();
 
         Ok(())
     }
@@ -710,8 +770,12 @@ impl Database {
             config.write_pipeline_leader_capacity,
         );
 
+        // NOTE: Shared with the supervisor, which writes it into manifest snapshots
+        let keyspace_id_counter = SequenceNumberCounter::new(0);
+
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
+            keyspace_id_counter: keyspace_id_counter.clone(),
             keyspaces,
             flush_manager: FlushManager::new(),
             write_buffer_size,
@@ -727,7 +791,7 @@ impl Database {
         let inner = DatabaseInner {
             supervisor,
             worker_pool: WorkerPool::prepare(),
-            keyspace_id_counter: SequenceNumberCounter::new(0),
+            keyspace_id_counter,
             table_id_counter: SequenceNumberCounter::default(),
             blob_file_id_counter: SequenceNumberCounter::default(),
             config,
@@ -858,7 +922,10 @@ impl Database {
 
                     log::debug!("Recovered {} keyspaces", registry.len());
 
-                    db.keyspace_id_counter.set(highest_keyspace_id + 1);
+                    // IMPORTANT: Also above the IDs of deleted keyspaces, so no ID is ever reused
+                    db.keyspace_id_counter.set(
+                        (highest_keyspace_id + 1).max(manifest_recovery_result.next_keyspace_id),
+                    );
                     log::trace!(
                         "Keyspace ID counter set to {}",
                         db.keyspace_id_counter.get(),

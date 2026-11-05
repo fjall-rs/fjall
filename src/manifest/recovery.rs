@@ -16,6 +16,9 @@ pub struct RecoveryResult {
 
     /// Set if the DB was migrated from v3
     pub legacy_watermark: Option<LegacyWatermark>,
+
+    /// Above every keyspace ID ever handed out (including deleted keyspaces)
+    pub next_keyspace_id: InternalKeyspaceId,
 }
 
 pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult> {
@@ -25,6 +28,10 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
     let mut keyspace_info = MetaKeyspaceInfo::default();
     let mut keyspace_versions = HashMap::<_, lsm_tree::RawVersionData>::default();
     let mut legacy_watermark = None;
+    let mut next_keyspace_id: InternalKeyspaceId = 0;
+
+    // NOTE: A compaction that was still running can append version edits after the deletion
+    let mut deleted_keyspaces = std::collections::HashSet::new();
 
     // NOTE: Only the current fragment is left at this point (see `Inner::open`),
     // and it contains the full state on its own
@@ -45,6 +52,12 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
 
         if let Some(keyspace_id) = keyspace_id {
             let version_edit = lsm_tree::VersionEdit::decode_from(reader)?;
+
+            if deleted_keyspaces.contains(&keyspace_id) {
+                log::debug!("Ignoring VersionEdit of deleted keyspace {keyspace_id}");
+                continue;
+            }
+
             log::debug!("Applying VersionEdit to keyspace {keyspace_id}: {version_edit:#?}");
 
             if let Some(seqno) = version_edit
@@ -77,6 +90,8 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
 
                 match db_edit {
                     DbEditRecord::CreateKeyspace { id, name } => {
+                        next_keyspace_id = next_keyspace_id.max(id + 1);
+
                         keyspace_info
                             .entry(id)
                             .and_modify(|entry| {
@@ -98,6 +113,14 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
                             );
                         }
                     }
+                    DbEditRecord::DeleteKeyspace { id } => {
+                        keyspace_info.remove(&id);
+                        keyspace_versions.remove(&id);
+                        deleted_keyspaces.insert(id);
+                    }
+                    DbEditRecord::SetKeyspaceIdCounter { next } => {
+                        next_keyspace_id = next_keyspace_id.max(next);
+                    }
                     DbEditRecord::SetLegacyWatermark { tables, blob_files } => {
                         legacy_watermark = Some(LegacyWatermark { tables, blob_files });
                     }
@@ -115,5 +138,6 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
         keyspace_versions,
         highest_seqno,
         legacy_watermark,
+        next_keyspace_id,
     })
 }
