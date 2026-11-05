@@ -7,6 +7,9 @@ mod db_edit;
 mod provider;
 mod recovery;
 
+#[cfg(test)]
+mod tests;
+
 pub use db_edit::DbEditRecord;
 pub use provider::ManifestPersister;
 
