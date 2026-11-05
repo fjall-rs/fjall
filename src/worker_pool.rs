@@ -3,8 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as run_flush, poison::PoisonDart,
-    stats::Stats, supervisor::Supervisor, Keyspace,
+    compaction::worker::run as run_compaction, poison::PoisonDart, stats::Stats,
+    supervisor::Supervisor, Keyspace,
 };
 use lsm_tree::MemtableId;
 use std::{

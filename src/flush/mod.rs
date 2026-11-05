@@ -4,6 +4,5 @@
 
 pub mod manager;
 pub mod task;
-pub mod worker;
 
 pub use task::Task;
