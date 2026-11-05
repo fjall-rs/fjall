@@ -38,7 +38,19 @@ pub fn compact_exclusive(
 /// IMPORTANT: The caller must hold the keyspace's compaction lock until this returns,
 /// so the compaction's input tables can't be picked by another compaction before
 /// the result is installed
-fn run_and_install(keyspace: &Keyspace, strategy: Arc<dyn CompactionStrategy>) -> crate::Result<()> {
+fn run_and_install(
+    keyspace: &Keyspace,
+    strategy: Arc<dyn CompactionStrategy>,
+) -> crate::Result<()> {
+    // NOTE: The deletion holds the compaction lock exclusively, so this can't race with it;
+    // without the check, the compaction would write tables that nothing references
+    if keyspace
+        .is_deleted
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err(crate::Error::KeyspaceDeleted);
+    }
+
     let gc_watermark = keyspace.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
     // NOTE: The merge is the expensive part, so it runs without holding the WAL or flush lock
@@ -77,11 +89,22 @@ pub fn run(
 
     let start = Instant::now();
 
-    if let Err(e) = compact_with(keyspace, strategy) {
-        log::error!("Compaction failed: {e:?}");
-        stats.active_compaction_count.fetch_sub(1, Relaxed);
-
-        return Err(e);
+    match compact_with(keyspace, strategy) {
+        Ok(()) => {}
+        Err(crate::Error::KeyspaceDeleted) => {
+            // NOTE: The keyspace was deleted in the meantime, so there is nothing to compact
+            log::debug!(
+                "Skipping compaction of deleted keyspace {:?}",
+                keyspace.name
+            );
+            stats.active_compaction_count.fetch_sub(1, Relaxed);
+            return Ok(());
+        }
+        Err(e) => {
+            log::error!("Compaction failed: {e:?}");
+            stats.active_compaction_count.fetch_sub(1, Relaxed);
+            return Err(e);
+        }
     }
 
     // TODO: we need feedback from the compaction strategy...

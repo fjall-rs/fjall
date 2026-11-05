@@ -24,6 +24,14 @@ impl<'a> Ingestion<'a> {
             .read()
             .map_err(|_| crate::Error::Poisoned)?;
 
+        // NOTE: The deletion holds the compaction lock exclusively, so this can't race with it
+        if keyspace
+            .is_deleted
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+
         let inner = keyspace.tree.ingestion()?;
 
         Ok(Self {
