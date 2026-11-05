@@ -16,7 +16,7 @@ use crate::{
     Database, Keyspace, KeyspaceCreateOptions,
 };
 use byteview::ByteView;
-use lsm_tree::{EditRecord, VersionEdit};
+use lsm_tree::VersionEdit;
 use std::sync::Arc;
 
 pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Result<Database> {
@@ -94,6 +94,14 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         // because the journal entries of that keyspace won't be replayed
         log::info!("Flushing all memtables");
 
+        // NOTE: Lock order: WAL, then keyspaces (same as `Database::flush_all`)
+        let wal_lock = db
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
         #[expect(clippy::expect_used)]
         for ks in db
             .supervisor
@@ -104,7 +112,8 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         {
             use lsm_tree::AbstractTree;
 
-            crate::flush::worker::run(ks, &db.supervisor, &db.stats)?;
+            // NOTE: Only takes a seqno if there is something to flush
+            ks.flush_inner(&wal_lock, true)?;
 
             assert!(
                 ks.tree.active_memtable().is_empty(),
@@ -116,14 +125,6 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
             );
         }
     }
-
-    // IMPORTANT: The v3 journal is deleted below, so the seqno must survive in the manifest.
-    //
-    // Without this:
-    // 1. v3: insert, flush (journal has nothing left to replay)
-    // 2. migrate: memtables are empty, so no flush persists a seqno
-    // 3. reopen in v4: seqno starts at 0 again, and the migrated data is invisible
-    write_highest_seqno_to_manifest(&db)?;
 
     // IMPORTANT: Set the "current" marker
     db.supervisor.manifest.place_current_marker()?;
@@ -144,35 +145,6 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     std::fs::remove_dir_all(db.path().join("keyspaces"))?;
 
     Ok(db)
-}
-
-/// Persists the highest seqno of the migrated database.
-///
-/// The v3 journal is removed after the migration, so on recovery the seqno can only
-/// come from the DB manifest. v3 versions have no seqno, and flushing an empty memtable
-/// takes a seqno without persisting it, so set every keyspace's version seqno
-/// to the highest seqno.
-///
-/// This is valid because all data is flushed into tables at this point.
-fn write_highest_seqno_to_manifest(db: &Database) -> crate::Result<()> {
-    let Some(highest_seqno) = db.supervisor.seqno.get().checked_sub(1) else {
-        return Ok(());
-    };
-
-    let edit = VersionEdit::new(vec![EditRecord::SetVersionSeqno(highest_seqno)]);
-
-    #[expect(clippy::expect_used)]
-    for keyspace in db
-        .supervisor
-        .keyspaces
-        .read()
-        .expect("lock should not be poisoned")
-        .values()
-    {
-        db.supervisor.manifest.append(keyspace.id, &edit)?;
-    }
-
-    Ok(())
 }
 
 /// Writes all recovered v3 keyspaces into the DB manifest:
