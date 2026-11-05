@@ -103,6 +103,16 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Sets the size (in bytes) above which the DB manifest is rotated.
+    ///
+    /// Only meant for testing.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn manifest_rotation_threshold(mut self, bytes: u64) -> Self {
+        self.inner.manifest_rotation_threshold = bytes;
+        self
+    }
+
     /// Sets the upper limit for cached file descriptors.
     ///
     /// All user data stored in multiple, immutable files.

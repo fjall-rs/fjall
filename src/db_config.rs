@@ -49,6 +49,13 @@ pub struct Config {
     #[doc(hidden)]
     pub(crate) disable_write_stalls: bool,
 
+    /// The DB manifest is rotated (a snapshot is written into a new fragment)
+    /// once its active fragment is larger than this
+    ///
+    /// Default = 4 MiB
+    #[doc(hidden)]
+    pub(crate) manifest_rotation_threshold: u64,
+
     /// Write-ahead log value compression
     ///
     /// See `wal_compression_threshold`.
@@ -96,6 +103,7 @@ impl Config {
             worker_threads,
             write_pipeline_leader_capacity: 1_000_000,
             disable_write_stalls: false,
+            manifest_rotation_threshold: /* 4 MiB */ 4 * 1_024 * 1_024,
             // journal_recovery_mode: RecoveryMode::default(),
 
             #[cfg(not(feature = "lz4"))]
