@@ -876,6 +876,26 @@ impl Database {
                     }
                 }
 
+                // IMPORTANT: Continue after every item in the keyspaces' tables (and cleared items):
+                // the flush watermark is at or above all of them. The highest `SetVersionSeqno`
+                // above does not cover migrated v3 trees, whose versions have no seqno; their
+                // flush watermark falls back to their highest table seqno.
+                //
+                // Otherwise:
+                // 1. v3: insert, flush (so the journal has nothing left to replay)
+                // 2. migrate, then reopen in v4: the seqno starts at 0 again,
+                //    so the migrated data is invisible
+                {
+                    use lsm_tree::AbstractTree;
+
+                    for keyspace in registry.values() {
+                        if let Some(flush_watermark) = keyspace.tree.get_flush_watermark() {
+                            db.supervisor.seqno.fetch_max(flush_watermark + 1);
+                            db.supervisor.snapshot_tracker.publish(flush_watermark);
+                        }
+                    }
+                }
+
                 log::debug!("Replaying WAL");
                 {
                     // TODO: change to be Option<Seqno>
