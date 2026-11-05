@@ -8,12 +8,29 @@ use lsm_tree::{AnyIngestion, UserKey, UserValue};
 pub struct Ingestion<'a> {
     keyspace: &'a Keyspace,
     inner: AnyIngestion<'a>,
+
+    /// NOTE: Held exclusively from the start until the ingested tables are installed,
+    /// so no compaction (or drop range, clear, other ingestion) runs in between
+    _compaction_lock: std::sync::RwLockReadGuard<'a, ()>,
 }
 
 impl<'a> Ingestion<'a> {
     pub fn new(keyspace: &'a Keyspace) -> crate::Result<Self> {
+        // IMPORTANT: Take it before `finish` takes the WAL lock (lock order: compaction lock,
+        // WAL lock, flush lock), otherwise a compaction that waits for the WAL lock
+        // (holding the compaction lock) deadlocks with the ingestion
+        let compaction_lock = keyspace
+            .compaction_lock
+            .read()
+            .map_err(|_| crate::Error::Poisoned)?;
+
         let inner = keyspace.tree.ingestion()?;
-        Ok(Self { keyspace, inner })
+
+        Ok(Self {
+            keyspace,
+            inner,
+            _compaction_lock: compaction_lock,
+        })
     }
 
     pub fn write<K: Into<UserKey>, V: Into<UserValue>>(

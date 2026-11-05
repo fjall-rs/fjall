@@ -22,7 +22,7 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, RwLock},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -78,6 +78,16 @@ pub struct KeyspaceInner {
     pub tree: AnyTree,
 
     pub(crate) version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
+
+    /// Keeps exclusive tree changes (major compaction, drop range, clear, ingestion) apart from
+    /// everything else that changes the tables (compactions)
+    ///
+    /// Shared: compactions. Exclusive: major compaction, drop range, clear, ingestion.
+    ///
+    /// IMPORTANT: Hold it until the new version is installed (the input tables of a compaction
+    /// are released when `run_compaction` returns, so another compaction could pick them again),
+    /// and take it before the WAL lock (lock order: compaction lock, WAL lock, flush lock).
+    pub(crate) compaction_lock: RwLock<()>,
 
     pub(crate) supervisor: Supervisor,
 
@@ -235,6 +245,13 @@ impl Keyspace {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
+        // IMPORTANT: Exclusive, otherwise a running compaction installs its result
+        // (made from the cleared tables) after the clear
+        let _compaction_lock = self
+            .compaction_lock
+            .write()
+            .map_err(|_| crate::Error::Poisoned)?;
+
         // IMPORTANT: Writes are applied to memtables while holding the WAL lock,
         // so holding it serializes the clear with all writes
         //
@@ -333,6 +350,12 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn drop_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
+        // NOTE: Exclusive, like a major compaction
+        let _compaction_lock = self
+            .compaction_lock
+            .write()
+            .map_err(|_| crate::Error::Poisoned)?;
+
         let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
         // NOTE: Dropping tables doesn't rewrite any data, so it's fine to hold the locks while doing it
@@ -393,6 +416,7 @@ impl Keyspace {
             lock_file: db.lock_file.clone(),
             stats: db.stats.clone(),
             version_set_provider,
+            compaction_lock: RwLock::default(),
         }))
     }
 
@@ -430,6 +454,7 @@ impl Keyspace {
             stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
             version_set_provider,
+            compaction_lock: RwLock::default(),
         })))
     }
 
@@ -1043,7 +1068,8 @@ impl Keyspace {
     pub fn major_compact(&self) -> crate::Result<()> {
         // TODO: v4 ----v
         //   compaction strategy needs a method: strategy.table_target_size()?
-        crate::compaction::worker::compact_with(
+        // NOTE: Exclusive, so two major compactions don't run at the same time
+        crate::compaction::worker::compact_exclusive(
             self,
             Arc::new(lsm_tree::compaction::Major::new(
                 64 * 1_024 * 1_024, // 64 MiB

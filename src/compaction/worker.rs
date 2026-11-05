@@ -7,13 +7,41 @@ use lsm_tree::{compaction::CompactionStrategy, AbstractTree};
 use std::{sync::Arc, time::Instant};
 
 /// Runs a compaction with the given strategy, and installs its result as a new version.
+///
+/// Can run next to other compactions, but not next to a major compaction, drop range or clear.
 pub fn compact_with(
     keyspace: &Keyspace,
     strategy: Arc<dyn CompactionStrategy>,
 ) -> crate::Result<()> {
+    let _compaction_lock = keyspace
+        .compaction_lock
+        .read()
+        .map_err(|_| crate::Error::Poisoned)?;
+
+    run_and_install(keyspace, strategy)
+}
+
+/// Like [`compact_with`], but no other compaction (or ingestion) runs at the same time,
+/// e.g. for a major compaction.
+pub fn compact_exclusive(
+    keyspace: &Keyspace,
+    strategy: Arc<dyn CompactionStrategy>,
+) -> crate::Result<()> {
+    let _compaction_lock = keyspace
+        .compaction_lock
+        .write()
+        .map_err(|_| crate::Error::Poisoned)?;
+
+    run_and_install(keyspace, strategy)
+}
+
+/// IMPORTANT: The caller must hold the keyspace's compaction lock until this returns,
+/// so the compaction's input tables can't be picked by another compaction before
+/// the result is installed
+fn run_and_install(keyspace: &Keyspace, strategy: Arc<dyn CompactionStrategy>) -> crate::Result<()> {
     let gc_watermark = keyspace.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
-    // NOTE: The merge is the expensive part, so it runs without holding any locks
+    // NOTE: The merge is the expensive part, so it runs without holding the WAL or flush lock
     let result = keyspace.tree.run_compaction(strategy, gc_watermark)?;
 
     keyspace.install_version(|seqno| {
