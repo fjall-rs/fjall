@@ -899,13 +899,13 @@ impl Database {
                 log::debug!("Replaying WAL");
                 {
                     // TODO: change to be Option<Seqno>
+                    // NOTE: Unknown IDs belong to deleted keyspaces
                     let highest_seqno = recover_wal(&db, &registry, |id| {
                         registry
                             .values()
                             .find(|ks| ks.id() == id)
                             .map(|ks| ks.name())
                             .cloned()
-                            .expect("should find keyspace")
                     })?;
 
                     // See notes above

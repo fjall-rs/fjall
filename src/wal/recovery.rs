@@ -144,7 +144,7 @@ struct WalRecovery<'a, F> {
 
 impl<'a, F> WalRecovery<'a, F>
 where
-    F: Fn(InternalKeyspaceId) -> KeyspaceKey,
+    F: Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
 {
     fn new(keyspaces: &'a Keyspaces, get_keyspace_name: F) -> Self {
         use crate::AbstractTree;
@@ -172,7 +172,10 @@ where
             }
         }
 
-        let keyspace_name = (self.get_keyspace_name)(item.keyspace_id);
+        // NOTE: Items of deleted keyspaces are skipped
+        let Some(keyspace_name) = (self.get_keyspace_name)(item.keyspace_id) else {
+            return;
+        };
 
         if let Some(keyspace) = self.keyspaces.get(&keyspace_name) {
             let (item_size, _) = match item.value_type {
@@ -202,7 +205,7 @@ where
 pub fn recover_wal(
     db: &Database,
     keyspaces: &Keyspaces,
-    get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
+    get_keyspace_name: impl Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
 ) -> crate::Result<SeqNo> {
     log::info!("Recovering WAL at {}", db.path().display());
 
