@@ -664,6 +664,44 @@ mod tests {
     use super::*;
     use test_log::test;
 
+    /// Manifest snapshots re-encode the configuration from memory (`encode_kvs` of the options
+    /// decoded with `from_kvs`), so the round-trip must be exact
+    #[test]
+    fn keyspace_opts_kvs_roundtrip() -> crate::Result<()> {
+        let variants = [
+            CreateOptions::default(),
+            CreateOptions::default()
+                .with_kv_separation(Some(KvSeparationOptions::default().separation_threshold(1))),
+            CreateOptions::default().compaction_strategy(Arc::new(
+                crate::compaction::Leveled::default().with_l0_threshold(2),
+            )),
+            CreateOptions::default()
+                .compaction_strategy(Arc::new(crate::compaction::Fifo::new(1_000_000, None))),
+            CreateOptions::default()
+                .data_block_compression_policy(CompressionPolicy::disabled())
+                .max_memtable_size(1_234),
+        ];
+
+        for (idx, opts) in variants.into_iter().enumerate() {
+            let kvs = opts.encode_kvs(0);
+
+            let info = crate::recovery::KeyspaceInfo {
+                id: 0,
+                name: "test".into(),
+                config: kvs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_vec()))
+                    .collect(),
+            };
+
+            let decoded = CreateOptions::from_kvs(&&info)?;
+
+            assert_eq!(kvs, decoded.encode_kvs(0), "variant #{idx}");
+        }
+
+        Ok(())
+    }
+
     #[test]
     #[cfg(not(feature = "lz4"))]
     fn keyspace_opts_compression_none() {
