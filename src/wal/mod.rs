@@ -59,6 +59,12 @@ impl Wal {
         self.inner.disk_usage().map_err(Into::into)
     }
 
+    /// Seals the active WAL fragment, and continues in a new one.
+    pub(crate) fn rotate(&mut self) -> crate::Result<()> {
+        self.inner.rotate()?;
+        Ok(())
+    }
+
     pub fn sealed_fragment_count(&self) -> usize {
         self.inner.sealed_fragment_count()
     }

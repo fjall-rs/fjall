@@ -2,7 +2,6 @@ use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test_log::test]
-#[ignore = "restore journal rotation"]
 fn clear_recover_sealed() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
 
@@ -10,6 +9,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
     {
         let db = Database::builder(&folder).open()?;
+        assert_eq!(1, db.journal_count());
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
@@ -23,9 +23,15 @@ fn clear_recover_sealed() -> crate::Result<()> {
         tree.flush(true)?;
         assert!(tree.is_empty()?);
 
-        // TODO: v4 restore
-        // db.supervisor.journal.get_writer()?.rotate()?;
-        todo!();
+        db.supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .expect("lock is poisoned")
+            .rotate()?;
+
+        // NOTE: The recovery below replays items from two WAL fragments
+        assert_eq!(2, db.journal_count());
 
         tree.insert("b", "a", crate::DurabilityLevel::Buffer)?;
         assert!(tree.contains_key("b")?);
@@ -259,12 +265,13 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
 }
 
 #[test]
-#[ignore = "restore journal rotation"]
 fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let unflushed_size = {
         let db = Database::builder(folder.path()).open()?;
+        assert_eq!(1, db.journal_count());
+
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
@@ -283,9 +290,15 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         }
         batch.commit()?;
 
-        // TODO: v4 restore
-        //db.supervisor.journal.get_writer()?.rotate()?;
-        todo!();
+        db.supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .expect("lock is poisoned")
+            .rotate()?;
+
+        // NOTE: The recovery below replays items from two WAL fragments
+        assert_eq!(2, db.journal_count());
 
         a.tree.active_memtable().size() + b.tree.active_memtable().size()
     };
