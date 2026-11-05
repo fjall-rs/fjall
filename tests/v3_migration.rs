@@ -73,7 +73,7 @@ fn assert_migrated(dir: &Path) -> fjall::Result<()> {
     for i in 0..5 {
         log::info!("[{i}] recovering");
 
-        let db = Database::builder(&dir).open()?;
+        let db = Database::builder(dir).open()?;
 
         // NOTE: The highest seqno in the v3 fixture is 12,
         // so migrated data must be visible, and new writes must get higher seqnos

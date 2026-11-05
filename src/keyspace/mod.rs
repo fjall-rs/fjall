@@ -269,7 +269,25 @@ impl Keyspace {
         self.supervisor.write_buffer_size.free(freed_bytes);
         self.supervisor.snapshot_tracker.publish(seqno);
 
+        self.prune_versions();
+
         Ok(())
+    }
+
+    /// Removes old versions (and with them, old memtables and deleted files)
+    /// that no snapshot can read anymore.
+    ///
+    /// Called after installing a new version.
+    fn prune_versions(&self) {
+        // NOTE: If the difference between watermark is too large, and
+        // we never opened a snapshot, we need to pull the watermark up
+        //
+        // https://github.com/fjall-rs/fjall/discussions/85
+        self.supervisor.snapshot_tracker.pullup();
+        self.supervisor.snapshot_tracker.gc();
+
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+        self.version_set_provider.prune(gc_watermark);
     }
 
     /// Installs a new version of the keyspace's tree, with a new version seqno.
@@ -299,6 +317,8 @@ impl Keyspace {
         })?;
 
         self.supervisor.snapshot_tracker.publish(seqno);
+
+        self.prune_versions();
 
         Ok(())
     }
@@ -821,6 +841,8 @@ impl Keyspace {
 
         self.supervisor.write_buffer_size.free(flushed_bytes);
         self.supervisor.snapshot_tracker.publish(seqno);
+
+        self.prune_versions();
 
         Ok(())
     }
