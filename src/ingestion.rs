@@ -33,11 +33,23 @@ impl<'a> Ingestion<'a> {
         self.inner.write_weak_tombstone(key).map_err(Into::into)
     }
 
+    /// Commits the ingested data.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     pub fn finish(self) -> crate::Result<()> {
-        // NOTE: We hold to avoid a race condition with concurrent writes:
+        let keyspace = self.keyspace;
+
+        // IMPORTANT: Hold the WAL lock for the whole finish (lock order: WAL lock, then the
+        // flush lock, which lsm-tree takes), so no write runs between flushing the memtable
+        // and registering the ingested tables.
+        //
+        // Otherwise, an older concurrent write ends up in the memtable after the ingestion,
+        // and shadows the newer ingested item:
         //
         // write         ingest
-        // lock journal
+        // lock WAL
         // |
         // next seqno=1
         // |
@@ -49,21 +61,59 @@ impl<'a> Ingestion<'a> {
         // -----------------
         // |
         // insert seqno=1
+        let wal_lock = keyspace
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
 
-        // let _journal_lock = self.keyspace.supervisor.journal.get_writer()?;
+        if keyspace.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
 
-        /*self.inner
-        .finish()
-        .inspect(|()| {
-            self.keyspace
-                .worker_messager
-                .try_send(WorkerMessage::Compact(self.keyspace.clone()))
-                .ok();
+        // NOTE: The flush callback has to return an lsm-tree error, so keep fjall's error aside
+        let mut flush_error = None;
 
-            self.keyspace.supervisor.snapshot_tracker.gc();
-        })
-        .map_err(Into::into)*/
+        // IMPORTANT: No need to lock flush lock - lsm-tree does so internally.
+        let result = self.inner.finish(
+            || {
+                keyspace.flush_memtables(&wal_lock, true).map_err(|e| {
+                    flush_error = Some(e);
+                    lsm_tree::Error::Unrecoverable
+                })
+            },
+            || keyspace.supervisor.seqno.next(),
+        );
 
-        todo!("restore ingestion")
+        if let Some(e) = flush_error {
+            return Err(e);
+        }
+
+        let Some((flush_result, global_seqno)) = result? else {
+            return Ok(());
+        };
+
+        // NOTE: The version gets the same seqno as the ingested tables
+        keyspace
+            .version_set_provider
+            .register_flush(flush_result, global_seqno)
+            .inspect_err(|e| {
+                log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
+                keyspace.is_poisoned.poison();
+            })?;
+
+        keyspace.supervisor.snapshot_tracker.publish(global_seqno);
+        keyspace.prune_versions();
+
+        drop(wal_lock);
+
+        // NOTE: Ingested tables are added to L0, so maybe compact
+        keyspace
+            .worker_messager
+            .try_send(WorkerMessage::Compact(keyspace.clone()))
+            .ok();
+
+        Ok(())
     }
 }

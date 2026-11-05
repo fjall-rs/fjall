@@ -278,7 +278,7 @@ impl Keyspace {
     /// that no snapshot can read anymore.
     ///
     /// Called after installing a new version.
-    fn prune_versions(&self) {
+    pub(crate) fn prune_versions(&self) {
         // NOTE: If the difference between watermark is too large, and
         // we never opened a snapshot, we need to pull the watermark up
         //
@@ -810,11 +810,21 @@ impl Keyspace {
     /// so no write can land in a memtable after it was sealed.
     pub(crate) fn flush_inner(
         &self,
-        _wal_lock: &std::sync::MutexGuard<'_, crate::wal::Wal>,
+        wal_lock: &std::sync::MutexGuard<'_, crate::wal::Wal>,
         rotate: bool,
     ) -> crate::Result<()> {
         let _flush_lock = self.tree.get_flush_lock();
+        self.flush_memtables(wal_lock, rotate)
+    }
 
+    /// Flushes all sealed memtables (sealing the active memtable first if `rotate` is set).
+    ///
+    /// IMPORTANT: The caller must hold the tree's flush lock.
+    pub(crate) fn flush_memtables(
+        &self,
+        _wal_lock: &std::sync::MutexGuard<'_, crate::wal::Wal>,
+        rotate: bool,
+    ) -> crate::Result<()> {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
