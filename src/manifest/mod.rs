@@ -32,14 +32,29 @@ use std::{
 const CURRENT_VERSION_MARKER: &str = "current";
 const PREALLOC_BYTES: u64 = 1_024 * 1_024; // 1 MiB
 
+/// Manifest fragments are named `v{id}`
 struct ManifestNameStrategy;
 
+impl ManifestNameStrategy {
+    /// Returns the fragment ID, if the file is a manifest fragment.
+    ///
+    /// NOTE: Only `v` + digits counts, so other files (e.g. `version`, `v0.bak`) are never
+    /// mistaken for (and deleted as) manifest fragments
+    fn parse_id(filename: &OsStr) -> Option<FragmentId> {
+        let id = filename.to_str()?.strip_prefix('v')?;
+
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+
+        id.parse().ok()
+    }
+}
+
 impl NameStrategy for ManifestNameStrategy {
-    #[warn(clippy::unwrap_used)]
+    #[expect(clippy::expect_used)]
     fn extract_id(&self, filename: &OsStr) -> FragmentId {
-        let s = filename.to_str().unwrap();
-        let s = s.strip_prefix("v").unwrap();
-        s.parse().unwrap()
+        Self::parse_id(filename).expect("should be a manifest fragment")
     }
 
     fn fmt(&self, path: &Path, id: FragmentId) -> PathBuf {
@@ -47,10 +62,72 @@ impl NameStrategy for ManifestNameStrategy {
     }
 
     fn is_wal_file(&self, dirent: &DirEntry) -> bool {
-        let f = dirent.file_name();
-        let f = f.as_encoded_bytes();
-        f.starts_with(b"v") && f != b"version"
+        Self::parse_id(&dirent.file_name()).is_some()
     }
+}
+
+/// Reads the ID of the current manifest fragment from the `current` marker.
+fn read_current_marker(path: &Path) -> crate::Result<FragmentId> {
+    let marker_path = path.join(CURRENT_VERSION_MARKER);
+
+    let bytes = std::fs::read(&marker_path).inspect_err(|e| {
+        log::error!(
+            "Could not read manifest marker at {}: {e:?}",
+            marker_path.display(),
+        );
+    })?;
+
+    let Ok(bytes) = <[u8; 8]>::try_from(bytes.as_slice()) else {
+        log::error!(
+            "Manifest marker at {} is corrupted ({} bytes)",
+            marker_path.display(),
+            bytes.len(),
+        );
+        return Err(crate::Error::Unrecoverable);
+    };
+
+    Ok(FragmentId::from_be_bytes(bytes))
+}
+
+/// Removes every manifest fragment except the current one.
+///
+/// Nothing is removed if the current fragment does not exist.
+fn remove_stale_fragments(path: &Path, current_id: FragmentId) -> crate::Result<()> {
+    // IMPORTANT: Only remove anything once the current fragment is known to exist,
+    // otherwise a broken marker would delete the whole manifest
+    let current_path = ManifestNameStrategy.fmt(path, current_id);
+
+    if !current_path.try_exists()? {
+        log::error!(
+            "Current manifest fragment #{current_id} does not exist at {}",
+            current_path.display(),
+        );
+        return Err(crate::Error::Unrecoverable);
+    }
+
+    let mut removed_any = false;
+
+    for dirent in std::fs::read_dir(path)? {
+        let dirent = dirent?;
+
+        let Some(id) = ManifestNameStrategy::parse_id(&dirent.file_name()) else {
+            continue;
+        };
+
+        if id == current_id {
+            continue;
+        }
+
+        log::debug!("Removing stale manifest fragment #{id} (current is #{current_id})");
+        std::fs::remove_file(dirent.path())?;
+        removed_any = true;
+    }
+
+    if removed_any {
+        crate::file::fsync_directory(path)?;
+    }
+
+    Ok(())
 }
 
 struct Inner {
@@ -74,6 +151,18 @@ impl Inner {
 
     fn open(path: &Path) -> crate::Result<Self> {
         log::trace!("Opening DB manifest at {}", path.display());
+
+        // IMPORTANT: Only the fragment named by the `current` marker counts: a manifest rotation
+        // writes a full snapshot into the new fragment and syncs it, and only then updates the
+        // marker.
+        // So the current fragment is complete on its own, and every other fragment can
+        // be removed before recovering:
+        // - lower IDs are already contained in the snapshot
+        // - higher IDs are from a rotation that crashed before updating the marker
+        //
+        // Then plain hwal recovery only sees the current fragment.
+        let current_id = read_current_marker(path)?;
+        remove_stale_fragments(path, current_id)?;
 
         Ok(Self {
             inner: Self::get_wal_builder().open(path)?,

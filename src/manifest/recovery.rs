@@ -26,7 +26,8 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
     let mut keyspace_versions = HashMap::<_, lsm_tree::RawVersionData>::default();
     let mut legacy_watermark = None;
 
-    // TODO: we need a HWAL function to only recover the current version
+    // NOTE: Only the current fragment is left at this point (see `Inner::open`),
+    // and it contains the full state on its own
     let mut recovery = manifest.inner.recover()?;
 
     for wal_record in recovery.by_ref() {
