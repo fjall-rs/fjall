@@ -111,7 +111,10 @@ impl Inner {
 
     fn place_current_marker(&self) -> crate::Result<()> {
         let id = self.inner.active_fragment_id();
-        rewrite_atomic(&self.inner.path().join("current"), &id.to_be_bytes())?;
+        rewrite_atomic(
+            &self.inner.path().join(CURRENT_VERSION_MARKER),
+            &id.to_be_bytes(),
+        )?;
         Ok(())
     }
 }

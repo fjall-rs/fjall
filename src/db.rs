@@ -986,10 +986,7 @@ impl Database {
 
         let db = Self::prepare_database(config, lock_file, false)?;
 
-        // TODO: do this correctly (write correct ID atomically)
-        std::fs::File::create(db.path().join("current"))?;
-
-        // IMPORTANT: Set the "current" marker
+        // IMPORTANT: Set the "current" marker (written atomically)
         db.supervisor.manifest.place_current_marker()?;
 
         // NOTE: Lastly, fsync version marker, which contains the version
