@@ -760,6 +760,16 @@ impl Database {
 
                 let db = Self::prepare_database(config, lock_file, true)?;
 
+                // Look for old v3 data
+                {
+                    let path = db.path().join("keyspaces");
+                    if path.try_exists()? {
+                        log::trace!("Removing old v3 keyspaces folder");
+                        std::fs::remove_dir_all(path)?;
+                    }
+                    crate::legacy::v3::journal::nuke_journal(db.path())?;
+                }
+
                 log::debug!("Loading keyspace info from DB manifest");
                 let manifest_recovery_result = db.supervisor.manifest.recover()?;
                 let keyspace_info = &manifest_recovery_result.keyspace_info;
