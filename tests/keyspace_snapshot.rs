@@ -5,7 +5,9 @@ use test_log::test;
 fn keyspace_iter_dirty_read() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).open()?;
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
 
     let tree = db.keyspace("default", || {
         KeyspaceCreateOptions::default().with_kv_separation(Default::default())
@@ -15,7 +17,7 @@ fn keyspace_iter_dirty_read() -> fjall::Result<()> {
     tree.insert("a#2", "b", Buffer)?;
     tree.insert("a#3", "c", Buffer)?;
 
-    tree.rotate_memtable_and_wait()?;
+    tree.flush(true)?;
 
     let iter = tree.iter();
 
@@ -46,7 +48,7 @@ fn keyspace_snapshot_read() -> fjall::Result<()> {
 
     let snapshot = db.snapshot();
 
-    tree.rotate_memtable_and_wait()?;
+    tree.flush(true)?;
 
     tree.insert("a#4", "d", Buffer)?;
     tree2.insert("b#2", "6", Buffer)?;

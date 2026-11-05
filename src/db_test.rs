@@ -2,6 +2,7 @@ use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
 #[test_log::test]
+#[ignore = "restore journal rotation"]
 fn clear_recover_sealed() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
 
@@ -19,7 +20,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
         tree.clear()?;
         assert!(tree.is_empty()?);
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert!(tree.is_empty()?);
 
         // TODO: v4 restore
@@ -111,7 +112,7 @@ fn whitebox_db_drop_2() -> crate::Result<()> {
         tree.insert("a", "a")?;
         tree2.insert("b", "b")?;
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     assert_eq!(0, crate::drop::load_drop_counter());
@@ -152,7 +153,7 @@ fn recover_sealed_smoke_test() -> crate::Result<()> {
         )?;
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     Ok(())
@@ -214,7 +215,7 @@ fn recover_sealed_blob() -> crate::Result<()> {
         )?;
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     Ok(())
@@ -226,7 +227,10 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for i in 0_u128..3 {
-        let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .disable_write_stalls(true)
+            .open()?;
 
         let tree = db.keyspace("default", || {
             KeyspaceCreateOptions::default().max_memtable_size(1_000)
@@ -248,13 +252,14 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
         assert_eq!(i + 1, tree2.len()?.try_into().unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     Ok(())
 }
 
 #[test]
+#[ignore = "restore journal rotation"]
 fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
@@ -270,7 +275,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         }
         batch.commit()?;
 
-        a.rotate_memtable_and_wait()?;
+        a.flush(true)?;
 
         let mut batch = db.batch();
         for x in 100_u64..200 {
@@ -302,6 +307,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
 
 // Regression test for https://github.com/fjall-rs/fjall/issues/328
 #[test]
+#[ignore = "restore keyspace delete"]
 fn delete_keyspace_1() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 

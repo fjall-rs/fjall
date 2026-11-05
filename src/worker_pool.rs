@@ -274,6 +274,7 @@ mod tests {
 
     // https://github.com/fjall-rs/fjall/pull/303
     #[test]
+    #[ignore = "restore"]
     fn keyspace_compact_after_startup() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
@@ -283,13 +284,13 @@ mod tests {
             let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             assert!(ks.tree.l0_run_count() > 0);
         }

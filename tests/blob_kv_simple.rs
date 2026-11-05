@@ -6,7 +6,10 @@ use test_log::test;
 fn blob_kv_simple() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).open()?;
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
     let tree = db.keyspace("default", || {
         KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default()))
     })?;
@@ -17,7 +20,7 @@ fn blob_kv_simple() -> fjall::Result<()> {
     tree.insert("5", "abc", Buffer)?;
     assert_eq!(tree.len()?, 3);
 
-    tree.rotate_memtable_and_wait()?;
+    tree.flush(true)?;
 
     if let fjall::AnyTree::Blob(tree) = &tree.tree {
         assert!(tree.index.disk_space() < 1_000);
@@ -38,7 +41,10 @@ fn blob_kv_simple_recovery() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = db.keyspace("default", || {
             KeyspaceCreateOptions::default()
                 .with_kv_separation(Some(KvSeparationOptions::default()))
@@ -50,11 +56,14 @@ fn blob_kv_simple_recovery() -> fjall::Result<()> {
         tree.insert("5", "abc", Buffer)?;
         assert_eq!(tree.len()?, 3);
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert_eq!(tree.len()?, 3);
     }

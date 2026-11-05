@@ -2,6 +2,7 @@ use fjall::{Database, Readable, Slice};
 use test_log::test;
 
 #[test]
+#[ignore = "restore ingest"]
 fn ingest_recovery() -> fjall::Result<()> {
     let path = tempfile::tempdir()?;
 

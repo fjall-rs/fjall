@@ -108,3 +108,64 @@ fn v3_migration_blobs() -> fjall::Result<()> {
 
     Ok(())
 }
+
+/// Migrated v3 files (named `<keyspace ID>_<ID>`) in a DB-level folder
+fn legacy_files(dir: &Path, folder: &str) -> std::io::Result<Vec<String>> {
+    let mut names = std::fs::read_dir(dir.join(folder))?
+        .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
+        .filter(|name| name.as_ref().map_or(true, |name| name.contains('_')))
+        .collect::<Result<Vec<_>, _>>()?;
+    names.sort();
+    Ok(names)
+}
+
+// After a V3 -> V4 migration, the v3 tree folders are gone, and dropping migrated tables
+// (here: clearing a keyspace after a v4 reopen) deletes their files in the DB-level folders
+#[test]
+fn v3_migration_drops_legacy_files() -> fjall::Result<()> {
+    let folder = "test_fixture/v3_keyspace_tables";
+
+    let dir = tempfile::tempdir()?;
+    copy_dir_all(folder, &dir)?;
+
+    {
+        let _db = Database::builder(&dir).open()?;
+    }
+
+    assert!(
+        !dir.path().join("keyspaces").try_exists()?,
+        "v3 keyspace folders should be removed after the migration",
+    );
+    assert_eq!(2, legacy_files(dir.path(), "tables")?.len());
+
+    {
+        let db = Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("default2", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
+
+        tree.clear()?;
+        assert_eq!(0, tree.table_count());
+
+        // NOTE: The other keyspace still reads its migrated table
+        assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+    }
+
+    assert_eq!(
+        1,
+        legacy_files(dir.path(), "tables")?.len(),
+        "the cleared keyspace's migrated table should be deleted",
+    );
+
+    {
+        let db = Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        let tree2 = db.keyspace("default2", KeyspaceCreateOptions::default)?;
+
+        assert!(tree.get("a")?.is_none());
+        assert_eq!(Some(b"dvalue".as_slice()), tree2.get("d")?.as_deref());
+    }
+
+    Ok(())
+}

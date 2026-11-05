@@ -196,7 +196,7 @@ mod tests {
         tree.insert("a", "b", crate::DurabilityLevel::Buffer)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
         db.supervisor.snapshot_tracker.gc();
@@ -219,7 +219,7 @@ mod tests {
         db.supervisor.snapshot_tracker.gc();
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
 
         Ok(())
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(b"b", &*tree.get("a")?.unwrap());
         assert_eq!(b"a", &*snapshot.get(&tree, "a")?.unwrap());
 

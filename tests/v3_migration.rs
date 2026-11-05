@@ -24,6 +24,52 @@ fn v3_migration_journal_only() -> fjall::Result<()> {
     let dir = tempfile::tempdir()?;
     copy_dir_all(folder, &dir)?;
 
+    assert_migrated(dir.path())
+}
+
+// A crashed migration attempt leaves files in the DB-level folders,
+// e.g. tables written by the migration flush; migrating again must still work
+#[test]
+fn v3_migration_journal_only_rerun_after_crash() -> fjall::Result<()> {
+    let folder = "test_fixture/v3_keyspace";
+
+    let dir = tempfile::tempdir()?;
+    copy_dir_all(folder, &dir)?;
+
+    // NOTE: Covers every file ID the migration could use for this fixture
+    for folder in ["tables", "blobs"] {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir_all(&folder)?;
+
+        for id in 0..32 {
+            std::fs::write(
+                folder.join(id.to_string()),
+                "leftover of a crashed migration",
+            )?;
+        }
+    }
+
+    assert_migrated(dir.path())?;
+
+    for folder in ["tables", "blobs"] {
+        for dirent in std::fs::read_dir(dir.path().join(folder))? {
+            let path = dirent?.path();
+
+            assert_ne!(
+                b"leftover of a crashed migration".as_slice(),
+                std::fs::read(&path)?,
+                "{} should have been removed",
+                path.display(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Migrates the `v3_keyspace` fixture (or recovers it as v4, if already migrated)
+/// a few times, and checks its contents and seqnos every time
+fn assert_migrated(dir: &Path) -> fjall::Result<()> {
     for i in 0..5 {
         log::info!("[{i}] recovering");
 
