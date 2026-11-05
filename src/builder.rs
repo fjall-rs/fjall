@@ -95,9 +95,7 @@ impl<O: Openable> Builder<O> {
 
     /// Disables write stalls and write halts.
     ///
-    /// Only meant for deterministic testing, where background workers are disabled
-    /// and flushes (and compactions) are run manually; otherwise writes could
-    /// halt forever, waiting for maintenance that never happens.
+    /// Only meant for deterministic testing.
     #[doc(hidden)]
     #[must_use]
     pub fn disable_write_stalls(mut self, flag: bool) -> Self {
