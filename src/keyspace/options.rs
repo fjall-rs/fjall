@@ -706,7 +706,7 @@ mod tests {
         );
         assert_eq!(c.kv_separation_opts, None);
 
-        c = c.with_kv_separation(KvSeparationOptions::default());
+        c = c.with_kv_separation(Some(KvSeparationOptions::default()));
         assert_eq!(
             c.kv_separation_opts.as_ref().unwrap().compression,
             CompressionType::None,
