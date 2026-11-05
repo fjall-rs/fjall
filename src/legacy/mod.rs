@@ -5,7 +5,7 @@
 pub mod v3;
 pub mod watermark;
 
-use crate::file::{rewrite_atomic, VERSION_MARKER};
+use crate::file::{rewrite_atomic, BLOBS_FOLDER, TABLES_FOLDER, VERSION_MARKER};
 use crate::{file::fsync_directory, locked_file::LockedFileGuard, Config};
 use crate::{
     file_resolver::KeyspaceFileResolver,
@@ -36,6 +36,19 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     let current_file = config.path.join("current");
     if current_file.try_exists()? {
         std::fs::remove_file(current_file)?;
+    }
+
+    // IMPORTANT: Remove files of a previous, crashed migration attempt.
+    //
+    // Otherwise:
+    // 1. migrate      : flush writes a table, then crash before the commit
+    // 2. migrate again: the flush gets the same table ID, and fails because the file exists
+    for folder in [TABLES_FOLDER, BLOBS_FOLDER] {
+        let folder = config.path.join(folder);
+
+        if folder.try_exists()? {
+            std::fs::remove_dir_all(folder)?;
+        }
     }
 
     log::debug!("Preparing database");
