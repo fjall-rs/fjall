@@ -42,7 +42,10 @@ fn ingest_overwrites_unflushed_item() -> fjall::Result<()> {
         let path = tempfile::tempdir()?;
 
         let open = || -> fjall::Result<(Database, fjall::Keyspace)> {
-            let db = Database::builder(&path).worker_threads_unchecked(0).open()?;
+            let db = Database::builder(&path)
+                .worker_threads_unchecked(0)
+                .open()?;
+
             let keyspace = db.keyspace("default", || {
                 let opts = fjall::KeyspaceCreateOptions::default();
 

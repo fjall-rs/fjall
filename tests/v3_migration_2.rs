@@ -169,3 +169,115 @@ fn v3_migration_drops_legacy_files() -> fjall::Result<()> {
 
     Ok(())
 }
+
+/// File names in a DB-level folder (`tables` or `blobs`): (legacy `{ks}_{id}` names, plain v4 names)
+fn file_names(dir: &Path, folder: &str) -> std::io::Result<(Vec<String>, Vec<String>)> {
+    let mut legacy = vec![];
+    let mut v4 = vec![];
+
+    for dirent in std::fs::read_dir(dir.join(folder))? {
+        let name = dirent?.file_name().to_string_lossy().into_owned();
+
+        if name.contains('_') {
+            legacy.push(name);
+        } else {
+            v4.push(name);
+        }
+    }
+
+    legacy.sort();
+    v4.sort();
+
+    Ok((legacy, v4))
+}
+
+/// Migrated v3 files are linked as `{keyspace ID}_{file ID}` (same content), and stay accessible;
+/// files written by v4 afterwards get plain IDs
+#[test]
+fn v3_migration_file_names() -> fjall::Result<()> {
+    let folder = "test_fixture/v3_keyspace_blobs";
+
+    let dir = tempfile::tempdir()?;
+    copy_dir_all(folder, &dir)?;
+
+    let large_value = "v4".repeat(32_000);
+
+    let keyspace_id = {
+        let db = Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        let keyspace_id = tree.id();
+
+        assert_eq!(1, tree.table_count());
+        assert_eq!(1, tree.blob_file_count());
+
+        // NOTE: The v3 table and blob file of this keyspace (both with ID 0)
+        let legacy_name = format!("{keyspace_id}_0");
+
+        let (legacy_tables, v4_tables) = file_names(dir.path(), "tables")?;
+        let (legacy_blob_files, v4_blob_files) = file_names(dir.path(), "blobs")?;
+
+        assert!(legacy_tables.contains(&legacy_name), "{legacy_tables:?}");
+        assert!(
+            legacy_blob_files.contains(&legacy_name),
+            "{legacy_blob_files:?}",
+        );
+        assert!(v4_tables.is_empty(), "{v4_tables:?}");
+        assert!(v4_blob_files.is_empty(), "{v4_blob_files:?}");
+
+        // NOTE: Linked, so the content is exactly the v3 file's
+        let v3_folder = Path::new(folder)
+            .join("keyspaces")
+            .join(keyspace_id.to_string());
+
+        assert_eq!(
+            std::fs::read(v3_folder.join("tables").join("0"))?,
+            std::fs::read(dir.path().join("tables").join(&legacy_name))?,
+        );
+        assert_eq!(
+            std::fs::read(v3_folder.join("blobs").join("0"))?,
+            std::fs::read(dir.path().join("blobs").join(&legacy_name))?,
+        );
+
+        // NOTE: Accessible through the legacy names
+        assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
+
+        // NOTE: A v4 table + blob file
+        tree.insert("v4", &large_value, fjall::DurabilityLevel::SyncAll)?;
+        tree.flush(true)?;
+
+        assert_eq!(2, tree.table_count());
+        assert_eq!(2, tree.blob_file_count());
+
+        keyspace_id
+    };
+
+    let legacy_name = format!("{keyspace_id}_0");
+
+    let (legacy_tables, v4_tables) = file_names(dir.path(), "tables")?;
+    let (legacy_blob_files, v4_blob_files) = file_names(dir.path(), "blobs")?;
+
+    // NOTE: The v4 files have plain IDs, the legacy files are untouched
+    assert_eq!(1, v4_tables.len());
+    assert_eq!(1, v4_blob_files.len());
+    assert!(v4_tables[0].parse::<u64>().is_ok());
+    assert!(v4_blob_files[0].parse::<u64>().is_ok());
+    assert!(legacy_tables.contains(&legacy_name));
+    assert!(
+        legacy_blob_files.contains(&legacy_name),
+        "{legacy_blob_files:?}",
+    );
+
+    {
+        let db = Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(2, tree.table_count());
+        assert_eq!(2, tree.blob_file_count());
+
+        // NOTE: Both the migrated and the new item are readable after recovery
+        assert_eq!(Some(b"avalue".as_slice()), tree.get("a")?.as_deref());
+        assert_eq!(Some(large_value.as_bytes()), tree.get("v4")?.as_deref());
+    }
+
+    Ok(())
+}

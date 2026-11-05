@@ -1,7 +1,10 @@
 use fjall::{AbstractTree, Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, Readable};
 
 fn open(folder: &tempfile::TempDir) -> fjall::Result<(Database, fjall::Keyspace)> {
-    let db = Database::builder(folder).worker_threads_unchecked(0).open()?;
+    let db = Database::builder(folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
     let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
     Ok((db, ks))
 }
