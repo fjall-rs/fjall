@@ -252,11 +252,15 @@ impl Keyspace {
             .write()
             .map_err(|_| crate::Error::Poisoned)?;
 
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+
         // IMPORTANT: Writes are applied to memtables while holding the WAL lock,
         // so holding it serializes the clear with all writes
         //
         // Same lock order as flushes: WAL lock, then flush lock
-        let _wal_lock = self
+        let wal_lock = self
             .supervisor
             .write_pipeline
             .wal()
@@ -312,7 +316,7 @@ impl Keyspace {
         &self,
         install: impl FnOnce(SeqNo) -> crate::Result<()>,
     ) -> crate::Result<()> {
-        let _wal_lock = self
+        let wal_lock = self
             .supervisor
             .write_pipeline
             .wal()
@@ -355,6 +359,10 @@ impl Keyspace {
             .compaction_lock
             .write()
             .map_err(|_| crate::Error::Poisoned)?;
+
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
 
         let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
 
@@ -826,7 +834,7 @@ impl Keyspace {
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        self.flush_inner(&wal_lock, rotate)
+        self.flush_inner(&wal_lock, rotate)?;
     }
 
     /// Like [`Keyspace::flush`], but with the WAL lock already held by the caller.
@@ -852,6 +860,11 @@ impl Keyspace {
     ) -> crate::Result<()> {
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
+        }
+
+        // NOTE: The deletion holds the WAL lock, so this can't race with it
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
         }
 
         if rotate {
