@@ -183,10 +183,18 @@ fn write_keyspaces_to_manifest(
 
     // NOTE: Opening the v3 trees raised the file ID counters above all v3 IDs,
     // so everything below the counters is a v3 file, everything written later is not
-    db_edits.push(DbEditRecord::SetLegacyWatermark {
+    let legacy_watermark = LegacyWatermark {
         tables: db.table_id_counter.get(),
         blob_files: db.blob_file_id_counter.get(),
+    };
+
+    db_edits.push(DbEditRecord::SetLegacyWatermark {
+        tables: legacy_watermark.tables,
+        blob_files: legacy_watermark.blob_files,
     });
+
+    // NOTE: Kept, so manifest rotations write it into the snapshot again
+    db.supervisor.legacy_watermark.set(legacy_watermark).ok();
 
     // NOTE: One DB edit, because faster
     db.supervisor.manifest.append_db_edits(&db_edits)?;

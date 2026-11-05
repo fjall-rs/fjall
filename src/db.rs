@@ -722,10 +722,39 @@ impl Database {
             keyspace.flush_inner(&wal_lock, true)?;
         }
 
+        // NOTE: After the loop, so the keyspaces lock is not held anymore
+        self.supervisor
+            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
+
         log::debug!("Rotating WAL");
 
         Ok(())
         // TODO: v4
+    }
+
+    /// Rotates the DB manifest: writes a snapshot of the full DB state into a new
+    /// manifest fragment, and removes the previous fragment.
+    ///
+    /// Happens automatically once the manifest is large enough; only meant for testing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O error occurs.
+    #[doc(hidden)]
+    pub fn rotate_manifest(&self) -> crate::Result<()> {
+        let wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        self.supervisor
+            .rotate_manifest(&wal_lock, &self.is_poisoned)
     }
 
     /// Constructs an ("empty") database to fill back with actual data later on.
@@ -783,6 +812,7 @@ impl Database {
             seqno,
             write_pipeline,
             manifest,
+            legacy_watermark: std::sync::OnceLock::new(),
         });
 
         let active_thread_counter = Arc::<AtomicUsize>::default();
@@ -838,6 +868,11 @@ impl Database {
                 let manifest_recovery_result = db.supervisor.manifest.recover()?;
                 let keyspace_info = &manifest_recovery_result.keyspace_info;
                 let keyspace_versions = &manifest_recovery_result.keyspace_versions;
+
+                // NOTE: Kept, so manifest rotations write it into the snapshot again
+                if let Some(legacy_watermark) = manifest_recovery_result.legacy_watermark {
+                    db.supervisor.legacy_watermark.set(legacy_watermark).ok();
+                }
 
                 // NOTE: We set the seqno (that is, the next seqno a write batch would get)
                 // to be one higher than the last found seqno (trivial)

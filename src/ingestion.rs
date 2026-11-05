@@ -131,6 +131,10 @@ impl<'a> Ingestion<'a> {
         keyspace.supervisor.snapshot_tracker.publish(global_seqno);
         keyspace.prune_versions();
 
+        keyspace
+            .supervisor
+            .maybe_rotate_manifest(&wal_lock, &keyspace.is_poisoned)?;
+
         drop(wal_lock);
 
         // NOTE: Ingested tables are added to L0, so maybe compact

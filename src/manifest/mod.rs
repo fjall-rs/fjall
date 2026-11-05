@@ -169,10 +169,56 @@ impl Inner {
         })
     }
 
-    // TODO: manifest rotation + snapshot
-    // TODO: we need to write the version, then sync to disk, then update current
-    // TODO: then apply to hwal internal state...
-    // TODO: e.g. wal.rotate_with(fn(file) -> Error)
+    /// Writes a snapshot of the full DB state into a new manifest fragment, switches the `current`
+    /// marker to it, and then removes the previous fragment.
+    ///
+    /// IMPORTANT: The snapshot must contain everything the previous fragment did
+    /// (keyspaces, their configuration and versions, the legacy watermark).
+    ///
+    /// If this fails after rotating, new edits go to a fragment that `current` does not name,
+    /// so the caller has to poison the database.
+    fn rotate(
+        &mut self,
+        db_edits: &[DbEditRecord],
+        keyspace_edits: impl Iterator<Item = (InternalKeyspaceId, lsm_tree::VersionEdit)>,
+    ) -> crate::Result<()> {
+        log::debug!(
+            "Rotating DB manifest (active fragment #{})",
+            self.inner.active_fragment_id(),
+        );
+
+        // 1. New fragment
+        self.inner.rotate()?;
+
+        // 2. Snapshot, synced before switching the marker
+        if !db_edits.is_empty() {
+            self.inner.append(&encode_db_edit(db_edits)?)?;
+        }
+
+        for (keyspace_id, version_edit) in keyspace_edits {
+            self.inner
+                .append(&encode_keyspace_version_edit(keyspace_id, &version_edit)?)?;
+        }
+
+        self.sync()?;
+
+        // 3. Switch the marker (atomically)
+        //
+        // NOTE: A crash before this leaves the new fragment behind, which recovery removes
+        self.place_current_marker()?;
+
+        // 4. The previous fragment's contents are contained in the snapshot now
+        //
+        // NOTE: A crash before this leaves the previous fragment behind, which recovery removes
+        self.inner.prune(|_| true)?;
+
+        log::debug!(
+            "Rotated DB manifest, active fragment now #{}",
+            self.inner.active_fragment_id(),
+        );
+
+        Ok(())
+    }
 
     fn append(
         &mut self,
@@ -251,5 +297,26 @@ impl Manifest {
             .lock()
             .expect("should not be poisoned")
             .place_current_marker()
+    }
+
+    /// See [`Inner::rotate`].
+    pub fn rotate(
+        &self,
+        db_edits: &[DbEditRecord],
+        keyspace_edits: impl Iterator<Item = (InternalKeyspaceId, lsm_tree::VersionEdit)>,
+    ) -> crate::Result<()> {
+        self.0
+            .lock()
+            .expect("should not be poisoned")
+            .rotate(db_edits, keyspace_edits)
+    }
+
+    /// Returns the size of the active manifest fragment in bytes.
+    pub fn active_fragment_size(&self) -> u64 {
+        self.0
+            .lock()
+            .expect("should not be poisoned")
+            .inner
+            .active_fragment_size()
     }
 }

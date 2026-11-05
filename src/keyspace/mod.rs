@@ -104,48 +104,8 @@ impl Drop for KeyspaceInner {
     fn drop(&mut self) {
         log::trace!("Dropping KeyspaceInner: {:?}", self.name);
 
-        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            todo!("handle deletion");
-
-            /*let path = &self.tree.tree_config().path;
-
-            // IMPORTANT: First, delete the manifest,
-            // once that is deleted, the keyspace is treated as uninitialized
-            // even if the .deleted marker is removed
-            //
-            // This is important, because if somehow `remove_dir_all` ends up
-            // deleting the `.deleted` marker first, we would end up resurrecting
-            // the keyspace
-            let manifest_file = path.join(CURRENT_VERSION_MARKER);
-
-            // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
-            #[expect(clippy::collapsible_else_if)]
-            match manifest_file.try_exists() {
-                Ok(exists) => {
-                    if exists {
-                        if let Err(e) = std::fs::remove_file(manifest_file) {
-                            log::error!(
-                                "Failed to cleanup keyspace manifest at {}: {e}",
-                                path.display(),
-                            );
-                        } else {
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                log::error!(
-                                    "Failed to cleanup deleted keyspace's folder at {}: {e}",
-                                    path.display(),
-                                );
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to cleanup keyspace manifest at {}: {e}",
-                        path.display(),
-                    );
-                }
-            }*/
-        }
+        // NOTE: A deleted keyspace's files are already marked as deleted (see `Database::delete_keyspace`),
+        // they are removed once the last version referencing them is dropped
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
@@ -292,6 +252,9 @@ impl Keyspace {
 
         self.prune_versions();
 
+        self.supervisor
+            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
+
         Ok(())
     }
 
@@ -340,6 +303,9 @@ impl Keyspace {
         self.supervisor.snapshot_tracker.publish(seqno);
 
         self.prune_versions();
+
+        self.supervisor
+            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
 
         Ok(())
     }
@@ -835,6 +801,9 @@ impl Keyspace {
             .map_err(|_| crate::Error::Poisoned)?;
 
         self.flush_inner(&wal_lock, rotate)?;
+
+        self.supervisor
+            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)
     }
 
     /// Like [`Keyspace::flush`], but with the WAL lock already held by the caller.
