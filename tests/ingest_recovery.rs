@@ -83,3 +83,27 @@ fn ingest_overwrites_unflushed_item() -> fjall::Result<()> {
 
     Ok(())
 }
+
+// This fails in v3 before 2fa374ca39bf0f365172cb18b826c203e42bd9da
+#[test]
+fn ingest_after_write_recover() -> fjall::Result<()> {
+    let path = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&path).open()?;
+        let keyspace = db.keyspace("default", Default::default)?;
+
+        keyspace.insert("k", "old", fjall::DurabilityLevel::SyncAll)?;
+        keyspace.flush(true)?;
+
+        let mut ingestion = keyspace.start_ingestion()?;
+        ingestion.write("k", "new")?;
+        ingestion.finish()?;
+    }
+
+    let db = Database::builder(&path).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+    assert_eq!(Some(b"new".as_slice()), keyspace.get("k")?.as_deref());
+
+    Ok(())
+}
