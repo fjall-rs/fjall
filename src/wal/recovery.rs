@@ -128,13 +128,16 @@ struct WalRecovery<'a, F> {
     get_keyspace_name: F,
     watermarks: Watermarks,
 
-    /// Version seqno of each keyspace, as recovered from the manifest.
+    /// Flush watermark of each keyspace, as recovered from the manifest.
     ///
-    /// Every WAL item below that seqno is already contained in the keyspace's
-    /// tables (flush) or was dropped (clear), so it must not be replayed.
+    /// Every WAL item up to that seqno is already contained in the keyspace's
+    /// tables (flush), or was removed on purpose (compaction, drop range, clear),
+    /// so it must not be replayed.
+    ///
+    /// NOTE: This is not the version seqno, which is used for snapshots.
     ///
     /// See <https://github.com/fjall-rs/fjall/pull/332>
-    version_seqnos: HashMap<InternalKeyspaceId, SeqNo>,
+    flush_watermarks: HashMap<InternalKeyspaceId, Option<SeqNo>>,
 
     replayed_bytes: u64,
 }
@@ -146,16 +149,16 @@ where
     fn new(keyspaces: &'a Keyspaces, get_keyspace_name: F) -> Self {
         use crate::AbstractTree;
 
-        let version_seqnos = keyspaces
+        let flush_watermarks = keyspaces
             .values()
-            .map(|ks| (ks.id(), ks.tree.current_version().seqno()))
+            .map(|ks| (ks.id(), ks.tree.get_flush_watermark()))
             .collect();
 
         Self {
             keyspaces,
             get_keyspace_name,
             watermarks: HashMap::default(),
-            version_seqnos,
+            flush_watermarks,
             replayed_bytes: 0,
         }
     }
@@ -163,8 +166,8 @@ where
     fn replay_item(&mut self, fragment_id: hwal::FragmentId, item: DecodedItem) {
         use crate::AbstractTree;
 
-        if let Some(&version_seqno) = self.version_seqnos.get(&item.keyspace_id) {
-            if item.seqno < version_seqno {
+        if let Some(Some(flush_watermark)) = self.flush_watermarks.get(&item.keyspace_id) {
+            if item.seqno <= *flush_watermark {
                 return;
             }
         }

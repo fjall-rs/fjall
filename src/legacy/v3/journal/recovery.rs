@@ -50,7 +50,7 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                 // writes them again into a table that overlaps the existing one
                 let persisted_seqno = *persisted_seqnos
                     .entry(item.keyspace_id)
-                    .or_insert_with(|| tree.get_highest_persisted_seqno());
+                    .or_insert_with(|| tree.get_flush_watermark());
 
                 if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
                     continue;
@@ -85,7 +85,7 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                 // Remember: replaying the WAL here happens after recovering the tables etc.
                 let persisted_seqno = *persisted_seqnos
                     .entry(keyspace_id)
-                    .or_insert_with(|| handle.tree.get_highest_persisted_seqno());
+                    .or_insert_with(|| handle.tree.get_flush_watermark());
 
                 if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
                     log::trace!(
