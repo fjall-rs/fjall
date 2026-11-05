@@ -3,12 +3,31 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{snapshot_tracker::SnapshotTracker, stats::Stats, Keyspace};
-use std::time::Instant;
+use lsm_tree::{compaction::CompactionStrategy, AbstractTree};
+use std::{sync::Arc, time::Instant};
+
+/// Runs a compaction with the given strategy, and installs its result as a new version.
+pub fn compact_with(
+    keyspace: &Keyspace,
+    strategy: Arc<dyn CompactionStrategy>,
+) -> crate::Result<()> {
+    let gc_watermark = keyspace.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+    // NOTE: The merge is the expensive part, so it runs without holding any locks
+    let result = keyspace.tree.run_compaction(strategy, gc_watermark)?;
+
+    keyspace.install_version(|seqno| {
+        keyspace
+            .version_set_provider
+            .register_compaction(result, seqno)
+            .map_err(Into::into)
+    })
+}
 
 /// Runs a single run of compaction.
 pub fn run(
     keyspace: &Keyspace,
-    snapshot_tracker: &SnapshotTracker,
+    _snapshot_tracker: &SnapshotTracker,
     stats: &Stats,
 ) -> crate::Result<()> {
     use std::sync::atomic::Ordering::Relaxed;
@@ -30,16 +49,12 @@ pub fn run(
 
     let start = Instant::now();
 
-    /*if let Err(e) = keyspace
-        .tree
-        .compact(strategy.clone(), snapshot_tracker.get_seqno_safe_to_gc())
-    {
+    if let Err(e) = compact_with(keyspace, strategy) {
         log::error!("Compaction failed: {e:?}");
         stats.active_compaction_count.fetch_sub(1, Relaxed);
 
-        return Err(e.into());
-    }*/
-    todo!("restore compaction");
+        return Err(e);
+    }
 
     // TODO: we need feedback from the compaction strategy...
     // TODO: if there is nothing more to do, we should clear the compaction_manager semaphore

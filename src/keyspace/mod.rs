@@ -272,6 +272,57 @@ impl Keyspace {
         Ok(())
     }
 
+    /// Installs a new version of the keyspace's tree, with a new version seqno.
+    pub(crate) fn install_version(
+        &self,
+        install: impl FnOnce(SeqNo) -> crate::Result<()>,
+    ) -> crate::Result<()> {
+        let _wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        let _flush_lock = self.tree.get_flush_lock();
+
+        // IMPORTANT: Check the poisoned flag after getting the WAL lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        let seqno = self.supervisor.seqno.next();
+
+        install(seqno).inspect_err(|e| {
+            log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
+            self.is_poisoned.poison();
+        })?;
+
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        Ok(())
+    }
+
+    /// Drops all tables that are fully contained in the given key range.
+    ///
+    /// Tables that only partially overlap the range are kept, so keys in the range
+    /// may still be readable afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn drop_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+        // NOTE: Dropping tables doesn't rewrite any data, so it's fine to hold the locks while doing it
+        self.install_version(|seqno| {
+            self.version_set_provider
+                .drop_range(&self.tree, range, seqno, gc_watermark)
+                .map_err(Into::into)
+        })
+    }
+
     /// Returns the number of blob bytes on disk that are not referenced.
     ///
     /// These will be reclaimed over time by blob garbage collection automatically.
@@ -713,27 +764,87 @@ impl Keyspace {
         matches!(self.tree, crate::AnyTree::Blob(_))
     }
 
-    // NOTE: Used in tests
+    /// Synchronously flushes all sealed memtables into a table,
+    /// sealing the active memtable first if `rotate` is set.
+    ///
+    /// Does not involve the background workers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        if self.rotate_memtable()? {
-            self.supervisor.flush_manager.wait_for_empty();
+    pub fn flush(&self, rotate: bool) -> crate::Result<()> {
+        let wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
 
-            while self.tree.sealed_memtable_count() > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+        self.flush_inner(&wal_lock, rotate)
+    }
+
+    /// Like [`Keyspace::flush`], but with the WAL lock already held by the caller.
+    ///
+    /// NOTE: Writes are applied to the active memtable under the WAL lock,
+    /// so no write can land in a memtable after it was sealed.
+    pub(crate) fn flush_inner(
+        &self,
+        _wal_lock: &std::sync::MutexGuard<'_, crate::wal::Wal>,
+        rotate: bool,
+    ) -> crate::Result<()> {
+        let _flush_lock = self.tree.get_flush_lock();
+
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
         }
+
+        if rotate {
+            self.version_set_provider.rotate_active_memtable(&self.tree);
+        }
+
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+        let Some(flush_result) = self.tree.new_flush(gc_watermark)? else {
+            return Ok(());
+        };
+
+        let seqno = self.supervisor.seqno.next();
+
+        let flushed_bytes = self
+            .version_set_provider
+            .register_flush(flush_result, seqno)
+            .inspect_err(|e| {
+                log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
+                self.is_poisoned.poison();
+            })?;
+
+        self.supervisor.write_buffer_size.free(flushed_bytes);
+        self.supervisor.snapshot_tracker.publish(seqno);
 
         Ok(())
     }
 
+    /// Seals the active memtable, without flushing it.
+    ///
+    /// Returns `false` if the active memtable was empty.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the keyspace is poisoned.
     #[doc(hidden)]
     pub fn rotate_memtable(&self) -> crate::Result<bool> {
-        /* log::trace!("acquiring journal lock");
-        let journal_writer = self.supervisor.journal.get_writer()?;
-        let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(journal_writer, active_memtable_id)*/
-        todo!()
+        let _wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        Ok(self
+            .version_set_provider
+            .rotate_active_memtable(&self.tree)
+            .is_some())
     }
 
     /*pub(crate) fn inner_rotate_memtable(
@@ -879,6 +990,19 @@ impl Keyspace {
         self.tree.blob_file_count()
     }
 
+    /// Runs a single compaction with the configured compaction strategy,
+    /// blocking the caller until it's done.
+    ///
+    /// Does not involve the background workers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn compact(&self) -> crate::Result<()> {
+        crate::compaction::worker::compact_with(self, self.config.compaction_strategy.clone())
+    }
+
     /// Performs major compaction, blocking the caller until it's done.
     ///
     /// # Errors
@@ -886,16 +1010,14 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        /*self.tree.major_compact(
-            64_000_000,
-            self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
-        )?;*/
-        todo!("restore compaction");
-
-        // TODO: 4.0.0 ----^
-        // compaction strategy needs a method: strategy.table_target_size()?
-
-        Ok(())
+        // TODO: v4 ----v
+        //   compaction strategy needs a method: strategy.table_target_size()?
+        crate::compaction::worker::compact_with(
+            self,
+            Arc::new(lsm_tree::compaction::Major::new(
+                64 * 1_024 * 1_024, // 64 MiB
+            )),
+        )
     }
 
     /// Inserts a key-value pair into the keyspace.

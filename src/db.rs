@@ -639,10 +639,18 @@ impl Database {
     ///
     /// Returns an error if an I/O error occurs.
     pub fn flush_all(&self) -> crate::Result<()> {
-        // TODO: hold WAL lock
-
         // TODO: v4: https://github.com/fjall-rs/fjall/pull/315
         log::info!("Flushing all write buffers");
+
+        // NOTE: Hold the WAL lock for all keyspaces, so no write sneaks in between their flushes
+        //
+        // Lock order: WAL, then keyspaces (nothing takes the WAL lock while holding the keyspaces lock)
+        let wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
 
         for keyspace in self
             .supervisor
@@ -651,14 +659,13 @@ impl Database {
             .expect("lock is poisoned")
             .values()
         {
-            // TODO: run_with_wal_lock
-            crate::flush::worker::run(keyspace, &self.supervisor, &self.stats)?;
+            keyspace.flush_inner(&wal_lock, true)?;
         }
 
         log::debug!("Rotating WAL");
 
         Ok(())
-        // TODO:
+        // TODO: v4
     }
 
     /// Constructs an ("empty") database to fill back with actual data later on.
