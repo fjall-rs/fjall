@@ -63,6 +63,18 @@ impl Supervisor {
         Self(Arc::new(inner))
     }
 
+    /// Removes sealed WAL fragments whose items are all flushed, see [`crate::wal::Wal::prune`].
+    ///
+    /// IMPORTANT: The caller must hold the WAL lock, and must NOT hold the keyspaces lock.
+    ///
+    /// Lock order: WAL lock, keyspaces lock.
+    pub(crate) fn prune_wal(&self, wal: &mut MutexGuard<'_, crate::wal::Wal>) -> crate::Result<()> {
+        #[expect(clippy::expect_used)]
+        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+        wal.prune(&keyspaces)
+    }
+
     /// Rotates the DB manifest if its active fragment is larger than the configured threshold.
     ///
     /// See [`Supervisor::rotate_manifest`].
@@ -165,27 +177,4 @@ impl Supervisor {
             .cloned()
             .collect()
     }
-
-    /*pub fn build_seqno_map(
-        &self,
-        keyspaces: &Keyspaces,
-    ) -> Vec<crate::journal::manager::EvictionWatermark> {
-        /*use crate::AbstractTree;
-
-        let mut seqnos = Vec::with_capacity(keyspaces.len());
-
-        for keyspace in keyspaces.values() {
-            if let Some(lsn) = keyspace.tree.get_highest_memtable_seqno() {
-                seqnos.push(crate::journal::manager::EvictionWatermark {
-                    lsn,
-                    keyspace: keyspace.clone(),
-                });
-            }
-        }*
-
-        seqnos*/
-
-        // TODO:
-        todo!()
-    }*/
 }

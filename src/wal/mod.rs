@@ -13,9 +13,10 @@ use varint_rs::VarintWriter;
 pub use recovery::recover_wal;
 
 use crate::{
-    batch::item::Item as BatchItem, keyspace::InternalKeyspaceId, wal::encoder::Encoder,
-    DurabilityLevel,
+    batch::item::Item as BatchItem, db::Keyspaces, keyspace::InternalKeyspaceId,
+    wal::encoder::Encoder, DurabilityLevel,
 };
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
@@ -30,9 +31,19 @@ enum RecordType {
     // End
 }
 
+/// Highest seqno of each keyspace that may still need a WAL fragment
+type FragmentWatermarks = Vec<(InternalKeyspaceId, SeqNo)>;
+
 pub struct Wal {
     inner: hwal::Wal,
     encoder: Encoder,
+
+    /// Watermarks of the sealed fragments: a sealed fragment can be pruned once every listed
+    /// keyspace's flush watermark is at or above its seqno (or the keyspace was deleted).
+    ///
+    /// NOTE: A sealed fragment without an entry has nothing left to wait for, e.g. after recovery,
+    /// when all its items were skipped (already flushed, or of deleted keyspaces)
+    sealed_watermarks: BTreeMap<hwal::FragmentId, FragmentWatermarks>,
 }
 
 impl Wal {
@@ -40,6 +51,7 @@ impl Wal {
         Self {
             inner,
             encoder: Encoder::default(),
+            sealed_watermarks: BTreeMap::new(),
         }
     }
 
@@ -60,9 +72,82 @@ impl Wal {
     }
 
     /// Seals the active WAL fragment, and continues in a new one.
-    pub(crate) fn rotate(&mut self) -> crate::Result<()> {
-        self.inner.rotate()?;
+    pub(crate) fn rotate(&mut self, keyspaces: &Keyspaces) -> crate::Result<()> {
+        use lsm_tree::AbstractTree;
+
+        let sealed_id = self.inner.active_fragment_id();
+
+        // NOTE: Nothing happens if the active fragment is empty
+        if self.inner.rotate()?.is_none() {
+            return Ok(());
+        }
+
+        let mut watermarks = FragmentWatermarks::with_capacity(keyspaces.len());
+
+        for keyspace in keyspaces.values() {
+            // NOTE: Empty memtables = everything of that keyspace is flushed already
+            if let Some(seqno) = keyspace.tree.get_highest_memtable_seqno() {
+                watermarks.push((keyspace.id(), seqno));
+            }
+        }
+
+        log::trace!("Sealed WAL fragment #{sealed_id} with watermarks {watermarks:?}");
+        self.sealed_watermarks.insert(sealed_id, watermarks);
+
         Ok(())
+    }
+
+    /// Prunes sealed WAL fragments that are safe to delete.
+    pub(crate) fn prune(&mut self, keyspaces: &Keyspaces) -> crate::Result<()> {
+        use lsm_tree::AbstractTree;
+
+        let sealed_watermarks = &self.sealed_watermarks;
+        let mut last_pruned = None;
+
+        self.inner.prune(|fragment_id| {
+            let prunable = sealed_watermarks
+                .get(&fragment_id)
+                .is_none_or(|watermarks| {
+                    watermarks.iter().all(|&(keyspace_id, seqno)| {
+                        keyspaces
+                            .values()
+                            .find(|ks| ks.id() == keyspace_id)
+                            // NOTE: Deleted keyspaces are not in the registry anymore,
+                            // their items are never replayed
+                            .is_none_or(|ks| ks.tree.get_flush_watermark() >= Some(seqno))
+                    })
+                });
+
+            if prunable {
+                log::debug!("Pruning fully flushed WAL fragment #{fragment_id}");
+                last_pruned = Some(fragment_id);
+            }
+
+            prunable
+        })?;
+
+        // NOTE: Fragments are pruned oldest first, so forget everything up to the last pruned one
+        if let Some(last_pruned) = last_pruned {
+            self.sealed_watermarks = self.sealed_watermarks.split_off(&(last_pruned + 1));
+        }
+
+        Ok(())
+    }
+
+    /// Takes over the watermarks found during WAL recovery.
+    fn set_recovered_watermarks(&mut self, watermarks: recovery::Watermarks) {
+        let active_id = self.inner.active_fragment_id();
+
+        for (fragment_id, keyspace_watermarks) in watermarks {
+            // NOTE: The active fragment is only sealed by a later rotation,
+            // which computes its watermarks then
+            if fragment_id == active_id {
+                continue;
+            }
+
+            self.sealed_watermarks
+                .insert(fragment_id, keyspace_watermarks.into_iter().collect());
+        }
     }
 
     pub fn sealed_fragment_count(&self) -> usize {

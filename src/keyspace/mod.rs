@@ -201,6 +201,11 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     ///
+    /// # Note
+    ///
+    /// Memtable contents are deleted as well.
+    /// This operation is thus not equal to [`Keyspace::drop_range(..)`](Keyspace::drop_range).
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -220,7 +225,7 @@ impl Keyspace {
         // so holding it serializes the clear with all writes
         //
         // Same lock order as flushes: WAL lock, then flush lock
-        let wal_lock = self
+        let mut wal_lock = self
             .supervisor
             .write_pipeline
             .wal()
@@ -254,6 +259,9 @@ impl Keyspace {
 
         self.supervisor
             .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
+
+        // NOTE: The clear raised the flush watermark, so WAL fragments may not be needed anymore
+        self.supervisor.prune_wal(&mut wal_lock)?;
 
         Ok(())
     }
@@ -315,6 +323,10 @@ impl Keyspace {
     /// Tables that only partially overlap the range are kept, so keys in the range
     /// may still be readable afterwards.
     ///
+    /// # Note
+    ///
+    /// Memtable contents overlapping the range are not deleted.
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
@@ -337,7 +349,9 @@ impl Keyspace {
             self.version_set_provider
                 .drop_range(&self.tree, range, seqno, gc_watermark)
                 .map_err(Into::into)
-        })
+        })?;
+
+        Ok(())
     }
 
     /// Returns the number of blob bytes on disk that are not referenced.
@@ -793,7 +807,7 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn flush(&self, rotate: bool) -> crate::Result<()> {
-        let wal_lock = self
+        let mut wal_lock = self
             .supervisor
             .write_pipeline
             .wal()
@@ -803,7 +817,9 @@ impl Keyspace {
         self.flush_inner(&wal_lock, rotate)?;
 
         self.supervisor
-            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)
+            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
+
+        self.supervisor.prune_wal(&mut wal_lock)
     }
 
     /// Like [`Keyspace::flush`], but with the WAL lock already held by the caller.

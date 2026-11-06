@@ -1,8 +1,9 @@
-use crate::{AbstractTree, Database, KeyspaceCreateOptions, KvSeparationOptions};
+use crate::{
+    AbstractTree, Database, DurabilityLevel::Buffer, KeyspaceCreateOptions, KvSeparationOptions,
+};
 use test_log::test;
 
 #[test_log::test]
-#[expect(clippy::expect_used)]
 fn clear_recover_sealed() -> crate::Result<()> {
     use crate::{Database, KeyspaceCreateOptions};
 
@@ -10,7 +11,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
     {
         let db = Database::builder(&folder).open()?;
-        assert_eq!(1, db.journal_count());
+        assert_eq!(1, db.wal_count());
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
@@ -24,15 +25,10 @@ fn clear_recover_sealed() -> crate::Result<()> {
         tree.flush(true)?;
         assert!(tree.is_empty()?);
 
-        db.supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .expect("lock is poisoned")
-            .rotate()?;
+        db.rotate_wal()?;
 
         // NOTE: The recovery below replays items from two WAL fragments
-        assert_eq!(2, db.journal_count());
+        assert_eq!(2, db.wal_count());
 
         tree.insert("b", "a", crate::DurabilityLevel::Buffer)?;
         assert!(tree.contains_key("b")?);
@@ -266,13 +262,12 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
 }
 
 #[test]
-#[expect(clippy::expect_used)]
 fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let unflushed_size = {
         let db = Database::builder(folder.path()).open()?;
-        assert_eq!(1, db.journal_count());
+        assert_eq!(1, db.wal_count());
 
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
@@ -292,15 +287,10 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         }
         batch.commit()?;
 
-        db.supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .expect("lock is poisoned")
-            .rotate()?;
+        db.rotate_wal()?;
 
         // NOTE: The recovery below replays items from two WAL fragments
-        assert_eq!(2, db.journal_count());
+        assert_eq!(2, db.wal_count());
 
         a.tree.active_memtable().size() + b.tree.active_memtable().size()
     };

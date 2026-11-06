@@ -86,7 +86,7 @@ impl<'a> Ingestion<'a> {
         // -----------------
         // |
         // insert seqno=1
-        let wal_lock = keyspace
+        let mut wal_lock = keyspace
             .supervisor
             .write_pipeline
             .wal()
@@ -134,6 +134,10 @@ impl<'a> Ingestion<'a> {
         keyspace
             .supervisor
             .maybe_rotate_manifest(&wal_lock, &keyspace.is_poisoned)?;
+
+        // NOTE: The ingestion flushed the memtables first,
+        // so WAL fragments may not be needed anymore
+        keyspace.supervisor.prune_wal(&mut wal_lock)?;
 
         drop(wal_lock);
 

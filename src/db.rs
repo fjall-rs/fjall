@@ -705,31 +705,61 @@ impl Database {
         // NOTE: Hold the WAL lock for all keyspaces, so no write sneaks in between their flushes
         //
         // Lock order: WAL, then keyspaces (nothing takes the WAL lock while holding the keyspaces lock)
-        let wal_lock = self
+        let mut wal_lock = self
             .supervisor
             .write_pipeline
             .wal()
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        for keyspace in self
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .values()
         {
-            keyspace.flush_inner(&wal_lock, true)?;
+            let keyspaces = self
+                .supervisor
+                .keyspaces
+                .read()
+                .map_err(|_| crate::Error::Poisoned)?;
+
+            // NOTE: Seal the active WAL fragment first: every item in it is flushed below,
+            // so all sealed fragments can be pruned afterwards
+            log::debug!("Rotating WAL");
+
+            wal_lock.rotate(&keyspaces)?;
+
+            for keyspace in keyspaces.values() {
+                keyspace.flush_inner(&wal_lock, true)?;
+            }
         }
 
-        // NOTE: After the loop, so the keyspaces lock is not held anymore
+        // NOTE: After the keyspaces lock is released again
         self.supervisor
             .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
 
-        log::debug!("Rotating WAL");
+        self.supervisor.prune_wal(&mut wal_lock)
+    }
 
-        Ok(())
-        // TODO: v4
+    /// Seals the active WAL fragment, and continues in a new one.
+    ///
+    /// Only meant for testing.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn rotate_wal(&self) -> crate::Result<()> {
+        let mut wal_lock = self
+            .supervisor
+            .write_pipeline
+            .wal()
+            .lock()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        let keyspaces = self
+            .supervisor
+            .keyspaces
+            .read()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        wal_lock.rotate(&keyspaces)
     }
 
     /// Rotates the DB manifest: writes a snapshot of the full DB state into a new
