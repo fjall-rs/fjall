@@ -347,3 +347,62 @@ fn delete_keyspace_1() -> crate::Result<()> {
 
     Ok(())
 }
+
+/// Flushing all keyspaces removes the covered WAL and allows reopening without replay.
+#[test]
+fn flush_all_materializes_wal() -> crate::Result<()> {
+    use crate::AbstractTree;
+
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
+        let first = db.keyspace("first", KeyspaceCreateOptions::default)?;
+        let second = db.keyspace("second", KeyspaceCreateOptions::default)?;
+
+        {
+            let mut batch = db.batch();
+            batch.insert(&first, "a", "1");
+            batch.insert(&second, "b", "2");
+            batch.commit()?;
+        }
+        first.rotate_memtable()?;
+        first.insert("c", "3", Buffer)?;
+
+        db.rotate_wal()?;
+        assert_eq!(2, db.wal_count());
+
+        db.flush_all()?;
+        assert_eq!(1, db.wal_count());
+
+        assert!(first.tree.active_memtable().is_empty());
+        assert!(second.tree.active_memtable().is_empty());
+        assert_eq!(0, first.tree.sealed_memtable_count());
+        assert_eq!(0, second.tree.sealed_memtable_count());
+
+        first.insert("d", "4", Buffer)?;
+
+        db.flush_all()?;
+    }
+
+    {
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
+        let first = db.keyspace("first", KeyspaceCreateOptions::default)?;
+        let second = db.keyspace("second", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(Some(b"1".as_slice()), first.get("a")?.as_deref());
+        assert_eq!(Some(b"2".as_slice()), second.get("b")?.as_deref());
+        assert_eq!(Some(b"3".as_slice()), first.get("c")?.as_deref());
+        assert_eq!(Some(b"4".as_slice()), first.get("d")?.as_deref());
+        assert!(first.tree.active_memtable().is_empty());
+        assert!(second.tree.active_memtable().is_empty());
+    }
+
+    Ok(())
+}
