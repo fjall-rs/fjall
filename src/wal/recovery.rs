@@ -253,6 +253,11 @@ pub fn recover_wal(
     // IMPORTANT: Finish recovery
     recovery.finish()?;
 
+    // NOTE: The replayed items are in memtables now, so sealed fragments are kept until their
+    // keyspaces are flushed; fragments that only contain flushed items are pruned right away
+    wal.set_recovered_watermarks(watermarks);
+    wal.prune(keyspaces)?;
+
     Ok(highest_seqno)
 }
 
