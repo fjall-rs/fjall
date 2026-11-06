@@ -277,7 +277,7 @@ impl Database {
     /// ```
     #[must_use]
     #[expect(clippy::expect_used, clippy::missing_panics_doc)]
-    pub fn journal_count(&self) -> usize {
+    pub fn wal_count(&self) -> usize {
         // 1 = active WAL fragment
         1 + self
             .supervisor
