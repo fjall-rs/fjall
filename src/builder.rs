@@ -113,6 +113,17 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Sets the value size (in bytes) from which values are compressed in the write-ahead log,
+    /// see [`Builder::wal_compression`].
+    ///
+    /// Only meant for testing.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn wal_compression_threshold(mut self, bytes: u32) -> Self {
+        self.inner.wal_compression_threshold = bytes;
+        self
+    }
+
     /// Sets the upper limit for cached file descriptors.
     ///
     /// All user data stored in multiple, immutable files.

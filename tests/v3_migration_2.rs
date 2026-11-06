@@ -281,3 +281,61 @@ fn v3_migration_file_names() -> fjall::Result<()> {
 
     Ok(())
 }
+
+/// v3 fixture `v3_journal_compression`, written by fjall v3 (main) with
+/// `journal_compression(CompressionType::Lz4)` (values >= 4 KiB are compressed in the journal),
+/// nothing flushed, so the migration has to decompress the journal items:
+///
+/// ```ignore
+/// // NOTE: Compressible value
+/// fn big(byte: u8, len: usize) -> Vec<u8> {
+///     (0..len).map(|i| byte.wrapping_add((i % 16) as u8)).collect()
+/// }
+///
+/// let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+/// ks.insert("small", "smallvalue")?;
+/// ks.insert("big", big(b'a', 8_192))?;
+/// ks.insert("removed", big(b'r', 8_192))?;
+/// ks.remove("removed")?;
+///
+/// let mut batch = db.batch();
+/// batch.insert(&ks, "batch_big", big(b'b', 16_384));
+/// batch.insert(&ks, "batch_small", "batchsmall");
+/// batch.commit()?;
+///
+/// db.persist(PersistMode::SyncAll)?;
+/// ```
+///
+/// NOTE: The journal is 528 bytes, so the big values really are compressed
+#[test]
+fn v3_migration_journal_compression() -> fjall::Result<()> {
+    fn big(byte: u8, len: usize) -> Vec<u8> {
+        (0..len).map(|i| byte.wrapping_add((i % 16) as u8)).collect()
+    }
+
+    let dir = tempfile::tempdir()?;
+    copy_dir_all("test_fixture/v3_journal_compression", &dir)?;
+
+    for i in 0..3 {
+        log::info!("[{i}] recovering");
+
+        let db = Database::builder(&dir).open()?;
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+        assert_eq!(4, tree.len()?);
+
+        assert_eq!(Some(b"smallvalue".as_slice()), tree.get("small")?.as_deref());
+        assert_eq!(Some(big(b'a', 8_192).as_slice()), tree.get("big")?.as_deref());
+        assert!(tree.get("removed")?.is_none());
+        assert_eq!(
+            Some(big(b'b', 16_384).as_slice()),
+            tree.get("batch_big")?.as_deref(),
+        );
+        assert_eq!(
+            Some(b"batchsmall".as_slice()),
+            tree.get("batch_small")?.as_deref(),
+        );
+    }
+
+    Ok(())
+}
