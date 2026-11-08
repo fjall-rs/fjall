@@ -83,9 +83,6 @@ pub struct CreateOptions {
 
 impl Default for CreateOptions {
     fn default() -> Self {
-        let default_tree_config =
-            lsm_tree::Config::new(".", Arc::new(lsm_tree::MemoryVersionSetProvider::default()));
-
         Self {
             manual_journal_persist: false,
 
@@ -111,8 +108,7 @@ impl Default for CreateOptions {
                 FilterPolicyEntry::Bloom(BloomConstructionPolicy::BitsPerKey(10.0)),
             ]),
 
-            // TODO: v4 expose this as constant instead...
-            level_count: default_tree_config.level_count,
+            level_count: lsm_tree::DEFAULT_LEVEL_COUNT,
 
             #[cfg(feature = "lz4")]
             data_block_compression_policy: CompressionPolicy::new([CompressionType::None, CompressionType::None, CompressionType::Lz4]),
