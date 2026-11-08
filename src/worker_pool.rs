@@ -17,7 +17,7 @@ use std::{
 };
 
 pub enum WorkerMessage {
-    Flush,
+    Flush(Keyspace),
     Compact(Keyspace),
     Close,
     RotateMemtable(Keyspace, MemtableId),
@@ -29,7 +29,7 @@ impl std::fmt::Debug for WorkerMessage {
             f,
             "{}",
             match self {
-                Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
+                Self::Flush(k) => Cow::Owned(format!("WorkerMessage:Flush({:?})", k.name)),
                 Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
                 Self::Close => Cow::Borrowed("WorkerMessage:Close"),
                 Self::RotateMemtable(k, memtable_id) =>
