@@ -56,6 +56,13 @@ pub struct Config {
     #[doc(hidden)]
     pub(crate) manifest_rotation_threshold: u64,
 
+    /// The WAL is rotated (sealed, and continued in a new fragment) once its
+    /// active fragment is larger than this, so flushed fragments can be pruned.
+    ///
+    /// Default = 64 MiB
+    #[doc(hidden)]
+    pub(crate) wal_rotation_threshold: u64,
+
     /// Write-ahead log value compression
     ///
     /// See `wal_compression_threshold`.
@@ -104,6 +111,7 @@ impl Config {
             write_pipeline_leader_capacity: 1_000_000,
             disable_write_stalls: false,
             manifest_rotation_threshold: /* 4 MiB */ 4 * 1_024 * 1_024,
+            wal_rotation_threshold: /* 64 MiB */ 64 * 1_024 * 1_024,
             // journal_recovery_mode: RecoveryMode::default(),
 
             #[cfg(not(feature = "lz4"))]
