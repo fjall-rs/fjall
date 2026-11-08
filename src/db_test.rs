@@ -201,7 +201,9 @@ fn recover_sealed_blob() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
     for i in 0_u128..3 {
-        let db = Database::create_or_recover(Database::builder(folder.path()).into_config())?;
+        let db = Database::builder(folder.path())
+            .worker_threads_unchecked(0)
+            .open()?;
 
         let tree = db.keyspace("default", || {
             KeyspaceCreateOptions::default()
@@ -393,6 +395,98 @@ fn flush_all_materializes_wal() -> crate::Result<()> {
         assert!(first.tree.active_memtable().is_empty());
         assert!(second.tree.active_memtable().is_empty());
     }
+
+    Ok(())
+}
+
+/// A clear drops the active and the sealed memtables (which are then never flushed),
+/// so it frees their write buffer bytes, but not those of other keyspaces.
+#[test]
+fn clear_frees_write_buffer() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
+    let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+    let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+    assert_eq!(0, db.write_buffer_size());
+
+    b.insert("b", "b", Buffer)?;
+    let b_size = db.write_buffer_size();
+    assert!(b_size > 0);
+
+    // NOTE: One sealed memtable, and an active one
+    a.insert("a", "a", Buffer)?;
+    assert!(a.rotate_memtable()?);
+    a.insert("a2", "a", Buffer)?;
+    assert_eq!(1, a.sealed_memtable_count());
+    assert!(db.write_buffer_size() > b_size);
+
+    a.clear()?;
+    assert_eq!(0, a.sealed_memtable_count());
+    assert_eq!(
+        b_size,
+        db.write_buffer_size(),
+        "only b's bytes should be left"
+    );
+
+    b.clear()?;
+    assert_eq!(0, db.write_buffer_size());
+
+    Ok(())
+}
+
+/// Deleting a keyspace frees the write buffer bytes of its (active and sealed) memtables.
+#[test]
+fn delete_keyspace_frees_write_buffer() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
+    let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+
+    a.insert("a", "a", Buffer)?;
+    assert!(a.rotate_memtable()?);
+    a.insert("a2", "a", Buffer)?;
+    assert!(db.write_buffer_size() > 0);
+
+    db.delete_keyspace(a)?;
+    assert_eq!(0, db.write_buffer_size());
+
+    Ok(())
+}
+
+/// Regression test for <https://github.com/fjall-rs/fjall/issues/288>
+#[test]
+fn clear_does_not_block_wal_pruning() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
+    let cold = db.keyspace("cold", KeyspaceCreateOptions::default)?;
+    let hot = db.keyspace("hot", KeyspaceCreateOptions::default)?;
+
+    // NOTE: WAL fragment #0 needs cold to be flushed (or cleared)
+    cold.insert("a", "a", Buffer)?;
+    db.rotate_wal()?;
+    cold.clear()?;
+
+    for _ in 0..5 {
+        hot.insert("a", "abcdef", Buffer)?;
+        db.rotate_wal()?;
+
+        // NOTE: Prunes the WAL afterwards
+        hot.flush(true)?;
+    }
+
+    // NOTE: Everything is flushed or cleared, so only the active WAL fragment is needed
+    assert_eq!(1, db.wal_count());
 
     Ok(())
 }
