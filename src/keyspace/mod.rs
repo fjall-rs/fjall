@@ -765,6 +765,17 @@ impl Keyspace {
         if rotate {
             let ledger = self.supervisor.ledger()?;
 
+            // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+            if self.is_poisoned.is_poisoned() {
+                return Err(crate::Error::Poisoned);
+            }
+
+            // NOTE: A deletion (or clear) racing with a flush is fine,
+            // because the flush is then discarded, see `Keyspace::install_flush`
+            if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(crate::Error::KeyspaceDeleted);
+            }
+
             // NOTE: Not queueing a background flush, because it is flushed right below
             self.seal_active_memtable(&ledger, self.tree.active_memtable().id())?;
         }
