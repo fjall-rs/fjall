@@ -14,7 +14,7 @@ pub use recovery::recover_wal;
 
 use crate::{
     batch::item::Item as BatchItem, db::Keyspaces, keyspace::InternalKeyspaceId,
-    wal::encoder::Encoder, DurabilityLevel,
+    wal::encoder::Encoder, DurabilityLevel, Keyspace,
 };
 use std::collections::BTreeMap;
 
@@ -157,6 +157,35 @@ impl Wal {
     /// Returns the size of the active WAL fragment in bytes.
     pub fn active_fragment_size(&self) -> u64 {
         self.inner.active_fragment_size()
+    }
+
+    /// Returns the keyspaces that keep the oldest sealed WAL fragment from being pruned,
+    /// because they have not flushed all of their items in it yet.
+    ///
+    /// Flushing them allows pruning the fragment, to reduce the WAL's disk usage.
+    ///
+    /// NOTE: Should be called after [`Wal::prune`], otherwise the oldest fragment may
+    /// already be prunable
+    pub(crate) fn get_keyspaces_blocking_oldest_fragment(
+        &self,
+        keyspaces: &Keyspaces,
+    ) -> Vec<Keyspace> {
+        use lsm_tree::AbstractTree;
+
+        let Some((_, watermarks)) = self.sealed_watermarks.first_key_value() else {
+            return vec![];
+        };
+
+        watermarks
+            .iter()
+            .filter_map(|&(keyspace_id, seqno)| {
+                keyspaces
+                    .values()
+                    .find(|ks| ks.id() == keyspace_id)
+                    .filter(|ks| ks.tree.get_flush_watermark() < Some(seqno))
+                    .cloned()
+            })
+            .collect()
     }
 
     fn encode(

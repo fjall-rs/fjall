@@ -69,15 +69,37 @@ impl Supervisor {
     }
 
     /// Removes sealed WAL fragments whose items are all flushed, see [`crate::wal::Wal::prune`].
-    ///
-    /// IMPORTANT: The caller must hold the WAL lock, and must NOT hold the keyspaces lock.
-    ///
-    /// Lock order: WAL lock, keyspaces lock.
-    pub(crate) fn prune_wal(&self, wal: &mut MutexGuard<'_, crate::wal::Wal>) -> crate::Result<()> {
+    pub(crate) fn prune_wal(&self, ledger: &mut LedgerGuard<'_>) -> crate::Result<()> {
         #[expect(clippy::expect_used)]
         let keyspaces = self.keyspaces.read().expect("lock is poisoned");
 
-        wal.prune(&keyspaces)
+        ledger.wal.prune(&keyspaces)
+    }
+
+    /// Rotates the WAL if its active fragment is larger than the configured threshold.
+    pub(crate) fn maybe_rotate_wal(&self, ledger: &mut LedgerGuard<'_>) -> crate::Result<()> {
+        if ledger.wal.active_fragment_size() <= self.db_config.wal_rotation_threshold {
+            return Ok(());
+        }
+
+        #[expect(clippy::expect_used)]
+        let keyspaces = self.keyspaces.read().expect("lock is poisoned");
+
+        log::debug!("Rotating WAL");
+        ledger.wal.rotate(&keyspaces)?;
+        ledger.wal.prune(&keyspaces)?;
+
+        if ledger.wal.disk_usage()? >= self.db_config.max_journaling_size_in_bytes {
+            for keyspace in ledger
+                .wal
+                .get_keyspaces_blocking_oldest_fragment(&keyspaces)
+            {
+                log::info!("Rotating {:?} to try to reduce WAL size", keyspace.name,);
+                keyspace.request_rotation();
+            }
+        }
+
+        Ok(())
     }
 
     /// Rotates the DB manifest if its active fragment is larger than the configured threshold.
