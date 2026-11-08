@@ -219,12 +219,13 @@ mod tests {
 
     // https://github.com/fjall-rs/fjall/pull/303
     #[test]
-    #[ignore = "restore"]
     fn keyspace_compact_after_startup() -> crate::Result<()> {
         let folder = tempfile::tempdir()?;
 
         {
-            let db = Database::builder(&folder).open()?;
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
 
             let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
