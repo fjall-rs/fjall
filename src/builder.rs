@@ -94,8 +94,6 @@ impl<O: Openable> Builder<O> {
     }
 
     /// Disables write stalls and write halts.
-    ///
-    /// Only meant for deterministic testing.
     #[doc(hidden)]
     #[must_use]
     pub fn disable_write_stalls(mut self, flag: bool) -> Self {
@@ -104,8 +102,6 @@ impl<O: Openable> Builder<O> {
     }
 
     /// Sets the size (in bytes) above which the DB manifest is rotated.
-    ///
-    /// Only meant for testing.
     #[doc(hidden)]
     #[must_use]
     pub fn manifest_rotation_threshold(mut self, bytes: u64) -> Self {
@@ -115,8 +111,6 @@ impl<O: Openable> Builder<O> {
 
     /// Sets the value size (in bytes) from which values are compressed in the write-ahead log,
     /// see [`Builder::wal_compression`].
-    ///
-    /// Only meant for testing.
     #[doc(hidden)]
     #[must_use]
     pub fn wal_compression_threshold(mut self, bytes: u32) -> Self {
