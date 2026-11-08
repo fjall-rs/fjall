@@ -23,7 +23,7 @@ use std::{
 
 pub use record::{OptimisticConflictCheck, Payload as WriteRecordPayload, WriteRecord};
 
-const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
+const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(9);
 
 pub struct State {
     pub ledger: Arc<Mutex<crate::ledger::Ledger>>,
