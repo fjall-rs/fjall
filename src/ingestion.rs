@@ -16,8 +16,8 @@ pub struct Ingestion<'a> {
 
 impl<'a> Ingestion<'a> {
     pub fn new(keyspace: &'a Keyspace) -> crate::Result<Self> {
-        // IMPORTANT: Take it before `finish` takes the WAL lock (lock order: compaction lock,
-        // WAL lock, flush lock), otherwise a compaction that waits for the WAL lock
+        // IMPORTANT: Take it before `finish` takes the ledger lock
+        // otherwise a compaction that waits for the ledger lock
         // (holding the compaction lock) deadlocks with the ingestion
         let compaction_lock = keyspace
             .compaction_lock
@@ -64,11 +64,9 @@ impl<'a> Ingestion<'a> {
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn finish(self) -> crate::Result<()> {
-        let keyspace = self.keyspace;
+        let ks = self.keyspace;
 
-        // IMPORTANT: Hold the WAL lock for the whole finish (lock order: WAL lock, then the
-        // flush lock, which lsm-tree takes), so no write runs between flushing the memtable
-        // and registering the ingested tables.
+        // IMPORTANT: Hold the ledger lock for the whole finish
         //
         // Otherwise, an older concurrent write ends up in the memtable after the ingestion,
         // and shadows the newer ingested item:
@@ -86,29 +84,24 @@ impl<'a> Ingestion<'a> {
         // -----------------
         // |
         // insert seqno=1
-        let mut wal_lock = keyspace
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
+        let mut ledger = ks.supervisor.ledger()?;
 
-        if keyspace.is_poisoned.is_poisoned() {
+        if ks.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
         // NOTE: The flush callback has to return an lsm-tree error, so keep fjall's error aside
         let mut flush_error = None;
 
-        // IMPORTANT: No need to lock flush lock - lsm-tree does so internally.
+        // NOTE: lsm-tree takes the flush lock (lock order: ledger lock, flush lock)
         let result = self.inner.finish(
             || {
-                keyspace.flush_memtables(&wal_lock, true).map_err(|e| {
+                ks.flush_locked(&mut ledger).map_err(|e| {
                     flush_error = Some(e);
                     lsm_tree::Error::Unrecoverable
                 })
             },
-            || keyspace.supervisor.seqno.next(),
+            || ks.supervisor.seqno.next(),
         );
 
         if let Some(e) = flush_error {
@@ -120,31 +113,28 @@ impl<'a> Ingestion<'a> {
         };
 
         // NOTE: The version gets the same seqno as the ingested tables
-        keyspace
-            .version_set_provider
-            .register_flush(flush_result, global_seqno)
+        ks.version_set_provider
+            .register_flush(&mut ledger.persister(ks.id), flush_result, global_seqno)
             .inspect_err(|e| {
                 log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
-                keyspace.is_poisoned.poison();
+                ks.is_poisoned.poison();
             })?;
 
-        keyspace.supervisor.snapshot_tracker.publish(global_seqno);
-        keyspace.prune_versions();
+        ks.supervisor.snapshot_tracker.publish(global_seqno);
+        ks.prune_versions();
 
-        keyspace
-            .supervisor
-            .maybe_rotate_manifest(&wal_lock, &keyspace.is_poisoned)?;
+        ks.supervisor
+            .maybe_rotate_manifest(&mut ledger, &ks.is_poisoned)?;
 
         // NOTE: The ingestion flushed the memtables first,
         // so WAL fragments may not be needed anymore
-        keyspace.supervisor.prune_wal(&mut wal_lock)?;
+        ks.supervisor.prune_wal(&mut ledger)?;
 
-        drop(wal_lock);
+        drop(ledger);
 
         // NOTE: Ingested tables are added to L0, so maybe compact
-        keyspace
-            .worker_messager
-            .try_send(WorkerMessage::Compact(keyspace.clone()))
+        ks.worker_messager
+            .try_send(WorkerMessage::Compact(ks.clone()))
             .ok();
 
         Ok(())
