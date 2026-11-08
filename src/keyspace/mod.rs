@@ -79,14 +79,6 @@ pub struct KeyspaceInner {
 
     pub(crate) version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
 
-    /// Keeps exclusive tree changes (major compaction, drop range, clear, ingestion) apart from
-    /// everything else that changes the tables (compactions)
-    ///
-    /// Shared: compactions. Exclusive: major compaction, drop range, clear, ingestion.
-    ///
-    /// IMPORTANT: Hold it until the new version is installed (the input tables of a compaction
-    /// are released when `run_compaction` returns, so another compaction could pick them again),
-    /// and take it before the WAL lock (lock order: compaction lock, WAL lock, flush lock).
     pub(crate) compaction_lock: RwLock<()>,
 
     pub(crate) supervisor: Supervisor,
