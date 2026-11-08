@@ -10,11 +10,10 @@ use crate::{
         fsync_directory, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
     },
     file_resolver::KeyspaceFileResolver,
-    flush::manager::FlushManager,
     keyspace::{apply_to_base_config, name::is_valid_keyspace_name, KeyspaceKey},
     locked_file::LockedFileGuard,
-    manifest::{DbEditRecord, Manifest, ManifestPersister},
-    poison::PoisonSignal,
+    manifest::{DbEditRecord, Manifest},
+    poison::{PoisonDart, PoisonSignal},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
     stats::Stats,
@@ -83,11 +82,9 @@ impl Drop for DatabaseInner {
             std::thread::sleep(std::time::Duration::from_micros(10));
         }
 
-        // Drain again after threads are closed
+        // IMPORTANT: Drain again after threads are closed,
+        // which also breaks cyclic Arcs (messages hold keyspace handles)
         let _ = self.worker_pool.rx.drain().count();
-
-        // IMPORTANT: Break cyclic Arcs
-        self.supervisor.flush_manager.clear();
 
         self.supervisor
             .keyspaces
@@ -203,17 +200,6 @@ impl Database {
         self.supervisor.write_buffer_size.get()
     }
 
-    /// Returns the number of queued memtable flush tasks.
-    ///
-    /// # Experimental
-    ///
-    /// This is a non-stable API currently.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn outstanding_flushes(&self) -> usize {
-        self.supervisor.flush_manager.len()
-    }
-
     /// Returns the time all compactions took until now.
     ///
     /// # Experimental
@@ -275,23 +261,16 @@ impl Database {
         // 1 = active WAL fragment
         1 + self
             .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
+            .ledger()
             .expect("should not be poisoned")
+            .wal
             .sealed_fragment_count()
     }
 
     /// Returns the disk space usage of the journal.
     #[doc(hidden)]
-    #[expect(clippy::expect_used)]
     pub fn journal_disk_space(&self) -> crate::Result<u64> {
-        self.supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .expect("should not be poisoned")
-            .disk_usage()
+        self.supervisor.ledger()?.wal.disk_usage()
     }
 
     /// Returns the disk space usage of the entire database.
@@ -418,7 +397,7 @@ impl Database {
             Self::create_new(config)
         }?;
 
-        /*if db.config.worker_threads > 0 {
+        if db.config.worker_threads > 0 {
             db.worker_pool.start(
                 db.config.worker_threads,
                 &db.supervisor,
@@ -427,7 +406,6 @@ impl Database {
                 &db.active_thread_counter,
             )?;
         }
-        */
 
         Ok(db)
     }
@@ -443,28 +421,17 @@ impl Database {
     /// Will return `Err` if an IO error occurs.
     #[expect(clippy::needless_pass_by_value)]
     pub fn delete_keyspace(&self, handle: Keyspace) -> crate::Result<()> {
-        use lsm_tree::AbstractTree;
-
         // IMPORTANT: Exclusive, so no compaction (or ingestion) of the keyspace installs
         // its result after the deletion
-        //
-        // Lock order: compaction lock, WAL lock, keyspaces lock, flush lock
         let _compaction_lock = handle
             .compaction_lock
             .write()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        let _wal_lock = self
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
+        let mut ledger = self.supervisor.ledger()?;
 
         #[expect(clippy::expect_used)]
         let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
-
-        let _flush_lock = handle.tree.get_flush_lock();
 
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
@@ -480,18 +447,17 @@ impl Database {
         //
         // NOTE: A crash after this leaves the keyspace's files behind (unreferenced),
         // but the keyspace stays deleted
-        self.supervisor
+        ledger
             .manifest
             .append_db_edits(&[DbEditRecord::DeleteKeyspace { id: handle.id }])?;
 
         // NOTE: Drops all tables and blob files (they are removed once nothing references them),
         // the edit is ignored on recovery, because the keyspace is deleted
-        let freed_bytes = handle.tree.active_memtable().size();
         let seqno = self.supervisor.seqno.next();
 
-        handle
+        let freed_bytes = handle
             .version_set_provider
-            .clear(&handle.tree, seqno)
+            .clear(&mut ledger.persister(handle.id), &handle.tree, seqno)
             .inspect_err(|e| {
                 log::error!("Deleting keyspace failed, which is a FATAL failure: {e:?}");
                 self.is_poisoned.poison();
@@ -541,6 +507,13 @@ impl Database {
     ) -> crate::Result<Keyspace> {
         assert!(is_valid_keyspace_name(name));
 
+        let mut ledger = self.supervisor.ledger()?;
+
+        // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
         let mut keyspaces = self.supervisor.keyspaces.write().expect("lock is poisoned");
 
         Ok(if let Some(keyspace) = keyspaces.get(name) {
@@ -580,7 +553,7 @@ impl Database {
                     }),
             );
 
-            self.supervisor.manifest.append_db_edits(&db_edits)?;
+            ledger.manifest.append_db_edits(&db_edits)?;
 
             keyspaces.insert(name, handle.clone());
 
@@ -693,18 +666,17 @@ impl Database {
     ///
     /// Returns an error if an I/O error occurs.
     pub fn flush_all(&self) -> crate::Result<()> {
-        // TODO: v4: https://github.com/fjall-rs/fjall/pull/315
+        use lsm_tree::AbstractTree;
+
         log::info!("Flushing all write buffers");
 
-        // NOTE: Hold the WAL lock for all keyspaces, so no write sneaks in between their flushes
-        //
-        // Lock order: WAL, then keyspaces (nothing takes the WAL lock while holding the keyspaces lock)
-        let mut wal_lock = self
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
+        // NOTE: Lock order: ledger lock, keyspaces lock, flush lock
+        let mut ledger = self.supervisor.ledger()?;
+
+        // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
 
         {
             let keyspaces = self
@@ -716,19 +688,19 @@ impl Database {
             // NOTE: Seal the active WAL fragment first: every item in it is flushed below,
             // so all sealed fragments can be pruned afterwards
             log::debug!("Rotating WAL");
-
-            wal_lock.rotate(&keyspaces)?;
+            ledger.wal.rotate(&keyspaces)?;
 
             for keyspace in keyspaces.values() {
-                keyspace.flush_inner(&wal_lock, true)?;
+                let _flush_lock = keyspace.tree.get_flush_lock();
+                keyspace.flush_locked(&mut ledger)?;
             }
         }
 
         // NOTE: After the keyspaces lock is released again
         self.supervisor
-            .maybe_rotate_manifest(&wal_lock, &self.is_poisoned)?;
+            .maybe_rotate_manifest(&mut ledger, &self.is_poisoned)?;
 
-        self.supervisor.prune_wal(&mut wal_lock)
+        self.supervisor.prune_wal(&mut ledger)
     }
 
     /// Seals the active WAL fragment, and continues in a new one.
@@ -740,12 +712,7 @@ impl Database {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn rotate_wal(&self) -> crate::Result<()> {
-        let mut wal_lock = self
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
+        let mut ledger = self.supervisor.ledger()?;
 
         let keyspaces = self
             .supervisor
@@ -753,7 +720,7 @@ impl Database {
             .read()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        wal_lock.rotate(&keyspaces)
+        ledger.wal.rotate(&keyspaces)
     }
 
     /// Rotates the DB manifest: writes a snapshot of the full DB state into a new
@@ -766,19 +733,14 @@ impl Database {
     /// Returns an error if an I/O error occurs.
     #[doc(hidden)]
     pub fn rotate_manifest(&self) -> crate::Result<()> {
-        let wal_lock = self
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
-
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
+        let mut ledger = self.supervisor.ledger()?;
+
         self.supervisor
-            .rotate_manifest(&wal_lock, &self.is_poisoned)
+            .rotate_manifest(&mut ledger, &self.is_poisoned)
     }
 
     /// Constructs an ("empty") database to fill back with actual data later on.
@@ -809,12 +771,17 @@ impl Database {
         let snapshot_tracker = SnapshotTracker::new(visible_seqno);
         let poison_signal = PoisonSignal::default();
 
+        let ledger = Arc::new(Mutex::new(crate::ledger::Ledger::new(
+            crate::wal::Wal::new(wal).with_compression(
+                config.wal_compression_type,
+                config.wal_compression_threshold,
+            ),
+            manifest,
+        )));
+
         let write_pipeline = WritePipeline::with_capacity(
             crate::write_pipeline::State {
-                writer: Mutex::new(crate::wal::Wal::new(wal).with_compression(
-                    config.wal_compression_type,
-                    config.wal_compression_threshold,
-                )),
+                ledger: ledger.clone(),
                 seqno: seqno.clone(),
                 snapshot_tracker: snapshot_tracker.clone(),
                 write_buffer_size: write_buffer_size.clone(),
@@ -830,12 +797,11 @@ impl Database {
             db_config: config.clone(),
             keyspace_id_counter: keyspace_id_counter.clone(),
             keyspaces,
-            flush_manager: FlushManager::new(),
             write_buffer_size,
             snapshot_tracker,
             seqno,
+            ledger,
             write_pipeline,
-            manifest,
             legacy_watermark: std::sync::OnceLock::new(),
         });
 
@@ -889,7 +855,7 @@ impl Database {
                 }
 
                 log::debug!("Loading keyspace info from DB manifest");
-                let manifest_recovery_result = db.supervisor.manifest.recover()?;
+                let manifest_recovery_result = db.supervisor.ledger()?.manifest.recover()?;
                 let keyspace_info = &manifest_recovery_result.keyspace_info;
                 let keyspace_versions = &manifest_recovery_result.keyspace_versions;
 
@@ -926,10 +892,7 @@ impl Database {
                     log::debug!("Loading {} existing keyspaces", keyspace_info.len());
 
                     for keyspace in keyspace_info.values() {
-                        let version_set_provider =
-                            Arc::new(lsm_tree::IoVersionSetProvider::new(Arc::new(
-                                ManifestPersister::new(db.supervisor.manifest.clone(), keyspace.id),
-                            )));
+                        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new());
 
                         // NOTE: All trees share the DB-level tables & blobs folders,
                         // same as when creating a keyspace
@@ -1070,14 +1033,10 @@ impl Database {
                     keyspace.name(),
                 );
 
-                // IMPORTANT: Add task to flush manager, so it can be flushed
-                db.supervisor
-                    .flush_manager
-                    .enqueue(Arc::new(crate::flush::Task {
-                        keyspace: keyspace.clone(),
-                    }));
-
-                keyspace.worker_messager.send(WorkerMessage::Flush).ok();
+                keyspace
+                    .worker_messager
+                    .send(WorkerMessage::Flush(keyspace.clone()))
+                    .ok();
             } else if keyspace.tree.l0_run_count() > 0 {
                 log::debug!(
                     "Queuing keyspace {:?} to maybe get compacted because L0 runs > 0",
@@ -1113,7 +1072,7 @@ impl Database {
         let db = Self::prepare_database(config, lock_file, false)?;
 
         // IMPORTANT: Set the "current" marker (written atomically)
-        db.supervisor.manifest.place_current_marker()?;
+        db.supervisor.ledger()?.manifest.place_current_marker()?;
 
         // NOTE: Lastly, fsync version marker, which contains the version
         {

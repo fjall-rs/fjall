@@ -56,11 +56,10 @@ fn run_and_install(
     // NOTE: The merge is the expensive part, so it runs without holding the WAL or flush lock
     let result = keyspace.tree.run_compaction(strategy, gc_watermark)?;
 
-    keyspace.install_version(|seqno| {
+    keyspace.install_version(|persister, seqno| {
         keyspace
             .version_set_provider
-            .register_compaction(result, seqno)
-            .map_err(Into::into)
+            .register_compaction(persister, result, seqno)
     })
 }
 

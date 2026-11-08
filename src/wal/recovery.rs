@@ -209,12 +209,9 @@ pub fn recover_wal(
 ) -> crate::Result<SeqNo> {
     log::info!("Recovering WAL at {}", db.path().display());
 
-    let mut wal = db
-        .supervisor
-        .write_pipeline
-        .wal()
-        .lock()
-        .expect("should not be poisoned");
+    let mut ledger = db.supervisor.ledger()?;
+
+    let wal = &mut ledger.wal;
 
     let mut recovery = wal.inner.recover()?;
     let mut find_a_name = WalRecovery::new(keyspaces, get_keyspace_name);

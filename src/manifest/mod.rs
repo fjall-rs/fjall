@@ -26,7 +26,7 @@ use std::{
     ffi::OsStr,
     fs::DirEntry,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 const CURRENT_VERSION_MARKER: &str = "current";
@@ -130,18 +130,22 @@ fn remove_stale_fragments(path: &Path, current_id: FragmentId) -> crate::Result<
     Ok(())
 }
 
-struct Inner {
+/// The DB manifest: keyspaces, their configuration and the version edits of their trees
+///
+/// IMPORTANT: Lives in the [`crate::ledger::Ledger`], next to the WAL, so it is only written
+/// while holding the ledger lock.
+pub struct Manifest {
     inner: hwal::Wal,
 }
 
-impl Inner {
+impl Manifest {
     fn get_wal_builder() -> hwal::Builder {
         hwal::Wal::builder()
             .with_preallocation_bytes(PREALLOC_BYTES)
             .with_name_strategy(Arc::new(ManifestNameStrategy))
     }
 
-    fn create_new(path: &Path) -> crate::Result<Self> {
+    pub(crate) fn create_new(path: &Path) -> crate::Result<Self> {
         log::trace!("Creating DB manifest at {}", path.display());
 
         Ok(Self {
@@ -149,7 +153,7 @@ impl Inner {
         })
     }
 
-    fn open(path: &Path) -> crate::Result<Self> {
+    pub(crate) fn open(path: &Path) -> crate::Result<Self> {
         log::trace!("Opening DB manifest at {}", path.display());
 
         // IMPORTANT: Only the fragment named by the `current` marker counts: a manifest rotation
@@ -177,7 +181,7 @@ impl Inner {
     ///
     /// If this fails after rotating, new edits go to a fragment that `current` does not name,
     /// so the caller has to poison the database.
-    fn rotate(
+    pub(crate) fn rotate(
         &mut self,
         db_edits: &[DbEditRecord],
         keyspace_edits: impl Iterator<Item = (InternalKeyspaceId, lsm_tree::VersionEdit)>,
@@ -220,7 +224,7 @@ impl Inner {
         Ok(())
     }
 
-    fn append(
+    pub(crate) fn append(
         &mut self,
         keyspace_id: InternalKeyspaceId,
         version_edit: &lsm_tree::VersionEdit,
@@ -231,7 +235,7 @@ impl Inner {
         self.sync()
     }
 
-    fn append_db_edit(&mut self, records: &[DbEditRecord]) -> crate::Result<()> {
+    pub(crate) fn append_db_edits(&mut self, records: &[DbEditRecord]) -> crate::Result<()> {
         log::trace!("Appending DB edits {records:#?}");
         self.inner.append(&encode_db_edit(records)?)?;
         self.sync()
@@ -247,7 +251,7 @@ impl Inner {
         Ok(())
     }
 
-    fn place_current_marker(&self) -> crate::Result<()> {
+    pub(crate) fn place_current_marker(&self) -> crate::Result<()> {
         let id = self.inner.active_fragment_id();
         rewrite_atomic(
             &self.inner.path().join(CURRENT_VERSION_MARKER),
@@ -255,68 +259,13 @@ impl Inner {
         )?;
         Ok(())
     }
-}
 
-#[derive(Clone)]
-pub struct Manifest(Arc<Mutex<Inner>>);
-
-impl Manifest {
-    pub fn create_new(path: &Path) -> crate::Result<Self> {
-        Inner::create_new(path).map(|inner| Self(Arc::new(Mutex::new(inner))))
-    }
-
-    pub fn open(path: &Path) -> crate::Result<Self> {
-        Inner::open(path).map(|inner| Self(Arc::new(Mutex::new(inner))))
-    }
-
-    pub fn recover(&self) -> crate::Result<RecoveryResult> {
-        let mut inner = self.0.lock().expect("lock should not be poisoned");
-        recover_db_manifest(&mut inner)
-    }
-
-    pub fn append(
-        &self,
-        keyspace_id: InternalKeyspaceId,
-        version_edit: &lsm_tree::VersionEdit,
-    ) -> crate::Result<()> {
-        self.0
-            .lock()
-            .expect("should not be poisoned")
-            .append(keyspace_id, version_edit)
-    }
-
-    pub fn append_db_edits(&self, records: &[DbEditRecord]) -> crate::Result<()> {
-        self.0
-            .lock()
-            .expect("should not be poisoned")
-            .append_db_edit(records)
-    }
-
-    pub fn place_current_marker(&self) -> crate::Result<()> {
-        self.0
-            .lock()
-            .expect("should not be poisoned")
-            .place_current_marker()
-    }
-
-    /// See [`Inner::rotate`].
-    pub fn rotate(
-        &self,
-        db_edits: &[DbEditRecord],
-        keyspace_edits: impl Iterator<Item = (InternalKeyspaceId, lsm_tree::VersionEdit)>,
-    ) -> crate::Result<()> {
-        self.0
-            .lock()
-            .expect("should not be poisoned")
-            .rotate(db_edits, keyspace_edits)
+    pub(crate) fn recover(&mut self) -> crate::Result<RecoveryResult> {
+        recover_db_manifest(self)
     }
 
     /// Returns the size of the active manifest fragment in bytes.
-    pub fn active_fragment_size(&self) -> u64 {
-        self.0
-            .lock()
-            .expect("should not be poisoned")
-            .inner
-            .active_fragment_size()
+    pub(crate) fn active_fragment_size(&self) -> u64 {
+        self.inner.active_fragment_size()
     }
 }

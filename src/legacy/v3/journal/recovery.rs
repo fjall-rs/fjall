@@ -15,6 +15,9 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
     let mut entry_count = 0;
     let mut highest_encountered_keyspace_id = 0;
 
+    // NOTE: Replayed clears are written to the manifest
+    let mut ledger = db.supervisor.ledger()?;
+
     #[expect(clippy::expect_used)]
     let keyspace_registy = db.supervisor.keyspaces.read().expect("lock is poisoned");
 
@@ -98,9 +101,11 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                 log::debug!("Clearing keyspace {}", handle.name());
 
                 log::trace!("Applying clear to version set provider");
-                handle
-                    .version_set_provider
-                    .clear(&handle.tree, batch.seqno)?;
+                handle.version_set_provider.clear(
+                    &mut ledger.persister(handle.id),
+                    &handle.tree,
+                    batch.seqno,
+                )?;
 
                 persisted_seqnos.remove(&keyspace_id);
             }

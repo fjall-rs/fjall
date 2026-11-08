@@ -118,6 +118,7 @@ mod guard;
 mod ingestion;
 mod iter;
 mod keyspace;
+mod ledger;
 mod legacy;
 mod locked_file;
 mod manifest;

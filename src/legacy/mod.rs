@@ -11,7 +11,7 @@ use crate::{
     file_resolver::KeyspaceFileResolver,
     keyspace::{apply_to_base_config, KeyspaceKey},
     legacy::watermark::LegacyWatermark,
-    manifest::{DbEditRecord, ManifestPersister},
+    manifest::DbEditRecord,
     recovery::MetaKeyspaceInfo,
     Database, Keyspace, KeyspaceCreateOptions,
 };
@@ -94,26 +94,24 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
         // because the journal entries of that keyspace won't be replayed
         log::info!("Flushing all memtables");
 
-        // NOTE: Lock order: WAL, then keyspaces (same as `Database::flush_all`)
-        let wal_lock = db
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
-            .map_err(|_| crate::Error::Poisoned)?;
-
+        // NOTE: Collected first, because flushing takes the ledger lock
+        // (lock order: ledger lock, keyspaces lock)
         #[expect(clippy::expect_used)]
-        for ks in db
+        let keyspaces = db
             .supervisor
             .keyspaces
             .read()
             .expect("lock should not be poisoned")
             .values()
-        {
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // NOTE: The background workers are not started yet, so nothing flushes concurrently
+        for ks in keyspaces {
             use lsm_tree::AbstractTree;
 
             // NOTE: Only takes a seqno if there is something to flush
-            ks.flush_inner(&wal_lock, true)?;
+            ks.flush(true)?;
 
             assert!(
                 ks.tree.active_memtable().is_empty(),
@@ -127,7 +125,7 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     }
 
     // IMPORTANT: Set the "current" marker
-    db.supervisor.manifest.place_current_marker()?;
+    db.supervisor.ledger()?.manifest.place_current_marker()?;
     fsync_directory(db.path())?;
 
     // IMPORTANT: Do this as final step
@@ -196,8 +194,10 @@ fn write_keyspaces_to_manifest(
     // NOTE: Kept, so manifest rotations write it into the snapshot again
     db.supervisor.legacy_watermark.set(legacy_watermark).ok();
 
+    let mut ledger = db.supervisor.ledger()?;
+
     // NOTE: One DB edit, because faster
-    db.supervisor.manifest.append_db_edits(&db_edits)?;
+    ledger.manifest.append_db_edits(&db_edits)?;
 
     #[expect(clippy::expect_used)]
     let keyspaces = db
@@ -213,7 +213,7 @@ fn write_keyspaces_to_manifest(
             .expect("keyspace should have been recovered");
 
         let edit = VersionEdit::new(keyspace.version_set_provider.get_edit_records());
-        db.supervisor.manifest.append(info.id, &edit)?;
+        ledger.manifest.append(info.id, &edit)?;
     }
 
     Ok(())
@@ -282,10 +282,6 @@ fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::
 
         let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
             tree_version,
-            Arc::new(ManifestPersister::new(
-                db.supervisor.manifest.clone(),
-                keyspace_id,
-            )),
         ));
 
         let mut recovered_config = KeyspaceCreateOptions::from_kvs(&info)?;

@@ -26,7 +26,7 @@ pub use record::{OptimisticConflictCheck, Payload as WriteRecordPayload, WriteRe
 const WRITE_PIPELINE_QUEUE_CAPACITY: usize = 2_usize.pow(10);
 
 pub struct State {
-    pub writer: Mutex<crate::wal::Wal>,
+    pub ledger: Arc<Mutex<crate::ledger::Ledger>>,
     pub write_buffer_size: WriteBufferManager,
     pub seqno: SequenceNumberCounter,
     pub snapshot_tracker: SnapshotTracker,
@@ -49,10 +49,6 @@ pub struct WritePipeline {
 }
 
 impl WritePipeline {
-    pub fn wal(&self) -> &Mutex<crate::wal::Wal> {
-        &self.state.writer
-    }
-
     /// Creates a new write pipeline.
     ///
     /// One database has one write pipeline.
@@ -66,9 +62,9 @@ impl WritePipeline {
     }
 
     fn act_as_leader(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
-        let mut journal_writer = self
+        let mut ledger = self
             .state
-            .writer
+            .ledger
             .lock()
             .map_err(|_| crate::Error::Poisoned)?;
 
@@ -124,10 +120,10 @@ impl WritePipeline {
 
             bytes_written += match &payload {
                 WriteRecordPayload::Single(item) => {
-                    journal_writer.write(item.keyspace.id(), &item.key, &item.value, batch_seqno, item.value_type)
+                    ledger.wal.write(item.keyspace.id(), &item.key, &item.value, batch_seqno, item.value_type)
                 },
                 WriteRecordPayload::Multiple(batch) => {
-                    journal_writer.write_batch(batch_seqno, batch)
+                    ledger.wal.write_batch(batch_seqno, batch)
                 }
             }
             .inspect_err(|e| {
@@ -215,13 +211,13 @@ impl WritePipeline {
             }
         }
 
-        journal_writer.persist(collected_persist)?;
+        ledger.wal.persist(collected_persist)?;
 
         if let Some(seqno) = highest_seqno_published {
             self.state.snapshot_tracker.publish(seqno);
         }
 
-        drop(journal_writer);
+        drop(ledger);
 
         // Check each affected keyspace for write stall/halt
         for keyspace in &keyspaces_with_possible_stall {

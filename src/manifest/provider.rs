@@ -4,14 +4,17 @@
 
 use crate::{keyspace::InternalKeyspaceId, manifest::Manifest};
 
-/// Writes version edits to the DB manifest
-pub struct ManifestPersister {
-    manifest: Manifest,
+/// Writes the version edits of one keyspace to the DB manifest
+///
+/// Borrows the manifest, so it can only be created while holding the ledger lock,
+/// see [`crate::ledger::Ledger::persister`].
+pub struct ManifestPersister<'a> {
+    manifest: &'a mut Manifest,
     keyspace_id: InternalKeyspaceId,
 }
 
-impl ManifestPersister {
-    pub fn new(manifest: Manifest, keyspace_id: InternalKeyspaceId) -> Self {
+impl<'a> ManifestPersister<'a> {
+    pub fn new(manifest: &'a mut Manifest, keyspace_id: InternalKeyspaceId) -> Self {
         Self {
             manifest,
             keyspace_id,
@@ -19,11 +22,10 @@ impl ManifestPersister {
     }
 }
 
-impl lsm_tree::VersionEditPersister for ManifestPersister {
-    fn persist(&self, edit: &lsm_tree::VersionEdit) -> lsm_tree::Result<()> {
-        self.manifest
-            .append(self.keyspace_id, edit)
-            .expect("should not fail please fix"); // TODO: v4 handle error
-        Ok(())
+impl lsm_tree::VersionEditPersister for ManifestPersister<'_> {
+    type Error = crate::Error;
+
+    fn persist(&mut self, edit: &lsm_tree::VersionEdit) -> crate::Result<()> {
+        self.manifest.append(self.keyspace_id, edit)
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     keyspace::InternalKeyspaceId,
     legacy::watermark::LegacyWatermark,
-    manifest::{DbEditRecord, Inner},
+    manifest::{DbEditRecord, Manifest},
     recovery::{KeyspaceInfo, MetaKeyspaceInfo},
     HashMap,
 };
@@ -21,7 +21,7 @@ pub struct RecoveryResult {
     pub next_keyspace_id: InternalKeyspaceId,
 }
 
-pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult> {
+pub fn recover_db_manifest(manifest: &mut Manifest) -> crate::Result<RecoveryResult> {
     use lsm_tree::coding::Decode;
 
     let mut highest_seqno = SeqNo::default();
@@ -33,7 +33,7 @@ pub fn recover_db_manifest(manifest: &mut Inner) -> crate::Result<RecoveryResult
     // NOTE: A compaction that was still running can append version edits after the deletion
     let mut deleted_keyspaces = std::collections::HashSet::new();
 
-    // NOTE: Only the current fragment is left at this point (see `Inner::open`),
+    // NOTE: Only the current fragment is left at this point (see `Manifest::open`),
     // and it contains the full state on its own
     let mut recovery = manifest.inner.recover()?;
 

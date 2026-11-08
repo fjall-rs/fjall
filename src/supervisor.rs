@@ -6,16 +6,16 @@ use lsm_tree::SequenceNumberCounter;
 
 use crate::{
     db::Keyspaces,
-    flush::manager::FlushManager,
     keyspace::KeyspaceKey,
+    ledger::{Ledger, LedgerGuard},
     legacy::watermark::LegacyWatermark,
-    manifest::{DbEditRecord, Manifest},
+    manifest::DbEditRecord,
     poison::PoisonSignal,
     snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
     write_pipeline::WritePipeline,
 };
-use std::sync::{Arc, MutexGuard, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 pub struct SupervisorInner {
     pub db_config: crate::Config,
@@ -28,17 +28,17 @@ pub struct SupervisorInner {
     pub keyspaces: Arc<RwLock<Keyspaces>>,
 
     pub(crate) write_buffer_size: WriteBufferManager,
-    pub(crate) flush_manager: FlushManager,
 
     pub seqno: SequenceNumberCounter,
 
     pub snapshot_tracker: SnapshotTracker,
 
-    /// Tracks journal size and garbage collects sealed journals when possible
-    // pub(crate) journal_manager: Arc<RwLock<JournalManager>>,
-    pub(crate) write_pipeline: WritePipeline,
+    /// The WAL and the DB manifest, see [`Ledger`]
+    ///
+    /// Shared with the write pipeline, which writes to the WAL under this lock.
+    pub(crate) ledger: Arc<Mutex<Ledger>>,
 
-    pub(crate) manifest: Manifest,
+    pub(crate) write_pipeline: WritePipeline,
 
     /// Set if the DB was migrated from v3, see [`LegacyWatermark`]
     ///
@@ -63,6 +63,11 @@ impl Supervisor {
         Self(Arc::new(inner))
     }
 
+    /// Locks the ledger (the WAL and the DB manifest), see [`Ledger`].
+    pub(crate) fn ledger(&self) -> crate::Result<LedgerGuard<'_>> {
+        self.ledger.lock().map_err(|_| crate::Error::Poisoned)
+    }
+
     /// Removes sealed WAL fragments whose items are all flushed, see [`crate::wal::Wal::prune`].
     ///
     /// IMPORTANT: The caller must hold the WAL lock, and must NOT hold the keyspaces lock.
@@ -80,11 +85,11 @@ impl Supervisor {
     /// See [`Supervisor::rotate_manifest`].
     pub(crate) fn maybe_rotate_manifest(
         &self,
-        wal_lock: &MutexGuard<'_, crate::wal::Wal>,
+        ledger: &mut LedgerGuard<'_>,
         poison: &PoisonSignal,
     ) -> crate::Result<()> {
-        if self.manifest.active_fragment_size() > self.db_config.manifest_rotation_threshold {
-            self.rotate_manifest(wal_lock, poison)?;
+        if ledger.manifest.active_fragment_size() > self.db_config.manifest_rotation_threshold {
+            self.rotate_manifest(ledger, poison)?;
         }
         Ok(())
     }
@@ -92,16 +97,13 @@ impl Supervisor {
     /// Writes a snapshot of the full DB state into a new manifest fragment,
     /// and removes the previous fragment.
     ///
-    /// IMPORTANT: The caller must hold the WAL lock, and must NOT hold the keyspaces lock.
+    /// IMPORTANT: The caller must NOT hold the keyspaces lock.
     ///
-    /// Every version edit is persisted and installed while holding the WAL lock,
-    /// and keyspaces are created while holding the keyspaces write lock, so the snapshot
-    /// can't miss an edit that was persisted but not installed yet.
-    ///
-    /// Lock order: WAL lock, keyspaces lock, manifest lock.
+    /// Every manifest edit is persisted and installed while holding the ledger lock,
+    /// so the snapshot can't miss an edit that was persisted but not installed yet.
     pub(crate) fn rotate_manifest(
         &self,
-        _wal_lock: &MutexGuard<'_, crate::wal::Wal>,
+        ledger: &mut LedgerGuard<'_>,
         poison: &PoisonSignal,
     ) -> crate::Result<()> {
         #[expect(clippy::expect_used)]
@@ -149,7 +151,8 @@ impl Supervisor {
             )
         });
 
-        self.manifest
+        ledger
+            .manifest
             .rotate(&db_edits, keyspace_edits)
             .inspect_err(|e| {
                 // NOTE: New edits would go to a fragment that `current` might not name
