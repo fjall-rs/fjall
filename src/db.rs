@@ -95,12 +95,6 @@ impl Drop for DatabaseInner {
             .expect("lock is poisoned")
             .clear();
 
-        /*self.supervisor
-        .journal_manager
-        .write()
-        .expect("lock is poisoned")
-        .clear();*/
-
         /*if self.config.clean_path_on_drop {
             log::info!(
                 "Deleting database because temporary=true: {}",
