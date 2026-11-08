@@ -268,4 +268,9 @@ impl Manifest {
     pub(crate) fn active_fragment_size(&self) -> u64 {
         self.inner.active_fragment_size()
     }
+
+    /// Returns the size of the manifest in bytes.
+    pub(crate) fn disk_usage(&self) -> crate::Result<u64> {
+        self.inner.disk_usage().map_err(Into::into)
+    }
 }

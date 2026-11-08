@@ -267,10 +267,16 @@ impl Database {
             .sealed_fragment_count()
     }
 
-    /// Returns the disk space usage of the journal.
+    /// Returns the disk space usage of the write-ahead log.
     #[doc(hidden)]
-    pub fn journal_disk_space(&self) -> crate::Result<u64> {
+    pub fn wal_disk_space(&self) -> crate::Result<u64> {
         self.supervisor.ledger()?.wal.disk_usage()
+    }
+
+    /// Returns the disk space usage of the database manifest.
+    #[doc(hidden)]
+    pub fn db_manifest_disk_space(&self) -> crate::Result<u64> {
+        self.supervisor.ledger()?.manifest.disk_usage()
     }
 
     /// Returns the disk space usage of the entire database.
@@ -293,7 +299,7 @@ impl Database {
     /// Returns error, if an IO error occurred.
     #[expect(clippy::expect_used, clippy::missing_panics_doc)]
     pub fn disk_space(&self) -> crate::Result<u64> {
-        let journal_size = self.journal_disk_space()?;
+        let journal_size = self.wal_disk_space()?;
 
         let keyspaces_size = self
             .supervisor
