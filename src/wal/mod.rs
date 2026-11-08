@@ -34,6 +34,7 @@ enum RecordType {
 /// Highest seqno of each keyspace that may still need a WAL fragment
 type FragmentWatermarks = Vec<(InternalKeyspaceId, SeqNo)>;
 
+/// Write-ahead log
 pub struct Wal {
     inner: hwal::Wal,
     encoder: Encoder,
@@ -55,7 +56,6 @@ impl Wal {
         }
     }
 
-    // TODO: v4 call this
     pub fn with_compression(
         mut self,
         compression_type: CompressionType,
@@ -152,6 +152,11 @@ impl Wal {
 
     pub fn sealed_fragment_count(&self) -> usize {
         self.inner.sealed_fragment_count()
+    }
+
+    /// Returns the size of the active WAL fragment in bytes.
+    pub fn active_fragment_size(&self) -> u64 {
+        self.inner.active_fragment_size()
     }
 
     fn encode(
