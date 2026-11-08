@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 mod encoder;
+mod pin;
 mod recovery;
 
 use byteorder::WriteBytesExt;
@@ -10,13 +11,20 @@ use hwal::SeqNo;
 use lsm_tree::{CompressionType, ValueType};
 use varint_rs::VarintWriter;
 
+pub use pin::WalPin;
 pub use recovery::recover_wal;
 
 use crate::{
     batch::item::Item as BatchItem, db::Keyspaces, keyspace::InternalKeyspaceId,
     wal::encoder::Encoder, DurabilityLevel, Keyspace,
 };
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
@@ -45,6 +53,9 @@ pub struct Wal {
     /// NOTE: A sealed fragment without an entry has nothing left to wait for, e.g. after recovery,
     /// when all its items were skipped (already flushed, or of deleted keyspaces)
     sealed_watermarks: BTreeMap<hwal::FragmentId, FragmentWatermarks>,
+
+    /// Set while the WAL is pinned (no fragment is pruned), see [`WalPin`]
+    pinned: Arc<AtomicBool>,
 }
 
 impl Wal {
@@ -53,7 +64,25 @@ impl Wal {
             inner,
             encoder: Encoder::default(),
             sealed_watermarks: BTreeMap::new(),
+            pinned: Arc::default(),
         }
+    }
+
+    /// Pins the WAL, so no fragment is pruned until the returned pin is dropped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WAL is already pinned (only one backup at a time).
+    pub(crate) fn pin(&self) -> WalPin {
+        let was_pinned = self.pinned.swap(true, Ordering::AcqRel);
+        assert!(!was_pinned, "WAL should not be pinned already");
+
+        WalPin(self.pinned.clone())
+    }
+
+    /// Returns `true` if the WAL is pinned, see [`Wal::pin`].
+    pub(crate) fn is_pinned(&self) -> bool {
+        self.pinned.load(Ordering::Acquire)
     }
 
     pub fn with_compression(
@@ -100,6 +129,12 @@ impl Wal {
     /// Prunes sealed WAL fragments that are safe to delete.
     pub(crate) fn prune(&mut self, keyspaces: &Keyspaces) -> crate::Result<()> {
         use lsm_tree::AbstractTree;
+
+        // NOTE: Nothing is pruned while pinned; the next prune after unpinning catches up
+        if self.is_pinned() {
+            log::trace!("Not pruning WAL, because it is pinned");
+            return Ok(());
+        }
 
         let sealed_watermarks = &self.sealed_watermarks;
         let mut last_pruned = None;

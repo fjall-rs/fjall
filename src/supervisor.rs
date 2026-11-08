@@ -94,7 +94,7 @@ impl Supervisor {
                 .wal
                 .get_keyspaces_blocking_oldest_fragment(&keyspaces)
             {
-                log::info!("Rotating {:?} to try to reduce WAL size", keyspace.name,);
+                log::info!("Rotating {:?} to try to reduce WAL size", keyspace.name);
                 keyspace.request_rotation();
             }
         }
