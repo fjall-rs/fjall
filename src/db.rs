@@ -1022,10 +1022,6 @@ impl Database {
             _ => unreachable!("should already be checked"),
         }?;
 
-        // TODO: v4 look at this
-        /*
-        db.supervisor.snapshot_tracker.gc();
-
         for keyspace in db
             .supervisor
             .keyspaces
@@ -1033,6 +1029,8 @@ impl Database {
             .expect("lock is poisoned")
             .values()
         {
+            use lsm_tree::AbstractTree;
+
             if keyspace.tree.sealed_memtable_count() > 0 {
                 log::debug!(
                     "Queuing keyspace {:?} to get flushed because sealed memtables > 0",
@@ -1055,7 +1053,6 @@ impl Database {
                     .ok();
             }
         }
-        */
 
         log::trace!("Database recovery successful");
 
