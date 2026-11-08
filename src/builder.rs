@@ -109,6 +109,14 @@ impl<O: Openable> Builder<O> {
         self
     }
 
+    /// Sets the size (in bytes) above which the active WAL fragment is rotated.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn wal_rotation_threshold(mut self, bytes: u64) -> Self {
+        self.inner.wal_rotation_threshold = bytes;
+        self
+    }
+
     /// Sets the value size (in bytes) from which values are compressed in the write-ahead log,
     /// see [`Builder::wal_compression`].
     #[doc(hidden)]
@@ -139,19 +147,25 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Maximum size of all journals in bytes.
+    /// Maximum size of all write-ahead log fragments in bytes.
     ///
     /// Default = 512 MiB
+    ///
+    /// Same as `max_total_wal_size` in `RocksDB`.
     ///
     /// # Panics
     ///
     /// Panics if < 64 MiB.
-    ///
-    /// Same as `max_total_wal_size` in `RocksDB`.
     #[must_use]
-    pub fn max_journaling_size(mut self, bytes: u64) -> Self {
+    pub fn max_wal_size(self, bytes: u64) -> Self {
         assert!(bytes >= 64 * 1_024 * 1_024);
 
+        self.max_wal_size_unchecked(bytes)
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn max_wal_size_unchecked(mut self, bytes: u64) -> Self {
         self.inner.max_journaling_size_in_bytes = bytes;
         self
     }
