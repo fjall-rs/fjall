@@ -38,9 +38,13 @@ pub struct State {
 ///
 /// See the paper on flat combining: <https://dl.acm.org/doi/10.1145/1810479.1810540>
 pub struct WritePipeline {
+    /// Lockless FIFO queue
     queue: Queue<Arc<WriteRecord>>,
+
     leader_lease: AtomicBool,
     state: State,
+
+    /// Maximum bytes a leader will write before abdicating
     leader_capacity: usize,
 }
 
