@@ -763,7 +763,7 @@ impl Keyspace {
     #[doc(hidden)]
     pub fn flush(&self, rotate: bool) -> crate::Result<()> {
         if rotate {
-            let ledger = self.supervisor.ledger()?;
+            let mut ledger = self.supervisor.ledger()?;
 
             // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
             if self.is_poisoned.is_poisoned() {
@@ -777,7 +777,7 @@ impl Keyspace {
             }
 
             // NOTE: Not queueing a background flush, because it is flushed right below
-            self.seal_active_memtable(&ledger, self.tree.active_memtable().id())?;
+            self.seal_active_memtable(&mut ledger, self.tree.active_memtable().id())?;
         }
 
         let flush_result = {
@@ -807,8 +807,6 @@ impl Keyspace {
         if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
             return Err(crate::Error::KeyspaceDeleted);
         }
-
-        self.supervisor.maybe_rotate_wal(&mut ledger)?;
 
         // NOTE: Discarded if some of its sealed memtables are gone: the keyspace was cleared
         // or deleted, or another flush (e.g. `flush_all`, an ingestion) installed them first
@@ -898,10 +896,10 @@ impl Keyspace {
     /// Returns `false` if the memtable was already rotated by someone else, or is empty.
     pub(crate) fn inner_rotate_memtable(
         &self,
-        ledger: crate::ledger::LedgerGuard<'_>,
+        mut ledger: crate::ledger::LedgerGuard<'_>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
-        if !self.seal_active_memtable(&ledger, memtable_id)? {
+        if !self.seal_active_memtable(&mut ledger, memtable_id)? {
             return Ok(false);
         }
 
@@ -920,11 +918,13 @@ impl Keyspace {
     /// Returns `false` if the memtable was already rotated by someone else, or is empty
     /// (or the keyspace is deleted).
     ///
+    /// Also rotates the WAL if its active fragment is over the rotation threshold.
+    ///
     /// NOTE: Takes the ledger guard, because writers load the active memtable and insert
     /// into it under the ledger lock, so no write can land in the memtable after sealing.
     fn seal_active_memtable(
         &self,
-        _ledger: &crate::ledger::LedgerGuard<'_>,
+        ledger: &mut crate::ledger::LedgerGuard<'_>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
         log::debug!("Rotating keyspace {:?}", self.name);
@@ -956,6 +956,8 @@ impl Keyspace {
             );
             return Ok(false);
         }
+
+        self.supervisor.maybe_rotate_wal(ledger)?;
 
         Ok(true)
     }
