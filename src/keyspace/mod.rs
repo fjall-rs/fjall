@@ -236,13 +236,6 @@ impl Keyspace {
     ///
     /// Called after installing a new version.
     pub(crate) fn prune_versions(&self) {
-        // NOTE: If the difference between watermark is too large, and
-        // we never opened a snapshot, we need to pull the watermark up
-        //
-        // https://github.com/fjall-rs/fjall/discussions/85
-        self.supervisor.snapshot_tracker.pullup();
-        self.supervisor.snapshot_tracker.gc();
-
         let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
         self.version_set_provider.prune(gc_watermark);
     }

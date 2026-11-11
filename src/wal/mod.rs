@@ -93,6 +93,7 @@ impl Wal {
         self.encoder = self
             .encoder
             .with_compression(compression_type, compression_threshold);
+
         self
     }
 
