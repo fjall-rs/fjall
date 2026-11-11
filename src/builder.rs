@@ -147,7 +147,7 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Maximum size of all write-ahead log fragments in bytes.
+    /// Sets the maximum size of all write-ahead log fragments in bytes.
     ///
     /// Default = 512 MiB
     ///
@@ -170,7 +170,7 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Maximum size of all memtables in bytes.
+    /// Sets the maximum size of all memtables in bytes.
     ///
     /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
     ///
