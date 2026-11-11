@@ -127,6 +127,33 @@ fn wal_pruning_ignores_deleted_keyspace() -> fjall::Result<()> {
     Ok(())
 }
 
+/// Deleting a keyspace releases the fragments its unflushed items were keeping around
+#[test]
+fn wal_pruned_after_deleting_unflushed_keyspace() -> fjall::Result<()> {
+    let folder = tempfile::tempdir()?;
+    let db = open(folder.path())?;
+
+    let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+    let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+    a.insert("a", "a", SyncAll)?;
+    b.insert("b", "b", SyncAll)?;
+
+    // Seal the fragment while both keyspaces still have unflushed items in it
+    db.rotate_wal()?;
+    assert_wal_count(&db, folder.path(), 2)?;
+
+    // `a` is flushed now, but `b` is not, so the sealed fragment has to stay
+    a.flush(true)?;
+    assert_wal_count(&db, folder.path(), 2)?;
+
+    // Once `b` is deleted, its unflushed items don't keep the fragment around anymore
+    db.delete_keyspace(b)?;
+    assert_wal_count(&db, folder.path(), 1)?;
+
+    Ok(())
+}
+
 /// A clear removes the keyspace's items on purpose, so they don't keep fragments around
 #[test]
 fn wal_pruned_after_clear() -> fjall::Result<()> {
