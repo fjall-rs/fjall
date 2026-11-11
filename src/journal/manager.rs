@@ -120,7 +120,6 @@ impl JournalManager {
                 return Ok(());
             };
 
-            // TODO: unit test: check deleted keyspace does not prevent journal eviction
             for item in &item.watermarks {
                 // Only check keyspace seqno if not deleted
                 if !item

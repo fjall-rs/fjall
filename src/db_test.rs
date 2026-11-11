@@ -314,3 +314,56 @@ fn delete_keyspace_1() -> crate::Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[expect(clippy::expect_used)]
+fn journal_eviction_ignores_deleted_keyspace() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    let db = Database::builder(folder.path())
+        .worker_threads_unchecked(0)
+        .open()?;
+
+    let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
+    let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
+
+    a.insert("a", "a")?;
+    b.insert("b", "b")?;
+
+    // Seal the journal while both keyspaces still have unflushed data in it
+    {
+        let mut journal_writer = db.supervisor.journal.get_writer()?;
+
+        let mut journal_manager = db
+            .supervisor
+            .journal_manager
+            .write()
+            .expect("lock is poisoned");
+
+        let watermarks = {
+            let keyspaces = db.supervisor.keyspaces.read().expect("lock is poisoned");
+            db.supervisor.build_seqno_map(&keyspaces)
+        };
+        assert_eq!(2, watermarks.len());
+
+        journal_manager.rotate_journal(&mut journal_writer, watermarks)?;
+    }
+    assert_eq!(2, db.journal_count());
+
+    // `a` is flushed now, but `b` is not, so the sealed journal has to stay
+    a.flush(true)?;
+    assert_eq!(2, db.journal_count());
+
+    // Once `b` is deleted, its unflushed data should not pin the journal anymore
+    db.delete_keyspace(b)?;
+
+    db.supervisor
+        .journal_manager
+        .write()
+        .expect("lock is poisoned")
+        .maintenance()?;
+
+    assert_eq!(1, db.journal_count());
+
+    Ok(())
+}
