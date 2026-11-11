@@ -33,9 +33,9 @@ pub fn read_meta_keyspace(path: &Path) -> crate::Result<MetaKeyspaceInfo> {
         None,
     )?;
 
-    let version_provider = Arc::new(lsm_tree::MemoryVersionSetProvider::with_initial_version(
-        tree_version,
-    ));
+    let version_provider =
+        Arc::new(lsm_tree::MemorySuperVersionSetProvider::with_initial_version(tree_version));
+
     let tree = lsm_tree::Config::new(path, version_provider).open()?;
 
     let mut result = MetaKeyspaceInfo::default();

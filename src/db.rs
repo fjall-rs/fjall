@@ -898,7 +898,8 @@ impl Database {
                     log::debug!("Loading {} existing keyspaces", keyspace_info.len());
 
                     for keyspace in keyspace_info.values() {
-                        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new());
+                        let version_set_provider =
+                            Arc::new(lsm_tree::IoSuperVersionSetProvider::new());
 
                         // NOTE: All trees share the DB-level tables & blobs folders,
                         // same as when creating a keyspace

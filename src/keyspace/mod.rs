@@ -77,7 +77,7 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    pub(crate) version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
+    pub(crate) version_set_provider: Arc<lsm_tree::IoSuperVersionSetProvider>,
 
     pub(crate) compaction_lock: RwLock<()>,
 
@@ -349,7 +349,7 @@ impl Keyspace {
         tree: AnyTree,
         name: KeyspaceKey,
         config: CreateOptions,
-        version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
+        version_set_provider: Arc<lsm_tree::IoSuperVersionSetProvider>,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             id: keyspace_id,
@@ -376,7 +376,7 @@ impl Keyspace {
     ) -> crate::Result<Self> {
         log::debug!("Creating keyspace {keyspace_id}={name:?}");
 
-        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new());
+        let version_set_provider = Arc::new(lsm_tree::IoSuperVersionSetProvider::new());
 
         let base_config = lsm_tree::Config::new(db.path(), version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())

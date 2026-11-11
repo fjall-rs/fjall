@@ -280,9 +280,9 @@ fn recover_keyspaces(db: &Database, keyspace_info: &MetaKeyspaceInfo) -> crate::
             Some(&legacy_resolver),
         )?;
 
-        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::with_initial_version(
-            tree_version,
-        ));
+        let version_set_provider = Arc::new(
+            lsm_tree::IoSuperVersionSetProvider::with_initial_version(tree_version),
+        );
 
         let mut recovered_config = KeyspaceCreateOptions::from_kvs(&info)?;
 
