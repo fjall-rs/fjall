@@ -812,6 +812,8 @@ impl Keyspace {
             self.supervisor.snapshot_tracker.pullup();
             self.supervisor.snapshot_tracker.gc();
 
+            let mut freed = Vec::new();
+
             for keyspace in self
                 .supervisor
                 .keyspaces
@@ -819,16 +821,23 @@ impl Keyspace {
                 .expect("lock is poisoned")
                 .values()
             {
-                if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
+                let result = keyspace.tree.get_version_history_lock().maintenance(
                     keyspace.path(),
                     self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
-                ) {
-                    log::warn!(
+                );
+
+                match result {
+                    Ok(versions) => freed.push(versions),
+                    Err(e) => log::warn!(
                         "Version history GC failed for keyspace {:?}: {e:?}",
                         keyspace.name,
-                    );
+                    ),
                 }
             }
+
+            // NOTE: Dropping the last reference to a version frees its memtable,
+            // so the removed versions are dropped after the keyspaces lock is released
+            drop(freed);
         }
 
         #[expect(clippy::expect_used)]
