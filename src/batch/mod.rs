@@ -177,7 +177,7 @@ impl WriteBatch {
         for keyspace in &keyspaces_with_possible_stall {
             let memtable_size = keyspace.tree.active_memtable().size();
             keyspace.check_memtable_rotate(memtable_size);
-            keyspace.local_backpressure();
+            keyspace.local_backpressure()?;
         }
 
         Ok(())
