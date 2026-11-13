@@ -142,3 +142,46 @@ fn writer_at_the_write_halt_returns_when_the_compaction_fails() -> fjall::Result
     drop(read_only);
     Ok(())
 }
+
+/// Closing the database returns after its only worker died of a failed flush.
+#[test_log::test]
+fn close_returns_after_the_worker_died() -> fjall::Result<()> {
+    if !permissions_apply()? {
+        eprintln!("skipped: read-only folders are writable for this user");
+        return Ok(());
+    }
+
+    let dir = tempfile::tempdir()?;
+    let db = Database::builder(&dir).worker_threads(1).open()?;
+    let ks = db.keyspace("items", KeyspaceCreateOptions::default)?;
+    let read_only = ReadOnly::set(&tables_folder(&ks))?;
+
+    ks.insert("a", "a")?;
+    assert!(ks.rotate_memtable()?);
+
+    let start = Instant::now();
+    loop {
+        match ks.insert("b", "b") {
+            Err(fjall::Error::Poisoned) => break,
+            result => result?,
+        }
+        assert!(
+            start.elapsed() < DEADLINE,
+            "the failed flush never poisoned"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        drop(ks);
+        drop(db);
+        tx.send(()).unwrap();
+    });
+
+    rx.recv_timeout(DEADLINE)
+        .expect("closing the database still waits after the worker died");
+
+    drop(read_only);
+    Ok(())
+}
