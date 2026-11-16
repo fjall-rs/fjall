@@ -571,6 +571,39 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn tx_ssi_empty_range() -> Result<(), Box<dyn std::error::Error>> {
+        use std::ops::Bound::{Excluded, Included};
+
+        let env = setup()?;
+
+        for bounds in [
+            (Included("z"), Included("a")),
+            (Excluded("a"), Excluded("a")),
+        ] {
+            let mut tx = env.db.write_tx()?;
+            assert!(tx.range::<&str, _>(&env.tree, bounds).next().is_none());
+
+            env.tree.insert("a", "concurrent write")?;
+
+            tx.insert(&env.tree, "result", "committed");
+            tx.commit()??;
+            assert_eq!(
+                env.tree.get("result")?.as_deref(),
+                Some(b"committed".as_slice()),
+            );
+        }
+
+        // An inclusive singleton still conflicts, even if the snapshot lacks the key.
+        let mut tx = env.db.write_tx()?;
+        assert!(tx.range(&env.tree, "new"..="new").next().is_none());
+        env.tree.insert("new", "concurrent write")?;
+        tx.insert(&env.tree, "result", "must not commit");
+        assert!(matches!(tx.commit()?, Err(Conflict)));
+
+        Ok(())
+    }
+
     // Adapted from https://github.com/al8n/skipdb/issues/10
     #[test]
     #[expect(clippy::unwrap_used)]

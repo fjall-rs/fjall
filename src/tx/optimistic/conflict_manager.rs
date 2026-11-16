@@ -55,6 +55,8 @@ impl ConflictManager {
     }
 
     pub fn mark_range(&self, keyspace_id: InternalKeyspaceId, range: impl RangeBounds<Slice>) {
+        use Bound::{Excluded, Included};
+
         let start = match range.start_bound() {
             Bound::Included(k) => Bound::Included(k.clone()),
             Bound::Excluded(k) => Bound::Excluded(k.clone()),
@@ -66,6 +68,15 @@ impl ConflictManager {
             Bound::Excluded(k) => Bound::Excluded(k.clone()),
             Bound::Unbounded => Bound::Unbounded,
         };
+
+        let is_empty = match (&start, &end) {
+            (Included(lo), Included(hi)) => lo > hi,
+            (Included(lo) | Excluded(lo), Included(hi) | Excluded(hi)) => lo >= hi,
+            _ => false,
+        };
+        if is_empty {
+            return;
+        }
 
         let read = if start == Bound::Unbounded && end == Bound::Unbounded {
             Read::All
