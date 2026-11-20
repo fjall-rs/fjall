@@ -206,7 +206,7 @@ pub fn recover_wal(
     db: &Database,
     keyspaces: &Keyspaces,
     get_keyspace_name: impl Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
-) -> crate::Result<SeqNo> {
+) -> crate::Result<Option<SeqNo>> {
     log::info!("Recovering WAL at {}", db.path().display());
 
     let mut ledger = db.supervisor.ledger()?;
@@ -216,7 +216,8 @@ pub fn recover_wal(
     let mut recovery = wal.inner.recover()?;
     let mut find_a_name = WalRecovery::new(keyspaces, get_keyspace_name);
 
-    let mut highest_seqno = SeqNo::default();
+    // NOTE: `None` if the WAL has no items
+    let mut highest_seqno: Option<SeqNo> = None;
 
     for record in recovery.by_ref() {
         let record = record?;
@@ -226,11 +227,11 @@ pub fn recover_wal(
 
         match decode_wal_record(&mut &payload[..])? {
             DecodedRecord::Single(item) => {
-                highest_seqno = highest_seqno.max(item.seqno);
+                highest_seqno = highest_seqno.max(Some(item.seqno));
                 find_a_name.replay_item(wal_fragment_id, item);
             }
             DecodedRecord::Full(batch) => {
-                highest_seqno = highest_seqno.max(batch.batch_seqno);
+                highest_seqno = highest_seqno.max(Some(batch.batch_seqno));
 
                 for item in batch {
                     find_a_name.replay_item(wal_fragment_id, item?);

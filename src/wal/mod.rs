@@ -85,6 +85,13 @@ impl Wal {
         self.pinned.load(Ordering::Acquire)
     }
 
+    /// Returns the paths of the sealed WAL fragments, oldest first.
+    ///
+    /// Sealed fragments are never written to again.
+    pub(crate) fn sealed_fragment_paths(&self) -> impl Iterator<Item = std::path::PathBuf> + '_ {
+        self.inner.sealed_fragment_paths()
+    }
+
     pub fn with_compression(
         mut self,
         compression_type: CompressionType,

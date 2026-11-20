@@ -22,3 +22,6 @@ mutants.out
 /old_*
 
 .directory
+
+# Test harness
+test_harness/crashes

@@ -796,18 +796,23 @@ impl Database {
             config.write_pipeline_leader_capacity,
         );
 
-        // NOTE: Shared with the supervisor, which writes it into manifest snapshots
+        // NOTE: Shared with the supervisor, which writes them into manifest snapshots
         let keyspace_id_counter = SequenceNumberCounter::new(0);
+        let table_id_counter = SequenceNumberCounter::default();
+        let blob_file_id_counter = SequenceNumberCounter::default();
 
         let supervisor = Supervisor::new(SupervisorInner {
             db_config: config.clone(),
             keyspace_id_counter: keyspace_id_counter.clone(),
+            table_id_counter: table_id_counter.clone(),
+            blob_file_id_counter: blob_file_id_counter.clone(),
             keyspaces,
             write_buffer_size,
             snapshot_tracker,
             seqno,
             ledger,
             write_pipeline,
+            backup_lock: Mutex::default(),
             legacy_watermark: std::sync::OnceLock::new(),
         });
 
@@ -818,8 +823,8 @@ impl Database {
             supervisor,
             worker_pool: WorkerPool::prepare(),
             keyspace_id_counter,
-            table_id_counter: SequenceNumberCounter::default(),
-            blob_file_id_counter: SequenceNumberCounter::default(),
+            table_id_counter,
+            blob_file_id_counter,
             config,
             stop_signal: lsm_tree::stop_signal::StopSignal::default(),
             active_thread_counter,
@@ -870,16 +875,28 @@ impl Database {
                     db.supervisor.legacy_watermark.set(legacy_watermark).ok();
                 }
 
+                // NOTE: Lower bounds only: opening the trees raises the counters above
+                // their highest file IDs as well
+                db.table_id_counter
+                    .fetch_max(manifest_recovery_result.next_table_id);
+                db.blob_file_id_counter
+                    .fetch_max(manifest_recovery_result.next_blob_file_id);
+
                 // NOTE: We set the seqno (that is, the next seqno a write batch would get)
                 // to be one higher than the last found seqno (trivial)
-                db.supervisor
-                    .seqno
-                    .fetch_max(manifest_recovery_result.highest_seqno + 1);
-
+                //
                 // NOTE: We PUBLISH the last actually found seqno
-                db.supervisor
-                    .snapshot_tracker
-                    .publish(manifest_recovery_result.highest_seqno);
+                if let Some(highest_seqno) = manifest_recovery_result.highest_seqno {
+                    db.supervisor.seqno.fetch_max(highest_seqno + 1);
+                    db.supervisor.snapshot_tracker.publish(highest_seqno);
+                }
+
+                // NOTE: Seqnos that were handed out without being written anywhere
+                // (see `DbEditRecord::SetSeqnoCounter`): continue (and publish) above them
+                if let Some(last_seqno) = manifest_recovery_result.next_seqno.checked_sub(1) {
+                    db.supervisor.seqno.fetch_max(last_seqno + 1);
+                    db.supervisor.snapshot_tracker.publish(last_seqno);
+                }
 
                 log::warn!("Got keyspace info: {keyspace_info:#?}");
 
@@ -994,7 +1011,6 @@ impl Database {
 
                 log::debug!("Replaying WAL");
                 {
-                    // TODO: change to be Option<Seqno>
                     // NOTE: Unknown IDs belong to deleted keyspaces
                     let highest_seqno = recover_wal(&db, &registry, |id| {
                         registry
@@ -1005,8 +1021,10 @@ impl Database {
                     })?;
 
                     // See notes above
-                    db.supervisor.seqno.fetch_max(highest_seqno + 1);
-                    db.supervisor.snapshot_tracker.publish(highest_seqno);
+                    if let Some(highest_seqno) = highest_seqno {
+                        db.supervisor.seqno.fetch_max(highest_seqno + 1);
+                        db.supervisor.snapshot_tracker.publish(highest_seqno);
+                    }
                 }
 
                 drop(registry);
