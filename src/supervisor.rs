@@ -23,6 +23,12 @@ pub struct SupervisorInner {
     /// Next keyspace ID to hand out (same counter as the database's)
     pub(crate) keyspace_id_counter: SequenceNumberCounter,
 
+    /// Next table and blob file IDs to hand out (same counters as the database's and trees')
+    ///
+    /// IMPORTANT: Written into every manifest snapshot, see [`DbEditRecord::SetFileIdCounters`]
+    pub(crate) table_id_counter: SequenceNumberCounter,
+    pub(crate) blob_file_id_counter: SequenceNumberCounter,
+
     /// Dictionary of all keyspaces
     #[doc(hidden)]
     pub keyspaces: Arc<RwLock<Keyspaces>>,
