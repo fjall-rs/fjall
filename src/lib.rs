@@ -92,6 +92,7 @@ macro_rules! fail_iter {
     };
 }
 
+mod backup;
 mod batch;
 mod builder;
 
@@ -151,6 +152,7 @@ pub mod config {
 }
 
 pub use {
+    backup::{Backup, BackupId, BackupInfo},
     batch::WriteBatch as OwnedWriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,

@@ -46,6 +46,11 @@ pub struct SupervisorInner {
 
     pub(crate) write_pipeline: WritePipeline,
 
+    /// Only one backup of the database at a time, see [`crate::Backup::create_backup`]
+    ///
+    /// Lock order: taken before every other lock (compaction, ledger, keyspaces, flush).
+    pub(crate) backup_lock: Mutex<()>,
+
     /// Set if the DB was migrated from v3, see [`LegacyWatermark`]
     ///
     /// IMPORTANT: Written into every manifest snapshot, otherwise migrated v3 files

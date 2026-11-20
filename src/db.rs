@@ -812,6 +812,7 @@ impl Database {
             seqno,
             ledger,
             write_pipeline,
+            backup_lock: Mutex::default(),
             legacy_watermark: std::sync::OnceLock::new(),
         });
 
