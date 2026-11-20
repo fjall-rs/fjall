@@ -9,7 +9,7 @@ use crate::{
     keyspace::KeyspaceKey,
     ledger::{Ledger, LedgerGuard},
     legacy::watermark::LegacyWatermark,
-    manifest::DbEditRecord,
+    manifest::{DbEditRecord, ManifestWriter},
     poison::PoisonSignal,
     snapshot_tracker::SnapshotTracker,
     write_buffer_manager::WriteBufferManager,
@@ -139,6 +139,30 @@ impl Supervisor {
         ledger: &mut LedgerGuard<'_>,
         poison: &PoisonSignal,
     ) -> crate::Result<()> {
+        ledger
+            .manifest
+            .rotate(|writer| self.write_manifest_snapshot(writer))
+            .inspect_err(|e| {
+                // NOTE: New edits would go to a fragment that `current` might not name
+                log::error!("DB manifest rotation failed, which is a FATAL failure: {e:?}");
+                poison.poison();
+            })
+    }
+
+    /// Writes a snapshot of the full DB state into the given writer: the keyspaces,
+    /// their configuration and versions, the keyspace ID counter and the legacy watermark.
+    ///
+    /// The version edits are written one keyspace at a time, not collected first.
+    ///
+    /// IMPORTANT: Must be called with the ledger lock held: every manifest edit is persisted
+    /// and installed under it, so the snapshot can't miss an edit that was persisted
+    /// but not installed yet.
+    ///
+    /// IMPORTANT: The caller must NOT hold the keyspaces lock.
+    pub(crate) fn write_manifest_snapshot(
+        &self,
+        writer: &mut dyn ManifestWriter,
+    ) -> crate::Result<()> {
         #[expect(clippy::expect_used)]
         let keyspaces = self.keyspaces.read().expect("lock is poisoned");
 
@@ -177,21 +201,28 @@ impl Supervisor {
             db_edits.push(DbEditRecord::SetLegacyWatermark { tables, blob_files });
         }
 
-        let keyspace_edits = sorted_keyspaces.iter().map(|keyspace| {
-            (
-                keyspace.id,
-                lsm_tree::VersionEdit::new(keyspace.version_set_provider.get_edit_records()),
-            )
+        // IMPORTANT: Files that are gone are not in the snapshot, so keep their IDs from being reused
+        db_edits.push(DbEditRecord::SetFileIdCounters {
+            tables: self.table_id_counter.get(),
+            blob_files: self.blob_file_id_counter.get(),
         });
 
-        ledger
-            .manifest
-            .rotate(&db_edits, keyspace_edits)
-            .inspect_err(|e| {
-                // NOTE: New edits would go to a fragment that `current` might not name
-                log::error!("DB manifest rotation failed, which is a FATAL failure: {e:?}");
-                poison.poison();
-            })
+        // IMPORTANT: Not every handed out seqno is in a version or the WAL
+        // (e.g. a no-op compaction), so keep them from being handed out again
+        db_edits.push(DbEditRecord::SetSeqnoCounter {
+            next: self.seqno.get(),
+        });
+
+        writer.append_db_edits(&db_edits)?;
+
+        for keyspace in sorted_keyspaces {
+            let version_edit =
+                lsm_tree::VersionEdit::new(keyspace.version_set_provider.get_edit_records());
+
+            writer.append_version_edit(keyspace.id, &version_edit)?;
+        }
+
+        Ok(())
     }
 
     pub fn keyspace_exists(&self, name: &str) -> bool {

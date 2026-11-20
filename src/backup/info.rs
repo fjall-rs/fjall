@@ -20,6 +20,12 @@ pub struct BackupInfo {
     /// Highest sequence number in the backup
     pub(crate) seqno: SeqNo,
 
+    /// Next table ID of the backed-up database: above its counter and every table in the backup
+    pub(crate) next_table_id: u64,
+
+    /// Next blob file ID of the backed-up database: above its counter and every blob file in the backup
+    pub(crate) next_blob_file_id: u64,
+
     /// Size of the tables and blob files the backup references, in bytes
     ///
     /// NOTE: Files are shared between backups, so the sizes of several backups don't add up

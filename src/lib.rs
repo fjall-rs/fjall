@@ -152,7 +152,7 @@ pub mod config {
 }
 
 pub use {
-    backup::{Backup, BackupId, BackupInfo},
+    backup::{Backup, BackupId, BackupInfo, BackupMode},
     batch::WriteBatch as OwnedWriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,

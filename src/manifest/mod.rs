@@ -6,12 +6,14 @@ mod coding;
 mod db_edit;
 mod provider;
 mod recovery;
+mod writer;
 
 #[cfg(test)]
 mod tests;
 
 pub use db_edit::DbEditRecord;
 pub use provider::ManifestPersister;
+pub use writer::ManifestWriter;
 
 use crate::{
     file::rewrite_atomic,
@@ -19,6 +21,7 @@ use crate::{
     manifest::{
         coding::{encode_db_edit, encode_keyspace_version_edit},
         recovery::{recover_db_manifest, RecoveryResult},
+        writer::FragmentWriter,
     },
 };
 use hwal::{FragmentId, NameStrategy};
@@ -29,7 +32,7 @@ use std::{
     sync::Arc,
 };
 
-const CURRENT_VERSION_MARKER: &str = "current";
+pub const CURRENT_VERSION_MARKER: &str = "current";
 const PREALLOC_BYTES: u64 = 1_024 * 1_024; // 1 MiB
 
 /// Manifest fragments are named `v{id}`
@@ -181,10 +184,20 @@ impl Manifest {
     ///
     /// If this fails after rotating, new edits go to a fragment that `current` does not name,
     /// so the caller has to poison the database.
+    /// Writes a snapshot into the active fragment, and syncs it (once, at the end).
+    ///
+    /// NOTE: Does not place the `current` marker, see [`Manifest::place_current_marker`]
+    pub(crate) fn write_snapshot(
+        &mut self,
+        write_snapshot: impl FnOnce(&mut dyn ManifestWriter) -> crate::Result<()>,
+    ) -> crate::Result<()> {
+        write_snapshot(&mut FragmentWriter(&mut self.inner))?;
+        self.sync()
+    }
+
     pub(crate) fn rotate(
         &mut self,
-        db_edits: &[DbEditRecord],
-        keyspace_edits: impl Iterator<Item = (InternalKeyspaceId, lsm_tree::VersionEdit)>,
+        write_snapshot: impl FnOnce(&mut dyn ManifestWriter) -> crate::Result<()>,
     ) -> crate::Result<()> {
         log::debug!(
             "Rotating DB manifest (active fragment #{})",
@@ -195,16 +208,7 @@ impl Manifest {
         self.inner.rotate()?;
 
         // 2. Snapshot, synced before switching the marker
-        if !db_edits.is_empty() {
-            self.inner.append(&encode_db_edit(db_edits)?)?;
-        }
-
-        for (keyspace_id, version_edit) in keyspace_edits {
-            self.inner
-                .append(&encode_keyspace_version_edit(keyspace_id, &version_edit)?)?;
-        }
-
-        self.sync()?;
+        self.write_snapshot(write_snapshot)?;
 
         // 3. Switch the marker (atomically)
         //
