@@ -14,6 +14,7 @@
 //! - Serializable transactions (optional)
 //! - Key-value separation for large blob use cases (optional)
 //! - Automatic background maintenance
+//! - Incremental backups
 //!
 //! It is not:
 //!

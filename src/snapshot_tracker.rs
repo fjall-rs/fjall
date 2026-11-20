@@ -129,6 +129,7 @@ impl SnapshotTracker {
 
     /// Returns the highest seqno that no open snapshot needs anymore, so older versions
     /// of a key below it can be dropped by compactions.
+    #[expect(clippy::expect_used, reason = "nothing we can do really")]
     pub fn get_seqno_safe_to_gc(&self) -> SeqNo {
         // IMPORTANT: Read before scanning the shards: a snapshot the scan misses was opened
         // after its shard was scanned, so it read a seqno at or above this one (see `open`)
