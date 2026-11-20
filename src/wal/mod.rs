@@ -3,6 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 mod encoder;
+mod pin;
 mod recovery;
 
 use byteorder::WriteBytesExt;
@@ -10,11 +11,19 @@ use hwal::SeqNo;
 use lsm_tree::{CompressionType, ValueType};
 use varint_rs::VarintWriter;
 
+pub use pin::WalPin;
 pub use recovery::recover_wal;
 
 use crate::{
-    batch::item::Item as BatchItem, keyspace::InternalKeyspaceId, wal::encoder::Encoder,
-    DurabilityLevel,
+    batch::item::Item as BatchItem, db::Keyspaces, keyspace::InternalKeyspaceId,
+    wal::encoder::Encoder, DurabilityLevel, Keyspace,
+};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -30,9 +39,23 @@ enum RecordType {
     // End
 }
 
+/// Highest seqno of each keyspace that may still need a WAL fragment
+type FragmentWatermarks = Vec<(InternalKeyspaceId, SeqNo)>;
+
+/// Write-ahead log
 pub struct Wal {
     inner: hwal::Wal,
     encoder: Encoder,
+
+    /// Watermarks of the sealed fragments: a sealed fragment can be pruned once every listed
+    /// keyspace's flush watermark is at or above its seqno (or the keyspace was deleted).
+    ///
+    /// NOTE: A sealed fragment without an entry has nothing left to wait for, e.g. after recovery,
+    /// when all its items were skipped (already flushed, or of deleted keyspaces)
+    sealed_watermarks: BTreeMap<hwal::FragmentId, FragmentWatermarks>,
+
+    /// Set while the WAL is pinned (no fragment is pruned), see [`WalPin`]
+    pinned: Arc<AtomicBool>,
 }
 
 impl Wal {
@@ -40,10 +63,35 @@ impl Wal {
         Self {
             inner,
             encoder: Encoder::default(),
+            sealed_watermarks: BTreeMap::new(),
+            pinned: Arc::default(),
         }
     }
 
-    // TODO: v4 call this
+    /// Pins the WAL, so no fragment is pruned until the returned pin is dropped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WAL is already pinned (only one backup at a time).
+    pub(crate) fn pin(&self) -> WalPin {
+        let was_pinned = self.pinned.swap(true, Ordering::AcqRel);
+        assert!(!was_pinned, "WAL should not be pinned already");
+
+        WalPin(self.pinned.clone())
+    }
+
+    /// Returns `true` if the WAL is pinned, see [`Wal::pin`].
+    pub(crate) fn is_pinned(&self) -> bool {
+        self.pinned.load(Ordering::Acquire)
+    }
+
+    /// Returns the paths of the sealed WAL fragments, oldest first.
+    ///
+    /// Sealed fragments are never written to again.
+    pub(crate) fn sealed_fragment_paths(&self) -> impl Iterator<Item = std::path::PathBuf> + '_ {
+        self.inner.sealed_fragment_paths()
+    }
+
     pub fn with_compression(
         mut self,
         compression_type: CompressionType,
@@ -52,6 +100,7 @@ impl Wal {
         self.encoder = self
             .encoder
             .with_compression(compression_type, compression_threshold);
+
         self
     }
 
@@ -59,8 +108,127 @@ impl Wal {
         self.inner.disk_usage().map_err(Into::into)
     }
 
+    /// Seals the active WAL fragment, and continues in a new one.
+    pub(crate) fn rotate(&mut self, keyspaces: &Keyspaces) -> crate::Result<()> {
+        use lsm_tree::AbstractTree;
+
+        let sealed_id = self.inner.active_fragment_id();
+
+        // NOTE: Nothing happens if the active fragment is empty
+        if self.inner.rotate()?.is_none() {
+            return Ok(());
+        }
+
+        let mut watermarks = FragmentWatermarks::with_capacity(keyspaces.len());
+
+        for keyspace in keyspaces.values() {
+            // NOTE: Empty memtables = everything of that keyspace is flushed already
+            if let Some(seqno) = keyspace.tree.get_highest_memtable_seqno() {
+                watermarks.push((keyspace.id(), seqno));
+            }
+        }
+
+        log::trace!("Sealed WAL fragment #{sealed_id} with watermarks {watermarks:?}");
+        self.sealed_watermarks.insert(sealed_id, watermarks);
+
+        Ok(())
+    }
+
+    /// Prunes sealed WAL fragments that are safe to delete.
+    pub(crate) fn prune(&mut self, keyspaces: &Keyspaces) -> crate::Result<()> {
+        use lsm_tree::AbstractTree;
+
+        // NOTE: Nothing is pruned while pinned; the next prune after unpinning catches up
+        if self.is_pinned() {
+            log::trace!("Not pruning WAL, because it is pinned");
+            return Ok(());
+        }
+
+        let sealed_watermarks = &self.sealed_watermarks;
+        let mut last_pruned = None;
+
+        self.inner.prune(|fragment_id| {
+            let prunable = sealed_watermarks
+                .get(&fragment_id)
+                .is_none_or(|watermarks| {
+                    watermarks.iter().all(|&(keyspace_id, seqno)| {
+                        keyspaces
+                            .values()
+                            .find(|ks| ks.id() == keyspace_id)
+                            // NOTE: Deleted keyspaces are not in the registry anymore,
+                            // their items are never replayed
+                            .is_none_or(|ks| ks.tree.get_flush_watermark() >= Some(seqno))
+                    })
+                });
+
+            if prunable {
+                log::debug!("Pruning fully flushed WAL fragment #{fragment_id}");
+                last_pruned = Some(fragment_id);
+            }
+
+            prunable
+        })?;
+
+        // NOTE: Fragments are pruned oldest first, so forget everything up to the last pruned one
+        if let Some(last_pruned) = last_pruned {
+            self.sealed_watermarks = self.sealed_watermarks.split_off(&(last_pruned + 1));
+        }
+
+        Ok(())
+    }
+
+    /// Takes over the watermarks found during WAL recovery.
+    fn set_recovered_watermarks(&mut self, watermarks: recovery::Watermarks) {
+        let active_id = self.inner.active_fragment_id();
+
+        for (fragment_id, keyspace_watermarks) in watermarks {
+            // NOTE: The active fragment is only sealed by a later rotation,
+            // which computes its watermarks then
+            if fragment_id == active_id {
+                continue;
+            }
+
+            self.sealed_watermarks
+                .insert(fragment_id, keyspace_watermarks.into_iter().collect());
+        }
+    }
+
     pub fn sealed_fragment_count(&self) -> usize {
         self.inner.sealed_fragment_count()
+    }
+
+    /// Returns the size of the active WAL fragment in bytes.
+    pub fn active_fragment_size(&self) -> u64 {
+        self.inner.active_fragment_size()
+    }
+
+    /// Returns the keyspaces that keep the oldest sealed WAL fragment from being pruned,
+    /// because they have not flushed all of their items in it yet.
+    ///
+    /// Flushing them allows pruning the fragment, to reduce the WAL's disk usage.
+    ///
+    /// NOTE: Should be called after [`Wal::prune`], otherwise the oldest fragment may
+    /// already be prunable
+    pub(crate) fn get_keyspaces_blocking_oldest_fragment(
+        &self,
+        keyspaces: &Keyspaces,
+    ) -> Vec<Keyspace> {
+        use lsm_tree::AbstractTree;
+
+        let Some((_, watermarks)) = self.sealed_watermarks.first_key_value() else {
+            return vec![];
+        };
+
+        watermarks
+            .iter()
+            .filter_map(|&(keyspace_id, seqno)| {
+                keyspaces
+                    .values()
+                    .find(|ks| ks.id() == keyspace_id)
+                    .filter(|ks| ks.tree.get_flush_watermark() < Some(seqno))
+                    .cloned()
+            })
+            .collect()
     }
 
     fn encode(

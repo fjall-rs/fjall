@@ -1,11 +1,14 @@
 use crate::{Database, KeyspaceCreateOptions, UserKey, UserValue};
 
 #[test_log::test]
-#[ignore = "flimsy because of the compaction check, probably race condition... run the compaction synchronously"]
 fn keyspace_ingest() -> crate::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).worker_threads(0).open()?;
+    // NOTE: No background workers, the compaction below runs synchronously
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
+
     let items = db.keyspace("items", KeyspaceCreateOptions::default)?;
 
     {
@@ -68,8 +71,10 @@ fn keyspace_ingest() -> crate::Result<()> {
     assert_eq!(15, items.len()?);
     assert_eq!(4, items.table_count());
 
-    while !db.worker_pool.sender.is_empty() {}
+    // NOTE: 4 overlapping L0 tables reach the L0 threshold of the default (leveled) strategy
+    items.compact()?;
     assert_eq!(1, items.table_count());
+    assert_eq!(15, items.len()?);
 
     Ok(())
 }

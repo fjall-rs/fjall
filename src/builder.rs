@@ -94,14 +94,35 @@ impl<O: Openable> Builder<O> {
     }
 
     /// Disables write stalls and write halts.
-    ///
-    /// Only meant for deterministic testing, where background workers are disabled
-    /// and flushes (and compactions) are run manually; otherwise writes could
-    /// halt forever, waiting for maintenance that never happens.
     #[doc(hidden)]
     #[must_use]
     pub fn disable_write_stalls(mut self, flag: bool) -> Self {
         self.inner.disable_write_stalls = flag;
+        self
+    }
+
+    /// Sets the size (in bytes) above which the DB manifest is rotated.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn manifest_rotation_threshold(mut self, bytes: u64) -> Self {
+        self.inner.manifest_rotation_threshold = bytes;
+        self
+    }
+
+    /// Sets the size (in bytes) above which the active WAL fragment is rotated.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn wal_rotation_threshold(mut self, bytes: u64) -> Self {
+        self.inner.wal_rotation_threshold = bytes;
+        self
+    }
+
+    /// Sets the value size (in bytes) from which values are compressed in the write-ahead log,
+    /// see [`Builder::wal_compression`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn wal_compression_threshold(mut self, bytes: u32) -> Self {
+        self.inner.wal_compression_threshold = bytes;
         self
     }
 
@@ -126,24 +147,30 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Maximum size of all journals in bytes.
+    /// Sets the maximum size of all write-ahead log fragments in bytes.
     ///
     /// Default = 512 MiB
+    ///
+    /// Same as `max_total_wal_size` in `RocksDB`.
     ///
     /// # Panics
     ///
     /// Panics if < 64 MiB.
-    ///
-    /// Same as `max_total_wal_size` in `RocksDB`.
     #[must_use]
-    pub fn max_journaling_size(mut self, bytes: u64) -> Self {
+    pub fn max_wal_size(self, bytes: u64) -> Self {
         assert!(bytes >= 64 * 1_024 * 1_024);
 
+        self.max_wal_size_unchecked(bytes)
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn max_wal_size_unchecked(mut self, bytes: u64) -> Self {
         self.inner.max_journaling_size_in_bytes = bytes;
         self
     }
 
-    /// Maximum size of all memtables in bytes.
+    /// Sets the maximum size of all memtables in bytes.
     ///
     /// Similar to `db_write_buffer_size` in `RocksDB`, however it is disabled by default in `RocksDB`.
     ///

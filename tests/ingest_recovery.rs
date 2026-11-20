@@ -33,3 +33,77 @@ fn ingest_recovery() -> fjall::Result<()> {
 
     Ok(())
 }
+
+/// An unflushed write to the same key is older than the ingested item, so it must not shadow it,
+/// neither in the memtable nor when it is replayed from the WAL after a reopen
+#[test]
+fn ingest_overwrites_unflushed_item() -> fjall::Result<()> {
+    for kv_separation in [false, true] {
+        let path = tempfile::tempdir()?;
+
+        let open = || -> fjall::Result<(Database, fjall::Keyspace)> {
+            let db = Database::builder(&path)
+                .worker_threads_unchecked(0)
+                .open()?;
+
+            let keyspace = db.keyspace("default", || {
+                let opts = fjall::KeyspaceCreateOptions::default();
+
+                if kv_separation {
+                    opts.with_kv_separation(Some(
+                        fjall::KvSeparationOptions::default().separation_threshold(1),
+                    ))
+                } else {
+                    opts
+                }
+            })?;
+            Ok((db, keyspace))
+        };
+
+        {
+            let (_db, keyspace) = open()?;
+
+            keyspace.insert("a", "old", fjall::DurabilityLevel::SyncAll)?;
+            keyspace.insert("b", "unflushed", fjall::DurabilityLevel::SyncAll)?;
+
+            let mut ingestion = keyspace.start_ingestion()?;
+            ingestion.write("a", "ingested")?;
+            ingestion.finish()?;
+
+            assert_eq!(Some(b"ingested".as_slice()), keyspace.get("a")?.as_deref());
+            assert_eq!(Some(b"unflushed".as_slice()), keyspace.get("b")?.as_deref());
+        }
+
+        {
+            let (_db, keyspace) = open()?;
+            assert_eq!(Some(b"ingested".as_slice()), keyspace.get("a")?.as_deref());
+            assert_eq!(Some(b"unflushed".as_slice()), keyspace.get("b")?.as_deref());
+        }
+    }
+
+    Ok(())
+}
+
+// This fails in v3 before 2fa374ca39bf0f365172cb18b826c203e42bd9da
+#[test]
+fn ingest_after_write_recover() -> fjall::Result<()> {
+    let path = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&path).open()?;
+        let keyspace = db.keyspace("default", Default::default)?;
+
+        keyspace.insert("k", "old", fjall::DurabilityLevel::SyncAll)?;
+        keyspace.flush(true)?;
+
+        let mut ingestion = keyspace.start_ingestion()?;
+        ingestion.write("k", "new")?;
+        ingestion.finish()?;
+    }
+
+    let db = Database::builder(&path).open()?;
+    let keyspace = db.keyspace("default", Default::default)?;
+    assert_eq!(Some(b"new".as_slice()), keyspace.get("k")?.as_deref());
+
+    Ok(())
+}

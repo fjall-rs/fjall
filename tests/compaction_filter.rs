@@ -40,6 +40,7 @@ fn compaction_filter() -> fjall::Result<()> {
     let folder = get_tmp_folder();
 
     let db = fjall::Database::builder(&folder)
+        .worker_threads_unchecked(0)
         .with_compaction_filter_factories(Arc::new(|keyspace| match keyspace {
             "my_items" => Some(Arc::new(MyFactory)),
             _ => None,
@@ -50,10 +51,10 @@ fn compaction_filter() -> fjall::Result<()> {
         let tree = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
         tree.insert("a", "a", Buffer)?;
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         tree.insert("abc", "abc", Buffer)?;
         tree.insert("b", "b", Buffer)?;
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
 
         assert!(tree.contains_key("a")?);
         assert!(tree.contains_key("abc")?);
@@ -70,10 +71,10 @@ fn compaction_filter() -> fjall::Result<()> {
         let tree = db.keyspace("my_items_imposter", KeyspaceCreateOptions::default)?;
 
         tree.insert("a", "a", Buffer)?;
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         tree.insert("abc", "abc", Buffer)?;
         tree.insert("b", "b", Buffer)?;
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
 
         assert!(tree.contains_key("a")?);
         assert!(tree.contains_key("abc")?);
@@ -95,6 +96,7 @@ fn compaction_filter_recover() -> fjall::Result<()> {
 
     {
         let db = fjall::Database::builder(&folder)
+            .worker_threads_unchecked(0)
             .with_compaction_filter_factories(Arc::new(|keyspace| match keyspace {
                 "my_items" => Some(Arc::new(MyFactory)),
                 _ => None,
@@ -117,10 +119,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
             let tree = db.keyspace("my_items", KeyspaceCreateOptions::default)?;
 
             tree.insert("a", "a", Buffer)?;
-            tree.rotate_memtable_and_wait()?;
+            tree.flush(true)?;
             tree.insert("abc", "abc", Buffer)?;
             tree.insert("b", "b", Buffer)?;
-            tree.rotate_memtable_and_wait()?;
+            tree.flush(true)?;
 
             assert!(tree.contains_key("a")?);
             assert!(tree.contains_key("abc")?);
@@ -137,10 +139,10 @@ fn compaction_filter_recover() -> fjall::Result<()> {
             let tree = db.keyspace("my_items_imposter", KeyspaceCreateOptions::default)?;
 
             tree.insert("a", "a", Buffer)?;
-            tree.rotate_memtable_and_wait()?;
+            tree.flush(true)?;
             tree.insert("abc", "abc", Buffer)?;
             tree.insert("b", "b", Buffer)?;
-            tree.rotate_memtable_and_wait()?;
+            tree.flush(true)?;
 
             assert!(tree.contains_key("a")?);
             assert!(tree.contains_key("abc")?);

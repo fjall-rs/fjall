@@ -184,7 +184,7 @@ impl OptimisticTxDatabase {
     /// Returns the number of journal fragments on disk.
     #[must_use]
     pub fn journal_count(&self) -> usize {
-        self.inner.journal_count()
+        self.inner.wal_count()
     }
 
     /// Returns the disk space usage of the entire database.

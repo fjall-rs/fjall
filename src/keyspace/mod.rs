@@ -22,7 +22,7 @@ use options::CreateOptions;
 use std::{
     ops::RangeBounds,
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, RwLock},
     time::Duration,
 };
 use write_delay::perform_write_stall;
@@ -77,7 +77,9 @@ pub struct KeyspaceInner {
     #[doc(hidden)]
     pub tree: AnyTree,
 
-    pub(crate) version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
+    pub(crate) version_set_provider: Arc<lsm_tree::IoSuperVersionSetProvider>,
+
+    pub(crate) compaction_lock: RwLock<()>,
 
     pub(crate) supervisor: Supervisor,
 
@@ -94,48 +96,8 @@ impl Drop for KeyspaceInner {
     fn drop(&mut self) {
         log::trace!("Dropping KeyspaceInner: {:?}", self.name);
 
-        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
-            todo!("handle deletion");
-
-            /*let path = &self.tree.tree_config().path;
-
-            // IMPORTANT: First, delete the manifest,
-            // once that is deleted, the keyspace is treated as uninitialized
-            // even if the .deleted marker is removed
-            //
-            // This is important, because if somehow `remove_dir_all` ends up
-            // deleting the `.deleted` marker first, we would end up resurrecting
-            // the keyspace
-            let manifest_file = path.join(CURRENT_VERSION_MARKER);
-
-            // TODO: use https://github.com/rust-lang/rust/issues/31436 if stable
-            #[expect(clippy::collapsible_else_if)]
-            match manifest_file.try_exists() {
-                Ok(exists) => {
-                    if exists {
-                        if let Err(e) = std::fs::remove_file(manifest_file) {
-                            log::error!(
-                                "Failed to cleanup keyspace manifest at {}: {e}",
-                                path.display(),
-                            );
-                        } else {
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                log::error!(
-                                    "Failed to cleanup deleted keyspace's folder at {}: {e}",
-                                    path.display(),
-                                );
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to cleanup keyspace manifest at {}: {e}",
-                        path.display(),
-                    );
-                }
-            }*/
-        }
+        // NOTE: A deleted keyspace's files are already marked as deleted (see `Database::delete_keyspace`),
+        // they are removed once the last version referencing them is dropped
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
@@ -231,43 +193,115 @@ impl Keyspace {
     /// # Ok::<(), fjall::Error>(())
     /// ```
     ///
+    /// # Note
+    ///
+    /// Memtable contents are deleted as well.
+    /// This operation is thus not equal to [`Keyspace::drop_range(..)`](Keyspace::drop_range).
+    ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
     pub fn clear(&self) -> crate::Result<()> {
-        // IMPORTANT: Writes are applied to memtables while holding the WAL lock,
-        // so holding it serializes the clear with all writes
-        //
-        // Same lock order as flushes: WAL lock, then flush lock
-        let _wal_lock = self
-            .supervisor
-            .write_pipeline
-            .wal()
-            .lock()
+        // IMPORTANT: Exclusive, otherwise a running compaction installs its result
+        // (made from the cleared tables) after the clear
+        let _compaction_lock = self
+            .compaction_lock
+            .write()
             .map_err(|_| crate::Error::Poisoned)?;
 
-        let _flush_lock = self.tree.get_flush_lock();
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
 
-        // IMPORTANT: Check the poisoned flag after getting the WAL lock, otherwise TOCTOU
+        // IMPORTANT: Writes are applied to memtables while holding the ledger lock,
+        // which `install_version` holds, so the clear is serialized with all writes
+        //
+        // Appends the version edit (drop all tables & blob files) to the manifest,
+        // then installs a new, empty version
+        let freed_bytes = self.install_version(|persister, seqno| {
+            self.version_set_provider
+                .clear(persister, &self.tree, seqno)
+        })?;
+
+        self.supervisor.write_buffer_size.free(freed_bytes);
+
+        // NOTE: The clear raised the flush watermark, so WAL fragments may not be needed anymore
+        self.supervisor.prune_wal(&mut self.supervisor.ledger()?)?;
+
+        Ok(())
+    }
+
+    /// Removes old versions (and with them, old memtables and deleted files)
+    /// that no snapshot can read anymore.
+    ///
+    /// Called after installing a new version.
+    pub(crate) fn prune_versions(&self) {
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+        self.version_set_provider.prune(gc_watermark);
+    }
+
+    /// Installs a new version of the keyspace's tree, with a new version seqno.
+    ///
+    /// `install` is called with the ledger lock held, and returns what `install_version` returns.
+    pub(crate) fn install_version<T>(
+        &self,
+        install: impl FnOnce(&mut ManifestPersister<'_>, SeqNo) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        let mut ledger = self.supervisor.ledger()?;
+
+        // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
         if self.is_poisoned.is_poisoned() {
             return Err(crate::Error::Poisoned);
         }
 
-        let freed_bytes = self.tree.active_memtable().size();
-
         let seqno = self.supervisor.seqno.next();
 
-        // Appends the version edit (drop all tables & blob files) to the manifest,
-        // then installs a new, empty version
-        self.version_set_provider
-            .clear(&self.tree, seqno)
-            .inspect_err(|e| {
-                log::error!("Clear failed, which is a FATAL failure: {e:?}");
-                self.is_poisoned.poison();
-            })?;
+        let result = install(&mut ledger.persister(self.id), seqno).inspect_err(|e| {
+            log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
+            self.is_poisoned.poison();
+        })?;
 
-        self.supervisor.write_buffer_size.free(freed_bytes);
         self.supervisor.snapshot_tracker.publish(seqno);
+
+        self.prune_versions();
+
+        self.supervisor
+            .maybe_rotate_manifest(&mut ledger, &self.is_poisoned)?;
+
+        Ok(result)
+    }
+
+    /// Drops all tables that are fully contained in the given key range.
+    ///
+    /// Tables that only partially overlap the range are kept, so keys in the range
+    /// may still be readable afterwards.
+    ///
+    /// # Note
+    ///
+    /// Memtable contents overlapping the range are not deleted.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn drop_range<K: AsRef<[u8]>, R: RangeBounds<K>>(&self, range: R) -> crate::Result<()> {
+        // NOTE: Exclusive, like a major compaction
+        let _compaction_lock = self
+            .compaction_lock
+            .write()
+            .map_err(|_| crate::Error::Poisoned)?;
+
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+        // NOTE: Dropping tables doesn't rewrite any data, so it's fine to hold the locks while doing it
+        self.install_version(|persister, seqno| {
+            self.version_set_provider
+                .drop_range(persister, &self.tree, range, seqno, gc_watermark)
+        })?;
 
         Ok(())
     }
@@ -308,7 +342,7 @@ impl Keyspace {
         tree: AnyTree,
         name: KeyspaceKey,
         config: CreateOptions,
-        version_set_provider: Arc<lsm_tree::IoVersionSetProvider>,
+        version_set_provider: Arc<lsm_tree::IoSuperVersionSetProvider>,
     ) -> Self {
         Self(Arc::new(KeyspaceInner {
             id: keyspace_id,
@@ -322,6 +356,7 @@ impl Keyspace {
             lock_file: db.lock_file.clone(),
             stats: db.stats.clone(),
             version_set_provider,
+            compaction_lock: RwLock::default(),
         }))
     }
 
@@ -334,9 +369,7 @@ impl Keyspace {
     ) -> crate::Result<Self> {
         log::debug!("Creating keyspace {keyspace_id}={name:?}");
 
-        let version_set_provider = Arc::new(lsm_tree::IoVersionSetProvider::new(Arc::new(
-            ManifestPersister::new(db.supervisor.manifest.clone(), keyspace_id),
-        )));
+        let version_set_provider = Arc::new(lsm_tree::IoSuperVersionSetProvider::new());
 
         let base_config = lsm_tree::Config::new(db.path(), version_set_provider.clone())
             .use_descriptor_table(db.config.descriptor_table.clone())
@@ -359,6 +392,7 @@ impl Keyspace {
             stats: db.stats.clone(),
             lock_file: db.lock_file.clone(),
             version_set_provider,
+            compaction_lock: RwLock::default(),
         })))
     }
 
@@ -713,92 +747,213 @@ impl Keyspace {
         matches!(self.tree, crate::AnyTree::Blob(_))
     }
 
-    // NOTE: Used in tests
+    /// Flushes all sealed memtables into tables, sealing the active memtable
+    /// first if `rotate` is set.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
-    pub fn rotate_memtable_and_wait(&self) -> crate::Result<()> {
-        if self.rotate_memtable()? {
-            self.supervisor.flush_manager.wait_for_empty();
+    pub fn flush(&self, rotate: bool) -> crate::Result<()> {
+        if rotate {
+            let mut ledger = self.supervisor.ledger()?;
 
-            while self.tree.sealed_memtable_count() > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+            // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+            if self.is_poisoned.is_poisoned() {
+                return Err(crate::Error::Poisoned);
             }
+
+            // NOTE: A deletion (or clear) racing with a flush is fine,
+            // because the flush is then discarded, see `Keyspace::install_flush`
+            if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(crate::Error::KeyspaceDeleted);
+            }
+
+            // NOTE: Not queueing a background flush, because it is flushed right below
+            self.seal_active_memtable(&mut ledger, self.tree.active_memtable().id())?;
+        }
+
+        let flush_result = {
+            // NOTE: Only the tables are written under the flush lock, not the install
+            //
+            // IMPORTANT: Released before taking the ledger lock
+            // (lock order: ledger lock, keyspaces lock, flush lock)
+            let _flush_lock = self.tree.get_flush_lock();
+
+            let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+            self.tree.flush(gc_watermark)?
+        };
+
+        let Some(flush_result) = flush_result else {
+            return Ok(());
+        };
+
+        let mut ledger = self.supervisor.ledger()?;
+
+        // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        // NOTE: A deletion (or clear) racing with a flush is fine,
+        // because the flush is then discarded, see `Keyspace::install_flush`
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(crate::Error::KeyspaceDeleted);
+        }
+
+        // NOTE: Discarded if some of its sealed memtables are gone: the keyspace was cleared
+        // or deleted, or another flush (e.g. `flush_all`, an ingestion) installed them first
+        if !self.install_flush(&mut ledger, flush_result)? {
+            log::trace!("Flush of keyspace {:?} was discarded", self.name);
+            return Ok(());
+        }
+
+        self.supervisor
+            .maybe_rotate_manifest(&mut ledger, &self.is_poisoned)?;
+
+        self.supervisor.prune_wal(&mut ledger)
+    }
+
+    /// Seals the active memtable, and flushes all sealed memtables.
+    ///
+    /// Unlike [`Keyspace::flush`], the caller holds the ledger lock for the whole flush
+    /// (e.g. `flush_all`, ingestion), so writes are blocked meanwhile.
+    ///
+    /// IMPORTANT: The caller must hold the tree's flush lock.
+    pub(crate) fn flush_locked(
+        &self,
+        ledger: &mut crate::ledger::LedgerGuard<'_>,
+    ) -> crate::Result<()> {
+        // NOTE: Writes are applied to the active memtable under the ledger lock,
+        // so no write can land in the memtable after it was sealed
+        self.version_set_provider.rotate_active_memtable(&self.tree);
+
+        let gc_watermark = self.supervisor.snapshot_tracker.get_seqno_safe_to_gc();
+
+        if let Some(flush_result) = self.tree.flush(gc_watermark)? {
+            self.install_flush(ledger, flush_result)?;
         }
 
         Ok(())
     }
 
-    #[doc(hidden)]
-    pub fn rotate_memtable(&self) -> crate::Result<bool> {
-        /* log::trace!("acquiring journal lock");
-        let journal_writer = self.supervisor.journal.get_writer()?;
-        let active_memtable_id = self.tree.active_memtable().id();
-        self.inner_rotate_memtable(journal_writer, active_memtable_id)*/
-        todo!()
+    /// Persists and installs a flush result.
+    ///
+    /// Returns `false` if the flush was discarded, because some of its sealed memtables
+    /// do not exist anymore (the keyspace was cleared or deleted, or another flush
+    /// installed them first).
+    pub(crate) fn install_flush(
+        &self,
+        ledger: &mut crate::ledger::LedgerGuard<'_>,
+        flush_result: lsm_tree::FlushToTablesResult,
+    ) -> crate::Result<bool> {
+        // IMPORTANT: https://github.com/fjall-rs/fjall/issues/329
+        ledger.wal.persist(Some(crate::DurabilityLevel::SyncAll))?;
+
+        let seqno = self.supervisor.seqno.next();
+
+        let flushed_bytes = self
+            .version_set_provider
+            .register_flush(&mut ledger.persister(self.id), flush_result, seqno)
+            .inspect_err(|e| {
+                log::error!("Installing a new version failed, which is a FATAL failure: {e:?}");
+                self.is_poisoned.poison();
+            })?;
+
+        self.supervisor.write_buffer_size.free(flushed_bytes);
+
+        // NOTE: Published even if discarded, the seqno was handed out
+        self.supervisor.snapshot_tracker.publish(seqno);
+
+        self.prune_versions();
+
+        Ok(flushed_bytes > 0)
     }
 
-    /*pub(crate) fn inner_rotate_memtable(
+    /// Seals the active memtable, without flushing it.
+    ///
+    /// Returns `false` if the active memtable was empty.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the keyspace is poisoned.
+    #[doc(hidden)]
+    pub fn rotate_memtable(&self) -> crate::Result<bool> {
+        let ledger = self.supervisor.ledger()?;
+        let memtable_id = self.tree.active_memtable().id();
+        self.inner_rotate_memtable(ledger, memtable_id)
+    }
+
+    /// Seals the active memtable (if it is still `memtable_id`) and queues a flush.
+    ///
+    /// Returns `false` if the memtable was already rotated by someone else, or is empty.
+    pub(crate) fn inner_rotate_memtable(
         &self,
-        journal_writer: MutexGuard<'_, crate::journal::writer::Writer>,
+        mut ledger: crate::ledger::LedgerGuard<'_>,
+        memtable_id: lsm_tree::MemtableId,
+    ) -> crate::Result<bool> {
+        if !self.seal_active_memtable(&mut ledger, memtable_id)? {
+            return Ok(false);
+        }
+
+        drop(ledger);
+
+        self.request_flush();
+
+        // NOTE: The rotation replaced the latest version, so drop old versions no snapshot needs
+        self.prune_versions();
+
+        Ok(true)
+    }
+
+    /// Seals the active memtable (if it is still `memtable_id`), without flushing it.
+    ///
+    /// Returns `false` if the memtable was already rotated by someone else, or is empty
+    /// (or the keyspace is deleted).
+    ///
+    /// Also rotates the WAL if its active fragment is over the rotation threshold.
+    ///
+    /// NOTE: Takes the ledger guard, because writers load the active memtable and insert
+    /// into it under the ledger lock, so no write can land in the memtable after sealing.
+    fn seal_active_memtable(
+        &self,
+        ledger: &mut crate::ledger::LedgerGuard<'_>,
         memtable_id: lsm_tree::MemtableId,
     ) -> crate::Result<bool> {
         log::debug!("Rotating keyspace {:?}", self.name);
 
+        // IMPORTANT: Check the poisoned flag after getting the ledger lock, otherwise TOCTOU
+        if self.is_poisoned.is_poisoned() {
+            return Err(crate::Error::Poisoned);
+        }
+
+        // NOTE: The deletion holds the ledger lock, so this can't race with it
+        if self.is_deleted.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(false);
+        }
+
+        // NOTE: The rotation request may be stale (someone else already rotated)
         if self.tree.active_memtable().id() != memtable_id {
+            log::debug!("Active memtable of {:?} was already rotated", self.name);
             return Ok(false);
         }
 
-        /*// Rotate memtable
-        let Some(_) = self.tree.rotate_memtable() else {
-            log::debug!("Got no sealed memtable, someone beat us to it");
-            return Ok(false);
-        };*/
-        todo!("r");
-
-        drop(journal_writer);
-
-        self.supervisor.flush_manager.enqueue(Arc::new(FlushTask {
-            keyspace: self.clone(),
-        }));
-
-        self.worker_messager.send(WorkerMessage::Flush).ok();
-
+        if self
+            .version_set_provider
+            .rotate_active_memtable(&self.tree)
+            .is_none()
         {
-            // NOTE: If the difference between watermark is too large, and
-            // we never opened a snapshot, we need to pull the watermark up
-            //
-            // https://github.com/fjall-rs/fjall/discussions/85
-            self.supervisor.snapshot_tracker.pullup();
-            self.supervisor.snapshot_tracker.gc();
-
-            todo!("maintenance?");
-            /*for keyspace in self
-                .supervisor
-                .keyspaces
-                .read()
-                .expect("lock is poisoned")
-                .values()
-            {
-                if let Err(e) = keyspace.tree.get_version_history_lock().maintenance(
-                    keyspace.path(),
-                    self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
-                ) {
-                    log::warn!(
-                        "Version history GC failed for keyspace {:?}: {e:?}",
-                        keyspace.name,
-                    );
-                }
-            }*/
+            log::debug!(
+                "Got no sealed memtable for {:?}, nothing to rotate",
+                self.name
+            );
+            return Ok(false);
         }
 
-        #[expect(clippy::expect_used)]
-        self.supervisor
-            .journal_manager
-            .write()
-            .expect("lock is poisoned")
-            .maintenance()?;
+        self.supervisor.maybe_rotate_wal(ledger)?;
 
         Ok(true)
-    }*/
+    }
 
     fn check_write_halt(&self) {
         while self.tree.l0_run_count() >= 30 {
@@ -833,19 +988,25 @@ impl Keyspace {
         throttled
     }
 
-    pub(crate) fn request_rotation(&self) {
-        todo!("restore");
+    /// Queues a background flush of the sealed memtables.
+    fn request_flush(&self) {
+        self.worker_messager
+            .send(WorkerMessage::Flush(self.clone()))
+            .ok();
+    }
 
-        /*let lock = self.tree.get_version_history_lock();
-        let latest_version = lock.latest_version();
-        let active_memtable = &latest_version.active_memtable;
+    pub(crate) fn request_rotation(&self) {
+        use lsm_tree::AbstractTree;
+
+        let latest_super_version = self.tree.current_super_version();
+        let active_memtable = &latest_super_version.active_memtable;
 
         self.worker_messager
             .try_send(WorkerMessage::RotateMemtable(
                 self.clone(),
                 active_memtable.id(),
             ))
-            .ok();*/
+            .ok();
     }
 
     pub(crate) fn check_memtable_rotate(&self, size: u64) {
@@ -879,6 +1040,19 @@ impl Keyspace {
         self.tree.blob_file_count()
     }
 
+    /// Runs a single compaction with the configured compaction strategy,
+    /// blocking the caller until it's done.
+    ///
+    /// Does not involve the background workers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    #[doc(hidden)]
+    pub fn compact(&self) -> crate::Result<()> {
+        crate::compaction::worker::compact_with(self, self.config.compaction_strategy.clone())
+    }
+
     /// Performs major compaction, blocking the caller until it's done.
     ///
     /// # Errors
@@ -886,16 +1060,15 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        /*self.tree.major_compact(
-            64_000_000,
-            self.supervisor.snapshot_tracker.get_seqno_safe_to_gc(),
-        )?;*/
-        todo!("restore compaction");
-
-        // TODO: 4.0.0 ----^
-        // compaction strategy needs a method: strategy.table_target_size()?
-
-        Ok(())
+        // TODO: v4 ----v
+        //   compaction strategy needs a method: strategy.table_target_size()?
+        // NOTE: Exclusive, so two major compactions don't run at the same time
+        crate::compaction::worker::compact_exclusive(
+            self,
+            Arc::new(lsm_tree::compaction::Major::new(
+                64 * 1_024 * 1_024, // 64 MiB
+            )),
+        )
     }
 
     /// Inserts a key-value pair into the keyspace.

@@ -7,7 +7,9 @@ fn fifo_dirty_read() -> fjall::Result<()> {
 
     let folder = tempfile::tempdir()?;
 
-    let db = SingleWriterTxDatabase::builder(&folder).open()?;
+    let db = SingleWriterTxDatabase::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
 
     let tree = db.keyspace("default", || {
         KeyspaceCreateOptions::default()
@@ -23,7 +25,7 @@ fn fifo_dirty_read() -> fjall::Result<()> {
     let snapshot = db.read_tx();
     assert!(snapshot.contains_key(&tree, "a")?);
 
-    tree.inner().rotate_memtable_and_wait()?;
+    tree.inner().flush(true)?;
 
     assert!(snapshot.contains_key(&tree, "a")?);
 

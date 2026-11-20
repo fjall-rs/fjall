@@ -29,6 +29,38 @@ pub enum DbEditRecord {
         k: StrView,
         v: ByteView,
     },
+
+    /// The keyspace was deleted
+    ///
+    /// Its later version edits (e.g. of a compaction that was still running) are ignored.
+    DeleteKeyspace { id: InternalKeyspaceId },
+
+    /// The next keyspace ID to hand out
+    ///
+    /// IMPORTANT: Keyspace IDs must never be reused, otherwise WAL items of a deleted keyspace
+    /// would be replayed into a new keyspace with the same ID. After a manifest rotation,
+    /// deleted keyspaces are not in the snapshot anymore, so their IDs are only kept by this.
+    SetKeyspaceIdCounter { next: InternalKeyspaceId },
+
+    /// Marks which table and blob file IDs belong to migrated v3 files
+    ///
+    /// See [`crate::legacy::watermark::LegacyWatermark`].
+    SetLegacyWatermark { tables: u64, blob_files: u64 },
+
+    /// The next table and blob file IDs to hand out (at least)
+    ///
+    /// Recovery otherwise continues above the highest ID still referenced, so IDs of
+    /// files that are gone (compacted away, cleared) would be handed out again.
+    /// A restored backup needs IDs above every file in its backup folder.
+    SetFileIdCounters { tables: u64, blob_files: u64 },
+
+    /// The next seqno to hand out (at least)
+    ///
+    /// Some seqnos are handed out without being written anywhere (e.g. a compaction that
+    /// turned out to have nothing to do, or the clear of a deleted keyspace); without this,
+    /// a database recovered from a manifest snapshot (or a restored backup) would continue
+    /// below them.
+    SetSeqnoCounter { next: u64 },
 }
 
 impl lsm_tree::coding::Encode for DbEditRecord {
@@ -62,6 +94,28 @@ impl lsm_tree::coding::Encode for DbEditRecord {
                 )]
                 writer.write_u32_varint(v.len() as u32)?;
                 writer.write_all(v)?;
+            }
+            Self::DeleteKeyspace { id } => {
+                writer.write_u8(0x2)?; // Enum discriminant
+                writer.write_u64_varint(*id)?;
+            }
+            Self::SetKeyspaceIdCounter { next } => {
+                writer.write_u8(0x3)?; // Enum discriminant
+                writer.write_u64_varint(*next)?;
+            }
+            Self::SetLegacyWatermark { tables, blob_files } => {
+                writer.write_u8(0xF0)?; // Enum discriminant
+                writer.write_u64_varint(*tables)?;
+                writer.write_u64_varint(*blob_files)?;
+            }
+            Self::SetFileIdCounters { tables, blob_files } => {
+                writer.write_u8(0x4)?; // Enum discriminant
+                writer.write_u64_varint(*tables)?;
+                writer.write_u64_varint(*blob_files)?;
+            }
+            Self::SetSeqnoCounter { next } => {
+                writer.write_u8(0x5)?; // Enum discriminant
+                writer.write_u64_varint(*next)?;
             }
         }
 
@@ -108,6 +162,30 @@ impl lsm_tree::coding::Decode for DbEditRecord {
                     k: key.into(),
                     v: value,
                 })
+            }
+            0x2 => {
+                let id = reader.read_u64_varint()?;
+                Ok(Self::DeleteKeyspace { id })
+            }
+            0x3 => {
+                let next = reader.read_u64_varint()?;
+                Ok(Self::SetKeyspaceIdCounter { next })
+            }
+            0x4 => {
+                let tables = reader.read_u64_varint()?;
+                let blob_files = reader.read_u64_varint()?;
+
+                Ok(Self::SetFileIdCounters { tables, blob_files })
+            }
+            0x5 => {
+                let next = reader.read_u64_varint()?;
+                Ok(Self::SetSeqnoCounter { next })
+            }
+            0xF0 => {
+                let tables = reader.read_u64_varint()?;
+                let blob_files = reader.read_u64_varint()?;
+
+                Ok(Self::SetLegacyWatermark { tables, blob_files })
             }
             tag => Err(lsm_tree::Error::InvalidTag(("DbEditRecord", tag))),
         }

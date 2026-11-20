@@ -15,6 +15,9 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
     let mut entry_count = 0;
     let mut highest_encountered_keyspace_id = 0;
 
+    // NOTE: Replayed clears are written to the manifest
+    let mut ledger = db.supervisor.ledger()?;
+
     #[expect(clippy::expect_used)]
     let keyspace_registy = db.supervisor.keyspaces.read().expect("lock is poisoned");
 
@@ -50,7 +53,7 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                 // writes them again into a table that overlaps the existing one
                 let persisted_seqno = *persisted_seqnos
                     .entry(item.keyspace_id)
-                    .or_insert_with(|| tree.get_highest_persisted_seqno());
+                    .or_insert_with(|| tree.get_flush_watermark());
 
                 if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
                     continue;
@@ -77,12 +80,32 @@ pub fn recover_sealed_memtables(db: &Database, journal_paths: &[PathBuf]) -> cra
                     continue;
                 };
 
+                // NOTE: Skip clears that were already persisted: v3 dropped all tables when
+                // clearing, so tables with higher seqnos only contain data written after the clear.
+                // Applying the clear again would drop those tables, and rewrite their data
+                // from the journal.
+                //
+                // Remember: replaying the WAL here happens after recovering the tables etc.
+                let persisted_seqno = *persisted_seqnos
+                    .entry(keyspace_id)
+                    .or_insert_with(|| handle.tree.get_flush_watermark());
+
+                if persisted_seqno.is_some_and(|seqno| batch.seqno <= seqno) {
+                    log::trace!(
+                        "Skipping already persisted clear of keyspace {}",
+                        handle.name(),
+                    );
+                    continue;
+                }
+
                 log::debug!("Clearing keyspace {}", handle.name());
 
                 log::trace!("Applying clear to version set provider");
-                handle
-                    .version_set_provider
-                    .clear(&handle.tree, batch.seqno)?;
+                handle.version_set_provider.clear(
+                    &mut ledger.persister(handle.id),
+                    &handle.tree,
+                    batch.seqno,
+                )?;
 
                 persisted_seqnos.remove(&keyspace_id);
             }
@@ -125,10 +148,7 @@ pub fn find_journal_files(path: &Path) -> crate::Result<Vec<(JournalId, PathBuf)
         let filename = dirent.file_name();
 
         let Some(filename) = filename.to_str() else {
-            log::error!("Invalid journal file name: {}", filename.display());
-            return Err(crate::Error::JournalRecovery(
-                crate::JournalRecoveryError::InvalidFileName,
-            ));
+            continue;
         };
 
         if !std::path::Path::new(filename)

@@ -32,7 +32,6 @@ fn db_flush_all_smoke_test() -> fjall::Result<()> {
 
         assert_eq!(Some(b"abc".as_slice()), tree.get(b"1")?.as_deref());
 
-        // TODO: v4 fix seqno publishing in flush
         {
             let snapshot = db.snapshot();
             assert_eq!(

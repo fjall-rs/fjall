@@ -3,8 +3,8 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    compaction::worker::run as run_compaction, flush::worker::run as run_flush, poison::PoisonDart,
-    stats::Stats, supervisor::Supervisor, Keyspace,
+    compaction::worker::run as run_compaction, poison::PoisonDart, stats::Stats,
+    supervisor::Supervisor, Keyspace,
 };
 use lsm_tree::MemtableId;
 use std::{
@@ -17,7 +17,7 @@ use std::{
 };
 
 pub enum WorkerMessage {
-    Flush,
+    Flush(Keyspace),
     Compact(Keyspace),
     Close,
     RotateMemtable(Keyspace, MemtableId),
@@ -29,7 +29,7 @@ impl std::fmt::Debug for WorkerMessage {
             f,
             "{}",
             match self {
-                Self::Flush => Cow::Borrowed("WorkerMessage:Flush"),
+                Self::Flush(k) => Cow::Owned(format!("WorkerMessage:Flush({:?})", k.name)),
                 Self::Compact(k) => Cow::Owned(format!("WorkerMessage:Compact({:?})", k.name)),
                 Self::Close => Cow::Borrowed("WorkerMessage:Close"),
                 Self::RotateMemtable(k, memtable_id) =>
@@ -178,79 +178,24 @@ fn worker_tick(ctx: &WorkerState) -> crate::Result<bool> {
             return Ok(true);
         }
         WorkerMessage::RotateMemtable(keyspace, memtable_id) => {
-            log::trace!("acquiring journal lock");
-            //let journal_writer = keyspace.supervisor.journal.get_writer()?;
-            // keyspace.inner_rotate_memtable(journal_writer, memtable_id)?;
-            todo!("rotate");
+            log::trace!("acquiring ledger lock");
+
+            let ledger = ctx.supervisor.ledger()?;
+
+            keyspace.inner_rotate_memtable(ledger, memtable_id)?;
         }
-        WorkerMessage::Flush => {
-            let Some(task) = ctx.supervisor.flush_manager.dequeue() else {
-                return Ok(false);
-            };
-
-            /*{
-                log::trace!("acquiring journal lock to maybe rotate journal");
-                let mut journal_writer = ctx.supervisor.journal.get_writer()?;
-
-                if journal_writer.pos()? > 64_000_000 {
-                    #[expect(clippy::expect_used)]
-                    let mut journal_manager = ctx
-                        .supervisor
-                        .journal_manager
-                        .write()
-                        .expect("lock is poisoned");
-
-                    let seqno_map = {
-                        #[expect(clippy::expect_used)]
-                        let keyspaces = ctx.supervisor.keyspaces.write().expect("lock is poisoned");
-
-                        ctx.supervisor.build_seqno_map(&keyspaces)
-                    };
-
-                    journal_manager.rotate_journal(&mut journal_writer, seqno_map)?;
-
-                    if journal_manager.disk_space_used()
-                        >= ctx.supervisor.db_config.max_journaling_size_in_bytes
-                    {
-                        let stragglers =
-                            journal_manager.get_keyspaces_to_flush_for_oldest_journal_eviction();
-
-                        for keyspace in stragglers {
-                            log::info!(
-                                "Rotating {:?} to try to reduce journal size",
-                                keyspace.name,
-                            );
-                            keyspace.request_rotation();
-                        }
-                    }
-                } else {
-                    // https://github.com/fjall-rs/fjall/issues/329
-                    journal_writer.persist(crate::DurabilityLevel::SyncAll)?;
-                }
-            }*/
-
-            todo!();
-
-            /*run_flush(
-                &task,
-                &ctx.supervisor.write_buffer_size,
-                &ctx.supervisor.snapshot_tracker,
-                &ctx.stats,
-            )?;*/
+        WorkerMessage::Flush(keyspace) => {
+            match keyspace.flush(false) {
+                // NOTE: The keyspace was deleted after the flush was queued
+                Err(crate::Error::KeyspaceDeleted) => {}
+                result => result?,
+            }
 
             for _ in 0..ctx.pool_size {
                 ctx.sender
-                    .try_send(WorkerMessage::Compact(task.keyspace.clone()))
+                    .try_send(WorkerMessage::Compact(keyspace.clone()))
                     .ok();
             }
-
-            /*ctx.supervisor
-            .journal_manager
-            .write()
-            .expect("lock is poisoned")
-            .maintenance()?;*/
-
-            todo!();
         }
         WorkerMessage::Compact(keyspace) => {
             // NOTE: Let one worker prioritize flushing if there are pending flushes
@@ -278,18 +223,20 @@ mod tests {
         let folder = tempfile::tempdir()?;
 
         {
-            let db = Database::builder(&folder).open()?;
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
 
             let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
-            ks.rotate_memtable_and_wait()?;
+            ks.flush(true)?;
 
             assert!(ks.tree.l0_run_count() > 0);
         }
@@ -310,6 +257,98 @@ mod tests {
                 "worker message should be compaction request",
             );
         }
+
+        Ok(())
+    }
+
+    /// Runs the worker messages of a database without worker threads, like one worker would.
+    fn run_worker_messages(db: &Database) -> crate::Result<()> {
+        let ctx = WorkerState {
+            pool_size: 1,
+            worker_id: 0,
+            supervisor: db.supervisor.clone(),
+            rx: db.worker_pool.rx.clone(),
+            sender: db.worker_pool.sender.clone(),
+            stats: db.stats.clone(),
+        };
+
+        while !ctx.rx.is_empty() {
+            worker_tick(&ctx)?;
+        }
+
+        Ok(())
+    }
+
+    /// A rotation request seals the active memtable, and the worker flushes it in the background.
+    #[test]
+    fn worker_rotates_and_flushes_memtable() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        {
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
+
+            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+            ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
+            ks.insert("b", "b", crate::DurabilityLevel::Buffer)?;
+
+            ks.request_rotation();
+            run_worker_messages(&db)?;
+
+            assert_eq!(1, ks.tree.table_count(), "memtable should be flushed");
+            assert_eq!(0, ks.sealed_memtable_count());
+            assert!(ks.tree.active_memtable().is_empty());
+            assert_eq!(Some(1), ks.tree.get_flush_watermark());
+            assert_eq!(0, db.supervisor.write_buffer_size.get());
+            assert_eq!(Some("a".as_bytes().into()), ks.get("a")?);
+        }
+
+        {
+            let db = Database::builder(&folder)
+                .worker_threads_unchecked(0)
+                .open()?;
+
+            let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+
+            assert_eq!(1, ks.tree.table_count());
+            assert_eq!(Some("a".as_bytes().into()), ks.get("a")?);
+            assert_eq!(Some("b".as_bytes().into()), ks.get("b")?);
+        }
+
+        Ok(())
+    }
+
+    /// A flush request of a cleared keyspace does nothing (its sealed memtables are gone).
+    #[test]
+    fn worker_flush_after_clear_does_nothing() -> crate::Result<()> {
+        let folder = tempfile::tempdir()?;
+
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
+        let ks = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        ks.insert("a", "a", crate::DurabilityLevel::Buffer)?;
+
+        // NOTE: Seals the memtable and queues the flush, without running it
+        {
+            let ctx_rx = db.worker_pool.rx.clone();
+            ks.request_rotation();
+            let msg = ctx_rx.try_recv().expect("should have rotation request");
+            let WorkerMessage::RotateMemtable(ks, memtable_id) = msg else {
+                panic!("should be rotation request");
+            };
+            ks.inner_rotate_memtable(db.supervisor.ledger()?, memtable_id)?;
+        }
+        assert_eq!(1, ks.sealed_memtable_count());
+
+        ks.clear()?;
+        run_worker_messages(&db)?;
+
+        assert_eq!(0, ks.tree.table_count());
+        assert_eq!(0, ks.sealed_memtable_count());
+        assert!(ks.is_empty()?);
 
         Ok(())
     }

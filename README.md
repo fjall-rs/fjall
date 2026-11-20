@@ -40,6 +40,7 @@ It features:
 - Key-value separation for large blob use cases (optional)
 - Custom compaction filters to run custom logic during compactions (optional)
 - Automatic background maintenance
+- Incremental backups
 
 It is not:
 

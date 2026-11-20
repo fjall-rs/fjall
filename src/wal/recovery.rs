@@ -128,34 +128,37 @@ struct WalRecovery<'a, F> {
     get_keyspace_name: F,
     watermarks: Watermarks,
 
-    /// Version seqno of each keyspace, as recovered from the manifest.
+    /// Flush watermark of each keyspace, as recovered from the manifest.
     ///
-    /// Every WAL item below that seqno is already contained in the keyspace's
-    /// tables (flush) or was dropped (clear), so it must not be replayed.
+    /// Every WAL item up to that seqno is already contained in the keyspace's
+    /// tables (flush), or was removed on purpose (compaction, drop range, clear),
+    /// so it must not be replayed.
+    ///
+    /// NOTE: This is not the version seqno, which is used for snapshots.
     ///
     /// See <https://github.com/fjall-rs/fjall/pull/332>
-    version_seqnos: HashMap<InternalKeyspaceId, SeqNo>,
+    flush_watermarks: HashMap<InternalKeyspaceId, Option<SeqNo>>,
 
     replayed_bytes: u64,
 }
 
 impl<'a, F> WalRecovery<'a, F>
 where
-    F: Fn(InternalKeyspaceId) -> KeyspaceKey,
+    F: Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
 {
     fn new(keyspaces: &'a Keyspaces, get_keyspace_name: F) -> Self {
         use crate::AbstractTree;
 
-        let version_seqnos = keyspaces
+        let flush_watermarks = keyspaces
             .values()
-            .map(|ks| (ks.id(), ks.tree.current_version().seqno()))
+            .map(|ks| (ks.id(), ks.tree.get_flush_watermark()))
             .collect();
 
         Self {
             keyspaces,
             get_keyspace_name,
             watermarks: HashMap::default(),
-            version_seqnos,
+            flush_watermarks,
             replayed_bytes: 0,
         }
     }
@@ -163,13 +166,16 @@ where
     fn replay_item(&mut self, fragment_id: hwal::FragmentId, item: DecodedItem) {
         use crate::AbstractTree;
 
-        if let Some(&version_seqno) = self.version_seqnos.get(&item.keyspace_id) {
-            if item.seqno < version_seqno {
+        if let Some(Some(flush_watermark)) = self.flush_watermarks.get(&item.keyspace_id) {
+            if item.seqno <= *flush_watermark {
                 return;
             }
         }
 
-        let keyspace_name = (self.get_keyspace_name)(item.keyspace_id);
+        // NOTE: Items of deleted keyspaces are skipped
+        let Some(keyspace_name) = (self.get_keyspace_name)(item.keyspace_id) else {
+            return;
+        };
 
         if let Some(keyspace) = self.keyspaces.get(&keyspace_name) {
             let (item_size, _) = match item.value_type {
@@ -199,21 +205,19 @@ where
 pub fn recover_wal(
     db: &Database,
     keyspaces: &Keyspaces,
-    get_keyspace_name: impl Fn(InternalKeyspaceId) -> KeyspaceKey,
-) -> crate::Result<SeqNo> {
+    get_keyspace_name: impl Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
+) -> crate::Result<Option<SeqNo>> {
     log::info!("Recovering WAL at {}", db.path().display());
 
-    let mut wal = db
-        .supervisor
-        .write_pipeline
-        .wal()
-        .lock()
-        .expect("should not be poisoned");
+    let mut ledger = db.supervisor.ledger()?;
+
+    let wal = &mut ledger.wal;
 
     let mut recovery = wal.inner.recover()?;
     let mut find_a_name = WalRecovery::new(keyspaces, get_keyspace_name);
 
-    let mut highest_seqno = SeqNo::default();
+    // NOTE: `None` if the WAL has no items
+    let mut highest_seqno: Option<SeqNo> = None;
 
     for record in recovery.by_ref() {
         let record = record?;
@@ -223,11 +227,11 @@ pub fn recover_wal(
 
         match decode_wal_record(&mut &payload[..])? {
             DecodedRecord::Single(item) => {
-                highest_seqno = highest_seqno.max(item.seqno);
+                highest_seqno = highest_seqno.max(Some(item.seqno));
                 find_a_name.replay_item(wal_fragment_id, item);
             }
             DecodedRecord::Full(batch) => {
-                highest_seqno = highest_seqno.max(batch.batch_seqno);
+                highest_seqno = highest_seqno.max(Some(batch.batch_seqno));
 
                 for item in batch {
                     find_a_name.replay_item(wal_fragment_id, item?);
@@ -246,6 +250,11 @@ pub fn recover_wal(
 
     // IMPORTANT: Finish recovery
     recovery.finish()?;
+
+    // NOTE: The replayed items are in memtables now, so sealed fragments are kept until their
+    // keyspaces are flushed; fragments that only contain flushed items are pruned right away
+    wal.set_recovered_watermarks(watermarks);
+    wal.prune(keyspaces)?;
 
     Ok(highest_seqno)
 }

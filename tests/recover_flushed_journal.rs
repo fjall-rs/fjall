@@ -19,7 +19,10 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
     let key = |x: u64| (u64::MAX - x).to_be_bytes();
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = open_fifo(&db)?;
 
         for x in 0..ITEM_COUNT {
@@ -27,12 +30,15 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
         }
 
         // Flushed, but still in the active journal
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(1, tree.tree.l0_run_count());
     }
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = open_fifo(&db)?;
 
         assert_eq!(0, tree.tree.active_memtable().len());
@@ -42,7 +48,7 @@ fn recover_does_not_replay_flushed_items() -> fjall::Result<()> {
             tree.insert(key(x), "a", Buffer)?;
         }
 
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
         assert_eq!(1, tree.tree.l0_run_count());
         assert_eq!(tree.len()?, ITEM_COUNT as usize * 2);
 
@@ -58,24 +64,30 @@ fn recover_flushed_items_after_clear() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         for x in 0..ITEM_COUNT {
             tree.insert(x.to_be_bytes(), "old", Buffer)?;
         }
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
 
         tree.clear()?;
 
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
             tree.insert(x.to_be_bytes(), "new", Buffer)?;
         }
-        tree.rotate_memtable_and_wait()?;
+        tree.flush(true)?;
     }
 
     {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
 
         // Replaying the clear drops the flushed table, so the items written after it
@@ -92,7 +104,10 @@ fn recover_partially_flushed_batch() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let unflushed_size = {
-        let db = Database::builder(&folder).open()?;
+        let db = Database::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
@@ -103,7 +118,7 @@ fn recover_partially_flushed_batch() -> fjall::Result<()> {
         }
         batch.commit()?;
 
-        a.rotate_memtable_and_wait()?;
+        a.flush(true)?;
 
         let mut batch = db.batch();
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
@@ -134,7 +149,10 @@ fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
     let unflushed_size = {
-        let db = SingleWriterTxDatabase::builder(&folder).open()?;
+        let db = SingleWriterTxDatabase::builder(&folder)
+            .worker_threads_unchecked(0)
+            .open()?;
+
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
@@ -145,7 +163,7 @@ fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
         }
         tx.commit()?;
 
-        a.inner().rotate_memtable_and_wait()?;
+        a.inner().flush(true)?;
 
         let mut tx = db.write_tx();
         for x in ITEM_COUNT..ITEM_COUNT * 2 {

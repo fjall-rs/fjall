@@ -14,6 +14,7 @@
 //! - Serializable transactions (optional)
 //! - Key-value separation for large blob use cases (optional)
 //! - Automatic background maintenance
+//! - Incremental backups
 //!
 //! It is not:
 //!
@@ -91,6 +92,7 @@ macro_rules! fail_iter {
     };
 }
 
+mod backup;
 mod batch;
 mod builder;
 
@@ -112,11 +114,12 @@ mod cache_pad;
 mod durability;
 mod error;
 mod file;
-mod flush;
+mod file_resolver;
 mod guard;
 mod ingestion;
 mod iter;
 mod keyspace;
+mod ledger;
 mod legacy;
 mod locked_file;
 mod manifest;
@@ -149,6 +152,7 @@ pub mod config {
 }
 
 pub use {
+    backup::{Backup, BackupId, BackupInfo, BackupMode},
     batch::WriteBatch as OwnedWriteBatch,
     builder::Builder as DatabaseBuilder,
     db::Database,

@@ -5,7 +5,9 @@ use test_log::test;
 fn keyspace_prefix_carl() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let db = Database::builder(&folder).open()?;
+    let db = Database::builder(&folder)
+        .worker_threads_unchecked(0)
+        .open()?;
 
     let tree = db.keyspace("default", || {
         KeyspaceCreateOptions::default().with_kv_separation(Default::default())
@@ -15,7 +17,7 @@ fn keyspace_prefix_carl() -> fjall::Result<()> {
     tree.insert("a#2", "b".repeat(4_096), Buffer)?;
     tree.insert("a#3", "c".repeat(4_096), Buffer)?;
 
-    tree.rotate_memtable_and_wait()?;
+    tree.flush(true)?;
 
     {
         let mut iter = tree.prefix("a#");
