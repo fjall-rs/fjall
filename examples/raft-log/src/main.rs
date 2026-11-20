@@ -56,7 +56,7 @@ fn main() -> fjall::Result<()> {
         println!(
             "log: [{first_index}, {next_index}) - oldest entry on disk: {oldest} - # tables: {} - # wals: {}",
             log.table_count(),
-            db.wal_count(),
+            db.stats().wal_count(),
         );
     }
 

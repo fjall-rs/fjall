@@ -10,22 +10,22 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
         .open()?;
 
     let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     tree.insert("asd", "def", Buffer)?;
 
-    let write_buffer_size_after = db.write_buffer_size();
+    let write_buffer_size_after = db.stats().write_buffer_size();
     assert!(write_buffer_size_after > 0);
 
     let mut batch = db.batch();
     batch.insert(&tree, "dsa", "qwe");
     batch.commit()?;
 
-    let write_buffer_size_after_batch = db.write_buffer_size();
+    let write_buffer_size_after_batch = db.stats().write_buffer_size();
     assert!(write_buffer_size_after_batch > write_buffer_size_after);
 
     tree.flush(true)?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     Ok(())
 }
@@ -41,22 +41,22 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
     let tree = db.keyspace("default", || {
         KeyspaceCreateOptions::default().with_kv_separation(Some(KvSeparationOptions::default()))
     })?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     tree.insert("asd", "def", Buffer)?;
 
-    let write_buffer_size_after = db.write_buffer_size();
+    let write_buffer_size_after = db.stats().write_buffer_size();
     assert!(write_buffer_size_after > 0);
 
     let mut batch = db.batch();
     batch.insert(&tree, "dsa", "qwe");
     batch.commit()?;
 
-    let write_buffer_size_after_batch = db.write_buffer_size();
+    let write_buffer_size_after_batch = db.stats().write_buffer_size();
     assert!(write_buffer_size_after_batch > write_buffer_size_after);
 
     tree.flush(true)?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     Ok(())
 }
@@ -78,14 +78,14 @@ fn write_buffer_size_after_reopen_of_flushed_db() -> fjall::Result<()> {
 
         // Flushed, but still in the active journal
         tree.flush(true)?;
-        assert_eq!(0, db.write_buffer_size());
+        assert_eq!(0, db.stats().write_buffer_size());
     }
 
     {
         // Items already in a table must not be replayed back into memory
         let db = Database::builder(&folder).open()?;
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-        assert_eq!(0, db.write_buffer_size());
+        assert_eq!(0, db.stats().write_buffer_size());
         assert_eq!(1_000, tree.len()?);
     }
 

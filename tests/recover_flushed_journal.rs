@@ -134,7 +134,7 @@ fn recover_partially_flushed_batch() -> fjall::Result<()> {
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
-        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(unflushed_size, db.stats().write_buffer_size());
         assert_eq!(a.len()?, ITEM_COUNT as usize * 2);
         assert_eq!(b.len()?, ITEM_COUNT as usize);
     }
@@ -179,7 +179,7 @@ fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
-        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(unflushed_size, db.stats().write_buffer_size());
         assert_eq!(a.inner().len()?, ITEM_COUNT as usize * 2);
         assert_eq!(b.inner().len()?, ITEM_COUNT as usize);
     }

@@ -11,7 +11,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
 
     {
         let db = Database::builder(&folder).open()?;
-        assert_eq!(1, db.wal_count());
+        assert_eq!(1, db.stats().wal_count());
 
         let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
         assert!(tree.is_empty()?);
@@ -28,7 +28,7 @@ fn clear_recover_sealed() -> crate::Result<()> {
         db.rotate_wal()?;
 
         // NOTE: The recovery below replays items from two WAL fragments
-        assert_eq!(2, db.wal_count());
+        assert_eq!(2, db.stats().wal_count());
 
         tree.insert("b", "a", crate::DurabilityLevel::Buffer)?;
         assert!(tree.contains_key("b")?);
@@ -269,7 +269,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
 
     let unflushed_size = {
         let db = Database::builder(folder.path()).open()?;
-        assert_eq!(1, db.wal_count());
+        assert_eq!(1, db.stats().wal_count());
 
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
@@ -292,7 +292,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         db.rotate_wal()?;
 
         // NOTE: The recovery below replays items from two WAL fragments
-        assert_eq!(2, db.wal_count());
+        assert_eq!(2, db.stats().wal_count());
 
         a.tree.active_memtable().size() + b.tree.active_memtable().size()
     };
@@ -304,7 +304,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
-        assert_eq!(unflushed_size, db.write_buffer_size());
+        assert_eq!(unflushed_size, db.stats().write_buffer_size());
         assert_eq!(200, a.len()?);
         assert_eq!(100, b.len()?);
     }
@@ -365,10 +365,10 @@ fn flush_all_materializes_wal() -> crate::Result<()> {
         first.insert("c", "3", Buffer)?;
 
         db.rotate_wal()?;
-        assert_eq!(2, db.wal_count());
+        assert_eq!(2, db.stats().wal_count());
 
         db.flush_all()?;
-        assert_eq!(1, db.wal_count());
+        assert_eq!(1, db.stats().wal_count());
 
         assert!(first.tree.active_memtable().is_empty());
         assert!(second.tree.active_memtable().is_empty());
@@ -411,10 +411,10 @@ fn clear_frees_write_buffer() -> crate::Result<()> {
 
     let a = db.keyspace("a", KeyspaceCreateOptions::default)?;
     let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     b.insert("b", "b", Buffer)?;
-    let b_size = db.write_buffer_size();
+    let b_size = db.stats().write_buffer_size();
     assert!(b_size > 0);
 
     // NOTE: One sealed memtable, and an active one
@@ -422,18 +422,18 @@ fn clear_frees_write_buffer() -> crate::Result<()> {
     assert!(a.rotate_memtable()?);
     a.insert("a2", "a", Buffer)?;
     assert_eq!(1, a.sealed_memtable_count());
-    assert!(db.write_buffer_size() > b_size);
+    assert!(db.stats().write_buffer_size() > b_size);
 
     a.clear()?;
     assert_eq!(0, a.sealed_memtable_count());
     assert_eq!(
         b_size,
-        db.write_buffer_size(),
+        db.stats().write_buffer_size(),
         "only b's bytes should be left"
     );
 
     b.clear()?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     Ok(())
 }
@@ -452,10 +452,10 @@ fn delete_keyspace_frees_write_buffer() -> crate::Result<()> {
     a.insert("a", "a", Buffer)?;
     assert!(a.rotate_memtable()?);
     a.insert("a2", "a", Buffer)?;
-    assert!(db.write_buffer_size() > 0);
+    assert!(db.stats().write_buffer_size() > 0);
 
     db.delete_keyspace(a)?;
-    assert_eq!(0, db.write_buffer_size());
+    assert_eq!(0, db.stats().write_buffer_size());
 
     Ok(())
 }
@@ -486,7 +486,7 @@ fn clear_does_not_block_wal_pruning() -> crate::Result<()> {
     }
 
     // NOTE: Everything is flushed or cleared, so only the active WAL fragment is needed
-    assert_eq!(1, db.wal_count());
+    assert_eq!(1, db.stats().wal_count());
 
     Ok(())
 }

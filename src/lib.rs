@@ -164,6 +164,7 @@ pub use {
     keyspace::{options::CreateOptions as KeyspaceCreateOptions, Keyspace},
     readable::Readable,
     snapshot::Snapshot,
+    stats::DatabaseStats,
     version::FormatVersion,
 };
 

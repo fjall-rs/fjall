@@ -149,25 +149,10 @@ impl SingleWriterTxDatabase {
         self.inner.keyspace_exists(name)
     }
 
-    /// Returns the current write buffer size (active + sealed memtables).
+    /// Returns runtime statistics and the disk usage of the database.
     #[must_use]
-    pub fn write_buffer_size(&self) -> u64 {
-        self.inner.write_buffer_size()
-    }
-
-    /// Returns the number of journal fragments on disk.
-    #[must_use]
-    pub fn journal_count(&self) -> usize {
-        self.inner.wal_count()
-    }
-
-    /// Returns the disk space usage of the entire database.
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occurred.
-    pub fn disk_space(&self) -> crate::Result<u64> {
-        self.inner.disk_space()
+    pub fn stats(&self) -> crate::DatabaseStats<'_> {
+        self.inner.stats()
     }
 
     /// Opens a database in the given directory.

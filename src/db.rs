@@ -16,7 +16,7 @@ use crate::{
     poison::{PoisonDart, PoisonSignal},
     snapshot::Snapshot,
     snapshot_tracker::SnapshotTracker,
-    stats::Stats,
+    stats::{DatabaseStats, Stats},
     supervisor::{Supervisor, SupervisorInner},
     version::FormatVersion,
     wal::recover_wal,
@@ -187,130 +187,27 @@ impl Database {
         WriteBatch::new(self.clone())
     }
 
-    // TODO: v4 refactor: accessor to stats(), so we don't have that many methods in DB
-
-    /// Returns the current write buffer size (active + sealed memtables).
-    ///
-    /// # Experimental
-    ///
-    /// This is a non-stable API currently.
-    #[must_use]
-    #[doc(hidden)]
-    pub fn write_buffer_size(&self) -> u64 {
-        self.supervisor.write_buffer_size.get()
-    }
-
-    /// Returns the time all compactions took until now.
-    ///
-    /// # Experimental
-    ///
-    /// This is a non-stable API currently.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn time_compacting(&self) -> std::time::Duration {
-        let us = self
-            .stats
-            .time_compacting
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        std::time::Duration::from_micros(us)
-    }
-
-    /// Returns the number of active compactions currently running.
-    ///
-    /// # Experimental
-    ///
-    /// This is a non-stable API currently.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn active_compactions(&self) -> usize {
-        self.stats
-            .active_compaction_count
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Returns the number of completed compactions.
-    ///
-    /// # Experimental
-    ///
-    /// This is a non-stable API currently.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn compactions_completed(&self) -> usize {
-        self.stats
-            .compactions_completed
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Returns the number of journals on disk.
+    /// Returns runtime statistics and the disk usage of the database.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{Database, DurabilityLevel, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
-    /// assert_eq!(1, db.journal_count());
+    /// let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    /// tree.insert("a", "abc", DurabilityLevel::Buffer)?;
+    ///
+    /// let stats = db.stats();
+    /// assert!(stats.write_buffer_size() > 0);
+    /// assert!(stats.disk_space()? > 0);
     /// #
     /// # Ok::<(), fjall::Error>(())
     /// ```
     #[must_use]
-    #[expect(clippy::expect_used, clippy::missing_panics_doc)]
-    pub fn wal_count(&self) -> usize {
-        // 1 = active WAL fragment
-        1 + self
-            .supervisor
-            .ledger()
-            .expect("should not be poisoned")
-            .wal
-            .sealed_fragment_count()
-    }
-
-    /// Returns the disk space usage of the write-ahead log.
-    #[doc(hidden)]
-    pub fn wal_disk_space(&self) -> crate::Result<u64> {
-        self.supervisor.ledger()?.wal.disk_usage()
-    }
-
-    /// Returns the disk space usage of the database manifest.
-    #[doc(hidden)]
-    pub fn db_manifest_disk_space(&self) -> crate::Result<u64> {
-        self.supervisor.ledger()?.manifest.disk_usage()
-    }
-
-    /// Returns the disk space usage of the entire database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
-    /// #
-    /// # let folder = tempfile::tempdir()?;
-    /// # let db = Database::builder(folder).open()?;
-    /// # let _tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
-    /// assert!(db.disk_space()? > 0);
-    /// #
-    /// # Ok::<(), fjall::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns error, if an IO error occurred.
-    #[expect(clippy::expect_used, clippy::missing_panics_doc)]
-    pub fn disk_space(&self) -> crate::Result<u64> {
-        let journal_size = self.wal_disk_space()?;
-
-        let keyspaces_size = self
-            .supervisor
-            .keyspaces
-            .read()
-            .expect("lock is poisoned")
-            .values()
-            .map(Keyspace::disk_space)
-            .sum::<u64>();
-
-        Ok(journal_size + keyspaces_size)
+    pub fn stats(&self) -> DatabaseStats<'_> {
+        DatabaseStats { db: self }
     }
 
     /// Flushes the active journal. The durability depends on the [`DurabilityLevel`]
@@ -355,18 +252,6 @@ impl Database {
             .expect("should not do OCC");
 
         Ok(())
-    }
-
-    #[doc(hidden)]
-    #[must_use]
-    pub fn cache_capacity(&self) -> u64 {
-        self.config.cache.capacity()
-    }
-
-    #[doc(hidden)]
-    #[must_use]
-    pub fn cache_size(&self) -> u64 {
-        self.config.cache.size()
     }
 
     /// Opens a database in the given directory.

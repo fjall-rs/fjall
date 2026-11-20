@@ -27,7 +27,7 @@ fn wal_file_count(folder: &Path) -> std::io::Result<usize> {
 }
 
 fn assert_wal_count(db: &Database, folder: &Path, expected: usize) -> std::io::Result<()> {
-    assert_eq!(expected, db.wal_count(), "journal count");
+    assert_eq!(expected, db.stats().wal_count(), "journal count");
     assert_eq!(expected, wal_file_count(folder)?, "WAL files on disk");
     Ok(())
 }
