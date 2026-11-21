@@ -5,7 +5,7 @@
 use crate::{
     db::Keyspaces,
     keyspace::{InternalKeyspaceId, KeyspaceKey},
-    Database, HashMap,
+    Database, HashMap, WalRecoveryStats,
 };
 use byteorder::ReadBytesExt;
 use lsm_tree::{coding::Decode, CompressionType, SeqNo, UserKey, UserValue, ValueType};
@@ -140,6 +140,7 @@ struct WalRecovery<'a, F> {
     flush_watermarks: HashMap<InternalKeyspaceId, Option<SeqNo>>,
 
     replayed_bytes: u64,
+    replayed_count: usize,
 }
 
 impl<'a, F> WalRecovery<'a, F>
@@ -160,6 +161,7 @@ where
             watermarks: HashMap::default(),
             flush_watermarks,
             replayed_bytes: 0,
+            replayed_count: 0,
         }
     }
 
@@ -186,6 +188,7 @@ where
             };
 
             self.replayed_bytes += item_size;
+            self.replayed_count += 1;
 
             self.watermarks
                 .entry(fragment_id)
@@ -208,6 +211,8 @@ pub fn recover_wal(
     get_keyspace_name: impl Fn(InternalKeyspaceId) -> Option<KeyspaceKey>,
 ) -> crate::Result<Option<SeqNo>> {
     log::info!("Recovering WAL at {}", db.path().display());
+
+    let start = std::time::Instant::now();
 
     let mut ledger = db.supervisor.ledger()?;
 
@@ -245,6 +250,8 @@ pub fn recover_wal(
         .write_buffer_size
         .allocate(find_a_name.replayed_bytes);
 
+    let replayed_count = find_a_name.replayed_count;
+
     let watermarks = find_a_name.into_watermarks();
     log::trace!("WAL watermarks: {watermarks:?}");
 
@@ -255,6 +262,14 @@ pub fn recover_wal(
     // keyspaces are flushed; fragments that only contain flushed items are pruned right away
     wal.set_recovered_watermarks(watermarks);
     wal.prune(keyspaces)?;
+
+    db.stats
+        .wal_recovery
+        .set(WalRecoveryStats {
+            duration: start.elapsed(),
+            replayed_count,
+        })
+        .ok();
 
     Ok(highest_seqno)
 }

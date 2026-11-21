@@ -207,7 +207,10 @@ impl Database {
     /// ```
     #[must_use]
     pub fn stats(&self) -> DatabaseStats<'_> {
-        DatabaseStats { db: self }
+        DatabaseStats {
+            db: self,
+            wal_recovery: self.stats.wal_recovery.get().copied().unwrap_or_default(),
+        }
     }
 
     /// Flushes the active journal. The durability depends on the [`DurabilityLevel`]

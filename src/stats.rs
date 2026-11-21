@@ -3,7 +3,13 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{Database, Keyspace};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::{
+    sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
+        OnceLock,
+    },
+    time::Duration,
+};
 
 /// Ephemeral, runtime stats
 #[derive(Default)]
@@ -16,12 +22,47 @@ pub struct Stats {
 
     /// Number of completed compactions
     pub(crate) compactions_completed: AtomicUsize,
+
+    /// Set once the WAL has been recovered when opening the database
+    pub(crate) wal_recovery: OnceLock<WalRecoveryStats>,
+}
+
+/// Statistics of the write-ahead log recovery when the database was opened
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WalRecoveryStats {
+    /// Time it took to recover the write-ahead log
+    pub duration: Duration,
+
+    /// Number of items replayed into memtables
+    pub replayed_count: usize,
 }
 
 /// Runtime statistics and disk usage of a database, see [`Database::stats`]
 #[derive(Clone, Copy)]
 pub struct DatabaseStats<'a> {
     pub(crate) db: &'a Database,
+
+    /// Statistics of the write-ahead log recovery when the database was opened.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use fjall::{Database, DurabilityLevel, KeyspaceCreateOptions};
+    /// #
+    /// # let folder = tempfile::tempdir()?;
+    /// {
+    ///     let db = Database::builder(&folder).open()?;
+    ///     let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+    ///     tree.insert("a", "abc", DurabilityLevel::Buffer)?;
+    ///     tree.insert("b", "abc", DurabilityLevel::Buffer)?;
+    /// }
+    ///
+    /// let db = Database::builder(&folder).open()?;
+    /// assert_eq!(2, db.stats().wal_recovery.replayed_count);
+    /// #
+    /// # Ok::<(), fjall::Error>(())
+    /// ```
+    pub wal_recovery: WalRecoveryStats,
 }
 
 impl DatabaseStats<'_> {
@@ -38,8 +79,8 @@ impl DatabaseStats<'_> {
     /// This is a non-stable API currently.
     #[doc(hidden)]
     #[must_use]
-    pub fn time_compacting(&self) -> std::time::Duration {
-        std::time::Duration::from_micros(self.db.stats.time_compacting.load(Relaxed))
+    pub fn time_compacting(&self) -> Duration {
+        Duration::from_micros(self.db.stats.time_compacting.load(Relaxed))
     }
 
     /// Returns the number of active compactions currently running.

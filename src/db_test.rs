@@ -490,3 +490,32 @@ fn clear_does_not_block_wal_pruning() -> crate::Result<()> {
 
     Ok(())
 }
+
+/// Only items that are not flushed yet are replayed (and counted) on recovery
+#[test]
+fn wal_recovery_stats() -> crate::Result<()> {
+    let folder = tempfile::tempdir()?;
+
+    {
+        let db = Database::builder(&folder).open()?;
+        assert_eq!(0, db.stats().wal_recovery.replayed_count);
+        assert_eq!(std::time::Duration::ZERO, db.stats().wal_recovery.duration);
+
+        let tree = db.keyspace("default", KeyspaceCreateOptions::default)?;
+        tree.insert("a", "a", Buffer)?;
+        tree.insert("b", "b", Buffer)?;
+        tree.flush(true)?;
+
+        tree.insert("c", "c", Buffer)?;
+        tree.remove("a", Buffer)?;
+        tree.insert("d", "d", Buffer)?;
+    }
+
+    {
+        let db = Database::builder(&folder).open()?;
+        assert_eq!(3, db.stats().wal_recovery.replayed_count);
+        assert!(db.stats().wal_recovery.duration > std::time::Duration::ZERO);
+    }
+
+    Ok(())
+}
