@@ -309,10 +309,12 @@ fn wal_recovery_prunes_unneeded_fragments() -> fjall::Result<()> {
         let b = db.keyspace("b", KeyspaceCreateOptions::default)?;
 
         b.insert("b", "b", SyncAll)?;
-        db.rotate_wal()?;
 
-        // NOTE: Deleting a keyspace does not prune the WAL
+        // NOTE: `b`'s items are still in the active fragment, so there is nothing to prune yet
         db.delete_keyspace(b)?;
+
+        // NOTE: Rotating does not prune the WAL
+        db.rotate_wal()?;
         assert_wal_count(&db, folder.path(), 2)?;
     }
 

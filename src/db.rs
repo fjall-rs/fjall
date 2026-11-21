@@ -370,6 +370,10 @@ impl Database {
         // NOTE: Old versions (and their files) go away as soon as no snapshot needs them
         handle.prune_versions();
 
+        // NOTE: The deleted keyspace's unflushed items are never replayed,
+        // so they no longer keep sealed WAL fragments around
+        ledger.wal.prune(&keyspaces)?;
+
         Ok(())
     }
 
