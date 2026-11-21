@@ -16,7 +16,7 @@ const ITEM_COUNT: usize = 100;
 fn reload_keyspace_config_fifo() -> fjall::Result<()> {
     let folder = tempfile::tempdir()?;
 
-    let strategy = fjall::compaction::Fifo::new(555, Some(6));
+    let strategy = fjall::compaction::Fifo::new(555).with_ttl(6);
 
     let expected_kvs = strategy.get_config();
 

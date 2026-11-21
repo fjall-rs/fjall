@@ -1,4 +1,4 @@
-use fjall::{Database, KeyspaceCreateOptions};
+use fjall::{Database, DurabilityLevel, KeyspaceCreateOptions};
 use std::{path::Path, sync::Arc};
 
 const LIMIT: u64 = 10_000_000;
@@ -11,11 +11,11 @@ fn main() -> fjall::Result<()> {
     let log = db.keyspace("log", || {
         KeyspaceCreateOptions::default()
             .max_memtable_size(4_000_000)
-            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT, None)))
+            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(LIMIT)))
     })?;
 
     for x in 0u64..2_500_000 {
-        log.insert(x.to_be_bytes(), x.to_be_bytes())?;
+        log.insert(x.to_be_bytes(), x.to_be_bytes(), DurabilityLevel::Buffer)?;
 
         if x % 100_000 == 0 {
             let min_key = log.first_key_value().unwrap().key()?;

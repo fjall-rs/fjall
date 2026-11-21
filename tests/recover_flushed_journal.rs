@@ -7,7 +7,7 @@ const ITEM_COUNT: u64 = 100;
 fn open_fifo(db: &Database) -> fjall::Result<fjall::Keyspace> {
     db.keyspace("default", || {
         KeyspaceCreateOptions::default()
-            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(u64::MAX, None)))
+            .compaction_strategy(Arc::new(fjall::compaction::Fifo::new(u64::MAX)))
     })
 }
 

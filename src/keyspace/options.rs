@@ -315,18 +315,18 @@ impl CreateOptions {
                     .expect("fifo_ttl should be defined")
                     == [1];
 
-                let ttl_seconds = if has_ttl {
+                let mut fifo = crate::compaction::Fifo::new(fifo_limit);
+
+                if has_ttl {
                     let fifo_ttl_seconds = config_provider
                         .get_kv_for_config("fifo_ttl_seconds")?
                         .expect("fifo_ttl_seconds should be defined");
                     let fifo_ttl_seconds = (&mut &fifo_ttl_seconds[..]).read_u64::<LE>()?;
 
-                    Some(fifo_ttl_seconds)
-                } else {
-                    None
-                };
+                    fifo = fifo.with_ttl(fifo_ttl_seconds);
+                }
 
-                Arc::new(crate::compaction::Fifo::new(fifo_limit, ttl_seconds))
+                Arc::new(fifo)
             }
             name => {
                 panic!("Invalid/unsupported compaction strategy: {name:?}");
@@ -672,7 +672,7 @@ mod tests {
                 crate::compaction::Leveled::default().with_l0_threshold(2),
             )),
             CreateOptions::default()
-                .compaction_strategy(Arc::new(crate::compaction::Fifo::new(1_000_000, None))),
+                .compaction_strategy(Arc::new(crate::compaction::Fifo::new(1_000_000))),
             CreateOptions::default()
                 .data_block_compression_policy(CompressionPolicy::disabled())
                 .max_memtable_size(1_234),
