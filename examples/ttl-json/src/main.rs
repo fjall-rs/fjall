@@ -50,13 +50,13 @@ fn main() -> fjall::Result<()> {
     let ttl_watermark = Arc::new(AtomicU64::default());
 
     let db = fjall::Database::builder(".fjall_data")
-        .with_compaction_filter_factories({
+        .with_compaction_filters({
             let ttl_watermark = ttl_watermark.clone();
 
-            Arc::new(move |keyspace| match keyspace {
+            move |keyspace| match keyspace {
                 "items" => Some(Arc::new(MyFactory(ttl_watermark.clone()))),
                 _ => None,
-            })
+            }
         })
         .temporary(true)
         .open()?;

@@ -420,12 +420,7 @@ impl Database {
             let mut opts = create_options();
 
             // Install compaction filter factory if needed
-            if let Some(f) = self
-                .config
-                .compaction_filter_factory_assigner
-                .as_ref()
-                .and_then(|f| f(&name))
-            {
+            if let Some(f) = self.config.compaction_filter_factory(&name) {
                 opts = opts.with_compaction_filter_factory(f);
             }
 
@@ -826,12 +821,7 @@ impl Database {
                         let mut recovered_config = KeyspaceCreateOptions::from_kvs(&keyspace)?;
 
                         // Install compaction filter factory if needed
-                        if let Some(f) = db
-                            .config
-                            .compaction_filter_factory_assigner
-                            .as_ref()
-                            .and_then(|f| f(&keyspace.name))
-                        {
+                        if let Some(f) = db.config.compaction_filter_factory(&keyspace.name) {
                             recovered_config = recovered_config.with_compaction_filter_factory(f);
                         }
 

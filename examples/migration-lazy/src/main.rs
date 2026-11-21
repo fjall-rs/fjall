@@ -65,11 +65,9 @@ impl Factory for MyFactory {
 
 fn main() -> fjall::Result<()> {
     let db = fjall::Database::builder(".fjall_data")
-        .with_compaction_filter_factories({
-            Arc::new(move |keyspace| match keyspace {
-                "items" => Some(Arc::new(MyFactory)),
-                _ => None,
-            })
+        .with_compaction_filters(|keyspace| match keyspace {
+            "items" => Some(Arc::new(MyFactory)),
+            _ => None,
         })
         .temporary(true)
         .open()?;

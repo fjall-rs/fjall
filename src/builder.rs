@@ -2,7 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
-use crate::{db_config::CompactionFilterAssigner, Config};
+use crate::Config;
 use lsm_tree::{Cache, CompressionType, DescriptorTable};
 use std::{marker::PhantomData, path::Path, sync::Arc};
 
@@ -214,32 +214,50 @@ impl<O: Openable> Builder<O> {
         self
     }
 
-    /// Installs a factory that assigns compaction filters to new or recovered keyspaces.
+    /// Adds a function that assigns compaction filter factories to new or recovered
+    /// keyspaces, by keyspace name.
+    ///
+    /// Can be called multiple times, e.g. once for the application's own keyspaces and once
+    /// for a library that shares the database.
+    /// The functions are asked in the order they were added, and the first one that
+    /// returns a factory wins.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
-    /// # use std::sync::Arc;
-    /// # let folder = tempfile::tempdir()?.keep();
+    /// # use fjall::Database;
     /// use lsm_tree::compaction::filter::Factory;
+    /// use std::sync::Arc;
+    /// // use third_party_library::some_other_filters;
+    /// #
+    /// # // e.g. exported by a library that shares the database
+    /// # fn some_other_filters(keyspace: &str) -> Option<Arc<dyn Factory>> {
+    /// #   match keyspace {
+    /// #        "library_items" => todo!(),
+    /// #        _ => None,
+    /// #    }
+    /// # }
     ///
+    /// # let folder = tempfile::tempdir()?;
     /// let db = Database::builder(&folder)
-    ///     .temporary(true)
-    ///     .with_compaction_filter_factories(
-    ///         Arc::new(|keyspace| {
-    ///             // Match on the keyspace name to assign specific compaction filters
-    ///             todo!()
-    ///         })
-    ///     )
+    ///     .with_compaction_filters(|keyspace| match keyspace {
+    ///         "my_items" => todo!(),
+    ///         _ => None,
+    ///     })
+    ///     .with_compaction_filters(some_other_filters)
     ///     .open()?;
-    ///
     /// #
     /// # Ok::<_, fjall::Error>(())
     /// ```
     #[must_use]
-    pub fn with_compaction_filter_factories(mut self, f: CompactionFilterAssigner) -> Self {
-        self.inner.compaction_filter_factory_assigner = Some(f);
+    pub fn with_compaction_filters(
+        mut self,
+        f: impl Fn(&str) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        self.inner.compaction_filter_assigners.push(Arc::new(f));
         self
     }
 }

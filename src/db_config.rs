@@ -79,7 +79,8 @@ pub struct Config {
 
     // pub(crate) journal_recovery_mode: RecoveryMode,
     //
-    pub(crate) compaction_filter_factory_assigner: Option<CompactionFilterAssigner>,
+    /// Asked in the order they were added, see [`Config::compaction_filter_factory`]
+    pub(crate) compaction_filter_assigners: Vec<CompactionFilterAssigner>,
 }
 
 const DEFAULT_CPU_CORES: usize = 4;
@@ -96,6 +97,18 @@ fn get_open_file_limit() -> usize {
 }
 
 impl Config {
+    /// Returns the compaction filter factory of a keyspace.
+    ///
+    /// The assigners are asked in the order they were added; the first match wins.
+    pub(crate) fn compaction_filter_factory(
+        &self,
+        keyspace: &str,
+    ) -> Option<Arc<dyn lsm_tree::compaction::filter::Factory>> {
+        self.compaction_filter_assigners
+            .iter()
+            .find_map(|f| f(keyspace))
+    }
+
     /// Creates a new configuration
     pub fn new(path: &Path) -> Self {
         let queried_cores = std::thread::available_parallelism().map(usize::from);
@@ -124,7 +137,7 @@ impl Config {
 
             cache: Arc::new(Cache::with_capacity_bytes(/* 64 MiB */ 64 * 1_024 * 1_024)),
 
-            compaction_filter_factory_assigner: None,
+            compaction_filter_assigners: Vec::new(),
         }
     }
 }
