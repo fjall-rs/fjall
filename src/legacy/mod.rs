@@ -5,7 +5,10 @@
 pub mod v3;
 pub mod watermark;
 
-use crate::file::{rewrite_atomic, BLOBS_FOLDER, TABLES_FOLDER, VERSION_MARKER};
+use crate::file::{
+    remove_dir_all_if_exists, remove_file_if_exists, rewrite_atomic, BLOBS_FOLDER, TABLES_FOLDER,
+    VERSION_MARKER,
+};
 use crate::{file::fsync_directory, locked_file::LockedFileGuard, Config};
 use crate::{
     file_resolver::KeyspaceFileResolver,
@@ -23,20 +26,9 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     log::info!("Migrating v3 database to v4 format");
 
     // TODO: refactor this to use a hwal method or so
-    let existing_v4_wal = config.path.join("0.hwal");
-    if existing_v4_wal.try_exists()? {
-        std::fs::remove_file(existing_v4_wal)?;
-    }
-
-    let existing_manifest = config.path.join("v0");
-    if existing_manifest.try_exists()? {
-        std::fs::remove_file(existing_manifest)?;
-    }
-
-    let current_file = config.path.join("current");
-    if current_file.try_exists()? {
-        std::fs::remove_file(current_file)?;
-    }
+    remove_file_if_exists(&config.path.join("0.hwal"))?;
+    remove_file_if_exists(&config.path.join("v0"))?;
+    remove_file_if_exists(&config.path.join("current"))?;
 
     // IMPORTANT: Remove files of a previous, crashed migration attempt.
     //
@@ -44,11 +36,7 @@ pub fn migrate_v3_to_v4(config: Config, lock_file: LockedFileGuard) -> crate::Re
     // 1. migrate      : flush writes a table, then crash before the commit
     // 2. migrate again: the flush gets the same table ID, and fails because the file exists
     for folder in [TABLES_FOLDER, BLOBS_FOLDER] {
-        let folder = config.path.join(folder);
-
-        if folder.try_exists()? {
-            std::fs::remove_dir_all(folder)?;
-        }
+        remove_dir_all_if_exists(&config.path.join(folder))?;
     }
 
     log::debug!("Preparing database");

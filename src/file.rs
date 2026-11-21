@@ -80,6 +80,28 @@ fn persist_temp_file(temp_file: tempfile::NamedTempFile, path: &Path) -> std::io
     })
 }
 
+/// Removes a file; a file that does not exist is not an error.
+///
+/// Returns `true` if the file existed.
+pub fn remove_file_if_exists(path: &Path) -> std::io::Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Removes a folder and all its contents; a folder that does not exist is not an error.
+///
+/// Returns `true` if the folder existed.
+pub fn remove_dir_all_if_exists(path: &Path) -> std::io::Result<bool> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 /// Atomically rewrites a file.
 pub fn rewrite_atomic(path: &Path, content: &[u8]) -> std::io::Result<()> {
     #[expect(

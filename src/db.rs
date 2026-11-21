@@ -7,7 +7,8 @@ use crate::{
     builder::Openable,
     db_config::Config,
     file::{
-        fsync_directory, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE, TABLES_FOLDER, VERSION_MARKER,
+        fsync_directory, remove_dir_all_if_exists, rewrite_atomic, BLOBS_FOLDER, LOCK_FILE,
+        TABLES_FOLDER, VERSION_MARKER,
     },
     file_resolver::KeyspaceFileResolver,
     keyspace::{apply_to_base_config, name::is_valid_keyspace_name, KeyspaceKey},
@@ -740,10 +741,8 @@ impl Database {
 
                 // Look for old v3 data
                 {
-                    let path = db.path().join("keyspaces");
-                    if path.try_exists()? {
-                        log::trace!("Removing old v3 keyspaces folder");
-                        std::fs::remove_dir_all(path)?;
+                    if remove_dir_all_if_exists(&db.path().join("keyspaces"))? {
+                        log::trace!("Removed old v3 keyspaces folder");
                     }
                     crate::legacy::v3::journal::nuke_journal(db.path())?;
                 }

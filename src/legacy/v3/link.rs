@@ -3,7 +3,7 @@
 // (found in the LICENSE-* files in the repository)
 
 use crate::{
-    file::{fsync_directory, BLOBS_FOLDER, TABLES_FOLDER},
+    file::{fsync_directory, remove_file_if_exists, BLOBS_FOLDER, TABLES_FOLDER},
     keyspace::InternalKeyspaceId,
 };
 use std::path::Path;
@@ -21,9 +21,7 @@ fn link_file(
     log::trace!("Linking {} -> {}", src.display(), dst.display());
 
     // NOTE: May exist if a previous migration attempt crashed
-    if dst.try_exists()? {
-        std::fs::remove_file(&dst)?;
-    }
+    remove_file_if_exists(&dst)?;
 
     std::fs::hard_link(&src, &dst)
 }

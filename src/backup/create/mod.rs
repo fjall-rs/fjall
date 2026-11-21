@@ -4,7 +4,7 @@
 
 use super::{file::link_or_copy, Backup, BackupId, PRIVATE_FOLDER, SHARED_FOLDER};
 use crate::{
-    file::{fsync_directory, BLOBS_FOLDER, TABLES_FOLDER},
+    file::{fsync_directory, remove_dir_all_if_exists, BLOBS_FOLDER, TABLES_FOLDER},
     file_resolver::KeyspaceFileResolver,
     keyspace::InternalKeyspaceId,
     manifest::{DbEditRecord, Manifest, ManifestWriter},
@@ -99,9 +99,7 @@ impl Backup {
         log::info!("Creating backup #{id} at {}", backup_path.display());
 
         // NOTE: Leftover of a backup that failed earlier, it was never committed
-        if backup_path.try_exists()? {
-            std::fs::remove_dir_all(&backup_path)?;
-        }
+        remove_dir_all_if_exists(&backup_path)?;
         std::fs::create_dir_all(&backup_path)?;
 
         // IMPORTANT: Only one backup of the database at a time (e.g. from two backup folders),

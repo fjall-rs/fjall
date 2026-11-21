@@ -2,6 +2,7 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use crate::file::remove_file_if_exists;
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -26,10 +27,7 @@ pub fn link_or_copy(src: &Path, dst: &Path) -> crate::Result<()> {
     let tmp = tmp_path(dst);
 
     // NOTE: Leftover of a crashed copy, otherwise the hard link fails
-    match std::fs::remove_file(&tmp) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        result => result?,
-    }
+    remove_file_if_exists(&tmp)?;
 
     if let Err(e) = std::fs::hard_link(src, &tmp) {
         log::debug!(
