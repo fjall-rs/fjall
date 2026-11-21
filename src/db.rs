@@ -92,19 +92,19 @@ impl Drop for DatabaseInner {
             .expect("lock is poisoned")
             .clear();
 
-        /*if self.config.clean_path_on_drop {
+        if self.config.clean_path_on_drop {
             log::info!(
                 "Deleting database because temporary=true: {}",
                 self.config.path.display(),
             );
 
-            if let Err(err) = remove_dir_all(&self.config.path) {
+            if let Err(err) = std::fs::remove_dir_all(&self.config.path) {
                 log::warn!(
                     "Failed to clean up path: {} - {err}",
                     self.config.path.display()
                 );
             }
-        }*/
+        }
 
         #[cfg(feature = "__internal_whitebox")]
         crate::drop::decrement_drop_counter();
