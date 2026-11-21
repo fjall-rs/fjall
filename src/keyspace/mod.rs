@@ -1060,13 +1060,11 @@ impl Keyspace {
     /// Will return `Err` if an IO error occurs.
     #[doc(hidden)]
     pub fn major_compact(&self) -> crate::Result<()> {
-        // TODO: v4 ----v
-        //   compaction strategy needs a method: strategy.table_target_size()?
         // NOTE: Exclusive, so two major compactions don't run at the same time
         crate::compaction::worker::compact_exclusive(
             self,
             Arc::new(lsm_tree::compaction::Major::new(
-                64 * 1_024 * 1_024, // 64 MiB
+                self.config.compaction_strategy.table_target_size(),
             )),
         )
     }
