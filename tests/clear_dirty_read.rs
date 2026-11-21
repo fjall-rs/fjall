@@ -1,3 +1,4 @@
+use fjall::DurabilityLevel::Buffer;
 use fjall::Readable;
 
 #[test_log::test]
@@ -14,7 +15,7 @@ fn clear_dirty_read() -> fjall::Result<()> {
 
     let mut tx = db.write_tx();
     tx.insert(&tree, "a", "a");
-    tx.commit()?;
+    tx.commit(Buffer)?;
 
     let snapshot = db.read_tx();
     assert!(snapshot.contains_key(&tree, "a")?);

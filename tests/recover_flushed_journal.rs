@@ -116,7 +116,7 @@ fn recover_partially_flushed_batch() -> fjall::Result<()> {
             batch.insert(&a, x.to_be_bytes(), "a");
             batch.insert(&b, x.to_be_bytes(), "b");
         }
-        batch.commit()?;
+        batch.commit(Buffer)?;
 
         a.flush(true)?;
 
@@ -124,7 +124,7 @@ fn recover_partially_flushed_batch() -> fjall::Result<()> {
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
             batch.insert(&a, x.to_be_bytes(), "a");
         }
-        batch.commit()?;
+        batch.commit(Buffer)?;
 
         a.tree.active_memtable().size() + b.tree.active_memtable().size()
     };
@@ -161,7 +161,7 @@ fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
             tx.insert(&a, x.to_be_bytes(), "a");
             tx.insert(&b, x.to_be_bytes(), "b");
         }
-        tx.commit()?;
+        tx.commit(Buffer)?;
 
         a.inner().flush(true)?;
 
@@ -169,7 +169,7 @@ fn recover_partially_flushed_write_tx() -> fjall::Result<()> {
         for x in ITEM_COUNT..ITEM_COUNT * 2 {
             tx.insert(&a, x.to_be_bytes(), "a");
         }
-        tx.commit()?;
+        tx.commit(Buffer)?;
 
         a.inner().tree.active_memtable().size() + b.inner().tree.active_memtable().size()
     };

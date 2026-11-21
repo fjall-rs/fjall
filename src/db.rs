@@ -164,7 +164,7 @@ impl Database {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{Database, KeyspaceCreateOptions};
+    /// # use fjall::{DurabilityLevel, Database, KeyspaceCreateOptions};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = Database::builder(folder).open()?;
@@ -178,7 +178,7 @@ impl Database {
     ///
     /// assert_eq!(tree.len()?, 0);
     ///
-    /// batch.commit()?;
+    /// batch.commit(DurabilityLevel::Buffer)?;
     /// assert_eq!(tree.len()?, 3);
     /// #
     /// # Ok::<(), fjall::Error>(())

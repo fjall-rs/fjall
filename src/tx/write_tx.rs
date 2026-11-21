@@ -32,7 +32,6 @@ pub(super) struct BaseTransaction {
     /// Durability level used, see [`DurabilityLevel`].
     ///
     /// Default = [`DurabilityLevel::Buffer`]
-    pub(crate) durability: DurabilityLevel,
 
     /// Current sequence number
     ///
@@ -165,18 +164,8 @@ impl BaseTransaction {
             db,
             memtables: HashMap::default(),
             nonce,
-            durability: DurabilityLevel::Buffer,
             seqno: 0x8000_0000_0000_0000,
         }
-    }
-
-    /// Sets the durability level.
-    ///
-    /// Default = [`DurabilityLevel::Buffer`]
-    #[must_use]
-    pub(super) fn durability(mut self, mode: DurabilityLevel) -> Self {
-        self.durability = mode;
-        self
     }
 
     /// Removes an item and returns its value if it existed.
@@ -313,7 +302,7 @@ impl BaseTransaction {
     }
 
     pub(crate) fn into_batch(self) -> (crate::OwnedWriteBatch, SnapshotNonce) {
-        let mut batch = OwnedWriteBatch::new(self.db).durability(self.durability);
+        let mut batch = OwnedWriteBatch::new(self.db);
 
         for (keyspace, memtable) in self.memtables {
             let mut prev_key: Option<UserKey> = None;
@@ -344,7 +333,7 @@ impl BaseTransaction {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub(super) fn commit(self) -> crate::Result<()> {
+    pub(super) fn commit(self, durability: DurabilityLevel) -> crate::Result<()> {
         // skip all the logic if no keys were written to
         if self.memtables.is_empty() {
             return Ok(());
@@ -352,7 +341,7 @@ impl BaseTransaction {
 
         // NOTE: Hold the snapshot nonce until the end of the function
         let (batch, _nonce) = self.into_batch();
-        batch.commit()?;
+        batch.commit(durability)?;
 
         Ok(())
     }
@@ -367,6 +356,7 @@ impl BaseTransaction {
 mod tests {
     use crate::{
         tx::{single_writer::SingleWriterTxKeyspace, write_tx::BaseTransaction},
+        DurabilityLevel::Buffer,
         KeyspaceCreateOptions, SingleWriterTxDatabase,
     };
     use tempfile::TempDir;
@@ -406,7 +396,7 @@ mod tests {
         })?;
 
         assert_eq!(new, Some([25u8].into()));
-        tx.commit()?;
+        tx.commit(Buffer)?;
 
         Ok(())
     }

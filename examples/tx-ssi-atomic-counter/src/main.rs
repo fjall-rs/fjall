@@ -1,4 +1,5 @@
 use fjall::{DurabilityLevel, OptimisticTxDatabase, Readable};
+use fjall::DurabilityLevel::Buffer;
 use std::path::Path;
 
 const LIMIT: u64 = 100;
@@ -38,7 +39,7 @@ fn main() -> fjall::Result<()> {
                     let next = prev + 1;
 
                     write_tx.insert(&counters, "c1", next.to_be_bytes());
-                    write_tx.commit()?.ok();
+                    write_tx.commit(Buffer)?.ok();
 
                     println!("worker {idx} incremented to {next}");
 

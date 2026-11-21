@@ -1,4 +1,5 @@
 use fjall::{Database, DurabilityLevel, Guard};
+use fjall::DurabilityLevel::Buffer;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -28,7 +29,7 @@ fn main() -> fjall::Result<()> {
             let mut batch = db.batch();
             batch.insert(&items, &line, &line);
             batch.insert(&items_rev, line.chars().rev().collect::<String>(), line);
-            batch.commit()?;
+            batch.commit(Buffer)?;
 
             if idx % 50_000 == 0 {
                 println!("Loaded {idx} words");

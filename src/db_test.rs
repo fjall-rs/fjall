@@ -252,7 +252,7 @@ fn recover_sealed_pair_1() -> crate::Result<()> {
         let mut batch = db.batch();
         batch.insert(&tree, i.to_be_bytes(), i.to_be_bytes());
         batch.insert(&tree2, i.to_be_bytes(), i.to_be_bytes().repeat(1_024));
-        batch.commit()?;
+        batch.commit(Buffer)?;
 
         assert_eq!(i + 1, tree.len()?.try_into().unwrap());
         assert_eq!(i + 1, tree2.len()?.try_into().unwrap());
@@ -279,7 +279,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
             batch.insert(&a, x.to_be_bytes(), "a");
             batch.insert(&b, x.to_be_bytes(), "b");
         }
-        batch.commit()?;
+        batch.commit(Buffer)?;
 
         a.flush(true)?;
 
@@ -287,7 +287,7 @@ fn recover_sealed_partially_flushed_batch() -> crate::Result<()> {
         for x in 100_u64..200 {
             batch.insert(&a, x.to_be_bytes(), "a");
         }
-        batch.commit()?;
+        batch.commit(Buffer)?;
 
         db.rotate_wal()?;
 
@@ -359,7 +359,7 @@ fn flush_all_materializes_wal() -> crate::Result<()> {
             let mut batch = db.batch();
             batch.insert(&first, "a", "1");
             batch.insert(&second, "b", "2");
-            batch.commit()?;
+            batch.commit(Buffer)?;
         }
         first.rotate_memtable()?;
         first.insert("c", "3", Buffer)?;

@@ -9,6 +9,7 @@ use actix_web::{
 };
 use error::RouteResult;
 use fjall::{Database, DurabilityLevel, Keyspace};
+use fjall::DurabilityLevel::Buffer;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -56,7 +57,7 @@ async fn insert_batch(
             }
         }
 
-        batch.commit()?;
+        batch.commit(Buffer)?;
         state.db.persist(DurabilityLevel::SyncAll)
     })
     .await

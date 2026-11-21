@@ -1,4 +1,5 @@
 use fjall::{DurabilityLevel, Guard, OptimisticTxDatabase, Readable};
+use fjall::DurabilityLevel::Buffer;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -72,7 +73,7 @@ fn main() -> fjall::Result<()> {
 
                         tx.remove_weak(&tasks, key);
 
-                        if tx.commit()?.is_ok() {
+                        if tx.commit(Buffer)?.is_ok() {
                             counter.fetch_add(1, Relaxed);
                         }
 

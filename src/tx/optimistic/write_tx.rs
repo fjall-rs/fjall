@@ -152,19 +152,10 @@ impl WriteTransaction {
         }
     }
 
-    /// Sets the durability level.
-    ///
-    /// Default = [`DurabilityLevel::Buffer`]
-    #[must_use]
-    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
-        self.inner = self.inner.durability(mode);
-        self
-    }
-
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -176,7 +167,7 @@ impl WriteTransaction {
     ///
     /// let taken = tx.take(&tree, "a")?.unwrap();
     /// assert_eq!(b"abc", &*taken);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -202,7 +193,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
+    /// # use fjall::{DurabilityLevel, OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -213,7 +204,7 @@ impl WriteTransaction {
     ///
     /// let updated = tx.update_fetch(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
@@ -222,7 +213,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -234,7 +225,7 @@ impl WriteTransaction {
     ///
     /// let updated = tx.update_fetch(&tree, "a", |_| None)?;
     /// assert!(updated.is_none());
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -270,7 +261,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
+    /// # use fjall::{DurabilityLevel, OptimisticTxDatabase, KeyspaceCreateOptions, Readable, Slice};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = OptimisticTxDatabase::builder(folder).open()?;
@@ -281,7 +272,7 @@ impl WriteTransaction {
     ///
     /// let prev = tx.fetch_update(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
@@ -290,7 +281,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, OptimisticTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -302,7 +293,7 @@ impl WriteTransaction {
     ///
     /// let prev = tx.fetch_update(&tree, "a", |_| None)?.unwrap();
     /// assert_eq!(b"abc", &*prev);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -465,12 +456,12 @@ impl WriteTransaction {
             .mark_conflict(keyspace.id, key);
     }
 
-    /// Commits the transaction.
+    /// Commits the transaction, with the given durability level.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn commit(self) -> crate::Result<Result<(), Conflict>> {
+    pub fn commit(self, durability: DurabilityLevel) -> crate::Result<Result<(), Conflict>> {
         // NOTE: We have no write set, so we are basically
         // a read-only transaction, so nothing to do here
         if self.inner.memtables.is_empty() {
@@ -479,7 +470,6 @@ impl WriteTransaction {
 
         let db = self.inner.db.clone();
         let instant = self.inner.nonce.instant;
-        let durability = self.inner.durability;
 
         // NOTE: Hold the snapshot nonce until the end of the function
         let (batch, _nonce) = self.inner.into_batch();
@@ -560,10 +550,10 @@ mod tests {
             assert_eq!(tx2.size_of(&env.tree, "a")?, expected_size);
             tx2.insert(&env.tree, "b", "bb");
 
-            tx1.commit()??;
+            tx1.commit(Buffer)??;
             // The snapshot still returns the old size, but committing must conflict.
             assert_eq!(tx2.size_of(&env.tree, "a")?, expected_size);
-            assert!(matches!(tx2.commit()?, Err(Conflict)));
+            assert!(matches!(tx2.commit(Buffer)?, Err(Conflict)));
             assert_eq!(env.tree.inner().get("a")?, Some("aa".into()));
             assert_eq!(env.tree.inner().get("b")?, initial.map(Into::into));
         }
@@ -582,9 +572,9 @@ mod tests {
 
         let mut other = env.db.write_tx()?;
         other.remove(&env.tree, "a");
-        other.commit()??;
+        other.commit(Buffer)??;
 
-        assert!(matches!(tx.commit()?, Err(Conflict)));
+        assert!(matches!(tx.commit(Buffer)?, Err(Conflict)));
         assert_eq!(env.tree.inner().get("a")?, None);
         assert_eq!(env.tree.inner().get("result")?, None);
 
@@ -605,9 +595,9 @@ mod tests {
         let mut other = env.db.write_tx()?;
         other.insert(&env.tree, "b", "changed");
         other.insert(&other_tree, "a", "changed");
-        other.commit()??;
+        other.commit(Buffer)??;
 
-        tx.commit()??;
+        tx.commit(Buffer)??;
         assert_eq!(env.tree.inner().get("result")?, Some("ab".into()));
 
         Ok(())
@@ -623,7 +613,7 @@ mod tests {
         tx.insert(env.tree.inner(), "a1", 10u64.to_be_bytes());
         tx.insert(env.tree.inner(), "b1", 100u64.to_be_bytes());
         tx.insert(env.tree.inner(), "b2", 200u64.to_be_bytes());
-        tx.commit()??;
+        tx.commit(Buffer)??;
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
@@ -652,8 +642,8 @@ mod tests {
             .sum::<u64>();
         tx2.insert(env.tree.inner(), "a3", 300u64.to_be_bytes());
         assert_eq!(300, val);
-        tx2.commit()??;
-        assert!(matches!(tx1.commit()?, Err(Conflict)));
+        tx2.commit(Buffer)??;
+        assert!(matches!(tx1.commit(Buffer)?, Err(Conflict)));
 
         let tx3 = env.db.write_tx()?;
         let val = tx3
@@ -684,7 +674,7 @@ mod tests {
         let mut tx = env.db.write_tx()?;
         tx.insert(env.tree.inner(), "b1", 100u64.to_be_bytes());
         tx.insert(env.tree.inner(), "b2", 200u64.to_be_bytes());
-        tx.commit()??;
+        tx.commit(Buffer)??;
 
         let mut tx1 = env.db.write_tx()?;
         let val = tx1
@@ -713,8 +703,8 @@ mod tests {
             .sum::<u64>();
         tx2.insert(env.tree.inner(), "a3", 300u64.to_be_bytes());
         assert_eq!(300, val);
-        tx2.commit()??;
-        assert!(matches!(tx1.commit()?, Err(Conflict)));
+        tx2.commit(Buffer)??;
+        assert!(matches!(tx1.commit(Buffer)?, Err(Conflict)));
 
         let tx3 = env.db.write_tx()?;
         let val = tx3
@@ -745,13 +735,13 @@ mod tests {
 
         tx1.insert(env.tree.inner(), "hello", "world");
 
-        tx1.commit()??;
+        tx1.commit(Buffer)??;
         assert!(env.tree.inner().contains_key("hello")?);
 
         assert_eq!(tx2.get(env.tree.inner(), "hello")?, None);
 
         tx2.insert(env.tree.inner(), "hello", "world2");
-        assert!(matches!(tx2.commit()?, Err(Conflict)));
+        assert!(matches!(tx2.commit(Buffer)?, Err(Conflict)));
 
         let mut tx1 = env.db.write_tx()?;
         let mut tx2 = env.db.write_tx()?;
@@ -760,9 +750,9 @@ mod tests {
         tx2.insert(env.tree.inner(), "hello", "world2");
 
         tx1.insert(env.tree.inner(), "hello2", "world1");
-        tx1.commit()??;
+        tx1.commit(Buffer)??;
 
-        tx2.commit()??;
+        tx2.commit(Buffer)??;
 
         Ok(())
     }
@@ -779,11 +769,11 @@ mod tests {
         tx1.insert(env.tree.inner(), "a", "a");
         tx2.insert(env.tree.inner(), "b", "c");
         tx1.insert(env.tree.inner(), "b", "b");
-        tx1.commit()??;
+        tx1.commit(Buffer)??;
 
         tx2.insert(env.tree.inner(), "a", "c");
 
-        tx2.commit()??;
+        tx2.commit(Buffer)??;
         assert_eq!(b"c", &*env.tree.inner().get("a")?.unwrap());
         assert_eq!(b"c", &*env.tree.inner().get("b")?.unwrap());
 
@@ -815,8 +805,8 @@ mod tests {
             tx2.insert(env.tree.inner(), "x", y);
         }
 
-        tx1.commit()??;
-        assert!(matches!(tx2.commit()?, Err(Conflict)));
+        tx1.commit(Buffer)??;
+        assert!(matches!(tx2.commit(Buffer)?, Err(Conflict)));
 
         Ok(())
     }
@@ -832,12 +822,12 @@ mod tests {
         t1.insert(env.tree.inner(), [1u8], [11u8]);
         t2.insert(env.tree.inner(), [1u8], [12u8]);
         t1.insert(env.tree.inner(), [2u8], [21u8]);
-        t1.commit()??;
+        t1.commit(Buffer)??;
 
         assert_eq!(env.tree.inner().get([1u8])?, Some([11u8].into()));
 
         t2.insert(env.tree.inner(), [2u8], [22u8]);
-        t2.commit()??;
+        t2.commit(Buffer)??;
 
         assert_eq!(env.tree.inner().get([1u8])?, Some([12u8].into()));
         assert_eq!(env.tree.inner().get([2u8])?, Some([22u8].into()));
@@ -861,7 +851,7 @@ mod tests {
 
         assert_eq!(t2.get(env.tree.inner(), [1u8])?, Some([10u8].into()));
 
-        t2.commit()??;
+        t2.commit(Buffer)??;
 
         Ok(())
     }
@@ -891,7 +881,7 @@ mod tests {
             v.and_then(|v| v.first().copied()).map(|v| [v + 5].into())
         })?;
         assert_eq!(new, Some([25u8].into()));
-        t2.commit()??;
+        t2.commit(Buffer)??;
 
         let t3 = env.db.write_tx()?;
         {
@@ -907,11 +897,11 @@ mod tests {
             assert!(iter.next().is_none());
         }
 
-        t3.commit()??;
+        t3.commit(Buffer)??;
 
         t1.insert(env.tree.inner(), [1u8], [0u8]);
 
-        assert!(matches!(t1.commit()?, Err(Conflict)));
+        assert!(matches!(t1.commit(Buffer)?, Err(Conflict)));
 
         Ok(())
     }
@@ -928,9 +918,9 @@ mod tests {
         let old = t2.fetch_update(env.tree.inner(), "hello", |_| Some("world2".into()))?;
         assert_eq!(old, None);
 
-        t1.commit()??;
+        t1.commit(Buffer)??;
 
-        assert!(matches!(t2.commit()?, Err(Conflict)));
+        assert!(matches!(t2.commit(Buffer)?, Err(Conflict)));
 
         assert_eq!(env.tree.inner().get("hello")?, Some("world".into()));
 
@@ -943,9 +933,9 @@ mod tests {
         assert_eq!(new, Some("world2".into()));
 
         eprintln!("committing txn 1");
-        t1.commit()??;
+        t1.commit(Buffer)??;
         eprintln!("committing txn 2");
-        t2.commit()??;
+        t2.commit(Buffer)??;
         eprintln!("committed txn 2");
 
         assert_eq!(env.tree.inner().get("hello")?, Some("world3".into()));
@@ -967,8 +957,8 @@ mod tests {
         // insert a key INSIDE the range read by t1
         t2.insert(env.tree.inner(), "hello", "world");
 
-        t2.commit()??;
-        assert!(matches!(t1.commit()?, Err(Conflict)));
+        t2.commit(Buffer)??;
+        assert!(matches!(t1.commit(Buffer)?, Err(Conflict)));
 
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
@@ -979,8 +969,8 @@ mod tests {
         // insert a key OUTSIDE the range read by t1
         t2.insert(env.tree.inner(), "hello2", "world");
 
-        t2.commit()??;
-        t1.commit()??;
+        t2.commit(Buffer)??;
+        t1.commit(Buffer)??;
 
         Ok(())
     }
@@ -998,8 +988,8 @@ mod tests {
         // insert a key MATCHING the prefix read by t1
         t2.insert(env.tree.inner(), "hello", "world");
 
-        t2.commit()??;
-        assert!(matches!(t1.commit()?, Err(Conflict)));
+        t2.commit(Buffer)??;
+        assert!(matches!(t1.commit(Buffer)?, Err(Conflict)));
 
         let mut t1 = env.db.write_tx()?;
         let mut t2 = env.db.write_tx()?;
@@ -1010,8 +1000,8 @@ mod tests {
         // insert a key NOT MATCHING the range read by t1
         t2.insert(env.tree.inner(), "foobar", "world");
 
-        t2.commit()??;
-        t1.commit()??;
+        t2.commit(Buffer)??;
+        t1.commit(Buffer)??;
 
         Ok(())
     }

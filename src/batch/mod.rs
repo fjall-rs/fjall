@@ -16,7 +16,6 @@ use std::sync::Arc;
 pub struct WriteBatch {
     pub(crate) data: Vec<Item>,
     db: Database,
-    durability: DurabilityLevel,
 }
 
 impl WriteBatch {
@@ -27,7 +26,6 @@ impl WriteBatch {
         Self {
             data: Vec::new(),
             db,
-            durability: DurabilityLevel::Buffer,
         }
     }
 
@@ -41,7 +39,6 @@ impl WriteBatch {
         Self {
             data: Vec::with_capacity(capacity),
             db,
-            durability: DurabilityLevel::Buffer,
         }
     }
 
@@ -55,15 +52,6 @@ impl WriteBatch {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Sets the durability level.
-    ///
-    /// Default = [`DurabilityLevel::Buffer`]
-    #[must_use]
-    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
-        self.durability = mode;
-        self
     }
 
     /// Inserts a key-value pair into the batch.
@@ -106,19 +94,19 @@ impl WriteBatch {
         ));
     }
 
-    /// Commits the batch to the [`Database`] atomically.
+    /// Commits the batch to the [`Database`] atomically, with the given durability level.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn commit(self) -> crate::Result<()> {
+    pub fn commit(self, durability: DurabilityLevel) -> crate::Result<()> {
         if self.is_empty() {
             return Ok(());
         }
 
         let write_record =
             crate::write_pipeline::WriteRecord::new(WriteRecordPayload::Multiple(self.data))
-                .durability(self.durability);
+                .durability(durability);
 
         #[expect(
             clippy::expect_used,

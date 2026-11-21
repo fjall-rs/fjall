@@ -1,4 +1,5 @@
 use fjall::{DurabilityLevel, Readable, SingleWriterTxDatabase};
+use fjall::DurabilityLevel::Buffer;
 use std::path::Path;
 
 const ITEM_COUNT: u64 = 200;
@@ -43,7 +44,7 @@ fn main() -> fjall::Result<()> {
                         tx.remove(&src, key.clone());
                         tx.insert(&dst, key, value);
 
-                        tx.commit()?;
+                        tx.commit(Buffer)?;
 
                         println!("consumer {idx} moved {task_id}");
 

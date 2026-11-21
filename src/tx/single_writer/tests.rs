@@ -1,4 +1,5 @@
 use super::*;
+use crate::DurabilityLevel::Buffer;
 use crate::Readable;
 use test_log::test;
 
@@ -20,7 +21,7 @@ fn write_tx_commit_on_other_thread() -> crate::Result<()> {
         wtx.get(&tree, "a")
     });
 
-    std::thread::spawn(move || first.commit())
+    std::thread::spawn(move || first.commit(Buffer))
         .join()
         .expect("thread should not panic")?;
 

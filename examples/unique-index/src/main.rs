@@ -1,4 +1,5 @@
 use fjall::{Readable, SingleWriterTxDatabase, SingleWriterTxKeyspace};
+use fjall::DurabilityLevel::Buffer;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -29,7 +30,7 @@ fn maybe_create_item(
     tx.insert(items, id, name);
     tx.insert(uniq, name, id);
 
-    tx.commit()?;
+    tx.commit(Buffer)?;
 
     Ok(())
 }

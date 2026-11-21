@@ -98,6 +98,7 @@ impl Oracle {
 #[cfg(test)]
 mod tests {
     use super::{CommittedTxnTracker, ConflictManager};
+    use crate::DurabilityLevel::Buffer;
     use crate::{KeyspaceCreateOptions, OptimisticTxDatabase, OptimisticTxKeyspace, Readable};
 
     #[test]
@@ -133,13 +134,13 @@ mod tests {
         let mut tx2 = db.write_tx()?;
         tx1.insert(tree.inner(), "hello", "world");
 
-        tx1.commit()??;
+        tx1.commit(Buffer)??;
         assert!(tree.inner().contains_key("hello")?);
 
         _ = tx2.get(tree.inner(), "hello")?;
 
         tx2.insert(tree.inner(), "hello", "world2");
-        assert!(tx2.commit()?.is_err()); // intended to conflict
+        assert!(tx2.commit(Buffer)?.is_err()); // intended to conflict
 
         Ok(())
     }
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(2, db.inner().supervisor.snapshot_tracker.open_snapshots());
 
         tx1.insert(tree.inner(), "hello", "world");
-        tx1.commit()??;
+        tx1.commit(Buffer)??;
         assert_eq!(1, db.inner().supervisor.snapshot_tracker.open_snapshots());
 
         drop(tx2);

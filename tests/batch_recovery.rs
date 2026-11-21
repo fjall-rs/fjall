@@ -1,4 +1,5 @@
 use fjall::Database;
+use fjall::DurabilityLevel::Buffer;
 use test_log::test;
 
 #[test]
@@ -14,7 +15,7 @@ fn batch_recovery() -> fjall::Result<()> {
         let mut batch = db.batch();
         batch.insert(&tree, i.to_be_bytes(), i.to_be_bytes());
         batch.insert(&tree2, i.to_be_bytes(), i.to_be_bytes());
-        batch.commit()?;
+        batch.commit(Buffer)?;
     }
 
     Ok(())

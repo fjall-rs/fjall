@@ -1,4 +1,5 @@
 use fjall::{DurabilityLevel, Readable, SingleWriterTxDatabase};
+use fjall::DurabilityLevel::Buffer;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -72,7 +73,7 @@ fn main() -> fjall::Result<()> {
 
                         tx.remove_weak(&tasks, key);
 
-                        tx.commit()?;
+                        tx.commit(Buffer)?;
 
                         println!("consumer {idx} completed task {task_id}");
 

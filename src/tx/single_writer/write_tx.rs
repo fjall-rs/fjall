@@ -88,19 +88,10 @@ impl WriteTransaction {
         }
     }
 
-    /// Sets the durability level.
-    ///
-    /// Default = [`DurabilityLevel::Buffer`]
-    #[must_use]
-    pub fn durability(mut self, mode: DurabilityLevel) -> Self {
-        self.inner = self.inner.durability(mode);
-        self
-    }
-
     /// Removes an item and returns its value if it existed.
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -112,7 +103,7 @@ impl WriteTransaction {
     ///
     /// let taken = tx.take(&tree, "a")?.unwrap();
     /// assert_eq!(b"abc", &*taken);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -138,7 +129,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -149,7 +140,7 @@ impl WriteTransaction {
     ///
     /// let updated = tx.update_fetch(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"def", &*updated);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
@@ -158,7 +149,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -170,7 +161,7 @@ impl WriteTransaction {
     ///
     /// let updated = tx.update_fetch(&tree, "a", |_| None)?;
     /// assert!(updated.is_none());
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -197,7 +188,7 @@ impl WriteTransaction {
     /// # Examples
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions, Slice, Readable};
     /// #
     /// # let folder = tempfile::tempdir()?;
     /// # let db = SingleWriterTxDatabase::builder(folder).open()?;
@@ -208,7 +199,7 @@ impl WriteTransaction {
     ///
     /// let prev = tx.fetch_update(&tree, "a", |_| Some(Slice::from(*b"def")))?.unwrap();
     /// assert_eq!(b"abc", &*prev);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert_eq!(Some("def".as_bytes().into()), item);
@@ -217,7 +208,7 @@ impl WriteTransaction {
     /// ```
     ///
     /// ```
-    /// # use fjall::{SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
+    /// # use fjall::{DurabilityLevel, SingleWriterTxDatabase, KeyspaceCreateOptions, Readable};
     /// # use std::sync::Arc;
     /// #
     /// # let folder = tempfile::tempdir()?;
@@ -229,7 +220,7 @@ impl WriteTransaction {
     ///
     /// let prev = tx.fetch_update(&tree, "a", |_| None)?.unwrap();
     /// assert_eq!(b"abc", &*prev);
-    /// tx.commit()?;
+    /// tx.commit(DurabilityLevel::Buffer)?;
     ///
     /// let item = tree.get("a")?;
     /// assert!(item.is_none());
@@ -361,13 +352,13 @@ impl WriteTransaction {
         self.inner.remove_weak(keyspace.inner(), key);
     }
 
-    /// Commits the transaction.
+    /// Commits the transaction, with the given durability level.
     ///
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn commit(self) -> crate::Result<()> {
-        self.inner.commit()
+    pub fn commit(self, durability: DurabilityLevel) -> crate::Result<()> {
+        self.inner.commit(durability)
     }
 
     /// More explicit alternative to dropping the transaction

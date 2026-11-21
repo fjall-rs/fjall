@@ -1,4 +1,5 @@
 use fjall::{Database, Guard, Keyspace, OwnedWriteBatch};
+use fjall::DurabilityLevel::Buffer;
 use format_bytes::format_bytes;
 use nanoid::nanoid;
 use std::path::Path;
@@ -43,7 +44,7 @@ fn main() -> fjall::Result<()> {
     create_item(&mut batch, &items, &sec, "Kid A", 2_000)?;
     create_item(&mut batch, &items, &sec, "Have You In My Wilderness", 2_015)?;
 
-    batch.commit()?;
+    batch.commit(Buffer)?;
     db.persist(fjall::DurabilityLevel::SyncAll)?;
 
     // Get items from 1990 to 2000 (exclusive)

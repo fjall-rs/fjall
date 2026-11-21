@@ -19,7 +19,7 @@ fn write_buffer_size_after_insert() -> fjall::Result<()> {
 
     let mut batch = db.batch();
     batch.insert(&tree, "dsa", "qwe");
-    batch.commit()?;
+    batch.commit(Buffer)?;
 
     let write_buffer_size_after_batch = db.stats().write_buffer_size();
     assert!(write_buffer_size_after_batch > write_buffer_size_after);
@@ -50,7 +50,7 @@ fn write_buffer_size_blob() -> fjall::Result<()> {
 
     let mut batch = db.batch();
     batch.insert(&tree, "dsa", "qwe");
-    batch.commit()?;
+    batch.commit(Buffer)?;
 
     let write_buffer_size_after_batch = db.stats().write_buffer_size();
     assert!(write_buffer_size_after_batch > write_buffer_size_after);

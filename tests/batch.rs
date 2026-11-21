@@ -1,3 +1,4 @@
+use fjall::DurabilityLevel::Buffer;
 use fjall::{Database, KeyspaceCreateOptions, KvSeparationOptions};
 use test_log::test;
 
@@ -15,7 +16,7 @@ fn batch_simple() -> fjall::Result<()> {
     batch.insert(&tree, "5", "abc");
     assert_eq!(tree.len()?, 0);
 
-    batch.commit()?;
+    batch.commit(Buffer)?;
     assert_eq!(tree.len()?, 3);
 
     Ok(())
@@ -40,7 +41,7 @@ fn blob_batch_simple() -> fjall::Result<()> {
     batch.insert(&tree, "5", "abc");
     assert_eq!(tree.len()?, 0);
 
-    batch.commit()?;
+    batch.commit(Buffer)?;
     assert_eq!(tree.len()?, 3);
 
     assert_eq!(&*tree.get("1")?.unwrap(), blob.as_bytes());
@@ -62,7 +63,7 @@ fn batch_multi_keys() -> fjall::Result<()> {
     batch.insert(&tree, "1", "ghi");
     assert_eq!(tree.len()?, 0);
 
-    batch.commit()?;
+    batch.commit(Buffer)?;
     assert_eq!(tree.len()?, 1);
     assert_eq!(&*tree.get("1")?.unwrap(), b"ghi");
 

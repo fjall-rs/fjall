@@ -1,3 +1,4 @@
+use fjall::DurabilityLevel::Buffer;
 use fjall::{KeyspaceCreateOptions, Readable, SingleWriterTxDatabase};
 use test_log::test;
 
@@ -13,7 +14,7 @@ fn write_tx_multi_keys() -> fjall::Result<()> {
     wtx.insert(&tree, "1", "def");
     wtx.insert(&tree, "1", "ghi");
     assert_eq!(&*wtx.get(&tree, "1")?.unwrap(), b"ghi");
-    wtx.commit()?;
+    wtx.commit(Buffer)?;
     assert_eq!(&*tree.inner().get("1")?.unwrap(), b"ghi");
 
     Ok(())

@@ -1,4 +1,5 @@
 use fjall::Readable;
+use fjall::DurabilityLevel::Buffer;
 use std::time::{Duration, Instant};
 
 fn main() -> fjall::Result<()> {
@@ -19,7 +20,7 @@ fn main() -> fjall::Result<()> {
             println!("Started tx1");
             std::thread::sleep(Duration::from_secs(3));
             wtx.insert(&items, "a", "a");
-            wtx.commit()
+            wtx.commit(Buffer)
         })
     };
 
@@ -32,7 +33,7 @@ fn main() -> fjall::Result<()> {
             println!("Started tx2");
             std::thread::sleep(Duration::from_secs(3));
             wtx.insert(&items, "b", "b");
-            wtx.commit()
+            wtx.commit(Buffer)
         })
     };
 
