@@ -3,16 +3,19 @@
 // (found in the LICENSE-* files in the repository)
 
 mod keyspace;
+mod lock;
 mod write_tx;
+
+#[cfg(test)]
+#[expect(clippy::expect_used)]
+mod tests;
 
 use crate::{
     builder::Openable, keyspace::KeyspaceKey, Config, Database, DurabilityLevel,
     KeyspaceCreateOptions, Snapshot,
 };
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use lock::SingleWriterLock;
+use std::{path::Path, sync::Arc};
 
 pub use keyspace::SingleWriterTxKeyspace;
 pub use write_tx::WriteTransaction;
@@ -24,7 +27,7 @@ pub type SingleWriterTxDatabaseBuilder = crate::DatabaseBuilder<SingleWriterTxDa
 #[derive(Clone)]
 pub struct SingleWriterTxDatabase {
     pub(crate) inner: Database,
-    single_writer_lock: Arc<Mutex<()>>,
+    single_writer_lock: Arc<SingleWriterLock>,
 }
 
 impl Openable for SingleWriterTxDatabase {
@@ -53,18 +56,14 @@ impl SingleWriterTxDatabase {
 
     /// Starts a new writeable transaction.
     #[must_use]
-    #[expect(clippy::missing_panics_doc)]
-    pub fn write_tx(&self) -> WriteTransaction<'_> {
-        #[expect(clippy::expect_used)]
-        let guard = self.single_writer_lock.lock().expect("poisoned tx lock");
+    pub fn write_tx(&self) -> WriteTransaction {
+        let guard = self.single_writer_lock.lock();
 
-        let mut write_tx = WriteTransaction::new(
+        WriteTransaction::new(
             self.clone(),
             self.inner.supervisor.snapshot_tracker.open(),
             guard,
-        );
-
-        write_tx
+        )
     }
 
     /// Acquires a snapshot for read isolation, a.k.a. "read transaction".

@@ -2,13 +2,14 @@
 // This source code is licensed under both the Apache 2.0 and MIT License
 // (found in the LICENSE-* files in the repository)
 
+use super::lock::SingleWriterGuard;
 use crate::{
     snapshot_nonce::SnapshotNonce,
     tx::{single_writer::keyspace::SingleWriterTxKeyspace, write_tx::BaseTransaction},
     DurabilityLevel, Guard, Iter, Keyspace, Readable, SingleWriterTxDatabase,
 };
 use lsm_tree::{UserKey, UserValue};
-use std::{ops::RangeBounds, sync::MutexGuard};
+use std::ops::RangeBounds;
 
 /// A single-writer (serialized) cross-keyspace transaction
 ///
@@ -20,12 +21,12 @@ use std::{ops::RangeBounds, sync::MutexGuard};
 /// For that reason, you should try to keep transactions short-lived, and make sure they
 /// are not held somewhere forever.
 #[clippy::has_significant_drop]
-pub struct WriteTransaction<'a> {
-    _guard: MutexGuard<'a, ()>,
+pub struct WriteTransaction {
+    _guard: SingleWriterGuard,
     inner: BaseTransaction,
 }
 
-impl Readable for WriteTransaction<'_> {
+impl Readable for WriteTransaction {
     fn get<K: AsRef<[u8]>>(
         &self,
         keyspace: impl AsRef<Keyspace>,
@@ -75,11 +76,11 @@ impl Readable for WriteTransaction<'_> {
     }
 }
 
-impl<'tx> WriteTransaction<'tx> {
+impl WriteTransaction {
     pub(crate) fn new(
         db: SingleWriterTxDatabase,
         nonce: SnapshotNonce,
-        guard: MutexGuard<'tx, ()>,
+        guard: SingleWriterGuard,
     ) -> Self {
         Self {
             _guard: guard,
