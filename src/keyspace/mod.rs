@@ -11,7 +11,7 @@ mod write_delay;
 mod test;
 
 use crate::{
-    file::{KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
+    file::{fsync_directory, KEYSPACES_FOLDER, LSM_CURRENT_VERSION_MARKER},
     flush::Task as FlushTask,
     ingestion::Ingestion,
     locked_file::LockedFileGuard,
@@ -331,11 +331,8 @@ impl Keyspace {
     ) -> crate::Result<Self> {
         log::debug!("Creating keyspace {name:?}->{keyspace_id}");
 
-        let base_folder = db
-            .config
-            .path
-            .join(KEYSPACES_FOLDER)
-            .join(keyspace_id.to_string());
+        let keyspaces_folder = db.config.path.join(KEYSPACES_FOLDER);
+        let base_folder = keyspaces_folder.join(keyspace_id.to_string());
 
         std::fs::create_dir_all(&base_folder)?;
 
@@ -349,6 +346,8 @@ impl Keyspace {
 
         let base_config = apply_to_base_config(base_config, &config);
         let tree = base_config.open()?;
+
+        fsync_directory(&keyspaces_folder)?;
 
         Ok(Self(Arc::new(KeyspaceInner {
             supervisor: db.supervisor.clone(),
