@@ -528,22 +528,6 @@ impl Database {
         &self.config.path
     }
 
-    /// Backs up the database into the given destination folder.
-    ///
-    /// If the destination folder is already an older backup,
-    /// it will be incrementally updated.
-    ///
-    /// If possible, data will be hard-linked.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error, if an IO error occurred.
-    pub fn backup_into<P: AsRef<Path>>(&self, path: P) -> crate::Result<()> {
-        let path = path.as_ref();
-        log::info!("Backing up database into {}", path.display());
-        todo!();
-    }
-
     /// Synchronously flushes all keyspaces into tables files and rotates the write-ahead log.
     ///
     /// This blocks writes and keyspace changes for the duration of the operation.
