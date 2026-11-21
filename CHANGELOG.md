@@ -1,3 +1,26 @@
+# 4.0.0
+
+- [feat] Incremental backups
+- [feat] New write-ahead log implementation, see [hadrians_wal](https://github.com/marvin-j97/hadrians_wal)
+- [feat] Keyspace meta information now sits at the database level; removed v3's "meta keyspace"
+- [perf] New write pipeline which can group fsync operations
+- [perf] New snapshot tracker which scales better in multithreaded workloads
+- [api] Remove lifetime from SingleWriterTransaction, and make it Send
+- [api] `Database::flush_all` operation
+- [api] Make FIFO compaction TTL a builder method, not an optional constructor parameter
+- [api] Renamed `PersistMode` to `DurabilityLevel`
+- [api] Removed `manual_journal_persist` in favour of `DurabilityLevel::Visible`
+- [api] Composable compaction filter registration
+- [api] Added `snapshot` as alias for `read_tx`
+- [api] Removed one-shot transactional operations, such as `TxKeyspace::insert`
+- [api] Group database statistics under `db.stats()`
+- [api] Added WAL recovery statistics
+- [api] Renamed `journal` APIs to `wal`, e.g. `journal_compression` -> `wal_compression`
+- [api] Write operations have an explicit `DurabilityLevel` parameter
+- [fix] Major compactions now use the table size defined by the compaction strategy
+- [fix] Other fixes
+- [msrv] Increased MSRV to 1.98
+
 # 3.1.0
 
 - [feat] Implemented support for compaction filters (custom logic during compactions)
