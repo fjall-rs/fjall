@@ -861,27 +861,11 @@ impl Database {
 
         std::fs::create_dir_all(&keyspaces_folder_path)?;
 
-        let active_journal_path = journal_folder_path.join("0.jnl");
-        let journal = Journal::create_new(&active_journal_path)?.with_compression(
-            config.journal_compression_type,
-            config.journal_compression_threshold,
-        );
-        let journal = Arc::new(journal);
-
-        // NOTE: Lastly, fsync version marker, which contains the version
-        let mut marker = std::fs::File::create_new(config.path.join(VERSION_MARKER))?;
-        FormatVersion::V3.write_file_header(&mut marker)?;
-        marker.sync_all()?;
-
-        // IMPORTANT: fsync folders on Unix
-        fsync_directory(&keyspaces_folder_path)?;
-        fsync_directory(&config.path)?;
-
         let seqno = SequenceNumberCounter::default();
         let visible_seqno = SequenceNumberCounter::default();
 
         let meta_tree = lsm_tree::Config::new(
-            config.path.join(KEYSPACES_FOLDER).join("0"),
+            keyspaces_folder_path.join("0"),
             seqno.clone(),
             visible_seqno.clone(),
         )
@@ -902,6 +886,23 @@ impl Database {
             ),
         ]))
         .open()?;
+
+        // IMPORTANT: fsync keyspaces folder before writing the version marker
+        fsync_directory(&keyspaces_folder_path)?;
+
+        let active_journal_path = journal_folder_path.join("0.jnl");
+        let journal = Journal::create_new(&active_journal_path)?.with_compression(
+            config.journal_compression_type,
+            config.journal_compression_threshold,
+        );
+        let journal = Arc::new(journal);
+
+        // NOTE: Lastly, fsync version marker, which contains the version
+        let mut marker = std::fs::File::create_new(config.path.join(VERSION_MARKER))?;
+        FormatVersion::V3.write_file_header(&mut marker)?;
+        marker.sync_all()?;
+
+        fsync_directory(&config.path)?;
 
         let keyspaces = Arc::new(RwLock::default());
 
