@@ -26,7 +26,7 @@ pub fn run(
         .tree
         .flush(&flush_lock, gc_watermark)
         .inspect_err(|e| {
-            log::error!("Flush error: {e:?}");
+            log::error!("Flush of keyspace {:?} failed: {e:?}", task.keyspace.name);
         })? {
         Some(flushed_bytes) => {
             write_buffer_manager.free(flushed_bytes);

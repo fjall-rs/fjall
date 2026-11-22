@@ -35,7 +35,7 @@ pub fn run(
         .tree
         .compact(strategy.clone(), snapshot_tracker.get_seqno_safe_to_gc())
     {
-        log::error!("Compaction failed: {e:?}");
+        log::error!("Compaction of keyspace {:?} failed: {e:?}", keyspace.name);
         stats.active_compaction_count.fetch_sub(1, Relaxed);
 
         return Err(e.into());
