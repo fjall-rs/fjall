@@ -61,6 +61,7 @@ impl WritePipeline {
         }
     }
 
+    fn act_as_leader(&self, record: &WriteRecord) -> crate::Result<Result<(), Conflict>> {
     fn act_as_leader(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
         let mut ledger = self
             .state
@@ -289,7 +290,7 @@ impl WritePipeline {
     ) -> crate::Result<Result<(), Conflict>> {
         'start: loop {
             if is_leader {
-                return self.act_as_leader(record).inspect_err(|_| {
+                return self.act_as_leader(&record).inspect_err(|_| {
                     self.state.poison_flag.poison();
                     self.abdicate();
                 });

@@ -47,8 +47,6 @@ struct Slot<T> {
 
 #[expect(unsafe_code)]
 unsafe impl<T: Send> Sync for Queue<T> {}
-#[expect(unsafe_code)]
-unsafe impl<T: Send> Send for Queue<T> {}
 
 /// A bounded, FIFO MPSC queue
 ///
@@ -72,7 +70,7 @@ impl<T> Queue<T> {
     pub fn with_capacity(n: usize) -> Self {
         assert!(
             n >= 2 && n.is_power_of_two(),
-            "capacity must be a power of two and >= 2"
+            "capacity must be a power of two and >= 2",
         );
 
         Self {
@@ -164,10 +162,9 @@ impl<T> Queue<T> {
                         Relaxed,
                     ) {
                         Ok(_) => {
-                            // SAFETY: We set published=true after pushing a value
-                            // We set published=false after popping a value
+                            // SAFETY: We won CAS
                             #[expect(unsafe_code)]
-                            let value = unsafe { slot.data.with(|d| d).read().assume_init() };
+                            let value = unsafe { slot.data.with(|d| d.read().assume_init()) };
 
                             slot.seqno
                                 .store(head.wrapping_add(self.mask).wrapping_add(1), Release);
@@ -180,33 +177,6 @@ impl<T> Queue<T> {
                 Ordering::Less => return None,
                 Ordering::Greater => head = self.head.load(Relaxed),
             }
-        }
-    }
-
-    // We have a special invariant in fjall: we only have a single consumer
-    pub fn peek(&self) -> Option<&T> {
-        use std::cmp::Ordering;
-
-        let head = self.head.load(Acquire);
-
-        #[expect(clippy::indexing_slicing)]
-        let slot = &self.slots[self.get_index(head)];
-        let seqno = slot.seqno.load(Acquire);
-
-        let diff = seqno.wrapping_sub(head + 1);
-
-        match diff.cmp(&0) {
-            Ordering::Equal => {
-                // SAFETY: Uhhh
-                #[expect(unsafe_code)]
-                let ptr = {
-                    let ptr = slot.data.with(|d| d).cast();
-                    unsafe { &*ptr }
-                };
-
-                Some(ptr)
-            }
-            Ordering::Less | Ordering::Greater => None,
         }
     }
 }
@@ -226,7 +196,8 @@ impl<T> Drop for Queue<T> {
             if slot.seqno.load(Acquire) == idx.wrapping_add(1) {
                 #[expect(unsafe_code)]
                 unsafe {
-                    std::ptr::drop_in_place((*slot.data.with_mut(|d| d)).as_mut_ptr());
+                    slot.data
+                        .with_mut(|d| std::ptr::drop_in_place((*d).as_mut_ptr()));
                 }
             }
         }
@@ -243,6 +214,7 @@ impl<T> Default for Queue<T> {
 mod tests {
     use super::*;
 
+    #[cfg(not(feature = "__internal_loom"))]
     #[test]
     fn mpsc_queue_1() {
         let list = Queue::<usize>::with_capacity(4);
@@ -260,6 +232,7 @@ mod tests {
         assert_eq!(None, list.try_pop());
     }
 
+    #[cfg(not(feature = "__internal_loom"))]
     #[test]
     fn mpsc_queue_2() {
         let list = Queue::<usize>::with_capacity(4);
@@ -278,44 +251,21 @@ mod tests {
         assert!(list.try_push(1).is_none());
     }
 
+    #[cfg(not(feature = "__internal_loom"))]
     #[test]
-    fn mpsc_queue_3() {
-        let list = Queue::<usize>::with_capacity(4);
-        assert_eq!(None, list.peek());
-
-        assert!(list.try_push(2).is_some());
-        assert_eq!(Some(&2), list.peek());
-        assert_eq!(Some(&2), list.peek());
-        assert_eq!(Some(&2), list.peek());
-
-        assert!(list.try_push(4).is_some());
-        assert_eq!(Some(&2), list.peek());
-        assert_eq!(Some(&2), list.peek());
-        assert_eq!(Some(&2), list.peek());
-        assert_eq!(Some(2), list.try_pop());
-        assert_eq!(Some(&4), list.peek());
-        assert_eq!(Some(&4), list.peek());
-        assert_eq!(Some(&4), list.peek());
-        assert_eq!(Some(4), list.try_pop());
-        assert_eq!(None, list.try_pop());
-
-        assert_eq!(None, list.try_pop());
-        assert_eq!(None, list.try_pop());
-        assert_eq!(None, list.try_pop());
-    }
-
-    #[test]
-    #[should_panic]
+    #[should_panic = "must be a power of two"]
     fn mpsc_queue_with_capacity_zero_panics() {
         let _ = Queue::<u8>::with_capacity(0);
     }
 
+    #[cfg(not(feature = "__internal_loom"))]
     #[test]
-    #[should_panic]
+    #[should_panic = "must be a power of two"]
     fn mpsc_queue_with_capacity_non_power_of_two_panics() {
         let _ = Queue::<u8>::with_capacity(3);
     }
 
+    #[cfg(not(feature = "__internal_loom"))]
     #[test]
     #[allow(clippy::unwrap_used)]
     fn mpsc_queue_drops_elements_on_drop() {
