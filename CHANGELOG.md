@@ -19,6 +19,7 @@
 - [api] Write operations have an explicit `DurabilityLevel` parameter
 - [fix] Major compactions now use the table size defined by the compaction strategy
 - [fix] Other fixes
+- [misc] Values are now soft-limited to 1 GiB
 - [msrv] Increased MSRV to 1.98
 
 # 3.1.0
