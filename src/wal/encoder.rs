@@ -60,6 +60,8 @@ impl Encoder {
 
         self.buf.write_u64_varint(keyspace_id)?;
 
+        self.buf.write_u8(value_type.into())?;
+
         #[expect(clippy::cast_possible_truncation, reason = "limit in lsm-tree")]
         self.buf.write_u16_varint(key.len() as u16)?;
         self.buf.write_all(key)?;
@@ -69,27 +71,27 @@ impl Encoder {
 
         self.buf.write_u32_varint(uncompressed_val_len)?;
 
-        let val = match self.compression {
-            #[cfg(feature = "lz4")]
-            CompressionType::Lz4 if uncompressed_val_len >= self.compression_threshold => {
-                self.compression.encode_into(&mut self.buf)?;
-                let compressed = lz4_flex::compress(val);
+        if uncompressed_val_len > 0 {
+            let val = match self.compression {
+                #[cfg(feature = "lz4")]
+                CompressionType::Lz4 if uncompressed_val_len >= self.compression_threshold => {
+                    self.compression.encode_into(&mut self.buf)?;
+                    let compressed = lz4_flex::compress(val);
 
-                #[expect(clippy::cast_possible_truncation, reason = "limit in lsm-tree")]
-                self.buf.write_u32_varint(compressed.len() as u32)?;
+                    #[expect(clippy::cast_possible_truncation, reason = "limit in lsm-tree")]
+                    self.buf.write_u32_varint(compressed.len() as u32)?;
 
-                std::borrow::Cow::Owned(compressed)
-            }
+                    std::borrow::Cow::Owned(compressed)
+                }
 
-            _ => {
-                CompressionType::None.encode_into(&mut self.buf)?;
-                std::borrow::Cow::Borrowed(val)
-            }
-        };
+                _ => {
+                    CompressionType::None.encode_into(&mut self.buf)?;
+                    std::borrow::Cow::Borrowed(val)
+                }
+            };
 
-        self.buf.write_all(&val)?;
-
-        self.buf.write_u8(value_type.into())?;
+            self.buf.write_all(&val)?;
+        }
 
         Ok(())
     }

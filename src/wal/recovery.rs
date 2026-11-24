@@ -48,46 +48,53 @@ enum DecodedRecord<'a, R: Read> {
 fn decode_item<R: Read>(reader: &mut R, batch_seqno: SeqNo) -> crate::Result<DecodedItem> {
     let keyspace_id = reader.read_u64_varint()?;
 
+    let value_type = {
+        let value_type = reader.read_u8()?;
+
+        value_type
+            .try_into()
+            .map_err(|()| crate::Error::InvalidTag(("ValueType", value_type)))?
+    };
+
     let key_len = usize::from(reader.read_u16_varint()?);
     let key = UserKey::from_reader(reader, key_len)?;
 
     let value_len = reader.read_u32_varint()? as usize;
 
-    let compression = CompressionType::decode_from(reader)?;
+    let value = if value_len > 0 {
+        let compression = CompressionType::decode_from(reader)?;
 
-    let value = match compression {
-        CompressionType::None => UserValue::from_reader(reader, value_len)?,
+        match compression {
+            CompressionType::None => UserValue::from_reader(reader, value_len)?,
 
-        #[cfg(feature = "lz4")]
-        CompressionType::Lz4 => {
-            let compressed_value_len = reader.read_u32_varint()? as usize;
+            #[cfg(feature = "lz4")]
+            CompressionType::Lz4 => {
+                let compressed_value_len = reader.read_u32_varint()? as usize;
 
-            let compressed_value = UserValue::from_reader(reader, compressed_value_len)?;
+                let compressed_value = UserValue::from_reader(reader, compressed_value_len)?;
 
-            #[expect(unsafe_code)]
-            let mut uncompressed_value = unsafe { UserValue::builder_unzeroed(value_len) };
+                #[expect(unsafe_code)]
+                let mut uncompressed_value = unsafe { UserValue::builder_unzeroed(value_len) };
 
-            let uncompressed_len =
-                lz4_flex::decompress_into(&compressed_value, &mut uncompressed_value).map_err(
-                    |e| {
-                        log::error!("LZ4 decompression failed: {e}");
-                        crate::Error::Decompress(CompressionType::Lz4)
-                    },
-                )?;
+                let uncompressed_len =
+                    lz4_flex::decompress_into(&compressed_value, &mut uncompressed_value).map_err(
+                        |e| {
+                            log::error!("LZ4 decompression failed: {e}");
+                            crate::Error::Decompress(CompressionType::Lz4)
+                        },
+                    )?;
 
-            if uncompressed_len != uncompressed_value.len() {
-                log::error!("Decompressed size does not match expected value size");
-                return Err(crate::Error::Decompress(CompressionType::Lz4));
+                if uncompressed_len != uncompressed_value.len() {
+                    log::error!("Decompressed size does not match expected value size");
+                    return Err(crate::Error::Decompress(CompressionType::Lz4));
+                }
+
+                UserValue::from(uncompressed_value.freeze())
             }
-
-            UserValue::from(uncompressed_value.freeze())
         }
+    } else {
+        UserValue::default()
     };
-
-    let value_type = reader.read_u8()?;
-    let value_type = value_type
-        .try_into()
-        .map_err(|()| crate::Error::InvalidTag(("ValueType", value_type)))?;
 
     Ok(DecodedItem {
         keyspace_id,
