@@ -62,7 +62,6 @@ impl WritePipeline {
     }
 
     fn act_as_leader(&self, record: &WriteRecord) -> crate::Result<Result<(), Conflict>> {
-    fn act_as_leader(&self, record: Arc<WriteRecord>) -> crate::Result<Result<(), Conflict>> {
         let mut ledger = self
             .state
             .ledger
